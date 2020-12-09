@@ -100,7 +100,7 @@ import static org.junit.Assert.fail;
  */
 public class IntegrationTestUtils {
 
-    public static final long DEFAULT_TIMEOUT = 20 * 1000L;
+    public static final long DEFAULT_TIMEOUT = 60 * 1000L;
     private static final Logger LOG = LoggerFactory.getLogger(IntegrationTestUtils.class);
 
     /*

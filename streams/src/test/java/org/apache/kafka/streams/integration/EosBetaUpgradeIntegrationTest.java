@@ -83,6 +83,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import static org.apache.kafka.common.utils.Utils.mkSet;
+import static org.apache.kafka.streams.integration.utils.IntegrationTestUtils.getStore;
 import static org.apache.kafka.test.TestUtils.waitForCondition;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -1101,27 +1102,19 @@ public class EosBetaUpgradeIntegrationTest {
     }
 
     private Set<Long> keysFromInstance(final KafkaStreams streams) throws Exception {
-        final Set<Long> keys = new HashSet<>();
-        waitForCondition(
-            () -> {
-                final ReadOnlyKeyValueStore<Long, Long> store = streams.store(
-                    StoreQueryParameters.fromNameAndType(storeName, QueryableStoreTypes.keyValueStore())
-                );
-
-                keys.clear();
-                try (final KeyValueIterator<Long, Long> it = store.all()) {
-                    while (it.hasNext()) {
-                        final KeyValue<Long, Long> row = it.next();
-                        keys.add(row.key);
-                    }
-                }
-
-                return true;
-            },
+        final ReadOnlyKeyValueStore<Long, Long> store = getStore(
             MAX_WAIT_TIME_MS,
-            "Could not get keys from store: " + storeName
+            streams,
+            StoreQueryParameters.fromNameAndType(storeName, QueryableStoreTypes.keyValueStore())
         );
-
+        waitForCondition(() -> store.get(-1L) == null, MAX_WAIT_TIME_MS, () -> "State store did not ready: " + storeName);
+        final Set<Long> keys = new HashSet<>();
+        try (final KeyValueIterator<Long, Long> it = store.all()) {
+            while (it.hasNext()) {
+                final KeyValue<Long, Long> row = it.next();
+                keys.add(row.key);
+            }
+        }
         return keys;
     }
 
