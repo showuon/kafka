@@ -439,7 +439,6 @@ public class EosBetaUpgradeIntegrationTest {
             System.err.println("!!! phase 5");
             requestCommit.set(true);
             waitForCondition(() -> !requestCommit.get(), "Punctuator did not request commit for running client");
-            System.err.println("!!! after Punctuator commit");
             stateTransitions1.clear();
             stateTransitions2.clear();
             streams1Beta = getKafkaStreams("appDir1", StreamsConfig.EXACTLY_ONCE_BETA);
