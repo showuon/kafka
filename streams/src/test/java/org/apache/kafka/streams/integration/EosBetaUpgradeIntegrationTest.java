@@ -580,6 +580,7 @@ public class EosBetaUpgradeIntegrationTest {
                 assignmentListener.prepareForRebalance();
                 streams2AlphaTwo.start();
                 assignmentListener.waitForNextStableAssignment(MAX_WAIT_TIME_MS);
+
                 waitForRunning(stateTransitions1);
                 waitForRunning(stateTransitions2);
 
@@ -885,6 +886,7 @@ public class EosBetaUpgradeIntegrationTest {
                     public void init(final ProcessorContext context) {
                         this.context = context;
                         state = (KeyValueStore<Long, Long>) context.getStateStore(storeName);
+                        System.err.println("!!! state in init is " + context.taskId() + ", " + state.get(0L) + ", " + state.get(1L) + ", " + state.get(2L) + ", " + state.get(3L));
                         final String clientId = context.appConfigs().get(StreamsConfig.CLIENT_ID_CONFIG).toString();
                         if ("appDir1".equals(clientId)) {
                             crash = errorInjectedClient1;
@@ -912,6 +914,7 @@ public class EosBetaUpgradeIntegrationTest {
                         }
 
                         Long sum = state.get(key);
+                        System.err.println("!!! sum is " +  context.taskId() + ", " + sum +  ", key is " + key);
                         if (sum == null) {
                             sum = value;
                         } else {
