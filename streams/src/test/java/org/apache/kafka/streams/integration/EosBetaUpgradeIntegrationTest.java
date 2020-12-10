@@ -330,7 +330,7 @@ public class EosBetaUpgradeIntegrationTest {
             System.err.println("!!! phase 3");
             final Set<Long> cleanKeys = mkSet(0L, 1L, 2L, 3L);
             final Set<Long> keyFilterFirstClient = keysFromInstance(streams1Alpha);
-            System.err.println("!!! keyFilterFirstClient is  " + keyFilterFirstClient);
+            System.err.println("!!! keyFilterFirstClient is " + keyFilterFirstClient);
             final long potentiallyFirstFailingKey = keyFilterFirstClient.iterator().next();
             System.err.println("!!! potentiallyFirstFailingKey is " + potentiallyFirstFailingKey);
             cleanKeys.remove(potentiallyFirstFailingKey);
