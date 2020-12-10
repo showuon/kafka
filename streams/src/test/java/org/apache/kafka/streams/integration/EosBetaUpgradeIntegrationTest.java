@@ -564,7 +564,7 @@ public class EosBetaUpgradeIntegrationTest {
             //   p-1: 10 rec + C + 5 rec + A + 5 rec + C + 5 rec + C ---> 10 rec + A + 10 rec + C
             //   p-2: 10 rec + C + 5 rec + C + 5 rec + A + 5 rec + C ---> 10 rec + C
             //   p-3: 10 rec + C + 5 rec + C + 5 rec + A + 5 rec + C ---> 10 rec + C
-            System.err.println("!!! phase 7 ");
+            System.err.println("!!! phase 7");
             if (!injectError) {
                 streams2AlphaTwo = streams2Alpha;
             } else {
