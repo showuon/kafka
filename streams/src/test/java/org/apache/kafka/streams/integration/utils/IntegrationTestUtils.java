@@ -1152,7 +1152,7 @@ public class IntegrationTestUtils {
             continueConsuming(consumerRecords.size(), maxMessages)) {
             totalPollTimeMs += pollIntervalMs;
             final ConsumerRecords<K, V> records = consumer.poll(Duration.ofMillis(pollIntervalMs));
-            System.err.println("!!! read records: " + records.count());
+            System.err.println("!!! read records: " + records.count() + ", totalPollTimeMs is " + totalPollTimeMs);
 
             for (final ConsumerRecord<K, V> record : records) {
                 consumerRecords.add(record);
