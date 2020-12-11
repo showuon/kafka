@@ -86,7 +86,7 @@ import static org.junit.Assert.fail;
 
 @RunWith(Parameterized.class)
 @Category({IntegrationTest.class})
-public class EosBetaUpgradeIntegrationTest {
+public class EosBetaUpgradeIntegrationTwoTest {
 
     @Parameterized.Parameters(name = "{0}")
     public static Collection<Boolean[]> data() {
@@ -103,24 +103,24 @@ public class EosBetaUpgradeIntegrationTest {
     private static final int MAX_POLL_INTERVAL_MS = (int) Duration.ofSeconds(100L).toMillis();
     private static final long MAX_WAIT_TIME_MS = Duration.ofMinutes(1L).toMillis();
 
-    private static final List<KeyValue<KafkaStreams.State, KafkaStreams.State>> CLOSE =
+    private static final List<KeyValue<State, State>> CLOSE =
         Collections.unmodifiableList(
             Arrays.asList(
-                KeyValue.pair(KafkaStreams.State.RUNNING, KafkaStreams.State.PENDING_SHUTDOWN),
-                KeyValue.pair(KafkaStreams.State.PENDING_SHUTDOWN, KafkaStreams.State.NOT_RUNNING)
+                KeyValue.pair(State.RUNNING, State.PENDING_SHUTDOWN),
+                KeyValue.pair(State.PENDING_SHUTDOWN, State.NOT_RUNNING)
             )
         );
-    private static final List<KeyValue<KafkaStreams.State, KafkaStreams.State>> CRASH =
+    private static final List<KeyValue<State, State>> CRASH =
         Collections.unmodifiableList(
             Collections.singletonList(
-                KeyValue.pair(KafkaStreams.State.RUNNING, KafkaStreams.State.ERROR)
+                KeyValue.pair(State.RUNNING, State.ERROR)
             )
         );
-    private static final List<KeyValue<KafkaStreams.State, KafkaStreams.State>> CLOSE_CRASHED =
+    private static final List<KeyValue<State, State>> CLOSE_CRASHED =
         Collections.unmodifiableList(
             Arrays.asList(
-                KeyValue.pair(KafkaStreams.State.ERROR, KafkaStreams.State.PENDING_SHUTDOWN),
-                KeyValue.pair(KafkaStreams.State.PENDING_SHUTDOWN, KafkaStreams.State.NOT_RUNNING)
+                KeyValue.pair(State.ERROR, State.PENDING_SHUTDOWN),
+                KeyValue.pair(State.PENDING_SHUTDOWN, State.NOT_RUNNING)
             )
         );
 
@@ -223,12 +223,12 @@ public class EosBetaUpgradeIntegrationTest {
         //       - the rebalance should result in a commit of all tasks
         // 11. write 5 record per input topic partition and verify that the result was committed
 
-        final List<KeyValue<KafkaStreams.State, KafkaStreams.State>> stateTransitions1 = new LinkedList<>();
+        final List<KeyValue<State, State>> stateTransitions1 = new LinkedList<>();
         KafkaStreams streams1Alpha = null;
         KafkaStreams streams1Beta = null;
         KafkaStreams streams1BetaTwo = null;
 
-        final List<KeyValue<KafkaStreams.State, KafkaStreams.State>> stateTransitions2 = new LinkedList<>();
+        final List<KeyValue<State, State>> stateTransitions2 = new LinkedList<>();
         KafkaStreams streams2Alpha = null;
         KafkaStreams streams2AlphaTwo = null;
         KafkaStreams streams2Beta = null;
@@ -965,7 +965,7 @@ public class EosBetaUpgradeIntegrationTest {
         return streams;
     }
 
-    private void waitForRunning(final List<KeyValue<KafkaStreams.State, KafkaStreams.State>> observed) throws Exception {
+    private void waitForRunning(final List<KeyValue<State, State>> observed) throws Exception {
         waitForCondition(
             () -> !observed.isEmpty() && observed.get(observed.size() - 1).value.equals(State.RUNNING),
             MAX_WAIT_TIME_MS,
@@ -973,8 +973,8 @@ public class EosBetaUpgradeIntegrationTest {
         );
     }
 
-    private void waitForStateTransition(final List<KeyValue<KafkaStreams.State, KafkaStreams.State>> observed,
-                                        final List<KeyValue<KafkaStreams.State, KafkaStreams.State>> expected)
+    private void waitForStateTransition(final List<KeyValue<State, State>> observed,
+                                        final List<KeyValue<State, State>> expected)
         throws Exception {
 
         waitForCondition(
