@@ -234,7 +234,7 @@ public class EosBetaUpgradeIntegrationTest {
         KafkaStreams streams2Beta = null;
 
         try {
-            // phase 1: start both clients
+            // phase 1: start both  clients
             streams1Alpha = getKafkaStreams("appDir1", StreamsConfig.EXACTLY_ONCE);
             streams1Alpha.setStateListener(
                 (newState, oldState) -> stateTransitions1.add(KeyValue.pair(oldState, newState))
