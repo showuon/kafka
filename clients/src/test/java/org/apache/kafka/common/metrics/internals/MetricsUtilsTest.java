@@ -14,22 +14,27 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.kafka.common.metrics.internals;
 
-package org.apache.kafka.common.protocol;
+import org.junit.Test;
 
-import java.nio.ByteBuffer;
+import java.util.Map;
 
-public final class MessageTestUtil {
-    public static int messageSize(Message message, short version) {
-        return message.size(new ObjectSerializationCache(), version);
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThrows;
+
+public class MetricsUtilsTest {
+
+    @Test
+    public void testCreatingTags() {
+        Map<String, String> tags = MetricsUtils.getTags("k1", "v1", "k2", "v2");
+        assertEquals("v1", tags.get("k1"));
+        assertEquals("v2", tags.get("k2"));
+        assertEquals(2, tags.size());
     }
 
-    public static ByteBuffer messageToByteBuffer(Message message, short version) {
-        ObjectSerializationCache cache = new ObjectSerializationCache();
-        int size = message.size(cache, version);
-        ByteBuffer bytes = ByteBuffer.allocate(size);
-        message.write(new ByteBufferAccessor(bytes), cache, version);
-        bytes.flip();
-        return bytes;
+    @Test
+    public void testCreatingTagsWithOddNumberOfTags() {
+        assertThrows(IllegalArgumentException.class, () -> MetricsUtils.getTags("k1", "v1", "k2", "v2", "extra"));
     }
 }
