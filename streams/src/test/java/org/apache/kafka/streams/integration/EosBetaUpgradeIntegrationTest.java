@@ -1015,7 +1015,7 @@ public class EosBetaUpgradeIntegrationTest {
 
     private void verifyCommitted(final List<KeyValue<Long, Long>> expectedResult) throws Exception {
         final List<KeyValue<Long, Long>> committedOutput = readResult(expectedResult.size(), true);
-        System.err.println("!!! committedOutput is " + committedOutput);
+        System.err.println("!!! committedOutput is  " + committedOutput);
         checkResultPerKey(committedOutput, expectedResult);
     }
 
