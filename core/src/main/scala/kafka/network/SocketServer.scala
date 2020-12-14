@@ -661,7 +661,9 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
    * Listen for new connections and assign accepted connections to processors using round-robin.
    */
   private def acceptNewConnections(): Unit = {
+    System.err.println("!!! select ")
     val ready = nioSelector.select(500)
+    System.err.println("!!! ready " + ready)
     if (ready > 0) {
       val keys = nioSelector.selectedKeys()
       val iter = keys.iterator()
@@ -730,6 +732,7 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
    */
   private def closeThrottledConnections(): Unit = {
     val timeMs = time.milliseconds
+    System.err.println("!!! throttledSockets: " + throttledSockets +  ", timeMs " + timeMs )
     while (throttledSockets.headOption.exists(_.endThrottleTimeMs < timeMs)) {
       val closingSocket = throttledSockets.dequeue()
       debug(s"Closing socket from ip ${closingSocket.socket.getRemoteAddress}")
@@ -1447,6 +1450,7 @@ class ConnectionQuotas(config: KafkaConfig, time: Time, metrics: Metrics) extend
           defaultConnectionRatePerIp = maxConnectionRate.getOrElse(DynamicConfig.Ip.DefaultConnectionCreationRate)
         }
         info(s"Updated default max IP connection rate to $defaultConnectionRatePerIp")
+        System.err.println("!!! Updated default max IP connection rate to " + defaultConnectionRatePerIp)
         metrics.metrics.forEach { (metricName, metric) =>
           if (isIpConnectionRateMetric(metricName)) {
             val quota = connectionRateForIp(InetAddress.getByName(metricName.tags.get(IpMetricTag)))

@@ -864,24 +864,246 @@ class SocketServerTest {
     val connectionRate = 5
     val time = new MockTime()
     val overrideServer = new SocketServer(KafkaConfig.fromProps(overrideProps), new Metrics(), time, credentialProvider)
+    System.err.println("!!! update updateIpConnectionRateQuota")
     overrideServer.connectionQuotas.updateIpConnectionRateQuota(None, Some(connectionRate))
     try {
+      System.err.println("!!! startup")
       overrideServer.startup()
       // make the maximum allowable number of connections
+      System.err.println("!!! connect 5")
       (0 until connectionRate).map(_ => connect(overrideServer))
       // now try one more (should get throttled)
+      System.err.println("!!! connect 6")
       var conn = connect(overrideServer)
+
       val acceptors = overrideServer.dataPlaneAcceptors.asScala.values
+      System.err.println("!!! acceptors size " + acceptors.size)
+      System.err.println("!!! acceptors size " + acceptors.foreach(acceptor => println("!!! acceptor.throttledSockets " + acceptor.throttledSockets)))
+
+
       TestUtils.waitUntilTrue(() => acceptors.exists(_.throttledSockets.nonEmpty),
         "timeout waiting for connection to get throttled",
         1000)
+      System.err.println("!!! acceptors size " + acceptors.foreach(acceptor => println("!!! acceptor.throttledSockets " + acceptor.throttledSockets)))
       // advance time to unthrottle connections
       time.sleep(2000)
+      System.err.println("!!! wakeup " )
       acceptors.foreach(_.wakeup())
+      System.err.println("!!! isEmpty " )
       TestUtils.waitUntilTrue(() => acceptors.forall(_.throttledSockets.isEmpty),
         "timeout waiting for connection to be unthrottled",
         1000)
+      System.err.println("!!! failed later acceptors " + overrideServer.dataPlaneAcceptors.keys() + ", " + overrideServer.dataPlaneAcceptors.values())
       verifyRemoteConnectionClosed(conn)
+      System.err.println("!!! done ")
+
+      // new connection should succeed after previous connection closed, and previous samples have been expired
+      conn = connect(overrideServer)
+      val serializedBytes = producerRequestBytes()
+      sendRequest(conn, serializedBytes)
+      val request = overrideServer.dataPlaneRequestChannel.receiveRequest(2000)
+      assertNotNull(request)
+    } finally {
+      shutdownServerAndMetrics(overrideServer)
+    }
+  }
+
+  @Test
+  def testConnectionRatePerIp2(): Unit = {
+    val overrideProps = TestUtils.createBrokerConfig(0, TestUtils.MockZkConnect, port = 0)
+    overrideProps.remove(KafkaConfig.MaxConnectionsPerIpProp)
+    overrideProps.put(KafkaConfig.NumQuotaSamplesProp, String.valueOf(2))
+    val connectionRate = 5
+    val time = new MockTime()
+    val overrideServer = new SocketServer(KafkaConfig.fromProps(overrideProps), new Metrics(), time, credentialProvider)
+    System.err.println("!!! update updateIpConnectionRateQuota")
+    overrideServer.connectionQuotas.updateIpConnectionRateQuota(None, Some(connectionRate))
+    try {
+      System.err.println("!!! startup")
+      overrideServer.startup()
+      // make the maximum allowable number of connections
+      System.err.println("!!! connect 5")
+      (0 until connectionRate).map(_ => connect(overrideServer))
+      // now try one more (should get throttled)
+      System.err.println("!!! connect 6")
+      var conn = connect(overrideServer)
+
+      val acceptors = overrideServer.dataPlaneAcceptors.asScala.values
+      System.err.println("!!! acceptors size " + acceptors.size)
+      System.err.println("!!! acceptors size " + acceptors.foreach(acceptor => println("!!! acceptor.throttledSockets " + acceptor.throttledSockets)))
+
+
+      TestUtils.waitUntilTrue(() => acceptors.exists(_.throttledSockets.nonEmpty),
+        "timeout waiting for connection to get throttled",
+        1000)
+      System.err.println("!!! acceptors size " + acceptors.foreach(acceptor => println("!!! acceptor.throttledSockets " + acceptor.throttledSockets)))
+      // advance time to unthrottle connections
+      time.sleep(2000)
+      System.err.println("!!! wakeup " )
+      acceptors.foreach(_.wakeup())
+      System.err.println("!!! isEmpty " )
+      TestUtils.waitUntilTrue(() => acceptors.forall(_.throttledSockets.isEmpty),
+        "timeout waiting for connection to be unthrottled",
+        1000)
+      System.err.println("!!! failed later acceptors " + overrideServer.dataPlaneAcceptors.keys() + ", " + overrideServer.dataPlaneAcceptors.values())
+      verifyRemoteConnectionClosed(conn)
+      System.err.println("!!! done ")
+
+      // new connection should succeed after previous connection closed, and previous samples have been expired
+      conn = connect(overrideServer)
+      val serializedBytes = producerRequestBytes()
+      sendRequest(conn, serializedBytes)
+      val request = overrideServer.dataPlaneRequestChannel.receiveRequest(2000)
+      assertNotNull(request)
+    } finally {
+      shutdownServerAndMetrics(overrideServer)
+    }
+  }
+
+  @Test
+  def testConnectionRatePerIp3(): Unit = {
+    val overrideProps = TestUtils.createBrokerConfig(0, TestUtils.MockZkConnect, port = 0)
+    overrideProps.remove(KafkaConfig.MaxConnectionsPerIpProp)
+    overrideProps.put(KafkaConfig.NumQuotaSamplesProp, String.valueOf(2))
+    val connectionRate = 5
+    val time = new MockTime()
+    val overrideServer = new SocketServer(KafkaConfig.fromProps(overrideProps), new Metrics(), time, credentialProvider)
+    System.err.println("!!! update updateIpConnectionRateQuota")
+    overrideServer.connectionQuotas.updateIpConnectionRateQuota(None, Some(connectionRate))
+    try {
+      System.err.println("!!! startup")
+      overrideServer.startup()
+      // make the maximum allowable number of connections
+      System.err.println("!!! connect 5")
+      (0 until connectionRate).map(_ => connect(overrideServer))
+      // now try one more (should get throttled)
+      System.err.println("!!! connect 6")
+      var conn = connect(overrideServer)
+
+      val acceptors = overrideServer.dataPlaneAcceptors.asScala.values
+      System.err.println("!!! acceptors size " + acceptors.size)
+      System.err.println("!!! acceptors size " + acceptors.foreach(acceptor => println("!!! acceptor.throttledSockets " + acceptor.throttledSockets)))
+
+
+      TestUtils.waitUntilTrue(() => acceptors.exists(_.throttledSockets.nonEmpty),
+        "timeout waiting for connection to get throttled",
+        1000)
+      System.err.println("!!! acceptors size " + acceptors.foreach(acceptor => println("!!! acceptor.throttledSockets " + acceptor.throttledSockets)))
+      // advance time to unthrottle connections
+      time.sleep(2000)
+      System.err.println("!!! wakeup " )
+      acceptors.foreach(_.wakeup())
+      System.err.println("!!! isEmpty " )
+      TestUtils.waitUntilTrue(() => acceptors.forall(_.throttledSockets.isEmpty),
+        "timeout waiting for connection to be unthrottled",
+        1000)
+      System.err.println("!!! failed later acceptors " + overrideServer.dataPlaneAcceptors.keys() + ", " + overrideServer.dataPlaneAcceptors.values())
+      verifyRemoteConnectionClosed(conn)
+      System.err.println("!!! done ")
+
+      // new connection should succeed after previous connection closed, and previous samples have been expired
+      conn = connect(overrideServer)
+      val serializedBytes = producerRequestBytes()
+      sendRequest(conn, serializedBytes)
+      val request = overrideServer.dataPlaneRequestChannel.receiveRequest(2000)
+      assertNotNull(request)
+    } finally {
+      shutdownServerAndMetrics(overrideServer)
+    }
+  }
+
+  @Test
+  def testConnectionRatePerIp4(): Unit = {
+    val overrideProps = TestUtils.createBrokerConfig(0, TestUtils.MockZkConnect, port = 0)
+    overrideProps.remove(KafkaConfig.MaxConnectionsPerIpProp)
+    overrideProps.put(KafkaConfig.NumQuotaSamplesProp, String.valueOf(2))
+    val connectionRate = 5
+    val time = new MockTime()
+    val overrideServer = new SocketServer(KafkaConfig.fromProps(overrideProps), new Metrics(), time, credentialProvider)
+    System.err.println("!!! update updateIpConnectionRateQuota")
+    overrideServer.connectionQuotas.updateIpConnectionRateQuota(None, Some(connectionRate))
+    try {
+      System.err.println("!!! startup")
+      overrideServer.startup()
+      // make the maximum allowable number of connections
+      System.err.println("!!! connect 5")
+      (0 until connectionRate).map(_ => connect(overrideServer))
+      // now try one more (should get throttled)
+      System.err.println("!!! connect 6")
+      var conn = connect(overrideServer)
+
+      val acceptors = overrideServer.dataPlaneAcceptors.asScala.values
+      System.err.println("!!! acceptors size " + acceptors.size)
+      System.err.println("!!! acceptors size " + acceptors.foreach(acceptor => println("!!! acceptor.throttledSockets " + acceptor.throttledSockets)))
+
+
+      TestUtils.waitUntilTrue(() => acceptors.exists(_.throttledSockets.nonEmpty),
+        "timeout waiting for connection to get throttled",
+        1000)
+      System.err.println("!!! acceptors size " + acceptors.foreach(acceptor => println("!!! acceptor.throttledSockets " + acceptor.throttledSockets)))
+      // advance time to unthrottle connections
+      time.sleep(2000)
+      System.err.println("!!! wakeup " )
+      acceptors.foreach(_.wakeup())
+      System.err.println("!!! isEmpty " )
+      TestUtils.waitUntilTrue(() => acceptors.forall(_.throttledSockets.isEmpty),
+        "timeout waiting for connection to be unthrottled",
+        1000)
+      System.err.println("!!! failed later acceptors " + overrideServer.dataPlaneAcceptors.keys() + ", " + overrideServer.dataPlaneAcceptors.values())
+      verifyRemoteConnectionClosed(conn)
+      System.err.println("!!! done ")
+
+      // new connection should succeed after previous connection closed, and previous samples have been expired
+      conn = connect(overrideServer)
+      val serializedBytes = producerRequestBytes()
+      sendRequest(conn, serializedBytes)
+      val request = overrideServer.dataPlaneRequestChannel.receiveRequest(2000)
+      assertNotNull(request)
+    } finally {
+      shutdownServerAndMetrics(overrideServer)
+    }
+  }
+
+  @Test
+  def testConnectionRatePerIp5(): Unit = {
+    val overrideProps = TestUtils.createBrokerConfig(0, TestUtils.MockZkConnect, port = 0)
+    overrideProps.remove(KafkaConfig.MaxConnectionsPerIpProp)
+    overrideProps.put(KafkaConfig.NumQuotaSamplesProp, String.valueOf(2))
+    val connectionRate = 5
+    val time = new MockTime()
+    val overrideServer = new SocketServer(KafkaConfig.fromProps(overrideProps), new Metrics(), time, credentialProvider)
+    System.err.println("!!! update updateIpConnectionRateQuota")
+    overrideServer.connectionQuotas.updateIpConnectionRateQuota(None, Some(connectionRate))
+    try {
+      System.err.println("!!! startup")
+      overrideServer.startup()
+      // make the maximum allowable number of connections
+      System.err.println("!!! connect 5")
+      (0 until connectionRate).map(_ => connect(overrideServer))
+      // now try one more (should get throttled)
+      System.err.println("!!! connect 6")
+      var conn = connect(overrideServer)
+
+      val acceptors = overrideServer.dataPlaneAcceptors.asScala.values
+      System.err.println("!!! acceptors size " + acceptors.size)
+      System.err.println("!!! acceptors size " + acceptors.foreach(acceptor => println("!!! acceptor.throttledSockets " + acceptor.throttledSockets)))
+
+
+      TestUtils.waitUntilTrue(() => acceptors.exists(_.throttledSockets.nonEmpty),
+        "timeout waiting for connection to get throttled",
+        1000)
+      System.err.println("!!! acceptors size " + acceptors.foreach(acceptor => println("!!! acceptor.throttledSockets " + acceptor.throttledSockets)))
+      // advance time to unthrottle connections
+      time.sleep(2000)
+      System.err.println("!!! wakeup " )
+      acceptors.foreach(_.wakeup())
+      System.err.println("!!! isEmpty " )
+      TestUtils.waitUntilTrue(() => acceptors.forall(_.throttledSockets.isEmpty),
+        "timeout waiting for connection to be unthrottled",
+        1000)
+      System.err.println("!!! failed later acceptors " + overrideServer.dataPlaneAcceptors.keys() + ", " + overrideServer.dataPlaneAcceptors.values())
+      verifyRemoteConnectionClosed(conn)
+      System.err.println("!!! done ")
 
       // new connection should succeed after previous connection closed, and previous samples have been expired
       conn = connect(overrideServer)
