@@ -1086,7 +1086,7 @@ class SocketServerTest {
 
       val acceptors = overrideServer.dataPlaneAcceptors.asScala.values
       System.err.println("!!! acceptors size " + acceptors.size)
-      System.err.println("!!! acceptors size " + acceptors.foreach(acceptor => println("!!! acceptor.throttledSockets " + acceptor.throttledSockets)))
+      acceptors.foreach(acceptor => println("!!! acceptor.throttledSockets " + acceptor.throttledSockets))
 
 
       TestUtils.waitUntilTrue(() => acceptors.exists(_.throttledSockets.nonEmpty),
