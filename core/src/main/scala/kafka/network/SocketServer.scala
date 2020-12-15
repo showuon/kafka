@@ -735,6 +735,7 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
     System.err.println("!!! throttledSockets: " + throttledSockets +  ", timeMs " + timeMs )
     while (throttledSockets.headOption.exists(_.endThrottleTimeMs < timeMs)) {
       val closingSocket = throttledSockets.dequeue()
+      System.err.println("!!! Closing socket from ip " + closingSocket.socket.getRemoteAddress)
       debug(s"Closing socket from ip ${closingSocket.socket.getRemoteAddress}")
       closeSocket(closingSocket.socket)
     }
