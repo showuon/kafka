@@ -663,7 +663,7 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
   private def acceptNewConnections(): Unit = {
     System.err.println("!!! select")
     val ready = nioSelector.select(500)
-    System.err.println("!!! ready " + ready)
+    System.err.println("!!! ready:" + ready)
     if (ready > 0) {
       val keys = nioSelector.selectedKeys()
       val iter = keys.iterator()
