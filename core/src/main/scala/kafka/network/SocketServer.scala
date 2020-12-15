@@ -661,7 +661,7 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
    * Listen for new connections and assign accepted connections to processors using round-robin.
    */
   private def acceptNewConnections(): Unit = {
-    System.err.println("!!! select ")
+    System.err.println("!!! select")
     val ready = nioSelector.select(500)
     System.err.println("!!! ready " + ready)
     if (ready > 0) {
