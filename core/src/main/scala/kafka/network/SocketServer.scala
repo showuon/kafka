@@ -1400,11 +1400,11 @@ class ConnectionQuotas(config: KafkaConfig, time: Time, metrics: Metrics) extend
   }
 
   private[network] def updateBrokerMaxConnections(maxConnections: Int): Unit = {
-    println("!!! updateBrokerMaxConnections to " + maxConnections)
+    System.err.println("!!! updateBrokerMaxConnections to " + maxConnections)
     val elements = Thread.currentThread.getStackTrace
     for (i <- 1 until elements.length) {
       val s = elements(i)
-      println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+      System.err.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
     }
     counts.synchronized {
       brokerMaxConnections = maxConnections
@@ -1458,6 +1458,11 @@ class ConnectionQuotas(config: KafkaConfig, time: Time, metrics: Metrics) extend
         }
         info(s"Updated default max IP connection rate to $defaultConnectionRatePerIp")
         System.err.println("!!! Updated default max IP connection rate to " + defaultConnectionRatePerIp)
+        val elements = Thread.currentThread.getStackTrace
+        for (i <- 1 until elements.length) {
+          val s = elements(i)
+          System.err.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+        }
         metrics.metrics.forEach { (metricName, metric) =>
           if (isIpConnectionRateMetric(metricName)) {
             val quota = connectionRateForIp(InetAddress.getByName(metricName.tags.get(IpMetricTag)))
