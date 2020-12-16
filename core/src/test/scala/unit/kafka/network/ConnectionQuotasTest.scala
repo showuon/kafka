@@ -881,7 +881,7 @@ class ConnectionQuotasTest {
 
   @Test
   def testNonDefaultConnectionCountLimitAndRateLimit6(): Unit = {
-    println("!!! time is " + time)
+    println("!!! time: " + time)
     val brokerRateLimit = 25
     val maxConnections = 350  // with rate == 25, will run out of connections in 14 seconds
     val props = brokerPropsWithDefaultConnectionLimits
