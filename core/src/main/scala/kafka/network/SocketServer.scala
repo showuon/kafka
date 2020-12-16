@@ -1400,6 +1400,12 @@ class ConnectionQuotas(config: KafkaConfig, time: Time, metrics: Metrics) extend
   }
 
   private[network] def updateBrokerMaxConnections(maxConnections: Int): Unit = {
+    println("!!! updateBrokerMaxConnections to " + maxConnections)
+    val elements = Thread.currentThread.getStackTrace
+    for (i <- 1 until elements.length) {
+      val s = elements(i)
+      println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+    }
     counts.synchronized {
       brokerMaxConnections = maxConnections
       counts.notifyAll()
@@ -1552,7 +1558,7 @@ class ConnectionQuotas(config: KafkaConfig, time: Time, metrics: Metrics) extend
   private def connectionSlotAvailable(listenerName: ListenerName): Boolean = {
     println("!!! listenerCounts(listenerName):" + listenerCounts(listenerName) + "maxListenerConnections(listenerName):" +
       maxListenerConnections(listenerName) + ", protectedListener(listenerName):" + protectedListener(listenerName) +
-      ", totalCount:" + totalCount + ", brokerMaxConnections:" + brokerMaxConnections)
+      ", totalCount:" + totalCount + ", brokerMaxConnections:" + brokerMaxConnections + ", config: " + config.maxConnections)
     if (listenerCounts(listenerName) >= maxListenerConnections(listenerName))
       false
     else if (protectedListener(listenerName))
