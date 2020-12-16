@@ -1529,6 +1529,7 @@ class ConnectionQuotas(config: KafkaConfig, time: Time, metrics: Metrics) extend
       val startThrottleTimeMs = time.milliseconds
       val throttleTimeMs = math.max(recordConnectionAndGetThrottleTimeMs(listenerName, startThrottleTimeMs), 0)
 
+      println("!!! throttleTimeMs:" + throttleTimeMs)
       if (throttleTimeMs > 0 || !connectionSlotAvailable(listenerName)) {
         val startNs = time.nanoseconds
         val endThrottleTimeMs = startThrottleTimeMs + throttleTimeMs
@@ -1549,6 +1550,9 @@ class ConnectionQuotas(config: KafkaConfig, time: Time, metrics: Metrics) extend
   }
 
   private def connectionSlotAvailable(listenerName: ListenerName): Boolean = {
+    println("!!! listenerCounts(listenerName):" + listenerCounts(listenerName) + "maxListenerConnections(listenerName):" +
+      maxListenerConnections(listenerName) + ", protectedListener(listenerName):" + protectedListener(listenerName) +
+      ", totalCount:" + totalCount + ", brokerMaxConnections:" + brokerMaxConnections)
     if (listenerCounts(listenerName) >= maxListenerConnections(listenerName))
       false
     else if (protectedListener(listenerName))

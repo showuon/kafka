@@ -596,6 +596,7 @@ class ConnectionQuotasTest {
 
   @Test
   def testMaxBrokerConnectionRateReconfiguration(): Unit = {
+    println("!!! testMaxBrokerConnectionRateReconfiguration, time is " + time)
     val config = KafkaConfig.fromProps(brokerPropsWithDefaultConnectionLimits)
     connectionQuotas = new ConnectionQuotas(config, time, metrics)
     connectionQuotas.addListener(config, listeners("EXTERNAL").listenerName)
@@ -710,6 +711,177 @@ class ConnectionQuotasTest {
 
   @Test
   def testNonDefaultConnectionCountLimitAndRateLimit(): Unit = {
+    println("!!! time is " + time)
+    val brokerRateLimit = 25
+    val maxConnections = 350  // with rate == 25, will run out of connections in 14 seconds
+    val props = brokerPropsWithDefaultConnectionLimits
+    props.put(KafkaConfig.MaxConnectionsProp, maxConnections.toString)
+    props.put(KafkaConfig.MaxConnectionCreationRateProp, brokerRateLimit.toString)
+    val config = KafkaConfig.fromProps(props)
+    connectionQuotas = new ConnectionQuotas(config, time, metrics)
+    connectionQuotas.addListener(config, listeners("EXTERNAL").listenerName)
+
+    addListenersAndVerify(config, connectionQuotas)
+
+    // create connections with rate = 100 conn/sec (10ms interval), so that connection rate gets throttled
+    val listener = listeners("EXTERNAL")
+    executor.submit((() =>
+      acceptConnectionsAndVerifyRate(connectionQuotas, listener, maxConnections, 10, brokerRateLimit, 8)): Runnable
+    ).get(20, TimeUnit.SECONDS)
+    assertTrue("Expected BlockedPercentMeter metric for EXTERNAL listener to be recorded", blockedPercentMeters("EXTERNAL").count() > 0)
+    assertEquals(s"Number of connections on EXTERNAL listener:", maxConnections, connectionQuotas.get(listener.defaultIp))
+
+    // adding one more connection will block ConnectionQuota.inc()
+    val future = executor.submit((() =>
+      acceptConnections(connectionQuotas, listeners("EXTERNAL"), 1)): Runnable
+    )
+    intercept[TimeoutException](future.get(100, TimeUnit.MILLISECONDS))
+
+    // removing one connection should make the waiting connection to succeed
+    connectionQuotas.dec(listener.listenerName, listener.defaultIp)
+    future.get(1, TimeUnit.SECONDS)
+    assertEquals(s"Number of connections on EXTERNAL listener:", maxConnections, connectionQuotas.get(listener.defaultIp))
+  }
+
+  @Test
+  def testNonDefaultConnectionCountLimitAndRateLimit2(): Unit = {
+    println("!!! time is " + time)
+    val brokerRateLimit = 25
+    val maxConnections = 350  // with rate == 25, will run out of connections in 14 seconds
+    val props = brokerPropsWithDefaultConnectionLimits
+    props.put(KafkaConfig.MaxConnectionsProp, maxConnections.toString)
+    props.put(KafkaConfig.MaxConnectionCreationRateProp, brokerRateLimit.toString)
+    val config = KafkaConfig.fromProps(props)
+    connectionQuotas = new ConnectionQuotas(config, time, metrics)
+    connectionQuotas.addListener(config, listeners("EXTERNAL").listenerName)
+
+    addListenersAndVerify(config, connectionQuotas)
+
+    // create connections with rate = 100 conn/sec (10ms interval), so that connection rate gets throttled
+    val listener = listeners("EXTERNAL")
+    executor.submit((() =>
+      acceptConnectionsAndVerifyRate(connectionQuotas, listener, maxConnections, 10, brokerRateLimit, 8)): Runnable
+    ).get(20, TimeUnit.SECONDS)
+    assertTrue("Expected BlockedPercentMeter metric for EXTERNAL listener to be recorded", blockedPercentMeters("EXTERNAL").count() > 0)
+    assertEquals(s"Number of connections on EXTERNAL listener:", maxConnections, connectionQuotas.get(listener.defaultIp))
+
+    // adding one more connection will block ConnectionQuota.inc()
+    val future = executor.submit((() =>
+      acceptConnections(connectionQuotas, listeners("EXTERNAL"), 1)): Runnable
+    )
+    intercept[TimeoutException](future.get(100, TimeUnit.MILLISECONDS))
+
+    // removing one connection should make the waiting connection to succeed
+    connectionQuotas.dec(listener.listenerName, listener.defaultIp)
+    future.get(1, TimeUnit.SECONDS)
+    assertEquals(s"Number of connections on EXTERNAL listener:", maxConnections, connectionQuotas.get(listener.defaultIp))
+  }
+
+  @Test
+  def testNonDefaultConnectionCountLimitAndRateLimit3(): Unit = {
+    println("!!! time is " + time)
+    val brokerRateLimit = 25
+    val maxConnections = 350  // with rate == 25, will run out of connections in 14 seconds
+    val props = brokerPropsWithDefaultConnectionLimits
+    props.put(KafkaConfig.MaxConnectionsProp, maxConnections.toString)
+    props.put(KafkaConfig.MaxConnectionCreationRateProp, brokerRateLimit.toString)
+    val config = KafkaConfig.fromProps(props)
+    connectionQuotas = new ConnectionQuotas(config, time, metrics)
+    connectionQuotas.addListener(config, listeners("EXTERNAL").listenerName)
+
+    addListenersAndVerify(config, connectionQuotas)
+
+    // create connections with rate = 100 conn/sec (10ms interval), so that connection rate gets throttled
+    val listener = listeners("EXTERNAL")
+    executor.submit((() =>
+      acceptConnectionsAndVerifyRate(connectionQuotas, listener, maxConnections, 10, brokerRateLimit, 8)): Runnable
+    ).get(20, TimeUnit.SECONDS)
+    assertTrue("Expected BlockedPercentMeter metric for EXTERNAL listener to be recorded", blockedPercentMeters("EXTERNAL").count() > 0)
+    assertEquals(s"Number of connections on EXTERNAL listener:", maxConnections, connectionQuotas.get(listener.defaultIp))
+
+    // adding one more connection will block ConnectionQuota.inc()
+    val future = executor.submit((() =>
+      acceptConnections(connectionQuotas, listeners("EXTERNAL"), 1)): Runnable
+    )
+    intercept[TimeoutException](future.get(100, TimeUnit.MILLISECONDS))
+
+    // removing one connection should make the waiting connection to succeed
+    connectionQuotas.dec(listener.listenerName, listener.defaultIp)
+    future.get(1, TimeUnit.SECONDS)
+    assertEquals(s"Number of connections on EXTERNAL listener:", maxConnections, connectionQuotas.get(listener.defaultIp))
+  }
+
+  @Test
+  def testNonDefaultConnectionCountLimitAndRateLimit4(): Unit = {
+    println("!!! time is " + time)
+    val brokerRateLimit = 25
+    val maxConnections = 350  // with rate == 25, will run out of connections in 14 seconds
+    val props = brokerPropsWithDefaultConnectionLimits
+    props.put(KafkaConfig.MaxConnectionsProp, maxConnections.toString)
+    props.put(KafkaConfig.MaxConnectionCreationRateProp, brokerRateLimit.toString)
+    val config = KafkaConfig.fromProps(props)
+    connectionQuotas = new ConnectionQuotas(config, time, metrics)
+    connectionQuotas.addListener(config, listeners("EXTERNAL").listenerName)
+
+    addListenersAndVerify(config, connectionQuotas)
+
+    // create connections with rate = 100 conn/sec (10ms interval), so that connection rate gets throttled
+    val listener = listeners("EXTERNAL")
+    executor.submit((() =>
+      acceptConnectionsAndVerifyRate(connectionQuotas, listener, maxConnections, 10, brokerRateLimit, 8)): Runnable
+    ).get(20, TimeUnit.SECONDS)
+    assertTrue("Expected BlockedPercentMeter metric for EXTERNAL listener to be recorded", blockedPercentMeters("EXTERNAL").count() > 0)
+    assertEquals(s"Number of connections on EXTERNAL listener:", maxConnections, connectionQuotas.get(listener.defaultIp))
+
+    // adding one more connection will block ConnectionQuota.inc()
+    val future = executor.submit((() =>
+      acceptConnections(connectionQuotas, listeners("EXTERNAL"), 1)): Runnable
+    )
+    intercept[TimeoutException](future.get(100, TimeUnit.MILLISECONDS))
+
+    // removing one connection should make the waiting connection to succeed
+    connectionQuotas.dec(listener.listenerName, listener.defaultIp)
+    future.get(1, TimeUnit.SECONDS)
+    assertEquals(s"Number of connections on EXTERNAL listener:", maxConnections, connectionQuotas.get(listener.defaultIp))
+  }
+
+  @Test
+  def testNonDefaultConnectionCountLimitAndRateLimit5(): Unit = {
+    println("!!! time is " + time)
+    val brokerRateLimit = 25
+    val maxConnections = 350  // with rate == 25, will run out of connections in 14 seconds
+    val props = brokerPropsWithDefaultConnectionLimits
+    props.put(KafkaConfig.MaxConnectionsProp, maxConnections.toString)
+    props.put(KafkaConfig.MaxConnectionCreationRateProp, brokerRateLimit.toString)
+    val config = KafkaConfig.fromProps(props)
+    connectionQuotas = new ConnectionQuotas(config, time, metrics)
+    connectionQuotas.addListener(config, listeners("EXTERNAL").listenerName)
+
+    addListenersAndVerify(config, connectionQuotas)
+
+    // create connections with rate = 100 conn/sec (10ms interval), so that connection rate gets throttled
+    val listener = listeners("EXTERNAL")
+    executor.submit((() =>
+      acceptConnectionsAndVerifyRate(connectionQuotas, listener, maxConnections, 10, brokerRateLimit, 8)): Runnable
+    ).get(20, TimeUnit.SECONDS)
+    assertTrue("Expected BlockedPercentMeter metric for EXTERNAL listener to be recorded", blockedPercentMeters("EXTERNAL").count() > 0)
+    assertEquals(s"Number of connections on EXTERNAL listener:", maxConnections, connectionQuotas.get(listener.defaultIp))
+
+    // adding one more connection will block ConnectionQuota.inc()
+    val future = executor.submit((() =>
+      acceptConnections(connectionQuotas, listeners("EXTERNAL"), 1)): Runnable
+    )
+    intercept[TimeoutException](future.get(100, TimeUnit.MILLISECONDS))
+
+    // removing one connection should make the waiting connection to succeed
+    connectionQuotas.dec(listener.listenerName, listener.defaultIp)
+    future.get(1, TimeUnit.SECONDS)
+    assertEquals(s"Number of connections on EXTERNAL listener:", maxConnections, connectionQuotas.get(listener.defaultIp))
+  }
+
+  @Test
+  def testNonDefaultConnectionCountLimitAndRateLimit6(): Unit = {
+    println("!!! time is " + time)
     val brokerRateLimit = 25
     val maxConnections = 350  // with rate == 25, will run out of connections in 14 seconds
     val props = brokerPropsWithDefaultConnectionLimits
@@ -890,6 +1062,7 @@ class ConnectionQuotasTest {
     val elapsedSeconds = MetricsUtils.convert(time.milliseconds - startTimeMs, TimeUnit.SECONDS)
     val createdConnections = connectionQuotas.get(listenerDesc.defaultIp) - startNumConnections
     val actualRate = createdConnections.toDouble / elapsedSeconds
+    println(s"Expected rate ($expectedRate +- $epsilon), but got $actualRate ($createdConnections connections / $elapsedSeconds sec)")
     assertEquals(s"Expected rate ($expectedRate +- $epsilon), but got $actualRate ($createdConnections connections / $elapsedSeconds sec)",
       expectedRate.toDouble, actualRate, epsilon)
   }
