@@ -397,7 +397,13 @@ class SocketServer(val config: KafkaConfig,
     }
     val maxConnectionRate = newConfig.maxConnectionCreationRate
     if (maxConnectionRate != oldConfig.maxConnectionCreationRate) {
+      System.err.println("!!! update broker-wide maxConnectionCreationRate: " + maxConnectionRate)
       info(s"Updating broker-wide maxConnectionCreationRate: $maxConnectionRate")
+      val elements = Thread.currentThread.getStackTrace
+      for (i <- 1 until elements.length) {
+        val s = elements(i)
+        System.out.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+      }
       connectionQuotas.updateBrokerMaxConnectionRate(maxConnectionRate)
     }
   }
@@ -1561,9 +1567,16 @@ class ConnectionQuotas(config: KafkaConfig, time: Time, metrics: Metrics) extend
   }
 
   private def connectionSlotAvailable(listenerName: ListenerName): Boolean = {
-    println("!!! listenerCounts(listenerName):" + listenerCounts(listenerName) + "maxListenerConnections(listenerName):" +
-      maxListenerConnections(listenerName) + ", protectedListener(listenerName):" + protectedListener(listenerName) +
-      ", totalCount:" + totalCount + ", brokerMaxConnections:" + brokerMaxConnections + ", config: " + config.maxConnections)
+    if (listenerCounts(listenerName) == 0) {
+      System.err.println("!!! listenerCounts(listenerName):" + listenerCounts(listenerName) + ", maxListenerConnections(listenerName):" +
+        maxListenerConnections(listenerName) + ", protectedListener(listenerName):" + protectedListener(listenerName) +
+        ", totalCount:" + totalCount + ", brokerMaxConnections:" + brokerMaxConnections + ", config: " + config.maxConnectionCreationRate)
+    }
+
+//    println("!!! listenerCounts(listenerName):" + listenerCounts(listenerName) + ", maxListenerConnections(listenerName):" +
+//      maxListenerConnections(listenerName) + ", protectedListener(listenerName):" + protectedListener(listenerName) +
+//      ", totalCount:" + totalCount + ", brokerMaxConnections:" + brokerMaxConnections + ", config: " + config.maxConnectionCreationRate)
+    println("!!! listenerCounts(listenerName):" + listenerCounts(listenerName))
     if (listenerCounts(listenerName) >= maxListenerConnections(listenerName))
       false
     else if (protectedListener(listenerName))
@@ -1772,6 +1785,12 @@ class ConnectionQuotas(config: KafkaConfig, time: Time, metrics: Metrics) extend
     }
 
     private def maxConnectionCreationRate(configs: util.Map[String, _]): Int = {
+      System.err.println("!!! maxConnectionCreationRate: " + configs.get(KafkaConfig.MaxConnectionCreationRateProp))
+      val elements = Thread.currentThread.getStackTrace
+      for (i <- 1 until elements.length) {
+        val s = elements(i)
+        System.out.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+      }
       Option(configs.get(KafkaConfig.MaxConnectionCreationRateProp)).map(_.toString.toInt).getOrElse(Int.MaxValue)
     }
 

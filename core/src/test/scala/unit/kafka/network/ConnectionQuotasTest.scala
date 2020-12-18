@@ -718,6 +718,7 @@ class ConnectionQuotasTest {
     props.put(KafkaConfig.MaxConnectionsProp, maxConnections.toString)
     props.put(KafkaConfig.MaxConnectionCreationRateProp, brokerRateLimit.toString)
     val config = KafkaConfig.fromProps(props)
+    System.err.println("!!! config is " + config.maxConnectionCreationRate)
     connectionQuotas = new ConnectionQuotas(config, time, metrics)
     connectionQuotas.addListener(config, listeners("EXTERNAL").listenerName)
 
@@ -752,6 +753,7 @@ class ConnectionQuotasTest {
     props.put(KafkaConfig.MaxConnectionsProp, maxConnections.toString)
     props.put(KafkaConfig.MaxConnectionCreationRateProp, brokerRateLimit.toString)
     val config = KafkaConfig.fromProps(props)
+    System.err.println("!!! config is " + config.maxConnectionCreationRate)
     connectionQuotas = new ConnectionQuotas(config, time, metrics)
     connectionQuotas.addListener(config, listeners("EXTERNAL").listenerName)
 
@@ -786,6 +788,7 @@ class ConnectionQuotasTest {
     props.put(KafkaConfig.MaxConnectionsProp, maxConnections.toString)
     props.put(KafkaConfig.MaxConnectionCreationRateProp, brokerRateLimit.toString)
     val config = KafkaConfig.fromProps(props)
+    System.err.println("!!! config is " + config.maxConnectionCreationRate)
     connectionQuotas = new ConnectionQuotas(config, time, metrics)
     connectionQuotas.addListener(config, listeners("EXTERNAL").listenerName)
 
@@ -820,6 +823,7 @@ class ConnectionQuotasTest {
     props.put(KafkaConfig.MaxConnectionsProp, maxConnections.toString)
     props.put(KafkaConfig.MaxConnectionCreationRateProp, brokerRateLimit.toString)
     val config = KafkaConfig.fromProps(props)
+    System.err.println("!!! config is " + config.maxConnectionCreationRate)
     connectionQuotas = new ConnectionQuotas(config, time, metrics)
     connectionQuotas.addListener(config, listeners("EXTERNAL").listenerName)
 
@@ -854,6 +858,7 @@ class ConnectionQuotasTest {
     props.put(KafkaConfig.MaxConnectionsProp, maxConnections.toString)
     props.put(KafkaConfig.MaxConnectionCreationRateProp, brokerRateLimit.toString)
     val config = KafkaConfig.fromProps(props)
+    System.err.println("!!! config is " + config.maxConnectionCreationRate)
     connectionQuotas = new ConnectionQuotas(config, time, metrics)
     connectionQuotas.addListener(config, listeners("EXTERNAL").listenerName)
 
@@ -888,6 +893,7 @@ class ConnectionQuotasTest {
     props.put(KafkaConfig.MaxConnectionsProp, maxConnections.toString)
     props.put(KafkaConfig.MaxConnectionCreationRateProp, brokerRateLimit.toString)
     val config = KafkaConfig.fromProps(props)
+    System.err.println("!!! config is " + config.maxConnectionCreationRate)
     connectionQuotas = new ConnectionQuotas(config, time, metrics)
     connectionQuotas.addListener(config, listeners("EXTERNAL").listenerName)
 
