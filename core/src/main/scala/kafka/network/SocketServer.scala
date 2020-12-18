@@ -402,7 +402,7 @@ class SocketServer(val config: KafkaConfig,
       val elements = Thread.currentThread.getStackTrace
       for (i <- 1 until elements.length) {
         val s = elements(i)
-        System.out.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+        System.err.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
       }
       connectionQuotas.updateBrokerMaxConnectionRate(maxConnectionRate)
     }
@@ -1789,7 +1789,7 @@ class ConnectionQuotas(config: KafkaConfig, time: Time, metrics: Metrics) extend
       val elements = Thread.currentThread.getStackTrace
       for (i <- 1 until elements.length) {
         val s = elements(i)
-        System.out.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+        System.err.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
       }
       Option(configs.get(KafkaConfig.MaxConnectionCreationRateProp)).map(_.toString.toInt).getOrElse(Int.MaxValue)
     }
