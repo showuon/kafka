@@ -1546,7 +1546,7 @@ class ConnectionQuotas(config: KafkaConfig, time: Time, metrics: Metrics) extend
       val startThrottleTimeMs = time.milliseconds
       val throttleTimeMs = math.max(recordConnectionAndGetThrottleTimeMs(listenerName, startThrottleTimeMs), 0)
 
-      println("!!! throttleTimeMs:" + throttleTimeMs)
+//      println("!!! throttleTimeMs:" + throttleTimeMs)
       if (throttleTimeMs > 0 || !connectionSlotAvailable(listenerName)) {
         val startNs = time.nanoseconds
         val endThrottleTimeMs = startThrottleTimeMs + throttleTimeMs
@@ -1567,7 +1567,7 @@ class ConnectionQuotas(config: KafkaConfig, time: Time, metrics: Metrics) extend
   }
 
   private def connectionSlotAvailable(listenerName: ListenerName): Boolean = {
-    if (listenerCounts(listenerName) == 0) {
+    if (listenerCounts(listenerName) == 0 || listenerCounts(listenerName) == 349) {
       System.err.println("!!! listenerCounts(listenerName):" + listenerCounts(listenerName) + ", maxListenerConnections(listenerName):" +
         maxListenerConnections(listenerName) + ", protectedListener(listenerName):" + protectedListener(listenerName) +
         ", totalCount:" + totalCount + ", brokerMaxConnections:" + brokerMaxConnections + ", config: " + config.maxConnectionCreationRate)
@@ -1576,7 +1576,7 @@ class ConnectionQuotas(config: KafkaConfig, time: Time, metrics: Metrics) extend
 //    println("!!! listenerCounts(listenerName):" + listenerCounts(listenerName) + ", maxListenerConnections(listenerName):" +
 //      maxListenerConnections(listenerName) + ", protectedListener(listenerName):" + protectedListener(listenerName) +
 //      ", totalCount:" + totalCount + ", brokerMaxConnections:" + brokerMaxConnections + ", config: " + config.maxConnectionCreationRate)
-    println("!!! listenerCounts(listenerName):" + listenerCounts(listenerName))
+//    println("!!! listenerCounts(listenerName):" + listenerCounts(listenerName))
     if (listenerCounts(listenerName) >= maxListenerConnections(listenerName))
       false
     else if (protectedListener(listenerName))
@@ -1785,7 +1785,9 @@ class ConnectionQuotas(config: KafkaConfig, time: Time, metrics: Metrics) extend
     }
 
     private def maxConnectionCreationRate(configs: util.Map[String, _]): Int = {
-      System.err.println("!!! maxConnectionCreationRate: " + configs.get(KafkaConfig.MaxConnectionCreationRateProp))
+      if (configs.get(KafkaConfig.MaxConnectionCreationRateProp) != null) {
+        System.err.println("!!! maxConnectionCreationRate: " + configs.get(KafkaConfig.MaxConnectionCreationRateProp))
+      }
       val elements = Thread.currentThread.getStackTrace
       for (i <- 1 until elements.length) {
         val s = elements(i)
