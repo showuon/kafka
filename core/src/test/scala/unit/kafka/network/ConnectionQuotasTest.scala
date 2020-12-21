@@ -1070,7 +1070,7 @@ class ConnectionQuotasTest {
     val actualRate = createdConnections.toDouble / elapsedSeconds
     println(s"Expected rate ($expectedRate +- $epsilon), but got $actualRate ($createdConnections connections / $elapsedSeconds sec)")
     assertEquals(s"Expected rate ($expectedRate +- $epsilon), but got $actualRate ($createdConnections connections / $elapsedSeconds sec)",
-      expectedRate.toDouble, actualRate, 0)
+      expectedRate.toDouble, actualRate, epsilon)
   }
 
   /**
