@@ -802,7 +802,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
 
     val producer = createProducer()
     println("!!! ready to send")
-    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 30, _))
+    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 15, _))
     println("!!! ready to endoffset")
     partitions.foreach(partition => {
       val endOffset = consumer.endOffsets(Collections.singleton(partition))
@@ -852,7 +852,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
 
     val producer = createProducer()
     println("!!! ready to send")
-    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 30, _))
+    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 15, _))
     println("!!! ready to endoffset")
     partitions.foreach(partition => {
       val endOffset = consumer.endOffsets(Collections.singleton(partition))
@@ -902,7 +902,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
 
     val producer = createProducer()
     println("!!! ready to send")
-    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 30, _))
+    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 15, _))
     println("!!! ready to endoffset")
     partitions.foreach(partition => {
       val endOffset = consumer.endOffsets(Collections.singleton(partition))
@@ -952,7 +952,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
 
     val producer = createProducer()
     println("!!! ready to send")
-    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 30, _))
+    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 15, _))
     println("!!! ready to endoffset")
     partitions.foreach(partition => {
       val endOffset = consumer.endOffsets(Collections.singleton(partition))
@@ -1002,7 +1002,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
 
     val producer = createProducer()
     println("!!! ready to send")
-    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 30, _))
+    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 15, _))
     println("!!! ready to endoffset")
     partitions.foreach(partition => {
       val endOffset = consumer.endOffsets(Collections.singleton(partition))
@@ -1052,7 +1052,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
 
     val producer = createProducer()
     println("!!! ready to send")
-    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 30, _))
+    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 15, _))
     println("!!! ready to endoffset")
     partitions.foreach(partition => {
       val endOffset = consumer.endOffsets(Collections.singleton(partition))
@@ -1102,7 +1102,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
 
     val producer = createProducer()
     println("!!! ready to send")
-    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 100, _))
+    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 30, _))
     println("!!! ready to endoffset")
     partitions.foreach(partition => {
       val endOffset = consumer.endOffsets(Collections.singleton(partition))
@@ -1152,7 +1152,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
 
     val producer = createProducer()
     println("!!! ready to send")
-    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 300, _))
+    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 30, _))
     println("!!! ready to endoffset")
     partitions.foreach(partition => {
       val endOffset = consumer.endOffsets(Collections.singleton(partition))
