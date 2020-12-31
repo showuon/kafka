@@ -1567,11 +1567,11 @@ class ConnectionQuotas(config: KafkaConfig, time: Time, metrics: Metrics) extend
   }
 
   private def connectionSlotAvailable(listenerName: ListenerName): Boolean = {
-    if (listenerCounts(listenerName) == 0 || listenerCounts(listenerName) == 349) {
-      System.out.println("!!! listenerCounts(listenerName):" + listenerCounts(listenerName) + ", maxListenerConnections(listenerName):" +
-        maxListenerConnections(listenerName) + ", protectedListener(listenerName):" + protectedListener(listenerName) +
-        ", totalCount:" + totalCount + ", brokerMaxConnections:" + brokerMaxConnections + ", config: " + config.maxConnectionCreationRate)
-    }
+//    if (listenerCounts(listenerName) == 0 || listenerCounts(listenerName) == 349) {
+//      System.out.println("!!! listenerCounts(listenerName):" + listenerCounts(listenerName) + ", maxListenerConnections(listenerName):" +
+//        maxListenerConnections(listenerName) + ", protectedListener(listenerName):" + protectedListener(listenerName) +
+//        ", totalCount:" + totalCount + ", brokerMaxConnections:" + brokerMaxConnections + ", config: " + config.maxConnectionCreationRate)
+//    }
 
 //    println("!!! listenerCounts(listenerName):" + listenerCounts(listenerName) + ", maxListenerConnections(listenerName):" +
 //      maxListenerConnections(listenerName) + ", protectedListener(listenerName):" + protectedListener(listenerName) +
