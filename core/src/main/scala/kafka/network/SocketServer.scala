@@ -667,9 +667,7 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
    * Listen for new connections and assign accepted connections to processors using round-robin.
    */
   private def acceptNewConnections(): Unit = {
-    System.err.println("!!! select")
     val ready = nioSelector.select(500)
-    System.err.println("!!! ready:" + ready)
     if (ready > 0) {
       val keys = nioSelector.selectedKeys()
       val iter = keys.iterator()
@@ -738,7 +736,6 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
    */
   private def closeThrottledConnections(): Unit = {
     val timeMs = time.milliseconds
-    System.err.println("!!! throttledSockets: " + throttledSockets +  ", timeMs " + timeMs )
     while (throttledSockets.headOption.exists(_.endThrottleTimeMs < timeMs)) {
       val closingSocket = throttledSockets.dequeue()
       System.err.println("!!! Closing socket from ip " + closingSocket.socket.getRemoteAddress)
@@ -1785,14 +1782,14 @@ class ConnectionQuotas(config: KafkaConfig, time: Time, metrics: Metrics) extend
     }
 
     private def maxConnectionCreationRate(configs: util.Map[String, _]): Int = {
-      if (configs.get(KafkaConfig.MaxConnectionCreationRateProp) != null) {
-        System.err.println("!!! maxConnectionCreationRate: " + configs.get(KafkaConfig.MaxConnectionCreationRateProp))
-      }
-      val elements = Thread.currentThread.getStackTrace
-      for (i <- 1 until elements.length) {
-        val s = elements(i)
-        System.err.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
-      }
+//      if (configs.get(KafkaConfig.MaxConnectionCreationRateProp) != null) {
+//        System.err.println("!!! maxConnectionCreationRate: " + configs.get(KafkaConfig.MaxConnectionCreationRateProp))
+//      }
+//      val elements = Thread.currentThread.getStackTrace
+//      for (i <- 1 until elements.length) {
+//        val s = elements(i)
+//        System.err.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+//      }
       Option(configs.get(KafkaConfig.MaxConnectionCreationRateProp)).map(_.toString.toInt).getOrElse(Int.MaxValue)
     }
 

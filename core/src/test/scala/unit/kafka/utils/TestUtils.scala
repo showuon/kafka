@@ -845,7 +845,7 @@ object TestUtils extends Logging {
       if (condition())
         return
       if (System.currentTimeMillis() > startTime + waitTimeMs) {
-        println("!!! waitUntilTrue fail: " + msg)
+        System.err.println("!!! waitUntilTrue fail: " + msg)
 //        fail(msg)
         return
       }
