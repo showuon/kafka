@@ -801,9 +801,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     awaitAssignment(consumer, partitions.toSet)
 
     val producer = createProducer()
-    println("!!! ready to send")
     val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 15, _))
-    println("!!! ready to endoffset")
     partitions.foreach(partition => {
       val endOffset = consumer.endOffsets(Collections.singleton(partition))
       println("!!! partitions is:" + partition + ", endoffset is: " + endOffset)
@@ -814,6 +812,12 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     val expected = producerRecords.map { record =>
       (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
     }.toSet
+
+    if (consumerRecords.size != expected.size) {
+      println("!!! consume again")
+      consumeRecords(consumer, producerRecords.size)
+      fail("consume again")
+    }
 
     val actual = consumerRecords.map { record =>
       (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
@@ -851,9 +855,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     awaitAssignment(consumer, partitions.toSet)
 
     val producer = createProducer()
-    println("!!! ready to send")
-    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 30, _))
-    println("!!! ready to endoffset")
+    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 15, _))
     partitions.foreach(partition => {
       val endOffset = consumer.endOffsets(Collections.singleton(partition))
       println("!!! partitions is:" + partition + ", endoffset is: " + endOffset)
@@ -864,6 +866,12 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     val expected = producerRecords.map { record =>
       (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
     }.toSet
+
+    if (consumerRecords.size != expected.size) {
+      println("!!! consume again")
+      consumeRecords(consumer, producerRecords.size)
+      fail("consume again")
+    }
 
     val actual = consumerRecords.map { record =>
       (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
@@ -901,9 +909,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     awaitAssignment(consumer, partitions.toSet)
 
     val producer = createProducer()
-    println("!!! ready to send")
     val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 15, _))
-    println("!!! ready to endoffset")
     partitions.foreach(partition => {
       val endOffset = consumer.endOffsets(Collections.singleton(partition))
       println("!!! partitions is:" + partition + ", endoffset is: " + endOffset)
@@ -914,6 +920,12 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     val expected = producerRecords.map { record =>
       (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
     }.toSet
+
+    if (consumerRecords.size != expected.size) {
+      println("!!! consume again")
+      consumeRecords(consumer, producerRecords.size)
+      fail("consume again")
+    }
 
     val actual = consumerRecords.map { record =>
       (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
@@ -951,9 +963,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     awaitAssignment(consumer, partitions.toSet)
 
     val producer = createProducer()
-    println("!!! ready to send")
-    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 30, _))
-    println("!!! ready to endoffset")
+    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 15, _))
     partitions.foreach(partition => {
       val endOffset = consumer.endOffsets(Collections.singleton(partition))
       println("!!! partitions is:" + partition + ", endoffset is: " + endOffset)
@@ -964,6 +974,12 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     val expected = producerRecords.map { record =>
       (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
     }.toSet
+
+    if (consumerRecords.size != expected.size) {
+      println("!!! consume again")
+      consumeRecords(consumer, producerRecords.size)
+      fail("consume again")
+    }
 
     val actual = consumerRecords.map { record =>
       (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
@@ -1001,9 +1017,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     awaitAssignment(consumer, partitions.toSet)
 
     val producer = createProducer()
-    println("!!! ready to send")
     val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 15, _))
-    println("!!! ready to endoffset")
     partitions.foreach(partition => {
       val endOffset = consumer.endOffsets(Collections.singleton(partition))
       println("!!! partitions is:" + partition + ", endoffset is: " + endOffset)
@@ -1014,6 +1028,12 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     val expected = producerRecords.map { record =>
       (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
     }.toSet
+
+    if (consumerRecords.size != expected.size) {
+      println("!!! consume again")
+      consumeRecords(consumer, producerRecords.size)
+      fail("consume again")
+    }
 
     val actual = consumerRecords.map { record =>
       (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
@@ -1051,9 +1071,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     awaitAssignment(consumer, partitions.toSet)
 
     val producer = createProducer()
-    println("!!! ready to send")
-    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 100, _))
-    println("!!! ready to endoffset")
+    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 15, _))
     partitions.foreach(partition => {
       val endOffset = consumer.endOffsets(Collections.singleton(partition))
       println("!!! partitions is:" + partition + ", endoffset is: " + endOffset)
@@ -1064,6 +1082,12 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     val expected = producerRecords.map { record =>
       (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
     }.toSet
+
+    if (consumerRecords.size != expected.size) {
+      println("!!! consume again")
+      consumeRecords(consumer, producerRecords.size)
+      fail("consume again")
+    }
 
     val actual = consumerRecords.map { record =>
       (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
@@ -1101,9 +1125,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     awaitAssignment(consumer, partitions.toSet)
 
     val producer = createProducer()
-    println("!!! ready to send")
-    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 300, _))
-    println("!!! ready to endoffset")
+    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 30, _))
     partitions.foreach(partition => {
       val endOffset = consumer.endOffsets(Collections.singleton(partition))
       println("!!! partitions is:" + partition + ", endoffset is: " + endOffset)
@@ -1114,6 +1136,12 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     val expected = producerRecords.map { record =>
       (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
     }.toSet
+
+    if (consumerRecords.size != expected.size) {
+      println("!!! consume again")
+      consumeRecords(consumer, producerRecords.size)
+      fail("consume again")
+    }
 
     val actual = consumerRecords.map { record =>
       (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
@@ -1151,9 +1179,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     awaitAssignment(consumer, partitions.toSet)
 
     val producer = createProducer()
-    println("!!! ready to send")
     val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 30, _))
-    println("!!! ready to endoffset")
     partitions.foreach(partition => {
       val endOffset = consumer.endOffsets(Collections.singleton(partition))
       println("!!! partitions is:" + partition + ", endoffset is: " + endOffset)
@@ -1164,6 +1190,12 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     val expected = producerRecords.map { record =>
       (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
     }.toSet
+
+    if (consumerRecords.size != expected.size) {
+      println("!!! consume again")
+      consumeRecords(consumer, producerRecords.size)
+      fail("consume again")
+    }
 
     val actual = consumerRecords.map { record =>
       (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)

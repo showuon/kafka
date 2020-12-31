@@ -844,8 +844,11 @@ object TestUtils extends Logging {
     while (true) {
       if (condition())
         return
-      if (System.currentTimeMillis() > startTime + waitTimeMs)
-        fail(msg)
+      if (System.currentTimeMillis() > startTime + waitTimeMs) {
+        println("!!! waitUntilTrue fail: " + msg)
+//        fail(msg)
+        return
+      }
       Thread.sleep(waitTimeMs.min(pause))
     }
 
