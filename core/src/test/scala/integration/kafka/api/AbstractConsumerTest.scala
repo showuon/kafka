@@ -152,7 +152,9 @@ abstract class AbstractConsumerTest extends BaseRequestTest {
     val records = new ArrayBuffer[ConsumerRecord[K, V]]
     def pollAction(polledRecords: ConsumerRecords[K, V]): Boolean = {
       assertTrue(polledRecords.asScala.size <= maxPollRecords)
-      println("!!! records: " + records.size)
+      if (polledRecords.count() == 0) {
+        println("!!! records: " + records.size)
+      }
       records ++= polledRecords.asScala
       records.size >= numRecords
     }
