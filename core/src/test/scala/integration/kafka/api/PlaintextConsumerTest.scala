@@ -1237,6 +1237,122 @@ class PlaintextConsumerTest extends BaseConsumerTest {
   }
 
   @Test
+  def testLowMaxFetchSizeForRequestAndPartition8(): Unit = {
+    // one of the effects of this is that there will be some log reads where `0 > remaining limit bytes < message size`
+    // and we don't return the message because it's not the first message in the first non-empty partition of the fetch
+    // this behaves a little different than when remaining limit bytes is 0 and it's important to test it
+    this.consumerConfig.setProperty(ConsumerConfig.FETCH_MAX_BYTES_CONFIG, "500")
+    this.consumerConfig.setProperty(ConsumerConfig.MAX_PARTITION_FETCH_BYTES_CONFIG, "100")
+    val consumer = createConsumer()
+
+    val topic1 = "topic1"
+    val topic2 = "topic2"
+    val topic3 = "topic3"
+    val partitionCount = 30
+    val topics = Seq(topic1, topic2, topic3)
+    topics.foreach { topicName =>
+      createTopic(topicName, partitionCount, brokerCount)
+    }
+
+    val partitions = topics.flatMap { topic =>
+      (0 until partitionCount).map(new TopicPartition(topic, _))
+    }
+
+    assertEquals(0, consumer.assignment().size)
+
+    consumer.subscribe(List(topic1, topic2, topic3).asJava)
+
+    awaitAssignment(consumer, partitions.toSet)
+
+    val producer = createProducer()
+    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 1, _))
+    partitions.foreach(partition => {
+      val endOffset = consumer.endOffsets(Collections.singleton(partition))
+      println("!!! end:" + endOffset)
+    })
+    //    consumer.endOffsets(partitions)
+    var consumerRecords = consumeRecords(consumer, producerRecords.size)
+
+    val expected = producerRecords.map { record =>
+      (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
+    }.toSet
+
+    if (consumerRecords.size != expected.size) {
+      println("!!! consume again")
+      partitions.foreach(partition => {
+        val pos = consumer.position(partition)
+        println("!!! par:" + partition + ",pos: " + pos)
+      })
+      consumerRecords = consumerRecords.addAll(consumeRecords(consumer, producerRecords.size))
+      fail("consume again with records: " + consumerRecords)
+    }
+
+    val actual = consumerRecords.map { record =>
+      (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
+    }.toSet
+
+    assertEquals(expected, actual)
+  }
+
+  @Test
+  def testLowMaxFetchSizeForRequestAndPartition10(): Unit = {
+    // one of the effects of this is that there will be some log reads where `0 > remaining limit bytes < message size`
+    // and we don't return the message because it's not the first message in the first non-empty partition of the fetch
+    // this behaves a little different than when remaining limit bytes is 0 and it's important to test it
+    this.consumerConfig.setProperty(ConsumerConfig.FETCH_MAX_BYTES_CONFIG, "500")
+    this.consumerConfig.setProperty(ConsumerConfig.MAX_PARTITION_FETCH_BYTES_CONFIG, "100")
+    val consumer = createConsumer()
+
+    val topic1 = "topic1"
+    val topic2 = "topic2"
+    val topic3 = "topic3"
+    val partitionCount = 30
+    val topics = Seq(topic1, topic2, topic3)
+    topics.foreach { topicName =>
+      createTopic(topicName, partitionCount, brokerCount)
+    }
+
+    val partitions = topics.flatMap { topic =>
+      (0 until partitionCount).map(new TopicPartition(topic, _))
+    }
+
+    assertEquals(0, consumer.assignment().size)
+
+    consumer.subscribe(List(topic1, topic2, topic3).asJava)
+
+    awaitAssignment(consumer, partitions.toSet)
+
+    val producer = createProducer()
+    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 1, _))
+    partitions.foreach(partition => {
+      val endOffset = consumer.endOffsets(Collections.singleton(partition))
+      println("!!! end:" + endOffset)
+    })
+    //    consumer.endOffsets(partitions)
+    var consumerRecords = consumeRecords(consumer, producerRecords.size)
+
+    val expected = producerRecords.map { record =>
+      (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
+    }.toSet
+
+    if (consumerRecords.size != expected.size) {
+      println("!!! consume again")
+      partitions.foreach(partition => {
+        val pos = consumer.position(partition)
+        println("!!! par:" + partition + ",pos: " + pos)
+      })
+      consumerRecords = consumerRecords.addAll(consumeRecords(consumer, producerRecords.size))
+      fail("consume again with records: " + consumerRecords)
+    }
+
+    val actual = consumerRecords.map { record =>
+      (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
+    }.toSet
+
+    assertEquals(expected, actual)
+  }
+
+  @Test
   def testRoundRobinAssignment(): Unit = {
     // 1 consumer using round-robin assignment
     this.consumerConfig.setProperty(ConsumerConfig.GROUP_ID_CONFIG, "roundrobin-group")
@@ -1270,6 +1386,180 @@ class PlaintextConsumerTest extends BaseConsumerTest {
 
     consumer.unsubscribe()
     assertEquals(0, consumer.assignment().size)
+  }
+
+  @Test
+  def testLowMaxFetchSizeForRequestAndPartition11(): Unit = {
+    // one of the effects of this is that there will be some log reads where `0 > remaining limit bytes < message size`
+    // and we don't return the message because it's not the first message in the first non-empty partition of the fetch
+    // this behaves a little different than when remaining limit bytes is 0 and it's important to test it
+    this.consumerConfig.setProperty(ConsumerConfig.FETCH_MAX_BYTES_CONFIG, "500")
+    this.consumerConfig.setProperty(ConsumerConfig.MAX_PARTITION_FETCH_BYTES_CONFIG, "100")
+    val consumer = createConsumer()
+
+    val topic1 = "topic1"
+    val topic2 = "topic2"
+    val topic3 = "topic3"
+    val partitionCount = 30
+    val topics = Seq(topic1, topic2, topic3)
+    topics.foreach { topicName =>
+      createTopic(topicName, partitionCount, brokerCount)
+    }
+
+    val partitions = topics.flatMap { topic =>
+      (0 until partitionCount).map(new TopicPartition(topic, _))
+    }
+
+    assertEquals(0, consumer.assignment().size)
+
+    consumer.subscribe(List(topic1, topic2, topic3).asJava)
+
+    awaitAssignment(consumer, partitions.toSet)
+
+    val producer = createProducer()
+    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 1, _))
+    partitions.foreach(partition => {
+      val endOffset = consumer.endOffsets(Collections.singleton(partition))
+      println("!!! end:" + endOffset)
+    })
+    //    consumer.endOffsets(partitions)
+    var consumerRecords = consumeRecords(consumer, producerRecords.size)
+
+    val expected = producerRecords.map { record =>
+      (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
+    }.toSet
+
+    if (consumerRecords.size != expected.size) {
+      println("!!! consume again")
+      partitions.foreach(partition => {
+        val pos = consumer.position(partition)
+        println("!!! par:" + partition + ",pos: " + pos)
+      })
+      consumerRecords = consumerRecords.addAll(consumeRecords(consumer, producerRecords.size))
+      fail("consume again with records: " + consumerRecords)
+    }
+
+    val actual = consumerRecords.map { record =>
+      (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
+    }.toSet
+
+    assertEquals(expected, actual)
+  }
+
+  @Test
+  def testLowMaxFetchSizeForRequestAndPartition12(): Unit = {
+    // one of the effects of this is that there will be some log reads where `0 > remaining limit bytes < message size`
+    // and we don't return the message because it's not the first message in the first non-empty partition of the fetch
+    // this behaves a little different than when remaining limit bytes is 0 and it's important to test it
+    this.consumerConfig.setProperty(ConsumerConfig.FETCH_MAX_BYTES_CONFIG, "500")
+    this.consumerConfig.setProperty(ConsumerConfig.MAX_PARTITION_FETCH_BYTES_CONFIG, "100")
+    val consumer = createConsumer()
+
+    val topic1 = "topic1"
+    val topic2 = "topic2"
+    val topic3 = "topic3"
+    val partitionCount = 30
+    val topics = Seq(topic1, topic2, topic3)
+    topics.foreach { topicName =>
+      createTopic(topicName, partitionCount, brokerCount)
+    }
+
+    val partitions = topics.flatMap { topic =>
+      (0 until partitionCount).map(new TopicPartition(topic, _))
+    }
+
+    assertEquals(0, consumer.assignment().size)
+
+    consumer.subscribe(List(topic1, topic2, topic3).asJava)
+
+    awaitAssignment(consumer, partitions.toSet)
+
+    val producer = createProducer()
+    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 1, _))
+    partitions.foreach(partition => {
+      val endOffset = consumer.endOffsets(Collections.singleton(partition))
+      println("!!! end:" + endOffset)
+    })
+    //    consumer.endOffsets(partitions)
+    var consumerRecords = consumeRecords(consumer, producerRecords.size)
+
+    val expected = producerRecords.map { record =>
+      (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
+    }.toSet
+
+    if (consumerRecords.size != expected.size) {
+      println("!!! consume again")
+      partitions.foreach(partition => {
+        val pos = consumer.position(partition)
+        println("!!! par:" + partition + ",pos: " + pos)
+      })
+      consumerRecords = consumerRecords.addAll(consumeRecords(consumer, producerRecords.size))
+      fail("consume again with records: " + consumerRecords)
+    }
+
+    val actual = consumerRecords.map { record =>
+      (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
+    }.toSet
+
+    assertEquals(expected, actual)
+  }
+
+  @Test
+  def testLowMaxFetchSizeForRequestAndPartition13(): Unit = {
+    // one of the effects of this is that there will be some log reads where `0 > remaining limit bytes < message size`
+    // and we don't return the message because it's not the first message in the first non-empty partition of the fetch
+    // this behaves a little different than when remaining limit bytes is 0 and it's important to test it
+    this.consumerConfig.setProperty(ConsumerConfig.FETCH_MAX_BYTES_CONFIG, "500")
+    this.consumerConfig.setProperty(ConsumerConfig.MAX_PARTITION_FETCH_BYTES_CONFIG, "100")
+    val consumer = createConsumer()
+
+    val topic1 = "topic1"
+    val topic2 = "topic2"
+    val topic3 = "topic3"
+    val partitionCount = 30
+    val topics = Seq(topic1, topic2, topic3)
+    topics.foreach { topicName =>
+      createTopic(topicName, partitionCount, brokerCount)
+    }
+
+    val partitions = topics.flatMap { topic =>
+      (0 until partitionCount).map(new TopicPartition(topic, _))
+    }
+
+    assertEquals(0, consumer.assignment().size)
+
+    consumer.subscribe(List(topic1, topic2, topic3).asJava)
+
+    awaitAssignment(consumer, partitions.toSet)
+
+    val producer = createProducer()
+    val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 2, _))
+    partitions.foreach(partition => {
+      val endOffset = consumer.endOffsets(Collections.singleton(partition))
+      println("!!! end:" + endOffset)
+    })
+    //    consumer.endOffsets(partitions)
+    var consumerRecords = consumeRecords(consumer, producerRecords.size)
+
+    val expected = producerRecords.map { record =>
+      (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
+    }.toSet
+
+    if (consumerRecords.size != expected.size) {
+      println("!!! consume again")
+      partitions.foreach(partition => {
+        val pos = consumer.position(partition)
+        println("!!! par:" + partition + ",pos: " + pos)
+      })
+      consumerRecords = consumerRecords.addAll(consumeRecords(consumer, producerRecords.size))
+      fail("consume again with records: " + consumerRecords)
+    }
+
+    val actual = consumerRecords.map { record =>
+      (record.topic, record.partition, new String(record.key), new String(record.value), record.timestamp)
+    }.toSet
+
+    assertEquals(expected, actual)
   }
 
   @Test
