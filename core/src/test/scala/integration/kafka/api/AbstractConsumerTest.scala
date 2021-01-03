@@ -228,7 +228,7 @@ abstract class AbstractConsumerTest extends BaseRequestTest {
 
   /**
     * Create 'numOfConsumersToAdd' consumers add then to the consumer group 'consumerGroup', and create corresponding
-    * pollers for these consumers.
+    * pollers for these consumers..
     *
     *
     * @param numOfConsumersToAdd number of consumers to create and add to the consumer group
