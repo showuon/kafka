@@ -154,6 +154,9 @@ abstract class AbstractConsumerTest extends BaseRequestTest {
       assertTrue(polledRecords.asScala.size <= maxPollRecords)
       if (polledRecords.count() > 0) {
         println("!!! records: " + polledRecords.count())
+        polledRecords.records("topic1").forEach(r => println("!!! t1:" + r.partition()))
+        polledRecords.records("topic2").forEach(r => println("!!! t2:" + r.partition()))
+        polledRecords.records("topic3").forEach(r => println("!!! t3:" + r.partition()))
       }
       records ++= polledRecords.asScala
       records.size >= numRecords
