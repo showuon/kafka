@@ -807,7 +807,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
 //      val endOffset = consumer.endOffsets(Collections.singleton(partition))
 //      println("!!! end:" + endOffset)
 //    })
-    println("!!! start comsume: " + partitions)
+    System.err.println("!!! start comsume: " + partitions)
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -815,7 +815,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     }.toSet
 
     if (consumerRecords.size != expected.size) {
-      println("!!! consume again")
+      System.err.println("!!! consume again")
 //      partitions.foreach(partition => {
 //        val pos = consumer.position(partition)
 //        println("!!! par:" + partition + ",pos: " + pos)
