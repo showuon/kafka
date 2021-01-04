@@ -807,7 +807,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
 //      val endOffset = consumer.endOffsets(Collections.singleton(partition))
 //      println("!!! end:" + endOffset)
 //    })
-    System.err.println("!!! start comsume: " + partitions)
+    System.err.println("!!! start comsume")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -866,7 +866,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      val endOffset = consumer.endOffsets(Collections.singleton(partition))
     //      println("!!! end:" + endOffset)
     //    })
-    println("!!! start comsume: " + partitions)
+    System.err.println("!!! start comsume")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -925,7 +925,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      val endOffset = consumer.endOffsets(Collections.singleton(partition))
     //      println("!!! end:" + endOffset)
     //    })
-    println("!!! start comsume: " + partitions)
+    System.err.println("!!! start comsume")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -984,7 +984,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      val endOffset = consumer.endOffsets(Collections.singleton(partition))
     //      println("!!! end:" + endOffset)
     //    })
-    println("!!! start comsume: " + partitions)
+    System.err.println("!!! start comsume")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1043,7 +1043,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      val endOffset = consumer.endOffsets(Collections.singleton(partition))
     //      println("!!! end:" + endOffset)
     //    })
-    println("!!! start comsume: " + partitions)
+    System.err.println("!!! start comsume")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1102,7 +1102,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      val endOffset = consumer.endOffsets(Collections.singleton(partition))
     //      println("!!! end:" + endOffset)
     //    })
-    println("!!! start comsume: " + partitions)
+    System.err.println("!!! start comsume")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1161,7 +1161,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      val endOffset = consumer.endOffsets(Collections.singleton(partition))
     //      println("!!! end:" + endOffset)
     //    })
-    println("!!! start comsume: " + partitions)
+    System.err.println("!!! start comsume")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1220,7 +1220,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      val endOffset = consumer.endOffsets(Collections.singleton(partition))
     //      println("!!! end:" + endOffset)
     //    })
-    println("!!! start comsume: " + partitions)
+    System.err.println("!!! start comsume")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1279,7 +1279,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      val endOffset = consumer.endOffsets(Collections.singleton(partition))
     //      println("!!! end:" + endOffset)
     //    })
-    println("!!! start comsume: " + partitions)
+    System.err.println("!!! start comsume")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1338,7 +1338,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      val endOffset = consumer.endOffsets(Collections.singleton(partition))
     //      println("!!! end:" + endOffset)
     //    })
-    println("!!! start comsume: " + partitions)
+    System.err.println("!!! start comsume")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1433,7 +1433,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      val endOffset = consumer.endOffsets(Collections.singleton(partition))
     //      println("!!! end:" + endOffset)
     //    })
-    println("!!! start comsume: " + partitions)
+    System.err.println("!!! start comsume")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1492,7 +1492,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      val endOffset = consumer.endOffsets(Collections.singleton(partition))
     //      println("!!! end:" + endOffset)
     //    })
-    println("!!! start comsume: " + partitions)
+    System.err.println("!!! start comsume")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1551,7 +1551,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      val endOffset = consumer.endOffsets(Collections.singleton(partition))
     //      println("!!! end:" + endOffset)
     //    })
-    println("!!! start comsume: " + partitions)
+    System.err.println("!!! start comsume")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
