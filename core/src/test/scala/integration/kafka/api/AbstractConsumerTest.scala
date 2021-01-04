@@ -153,7 +153,7 @@ abstract class AbstractConsumerTest extends BaseRequestTest {
     def pollAction(polledRecords: ConsumerRecords[K, V]): Boolean = {
       assertTrue(polledRecords.asScala.size <= maxPollRecords)
       if (polledRecords.count() > 0) {
-        println("!!! records:" + polledRecords.count())
+        println("!!! r.cou:" + polledRecords.count())
 //        polledRecords.records("topic1").forEach(r => println("!!! t1:" + r.partition()))
 //        polledRecords.records("topic2").forEach(r => println("!!! t2:" + r.partition()))
 //        polledRecords.records("topic3").forEach(r => println("!!! t3:" + r.partition()))
