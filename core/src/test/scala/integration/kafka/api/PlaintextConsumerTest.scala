@@ -801,12 +801,12 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     awaitAssignment(consumer, partitions.toSet)
 
     val producer = createProducer()
+//    println("!!! ready to send")
     val producerRecords = partitions.flatMap(sendRecords(producer, numRecords = 1, _))
     partitions.foreach(partition => {
       val endOffset = consumer.endOffsets(Collections.singleton(partition))
       println("!!! end:" + endOffset)
     })
-    //    consumer.endOffsets(partitions)
     var consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
