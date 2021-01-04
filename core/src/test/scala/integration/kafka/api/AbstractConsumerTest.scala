@@ -159,18 +159,19 @@ abstract class AbstractConsumerTest extends BaseRequestTest {
     def pollAction(polledRecords: ConsumerRecords[K, V]): Boolean = {
       assertTrue(polledRecords.asScala.size <= maxPollRecords)
       if (polledRecords.count() > 0) {
-        System.err.println("!!! r.cou:" + polledRecords.count())
+        System.err.println("!!! r.cou:" + polledRecords.count() + "," + records.size)
 
         partitions.foreach(partition => {
           try {
             val pos = consumer.position(partition)
             if (pos > 0) {
-              System.err.println("!!! p:" + partition + ", " + pos)
+              System.err.print(" p:" + partition + ", " + pos)
             }
           } catch {
             case e: Throwable =>
           }
         })
+
 //        polledRecords.records("topic1").forEach(r => println("!!! t1:" + r.partition()))
 //        polledRecords.records("topic2").forEach(r => println("!!! t2:" + r.partition()))
 //        polledRecords.records("topic3").forEach(r => println("!!! t3:" + r.partition()))
