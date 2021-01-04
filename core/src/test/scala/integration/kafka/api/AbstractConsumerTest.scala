@@ -159,7 +159,7 @@ abstract class AbstractConsumerTest extends BaseRequestTest {
     def pollAction(polledRecords: ConsumerRecords[K, V]): Boolean = {
       assertTrue(polledRecords.asScala.size <= maxPollRecords)
       if (polledRecords.count() > 0) {
-        System.err.println("!!! r.cou:" + polledRecords.count() + "," + records.size)
+        System.err.println("!!! r.cou:" + polledRecords.count())
 
         partitions.foreach(partition => {
           try {
@@ -181,7 +181,7 @@ abstract class AbstractConsumerTest extends BaseRequestTest {
     }
     TestUtils.pollRecordsUntilTrue(consumer, pollAction, waitTimeMs = 60000,
       msg = s"Timed out before consuming expected $numRecords records. " +
-        s"The number consumed was ${records.size} and record is ${records}." +
+        s"The number consumed was ${records.size}." +
         s"t")
     records
   }

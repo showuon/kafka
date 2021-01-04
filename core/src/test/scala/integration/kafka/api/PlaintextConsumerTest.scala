@@ -808,6 +808,13 @@ class PlaintextConsumerTest extends BaseConsumerTest {
 //      println("!!! end:" + endOffset)
 //    })
     System.err.println("!!! start comsume")
+    partitions.foreach(partition => {
+      val pos = consumer.position(partition)
+      if (pos > 0) {
+        System.err.print(" why p:" + partition + "," + pos)
+      }
+    })
+    System.err.println("")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -867,6 +874,13 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      println("!!! end:" + endOffset)
     //    })
     System.err.println("!!! start comsume")
+    partitions.foreach(partition => {
+      val pos = consumer.position(partition)
+      if (pos > 0) {
+        System.err.print(" why p:" + partition + "," + pos)
+      }
+    })
+    System.err.println("")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -874,7 +888,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     }.toSet
 
     if (consumerRecords.size != expected.size) {
-      println("!!! consume again")
+      System.err.println("!!! consume again")
       //      partitions.foreach(partition => {
       //        val pos = consumer.position(partition)
       //        println("!!! par:" + partition + ",pos: " + pos)
@@ -926,6 +940,13 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      println("!!! end:" + endOffset)
     //    })
     System.err.println("!!! start comsume")
+    partitions.foreach(partition => {
+      val pos = consumer.position(partition)
+      if (pos > 0) {
+        System.err.print(" why p:" + partition + "," + pos)
+      }
+    })
+    System.err.println("")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -933,7 +954,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     }.toSet
 
     if (consumerRecords.size != expected.size) {
-      println("!!! consume again")
+      System.err.println("!!! consume again")
       //      partitions.foreach(partition => {
       //        val pos = consumer.position(partition)
       //        println("!!! par:" + partition + ",pos: " + pos)
@@ -985,6 +1006,13 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      println("!!! end:" + endOffset)
     //    })
     System.err.println("!!! start comsume")
+    partitions.foreach(partition => {
+      val pos = consumer.position(partition)
+      if (pos > 0) {
+        System.err.print(" why p:" + partition + "," + pos)
+      }
+    })
+    System.err.println("")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -992,7 +1020,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     }.toSet
 
     if (consumerRecords.size != expected.size) {
-      println("!!! consume again")
+      System.err.println("!!! consume again")
       //      partitions.foreach(partition => {
       //        val pos = consumer.position(partition)
       //        println("!!! par:" + partition + ",pos: " + pos)
@@ -1044,6 +1072,13 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      println("!!! end:" + endOffset)
     //    })
     System.err.println("!!! start comsume")
+    partitions.foreach(partition => {
+      val pos = consumer.position(partition)
+      if (pos > 0) {
+        System.err.print(" why p:" + partition + "," + pos)
+      }
+    })
+    System.err.println("")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1051,7 +1086,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     }.toSet
 
     if (consumerRecords.size != expected.size) {
-      println("!!! consume again")
+      System.err.println("!!! consume again")
       //      partitions.foreach(partition => {
       //        val pos = consumer.position(partition)
       //        println("!!! par:" + partition + ",pos: " + pos)
@@ -1103,6 +1138,13 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      println("!!! end:" + endOffset)
     //    })
     System.err.println("!!! start comsume")
+    partitions.foreach(partition => {
+      val pos = consumer.position(partition)
+      if (pos > 0) {
+        System.err.print(" why p:" + partition + "," + pos)
+      }
+    })
+    System.err.println("")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1110,7 +1152,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     }.toSet
 
     if (consumerRecords.size != expected.size) {
-      println("!!! consume again")
+      System.err.println("!!! consume again")
       //      partitions.foreach(partition => {
       //        val pos = consumer.position(partition)
       //        println("!!! par:" + partition + ",pos: " + pos)
@@ -1162,6 +1204,13 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      println("!!! end:" + endOffset)
     //    })
     System.err.println("!!! start comsume")
+    partitions.foreach(partition => {
+      val pos = consumer.position(partition)
+      if (pos > 0) {
+        System.err.print(" why p:" + partition + "," + pos)
+      }
+    })
+    System.err.println("")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1169,7 +1218,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     }.toSet
 
     if (consumerRecords.size != expected.size) {
-      println("!!! consume again")
+      System.err.println("!!! consume again")
       //      partitions.foreach(partition => {
       //        val pos = consumer.position(partition)
       //        println("!!! par:" + partition + ",pos: " + pos)
@@ -1221,6 +1270,13 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      println("!!! end:" + endOffset)
     //    })
     System.err.println("!!! start comsume")
+    partitions.foreach(partition => {
+      val pos = consumer.position(partition)
+      if (pos > 0) {
+        System.err.print(" why p:" + partition + "," + pos)
+      }
+    })
+    System.err.println("")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1228,7 +1284,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     }.toSet
 
     if (consumerRecords.size != expected.size) {
-      println("!!! consume again")
+      System.err.println("!!! consume again")
       //      partitions.foreach(partition => {
       //        val pos = consumer.position(partition)
       //        println("!!! par:" + partition + ",pos: " + pos)
@@ -1280,6 +1336,13 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      println("!!! end:" + endOffset)
     //    })
     System.err.println("!!! start comsume")
+    partitions.foreach(partition => {
+      val pos = consumer.position(partition)
+      if (pos > 0) {
+        System.err.print(" why p:" + partition + "," + pos)
+      }
+    })
+    System.err.println("")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1287,7 +1350,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     }.toSet
 
     if (consumerRecords.size != expected.size) {
-      println("!!! consume again")
+      System.err.println("!!! consume again")
       //      partitions.foreach(partition => {
       //        val pos = consumer.position(partition)
       //        println("!!! par:" + partition + ",pos: " + pos)
@@ -1339,6 +1402,13 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      println("!!! end:" + endOffset)
     //    })
     System.err.println("!!! start comsume")
+    partitions.foreach(partition => {
+      val pos = consumer.position(partition)
+      if (pos > 0) {
+        System.err.print(" why p:" + partition + "," + pos)
+      }
+    })
+    System.err.println("")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1346,7 +1416,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     }.toSet
 
     if (consumerRecords.size != expected.size) {
-      println("!!! consume again")
+      System.err.println("!!! consume again")
       //      partitions.foreach(partition => {
       //        val pos = consumer.position(partition)
       //        println("!!! par:" + partition + ",pos: " + pos)
@@ -1434,6 +1504,13 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      println("!!! end:" + endOffset)
     //    })
     System.err.println("!!! start comsume")
+    partitions.foreach(partition => {
+      val pos = consumer.position(partition)
+      if (pos > 0) {
+        System.err.print(" why p:" + partition + "," + pos)
+      }
+    })
+    System.err.println("")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1441,7 +1518,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     }.toSet
 
     if (consumerRecords.size != expected.size) {
-      println("!!! consume again")
+      System.err.println("!!! consume again")
       //      partitions.foreach(partition => {
       //        val pos = consumer.position(partition)
       //        println("!!! par:" + partition + ",pos: " + pos)
@@ -1493,6 +1570,13 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      println("!!! end:" + endOffset)
     //    })
     System.err.println("!!! start comsume")
+    partitions.foreach(partition => {
+      val pos = consumer.position(partition)
+      if (pos > 0) {
+        System.err.print(" why p:" + partition + "," + pos)
+      }
+    })
+    System.err.println("")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1500,7 +1584,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     }.toSet
 
     if (consumerRecords.size != expected.size) {
-      println("!!! consume again")
+      System.err.println("!!! consume again")
       //      partitions.foreach(partition => {
       //        val pos = consumer.position(partition)
       //        println("!!! par:" + partition + ",pos: " + pos)
@@ -1552,6 +1636,13 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     //      println("!!! end:" + endOffset)
     //    })
     System.err.println("!!! start comsume")
+    partitions.foreach(partition => {
+      val pos = consumer.position(partition)
+      if (pos > 0) {
+        System.err.print(" why p:" + partition + "," + pos)
+      }
+    })
+    System.err.println("")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1559,13 +1650,13 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     }.toSet
 
     if (consumerRecords.size != expected.size) {
-      println("!!! consume again")
+      System.err.println("!!! consume again")
       //      partitions.foreach(partition => {
       //        val pos = consumer.position(partition)
       //        println("!!! par:" + partition + ",pos: " + pos)
       //      })
       //      consumerRecords = consumerRecords.addAll(consumeRecords(consumer, producerRecords.size))
-      fail("consume again with records:" + consumerRecords)
+      fail("consume again with records: " + consumerRecords)
     }
 
     val actual = consumerRecords.map { record =>
