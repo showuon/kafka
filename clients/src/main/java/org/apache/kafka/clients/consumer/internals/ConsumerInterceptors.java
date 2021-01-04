@@ -55,6 +55,7 @@ public class ConsumerInterceptors<K, V> implements Closeable {
      * @return records that are either modified by interceptors or same as records passed to this method.
      */
     public ConsumerRecords<K, V> onConsume(ConsumerRecords<K, V> records) {
+        System.out.println("!!! r:" + records.partitions());
         ConsumerRecords<K, V> interceptRecords = records;
         for (ConsumerInterceptor<K, V> interceptor : this.interceptors) {
             try {
