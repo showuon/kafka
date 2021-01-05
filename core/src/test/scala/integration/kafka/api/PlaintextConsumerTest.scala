@@ -1656,7 +1656,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
       //        println("!!! par:" + partition + ",pos: " + pos)
       //      })
       //      consumerRecords = consumerRecords.addAll(consumeRecords(consumer, producerRecords.size))
-      fail("consume again with records:" + consumerRecords.size)
+      fail("consume again records:" + consumerRecords.size)
     }
 
     val actual = consumerRecords.map { record =>
