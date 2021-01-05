@@ -1274,6 +1274,9 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 
         // if data is available already, return it immediately
         final Map<TopicPartition, List<ConsumerRecord<K, V>>> records = fetcher.fetchedRecords();
+//        if (records.keySet().size() > 0) {
+//            System.err.println("!!! r:" + records.keySet());
+//        }
         if (!records.isEmpty()) {
             return records;
         }

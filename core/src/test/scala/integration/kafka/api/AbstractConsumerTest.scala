@@ -165,7 +165,7 @@ abstract class AbstractConsumerTest extends BaseRequestTest {
           try {
             val pos = consumer.position(partition)
             if (pos > 0) {
-              System.err.print(" p:" + partition + ", " + pos)
+              System.err.print(" p:" + partition)
             }
           } catch {
             case e: Throwable =>
@@ -181,8 +181,7 @@ abstract class AbstractConsumerTest extends BaseRequestTest {
     }
     TestUtils.pollRecordsUntilTrue(consumer, pollAction, waitTimeMs = 60000,
       msg = s"Timed out before consuming expected $numRecords records. " +
-        s"The number consumed was ${records.size}." +
-        s"t")
+        s"The number consumed was ${records.size}.")
     records
   }
 

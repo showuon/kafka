@@ -265,7 +265,9 @@ public class Fetcher<K, V> implements Closeable {
             if (log.isDebugEnabled()) {
                 log.debug("Sending {} {} to broker {}", isolationLevel, data.toString(), fetchTarget);
             }
-            System.err.println("!!! Sending:" + data.toSend().keySet());
+            if (data.toSend().keySet().size() > 0) {
+                System.err.println("!!! Sending:" + data.toSend().keySet());
+            }
             RequestFuture<ClientResponse> future = client.send(fetchTarget, request);
             // We add the node to the set of nodes with pending fetch requests before adding the
             // listener because the future may have been fulfilled on another thread (e.g. during a
@@ -637,6 +639,9 @@ public class Fetcher<K, V> implements Closeable {
                     nextInLineFetch = null;
                 } else {
                     List<ConsumerRecord<K, V>> records = fetchRecords(nextInLineFetch, recordsRemaining);
+                    if (records.size() > 0) {
+                        System.err.print(" re:" + records.size());
+                    }
 
                     if (!records.isEmpty()) {
                         TopicPartition partition = nextInLineFetch.partition;
@@ -665,6 +670,9 @@ public class Fetcher<K, V> implements Closeable {
             completedFetches.addAll(pausedCompletedFetches);
         }
 
+        if (fetched.keySet().size() > 0) {
+            System.err.println("fed:" + fetched.keySet());
+        }
         return fetched;
     }
 
@@ -687,8 +695,8 @@ public class Fetcher<K, V> implements Closeable {
             if (completedFetch.nextFetchOffset == position.offset) {
                 List<ConsumerRecord<K, V>> partRecords = completedFetch.fetchRecords(maxRecords);
 
-                log.trace("Returning {} fetched records at offset {} for assigned partition {}",
-                        partRecords.size(), position, completedFetch.partition);
+//                log.error("!!! Returning {} fetched records at offset {} for assigned partition {}",
+//                        partRecords.size(), position, completedFetch.partition);
 
                 if (completedFetch.nextFetchOffset > position.offset) {
                     FetchPosition nextPosition = new FetchPosition(
@@ -696,6 +704,7 @@ public class Fetcher<K, V> implements Closeable {
                             completedFetch.lastEpoch,
                             position.currentLeader);
                     log.trace("Update fetching position to {} for partition {}", nextPosition, completedFetch.partition);
+                    System.err.println("update f p:" + completedFetch.partition);
                     subscriptions.position(completedFetch.partition, nextPosition);
                 }
 

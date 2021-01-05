@@ -811,7 +811,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     partitions.foreach(partition => {
       val pos = consumer.position(partition)
       if (pos > 0) {
-        System.err.print(" why p:" + partition + "," + pos)
+        System.err.print(" why p:" + partition)
       }
     })
     System.err.println("")
@@ -828,7 +828,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
 //        println("!!! par:" + partition + ",pos: " + pos)
 //      })
 //      consumerRecords = consumerRecords.addAll(consumeRecords(consumer, producerRecords.size))
-      fail("consume again with records: " + consumerRecords)
+      fail("consume again with records: " + consumerRecords.size)
     }
 
     val actual = consumerRecords.map { record =>
@@ -877,7 +877,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     partitions.foreach(partition => {
       val pos = consumer.position(partition)
       if (pos > 0) {
-        System.err.print(" why p:" + partition + "," + pos)
+        System.err.print(" why p:" + partition)
       }
     })
     System.err.println("")
@@ -894,7 +894,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
       //        println("!!! par:" + partition + ",pos: " + pos)
       //      })
       //      consumerRecords = consumerRecords.addAll(consumeRecords(consumer, producerRecords.size))
-      fail("consume again with records: " + consumerRecords)
+      fail("consume again with records: " + consumerRecords.size)
     }
 
     val actual = consumerRecords.map { record =>
@@ -943,7 +943,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     partitions.foreach(partition => {
       val pos = consumer.position(partition)
       if (pos > 0) {
-        System.err.print(" why p:" + partition + "," + pos)
+        System.err.print(" why p:" + partition)
       }
     })
     System.err.println("")
@@ -960,7 +960,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
       //        println("!!! par:" + partition + ",pos: " + pos)
       //      })
       //      consumerRecords = consumerRecords.addAll(consumeRecords(consumer, producerRecords.size))
-      fail("consume again with records: " + consumerRecords)
+      fail("consume again with records: " + consumerRecords.size)
     }
 
     val actual = consumerRecords.map { record =>
@@ -1009,7 +1009,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     partitions.foreach(partition => {
       val pos = consumer.position(partition)
       if (pos > 0) {
-        System.err.print(" why p:" + partition + "," + pos)
+        System.err.print(" why p:" + partition)
       }
     })
     System.err.println("")
@@ -1026,7 +1026,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
       //        println("!!! par:" + partition + ",pos: " + pos)
       //      })
       //      consumerRecords = consumerRecords.addAll(consumeRecords(consumer, producerRecords.size))
-      fail("consume again with records: " + consumerRecords)
+      fail("consume again with records: " + consumerRecords.size)
     }
 
     val actual = consumerRecords.map { record =>
@@ -1075,7 +1075,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     partitions.foreach(partition => {
       val pos = consumer.position(partition)
       if (pos > 0) {
-        System.err.print(" why p:" + partition + "," + pos)
+        System.err.print(" why p:" + partition)
       }
     })
     System.err.println("")
@@ -1092,7 +1092,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
       //        println("!!! par:" + partition + ",pos: " + pos)
       //      })
       //      consumerRecords = consumerRecords.addAll(consumeRecords(consumer, producerRecords.size))
-      fail("consume again with records: " + consumerRecords)
+      fail("consume again with records: " + consumerRecords.size)
     }
 
     val actual = consumerRecords.map { record =>
@@ -1141,7 +1141,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     partitions.foreach(partition => {
       val pos = consumer.position(partition)
       if (pos > 0) {
-        System.err.print(" why p:" + partition + "," + pos)
+        System.err.print(" why p:" + partition)
       }
     })
     System.err.println("")
@@ -1158,7 +1158,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
       //        println("!!! par:" + partition + ",pos: " + pos)
       //      })
       //      consumerRecords = consumerRecords.addAll(consumeRecords(consumer, producerRecords.size))
-      fail("consume again with records: " + consumerRecords)
+      fail("consume again with records: " + consumerRecords.size)
     }
 
     val actual = consumerRecords.map { record =>
@@ -1207,7 +1207,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     partitions.foreach(partition => {
       val pos = consumer.position(partition)
       if (pos > 0) {
-        System.err.print(" why p:" + partition + "," + pos)
+        System.err.print(" why p:" + partition)
       }
     })
     System.err.println("")
@@ -1224,7 +1224,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
       //        println("!!! par:" + partition + ",pos: " + pos)
       //      })
       //      consumerRecords = consumerRecords.addAll(consumeRecords(consumer, producerRecords.size))
-      fail("consume again with records: " + consumerRecords)
+      fail("consume again with records: " + consumerRecords.size)
     }
 
     val actual = consumerRecords.map { record =>
@@ -1273,7 +1273,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     partitions.foreach(partition => {
       val pos = consumer.position(partition)
       if (pos > 0) {
-        System.err.print(" why p:" + partition + "," + pos)
+        System.err.print(" why p:" + partition)
       }
     })
     System.err.println("")
@@ -1290,7 +1290,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
       //        println("!!! par:" + partition + ",pos: " + pos)
       //      })
       //      consumerRecords = consumerRecords.addAll(consumeRecords(consumer, producerRecords.size))
-      fail("consume again with records: " + consumerRecords)
+      fail("consume again with records: " + consumerRecords.size)
     }
 
     val actual = consumerRecords.map { record =>
@@ -1339,7 +1339,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     partitions.foreach(partition => {
       val pos = consumer.position(partition)
       if (pos > 0) {
-        System.err.print(" why p:" + partition + "," + pos)
+        System.err.print(" why p:" + partition)
       }
     })
     System.err.println("")
@@ -1356,7 +1356,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
       //        println("!!! par:" + partition + ",pos: " + pos)
       //      })
       //      consumerRecords = consumerRecords.addAll(consumeRecords(consumer, producerRecords.size))
-      fail("consume again with records: " + consumerRecords)
+      fail("consume again with records: " + consumerRecords.size)
     }
 
     val actual = consumerRecords.map { record =>
@@ -1405,7 +1405,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     partitions.foreach(partition => {
       val pos = consumer.position(partition)
       if (pos > 0) {
-        System.err.print(" why p:" + partition + "," + pos)
+        System.err.print(" why p:" + partition)
       }
     })
     System.err.println("")
@@ -1422,7 +1422,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
       //        println("!!! par:" + partition + ",pos: " + pos)
       //      })
       //      consumerRecords = consumerRecords.addAll(consumeRecords(consumer, producerRecords.size))
-      fail("consume again with records: " + consumerRecords)
+      fail("consume again with records: " + consumerRecords.size)
     }
 
     val actual = consumerRecords.map { record =>
@@ -1507,7 +1507,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     partitions.foreach(partition => {
       val pos = consumer.position(partition)
       if (pos > 0) {
-        System.err.print(" why p:" + partition + "," + pos)
+        System.err.print(" why p:" + partition)
       }
     })
     System.err.println("")
@@ -1524,7 +1524,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
       //        println("!!! par:" + partition + ",pos: " + pos)
       //      })
       //      consumerRecords = consumerRecords.addAll(consumeRecords(consumer, producerRecords.size))
-      fail("consume again with records: " + consumerRecords)
+      fail("consume again with records: " + consumerRecords.size)
     }
 
     val actual = consumerRecords.map { record =>
@@ -1573,7 +1573,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     partitions.foreach(partition => {
       val pos = consumer.position(partition)
       if (pos > 0) {
-        System.err.print(" why p:" + partition + "," + pos)
+        System.err.print(" why p:" + partition)
       }
     })
     System.err.println("")
@@ -1590,7 +1590,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
       //        println("!!! par:" + partition + ",pos: " + pos)
       //      })
       //      consumerRecords = consumerRecords.addAll(consumeRecords(consumer, producerRecords.size))
-      fail("consume again with records: " + consumerRecords)
+      fail("consume again with records: " + consumerRecords.size)
     }
 
     val actual = consumerRecords.map { record =>
@@ -1639,7 +1639,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     partitions.foreach(partition => {
       val pos = consumer.position(partition)
       if (pos > 0) {
-        System.err.print(" why p:" + partition + "," + pos)
+        System.err.print(" why p:" + partition)
       }
     })
     System.err.println("")
@@ -1656,7 +1656,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
       //        println("!!! par:" + partition + ",pos: " + pos)
       //      })
       //      consumerRecords = consumerRecords.addAll(consumeRecords(consumer, producerRecords.size))
-      fail("consume again with records: " + consumerRecords)
+      fail("consume again with records: " + consumerRecords.size)
     }
 
     val actual = consumerRecords.map { record =>
