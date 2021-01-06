@@ -880,7 +880,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     partitions.foreach(partition => {
       val pos = consumer.position(partition)
       if (pos > 0) {
-        System.err.print(" why p:" + partition)
+        System.err.print("why p:" + partition)
       }
     })
     System.err.println("")
