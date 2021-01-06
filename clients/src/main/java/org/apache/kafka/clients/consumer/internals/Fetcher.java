@@ -266,7 +266,16 @@ public class Fetcher<K, V> implements Closeable {
                 log.debug("Sending {} {} to broker {}", isolationLevel, data.toString(), fetchTarget);
             }
             if (data.toSend().keySet().size() > 0) {
-                System.err.println("!!! Sending:" + data.toSend().keySet());
+                System.err.println("!!! S:" + data.toSend().keySet());
+                final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+                for (int i = 1; i < elements.length; i++) {
+                    final StackTraceElement s = elements[i];
+                    System.err.print(" at " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+                    if (s.getFileName().equals("PlaintextConsumerTest.scala")) {
+                        break;
+                    }
+                }
+                System.err.println("");
             }
             RequestFuture<ClientResponse> future = client.send(fetchTarget, request);
             // We add the node to the set of nodes with pending fetch requests before adding the
@@ -278,6 +287,7 @@ public class Fetcher<K, V> implements Closeable {
                 @Override
                 public void onSuccess(ClientResponse resp) {
                     synchronized (Fetcher.this) {
+//                        System.err.println("!!! onSuccess:" + resp);
                         try {
                             @SuppressWarnings("unchecked")
                             FetchResponse<Records> response = (FetchResponse<Records>) resp.responseBody();
@@ -335,6 +345,7 @@ public class Fetcher<K, V> implements Closeable {
 
                 @Override
                 public void onFailure(RuntimeException e) {
+//                    System.err.println("!!! onFailure:" + e);
                     synchronized (Fetcher.this) {
                         try {
                             FetchSessionHandler handler = sessionHandler(fetchTarget.id());
@@ -639,9 +650,9 @@ public class Fetcher<K, V> implements Closeable {
                     nextInLineFetch = null;
                 } else {
                     List<ConsumerRecord<K, V>> records = fetchRecords(nextInLineFetch, recordsRemaining);
-                    if (records.size() > 0) {
-                        System.err.print(" re:" + records.size());
-                    }
+//                    if (records.size() > 0) {
+//                        System.err.print(" re:" + records.size());
+//                    }
 
                     if (!records.isEmpty()) {
                         TopicPartition partition = nextInLineFetch.partition;
@@ -704,7 +715,7 @@ public class Fetcher<K, V> implements Closeable {
                             completedFetch.lastEpoch,
                             position.currentLeader);
                     log.trace("Update fetching position to {} for partition {}", nextPosition, completedFetch.partition);
-                    System.err.println("update f p:" + completedFetch.partition);
+//                    System.err.println("update f p:" + completedFetch.partition);
                     subscriptions.position(completedFetch.partition, nextPosition);
                 }
 
