@@ -975,14 +975,16 @@ public class SubscriptionState {
             this.position = position;
 
             final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-//            for (int i = 1; i < elements.length; i++) {
-//                final StackTraceElement s = elements[i];
-//                System.err.print(" at " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
-//                if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
-//                    break;
-//                }
-//            }
-//            System.err.println(" po:" + position.offset);
+            if (position.offset > 0) {
+                for (int i = 1; i < elements.length; i++) {
+                    final StackTraceElement s = elements[i];
+                    System.err.print(" at " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+                    if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
+                        break;
+                    }
+                }
+                System.err.println(" po:" + position.offset);
+            }
         }
 
         private FetchPosition validPosition() {
