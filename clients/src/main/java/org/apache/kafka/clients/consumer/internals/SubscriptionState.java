@@ -851,11 +851,11 @@ public class SubscriptionState {
             if (position != null) {
                 transitionState(FetchStates.FETCHING, () -> {
                     this.position = new FetchPosition(position.offset, position.offsetEpoch, currentLeaderAndEpoch);
-                    if (this.position.offset > 0) {
+                    if (this.position.offset == 1) {
                         final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
                         for (int i = 1; i < elements.length; i++) {
                             final StackTraceElement s = elements[i];
-                            System.err.print(" at " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+                            System.err.print(" at " + s.getFileName() + ":" + s.getLineNumber());
                             if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
                                 break;
                             }
@@ -870,11 +870,11 @@ public class SubscriptionState {
         private void validatePosition(FetchPosition position) {
             if (position.offsetEpoch.isPresent() && position.currentLeader.epoch.isPresent()) {
                 transitionState(FetchStates.AWAIT_VALIDATION, () -> {
-                    if (position.offset > 0) {
+                    if (position.offset == 1) {
                         final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
                         for (int i = 1; i < elements.length; i++) {
                             final StackTraceElement s = elements[i];
-                            System.err.print(" at " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+                            System.err.print(" at " + s.getFileName() + ":" + s.getLineNumber());
                             if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
                                 break;
                             }
@@ -887,11 +887,11 @@ public class SubscriptionState {
             } else {
                 // If we have no epoch information for the current position, then we can skip validation
                 transitionState(FetchStates.FETCHING, () -> {
-                    if (position.offset > 0) {
+                    if (position.offset == 1) {
                         final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
                         for (int i = 1; i < elements.length; i++) {
                             final StackTraceElement s = elements[i];
-                            System.err.print(" at " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+                            System.err.print(" at " + s.getFileName() + ":" + s.getLineNumber());
                             if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
                                 break;
                             }
@@ -947,11 +947,11 @@ public class SubscriptionState {
 
         private void seekValidated(FetchPosition position) {
             transitionState(FetchStates.FETCHING, () -> {
-                if (position.offset > 0) {
+                if (position.offset == 1) {
                     final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
                     for (int i = 1; i < elements.length; i++) {
                         final StackTraceElement s = elements[i];
-                        System.err.print(" at " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+                        System.err.print(" at " + s.getFileName() + ":" + s.getLineNumber());
                         if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
                             break;
                         }
@@ -975,16 +975,16 @@ public class SubscriptionState {
             this.position = position;
 
             final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-            if (position.offset > 0) {
-                for (int i = 1; i < elements.length; i++) {
-                    final StackTraceElement s = elements[i];
-                    System.err.print(" at " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
-                    if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
-                        break;
-                    }
-                }
-                System.err.println(" po:" + position.offset);
-            }
+//            if (position.offset == 1) {
+//                for (int i = 1; i < elements.length; i++) {
+//                    final StackTraceElement s = elements[i];
+//                    System.err.print(" at " + s.getFileName() + ":" + s.getLineNumber());
+//                    if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
+//                        break;
+//                    }
+//                }
+//                System.err.println(" po:" + position.offset);
+//            }
         }
 
         private FetchPosition validPosition() {
