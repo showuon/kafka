@@ -445,7 +445,7 @@ public class SubscriptionState {
         for (int i = 1; i < elements.length; i++) {
             final StackTraceElement s = elements[i];
             System.err.print(" at " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
-            if (s != null && s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
+            if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
                 break;
             }
         }
