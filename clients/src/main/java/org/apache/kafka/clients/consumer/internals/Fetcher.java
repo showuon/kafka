@@ -271,7 +271,7 @@ public class Fetcher<K, V> implements Closeable {
                 for (int i = 1; i < elements.length; i++) {
                     final StackTraceElement s = elements[i];
                     System.err.print(" at " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
-                    if (s.getFileName().equals("PlaintextConsumerTest.scala")) {
+                    if (s != null && s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
                         break;
                     }
                 }
@@ -327,6 +327,7 @@ public class Fetcher<K, V> implements Closeable {
 
                                     log.debug("Fetch {} at offset {} for partition {} returned fetch data {}",
                                             isolationLevel, fetchOffset, partition, partitionData);
+//                                    System.err.print(" suc:" + partition);
 
                                     Iterator<? extends RecordBatch> batches = partitionData.records().batches().iterator();
                                     short responseVersion = resp.requestHeader().apiVersion();
