@@ -956,7 +956,7 @@ public class SubscriptionState {
                             break;
                         }
                     }
-                    System.err.println(" po4:" + position.offset);
+                    System.err.println(" po4 " + position.offset);
                 }
                 this.position = position;
                 this.resetStrategy = null;
