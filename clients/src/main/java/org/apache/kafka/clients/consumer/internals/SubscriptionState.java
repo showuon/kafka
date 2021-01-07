@@ -440,16 +440,16 @@ public class SubscriptionState {
     }
 
     public synchronized void position(TopicPartition tp, FetchPosition position) {
-        System.err.print("u p:" + tp);
-        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-        for (int i = 1; i < elements.length; i++) {
-            final StackTraceElement s = elements[i];
-            System.err.print(" at " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
-            if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
-                break;
-            }
-        }
-        System.err.println("");
+//        System.err.print("u p:" + tp);
+//        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+//        for (int i = 1; i < elements.length; i++) {
+//            final StackTraceElement s = elements[i];
+//            System.err.print(" at " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+//            if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
+//                break;
+//            }
+//        }
+//        System.err.println("");
         assignedState(tp).position(position);
     }
 
@@ -851,6 +851,15 @@ public class SubscriptionState {
             if (position != null) {
                 transitionState(FetchStates.FETCHING, () -> {
                     this.position = new FetchPosition(position.offset, position.offsetEpoch, currentLeaderAndEpoch);
+                    final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+                    for (int i = 1; i < elements.length; i++) {
+                        final StackTraceElement s = elements[i];
+                        System.err.print(" at " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+                        if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
+                            break;
+                        }
+                    }
+                    System.err.println(" po1:" + this.position.offset);
                     this.nextRetryTimeMs = null;
                 });
             }
@@ -859,12 +868,30 @@ public class SubscriptionState {
         private void validatePosition(FetchPosition position) {
             if (position.offsetEpoch.isPresent() && position.currentLeader.epoch.isPresent()) {
                 transitionState(FetchStates.AWAIT_VALIDATION, () -> {
+                    final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+                    for (int i = 1; i < elements.length; i++) {
+                        final StackTraceElement s = elements[i];
+                        System.err.print(" at " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+                        if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
+                            break;
+                        }
+                    }
+                    System.err.println(" po2:" + position.offset);
                     this.position = position;
                     this.nextRetryTimeMs = null;
                 });
             } else {
                 // If we have no epoch information for the current position, then we can skip validation
                 transitionState(FetchStates.FETCHING, () -> {
+                    final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+                    for (int i = 1; i < elements.length; i++) {
+                        final StackTraceElement s = elements[i];
+                        System.err.print(" at " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+                        if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
+                            break;
+                        }
+                    }
+                    System.err.println(" po3:" + position.offset);
                     this.position = position;
                     this.nextRetryTimeMs = null;
                 });
@@ -914,6 +941,15 @@ public class SubscriptionState {
 
         private void seekValidated(FetchPosition position) {
             transitionState(FetchStates.FETCHING, () -> {
+                final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+                for (int i = 1; i < elements.length; i++) {
+                    final StackTraceElement s = elements[i];
+                    System.err.print(" at " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+                    if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
+                        break;
+                    }
+                }
+                System.err.println(" po4:" + position.offset);
                 this.position = position;
                 this.resetStrategy = null;
                 this.nextRetryTimeMs = null;
@@ -929,6 +965,16 @@ public class SubscriptionState {
             if (!hasValidPosition())
                 throw new IllegalStateException("Cannot set a new position without a valid current position");
             this.position = position;
+
+            final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+//            for (int i = 1; i < elements.length; i++) {
+//                final StackTraceElement s = elements[i];
+//                System.err.print(" at " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+//                if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
+//                    break;
+//                }
+//            }
+//            System.err.println(" po:" + position.offset);
         }
 
         private FetchPosition validPosition() {
