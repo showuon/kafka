@@ -449,6 +449,7 @@ public class SubscriptionState {
                 break;
             }
         }
+        System.err.println("");
         assignedState(tp).position(position);
     }
 

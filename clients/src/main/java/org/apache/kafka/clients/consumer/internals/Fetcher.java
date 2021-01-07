@@ -267,18 +267,18 @@ public class Fetcher<K, V> implements Closeable {
             }
             if (data.toSend().keySet().size() > 0) {
                 System.err.println("!!! S:" + data.toSend().keySet());
-                final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-                for (int i = 1; i < elements.length; i++) {
-                    final StackTraceElement s = elements[i];
-                    System.err.print(" at " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
-                    if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
-                        break;
-                    }
-                }
-                System.err.println("");
+//                final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+//                for (int i = 1; i < elements.length; i++) {
+//                    final StackTraceElement s = elements[i];
+//                    System.err.print(" at " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+//                    if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
+//                        break;
+//                    }
+//                }
+//
             }
             RequestFuture<ClientResponse> future = client.send(fetchTarget, request);
-            // We add the node to the set of nodes with pending fetch requests before adding the
+            // We add the nodSystem.err.println("");e to the set of nodes with pending fetch requests before adding the
             // listener because the future may have been fulfilled on another thread (e.g. during a
             // disconnection being handled by the heartbeat thread) which will mean the listener
             // will be invoked synchronously.
