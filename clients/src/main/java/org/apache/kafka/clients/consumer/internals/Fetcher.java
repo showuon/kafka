@@ -266,7 +266,7 @@ public class Fetcher<K, V> implements Closeable {
                 log.debug("Sending {} {} to broker {}", isolationLevel, data.toString(), fetchTarget);
             }
             if (data.toSend().keySet().size() > 0) {
-                System.err.println("!!! S:" + data.toSend().keySet());
+//                System.err.println("!!! S:" + data.toSend().keySet());
 //                final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
 //                for (int i = 1; i < elements.length; i++) {
 //                    final StackTraceElement s = elements[i];
