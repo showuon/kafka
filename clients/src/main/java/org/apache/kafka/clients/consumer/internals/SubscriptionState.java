@@ -396,6 +396,16 @@ public class SubscriptionState {
             log.debug("Skipping reset of partition {} since an alternative reset has been requested", tp);
         } else {
             log.info("Resetting offset for partition {} to position {}.", tp, position);
+            if (position.offset <= 1) {
+                final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+                for (int i = 1; i < elements.length; i++) {
+                    final StackTraceElement s = elements[i];
+                    System.err.print(" - " + s.getFileName() + ":" + s.getLineNumber());
+                    if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
+                        break;
+                    }
+                }
+            }
             System.err.print(tp + ":" + position + " ");
             state.seekUnvalidated(position);
         }
@@ -956,17 +966,17 @@ public class SubscriptionState {
 
         private void seekValidated(FetchPosition position) {
             transitionState(FetchStates.FETCHING, () -> {
-                if (position.offset <= 1) {
-                    final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-                    for (int i = 1; i < elements.length; i++) {
-                        final StackTraceElement s = elements[i];
-                        System.err.print(" - " + s.getFileName() + ":" + s.getLineNumber());
-                        if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
-                            break;
-                        }
-                    }
-                    System.err.println(" po4 " + position.offset);
-                }
+//                if (position.offset <= 1) {
+//                    final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+//                    for (int i = 1; i < elements.length; i++) {
+//                        final StackTraceElement s = elements[i];
+//                        System.err.print(" - " + s.getFileName() + ":" + s.getLineNumber());
+//                        if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
+//                            break;
+//                        }
+//                    }
+//                    System.err.println(" po4 " + position.offset);
+//                }
                 this.position = position;
                 this.resetStrategy = null;
                 this.nextRetryTimeMs = null;
