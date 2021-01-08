@@ -870,7 +870,7 @@ public class SubscriptionState {
             if (position != null) {
                 transitionState(FetchStates.FETCHING, () -> {
                     this.position = new FetchPosition(position.offset, position.offsetEpoch, currentLeaderAndEpoch);
-                    if (this.position.offset <= 1) {
+                    if (this.position.offset <= 0) {
                         final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
                         for (int i = 1; i < elements.length; i++) {
                             final StackTraceElement s = elements[i];
@@ -889,7 +889,7 @@ public class SubscriptionState {
         private void validatePosition(FetchPosition position) {
             if (position.offsetEpoch.isPresent() && position.currentLeader.epoch.isPresent()) {
                 transitionState(FetchStates.AWAIT_VALIDATION, () -> {
-                    if (position.offset <= 1) {
+                    if (position.offset <= 0) {
                         final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
                         for (int i = 1; i < elements.length; i++) {
                             final StackTraceElement s = elements[i];
@@ -906,7 +906,7 @@ public class SubscriptionState {
             } else {
                 // If we have no epoch information for the current position, then we can skip validation
                 transitionState(FetchStates.FETCHING, () -> {
-                    if (position.offset <= 1) {
+                    if (position.offset <= 0) {
                         final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
                         for (int i = 1; i < elements.length; i++) {
                             final StackTraceElement s = elements[i];
@@ -994,7 +994,7 @@ public class SubscriptionState {
             this.position = position;
 
             final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-            if (position.offset <= 1) {
+            if (position.offset <= 0) {
                 for (int i = 1; i < elements.length; i++) {
                     final StackTraceElement s = elements[i];
                     System.err.print(" - " + s.getFileName() + ":" + s.getLineNumber());
