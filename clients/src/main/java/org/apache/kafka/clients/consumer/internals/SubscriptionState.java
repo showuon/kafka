@@ -978,12 +978,12 @@ public class SubscriptionState {
             if (position.offset == 1) {
                 for (int i = 1; i < elements.length; i++) {
                     final StackTraceElement s = elements[i];
-                    System.err.print(" at " + s.getFileName() + ":" + s.getLineNumber());
+//                    System.err.print(" at " + s.getFileName() + ":" + s.getLineNumber());
                     if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
                         break;
                     }
                 }
-                System.err.println(" po:" + position.offset);
+//                System.err.println(" po:" + position.offset);
             }
         }
 
