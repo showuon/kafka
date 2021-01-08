@@ -974,17 +974,17 @@ public class SubscriptionState {
                 throw new IllegalStateException("Cannot set a new position without a valid current position");
             this.position = position;
 
-            final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-            if (position.offset == 1) {
-                for (int i = 1; i < elements.length; i++) {
-                    final StackTraceElement s = elements[i];
+//            final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+//            if (position.offset == 1) {
+//                for (int i = 1; i < elements.length; i++) {
+//                    final StackTraceElement s = elements[i];
 //                    System.err.print(" at " + s.getFileName() + ":" + s.getLineNumber());
-                    if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
-                        break;
-                    }
-                }
+//                    if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
+//                        break;
+//                    }
+//                }
 //                System.err.println(" po:" + position.offset);
-            }
+//            }
         }
 
         private FetchPosition validPosition() {
