@@ -396,7 +396,7 @@ public class SubscriptionState {
             log.debug("Skipping reset of partition {} since an alternative reset has been requested", tp);
         } else {
             log.info("Resetting offset for partition {} to position {}.", tp, position);
-            if (position.offset <= 1) {
+            if (position.offset <= 0) {
                 final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
                 for (int i = 1; i < elements.length; i++) {
                     final StackTraceElement s = elements[i];
@@ -406,7 +406,7 @@ public class SubscriptionState {
                     }
                 }
             }
-            System.err.print(tp + ":" + position + " ");
+            System.err.print(tp + ":" + position.offset + " ");
             state.seekUnvalidated(position);
         }
     }
