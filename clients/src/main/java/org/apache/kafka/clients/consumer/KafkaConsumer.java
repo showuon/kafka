@@ -1742,6 +1742,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             Timer timer = time.timer(timeout);
             do {
                 SubscriptionState.FetchPosition position = this.subscriptions.validPosition(partition);
+//                System.err.println("!!! " + partition + ":" + position.offset);
                 if (position != null)
                     return position.offset;
 
