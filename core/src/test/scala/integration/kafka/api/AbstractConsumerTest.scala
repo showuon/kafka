@@ -161,16 +161,16 @@ abstract class AbstractConsumerTest extends BaseRequestTest {
       if (polledRecords.count() > 0) {
 //        System.err.println("!!! r.cou:" + polledRecords.count())
 
-        partitions.foreach(partition => {
-          try {
-            val pos = consumer.position(partition)
-            if (pos > 0) {
-              System.err.print(" p:" + partition)
-            }
-          } catch {
-            case e: Throwable =>
-          }
-        })
+//        partitions.foreach(partition => {
+//          try {
+//            val pos = consumer.position(partition)
+//            if (pos > 0) {
+//              System.err.print(" p:" + partition)
+//            }
+//          } catch {
+//            case e: Throwable =>
+//          }
+//        })
 
 //        polledRecords.records("topic1").forEach(r => println("!!! t1:" + r.partition()))
 //        polledRecords.records("topic2").forEach(r => println("!!! t2:" + r.partition()))
