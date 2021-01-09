@@ -123,7 +123,7 @@
     </module>
     <module name="BooleanExpressionComplexity">
       <!-- default is 3 -->
-      <property name="max" value="70"/>
+      <property name="max" value="71"/>
     </module>
 
     <module name="ClassFanOutComplexity">
