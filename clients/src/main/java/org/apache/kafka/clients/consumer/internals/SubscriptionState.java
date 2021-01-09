@@ -940,7 +940,7 @@ public class SubscriptionState {
                                 break;
                             }
                         }
-                        System.err.println(" po3:" + position.offset);
+                        System.err.print(" po3:" + position.offset);
                     }
                     this.position = position;
                     this.nextRetryTimeMs = null;
@@ -1000,7 +1000,7 @@ public class SubscriptionState {
 //                            break;
 //                        }
 //                    }
-                    System.err.println(" po4 " + position.offset);
+                    System.err.print(" po4 " + position.offset);
                 }
                 this.position = position;
                 this.resetStrategy = null;
