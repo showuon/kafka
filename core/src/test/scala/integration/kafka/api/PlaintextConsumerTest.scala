@@ -816,7 +816,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
     })
 //    println("!!! begin")
 //    consumer.seekToBeginning(partitions.asJava)
-    System.err.println("")
+    System.err.println("pp")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -883,7 +883,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
         System.err.print("why p:" + partition)
       }
     })
-    System.err.println("")
+    System.err.println("pp")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -950,7 +950,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
         System.err.print(" why p:" + partition)
       }
     })
-    System.err.println("")
+    System.err.println("pp")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1017,7 +1017,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
         System.err.print(" why p:" + partition)
       }
     })
-    System.err.println("")
+    System.err.println("pp")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1084,7 +1084,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
         System.err.print(" why p:" + partition)
       }
     })
-    System.err.println("")
+    System.err.println("pp")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1151,7 +1151,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
         System.err.print(" why p:" + partition)
       }
     })
-    System.err.println("")
+    System.err.println("pp")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1218,7 +1218,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
         System.err.print(" why p:" + partition)
       }
     })
-    System.err.println("")
+    System.err.println("pp")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1285,7 +1285,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
         System.err.print(" why p:" + partition)
       }
     })
-    System.err.println("")
+    System.err.println("pp")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1352,7 +1352,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
         System.err.print(" why p:" + partition)
       }
     })
-    System.err.println("")
+    System.err.println("pp")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1419,7 +1419,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
         System.err.print(" why p:" + partition)
       }
     })
-    System.err.println("")
+    System.err.println("pp")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1522,7 +1522,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
         System.err.print(" why p:" + partition)
       }
     })
-    System.err.println("")
+    System.err.println("pp")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1589,7 +1589,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
         System.err.print(" why p:" + partition)
       }
     })
-    System.err.println("")
+    System.err.println("pp")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
@@ -1656,7 +1656,7 @@ class PlaintextConsumerTest extends BaseConsumerTest {
         System.err.print(" why p:" + partition)
       }
     })
-    System.err.println("")
+    System.err.println("pp")
     val consumerRecords = consumeRecords(consumer, producerRecords.size)
 
     val expected = producerRecords.map { record =>
