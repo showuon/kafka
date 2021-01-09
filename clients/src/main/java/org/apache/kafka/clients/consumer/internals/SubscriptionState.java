@@ -400,6 +400,26 @@ public class SubscriptionState {
                 final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
                 for (int i = 1; i < elements.length; i++) {
                     final StackTraceElement s = elements[i];
+                    if ((i == 1 && s.getFileName().equals("SubscriptionState.java") && s.getLineNumber() == 400) ||
+                        (i == 2 && s.getFileName().equals("Fetcher.java") && s.getLineNumber() == 755) ||
+                        (i == 3 && s.getFileName().equals("Fetcher.java") && s.getLineNumber() == 779) ||
+                        (i == 4 && s.getFileName().equals("Fetcher.java") && s.getLineNumber() == 767) ||
+                        (i == 5 && s.getFileName().equals("RequestFuture.java") && s.getLineNumber() == 169) ||
+                        (i == 6 && s.getFileName().equals("RequestFuture.java") && s.getLineNumber() == 129) ||
+                        (i == 7 && s.getFileName().equals("Fetcher.java") && s.getLineNumber() == 1107) ||
+                        (i == 8 && s.getFileName().equals("Fetcher.java") && s.getLineNumber() == 133) ||
+                        (i == 9 && s.getFileName().equals("Fetcher.java") && s.getLineNumber() == 1014) ||
+                        (i == 10 && s.getFileName().equals("Fetcher.java") && s.getLineNumber() == 1009) ||
+                        (i == 11 && s.getFileName().equals("RequestFuture.java") && s.getLineNumber() == 206) ||
+                        (i == 12 && s.getFileName().equals("RequestFuture.java") && s.getLineNumber() == 169) ||
+                        (i == 13 && s.getFileName().equals("RequestFuture.java") && s.getLineNumber() == 129) ||
+                        (i == 14 && s.getFileName().equals("ConsumerNetworkClient.java") && s.getLineNumber() == 602) ||
+                        (i == 15 && s.getFileName().equals("ConsumerNetworkClient.java") && s.getLineNumber() == 412)) {
+//                        (i == 1 && s.getFileName().equals("ConsumerNetworkClient.java") && s.getLineNumber() == 247) ||
+//                        (i == 1 && s.getFileName().equals("ConsumerNetworkClient.java") && s.getLineNumber() == 306) ||
+//                        (i == 1 && s.getFileName().equals("AbstractCoordinator.java") && s.getLineNumber() == 1009) ||) {
+                        continue;
+                    }
                     System.err.print(" - " + s.getFileName() + ":" + s.getLineNumber());
                     if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
                         break;
