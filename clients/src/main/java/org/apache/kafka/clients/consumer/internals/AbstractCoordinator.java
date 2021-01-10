@@ -360,6 +360,7 @@ public abstract class AbstractCoordinator implements Closeable {
         // always ensure that the coordinator is ready because we may have been disconnected
         // when sending heartbeats and does not necessarily require us to rejoin the group.
         if (!ensureCoordinatorReady(timer)) {
+            System.err.println("not ready");
             return false;
         }
 
@@ -409,6 +410,7 @@ public abstract class AbstractCoordinator implements Closeable {
     boolean joinGroupIfNeeded(final Timer timer) {
         while (rejoinNeededOrPending()) {
             if (!ensureCoordinatorReady(timer)) {
+                System.err.println("!ready");
                 return false;
             }
 
@@ -428,6 +430,7 @@ public abstract class AbstractCoordinator implements Closeable {
             client.poll(future, timer);
             if (!future.isDone()) {
                 // we ran out of time
+                System.err.println("future not done");
                 return false;
             }
 
@@ -465,6 +468,7 @@ public abstract class AbstractCoordinator implements Closeable {
                 }
             } else {
                 final RuntimeException exception = future.exception();
+                System.err.println("e:" + exception);
 
                 // we do not need to log error for memberId required,
                 // since it is not really an error and is transient
