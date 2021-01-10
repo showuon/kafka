@@ -1004,7 +1004,7 @@ public class Fetcher<K, V> implements Closeable {
                 .forConsumer(requireTimestamp, isolationLevel)
                 .setTargetTimes(ListOffsetsRequest.toListOffsetsTopics(timestampsToSearch));
 
-        log.debug("Sending ListOffsetRequest {} to broker {}", builder, node);
+        System.err.println("ListOffsetR:" + builder + node);
         return client.send(node, builder)
                 .compose(new RequestFutureAdapter<ClientResponse, ListOffsetResult>() {
                     @Override
