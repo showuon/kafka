@@ -425,7 +425,7 @@ public class SubscriptionState {
 //                        (i == 1 && s.getFileName().equals("AbstractCoordinator.java") && s.getLineNumber() == 1009) ||) {
                         continue;
                     }
-                    System.err.print(" - " + s.getFileName() + ":" + s.getLineNumber());
+//                    System.err.print(" - " + s.getFileName() + ":" + s.getLineNumber());
                     if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
                         break;
                     }
@@ -1022,7 +1022,7 @@ public class SubscriptionState {
             if (position.offset <= 0) {
                 for (int i = 1; i < elements.length; i++) {
                     final StackTraceElement s = elements[i];
-                    System.err.print(" - " + s.getFileName() + ":" + s.getLineNumber());
+//                    System.err.print(" - " + s.getFileName() + ":" + s.getLineNumber());
                     if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
                         break;
                     }

@@ -1004,7 +1004,16 @@ public class Fetcher<K, V> implements Closeable {
                 .forConsumer(requireTimestamp, isolationLevel)
                 .setTargetTimes(ListOffsetsRequest.toListOffsetsTopics(timestampsToSearch));
 
-        System.err.println("ListOffsetR:" + builder + node);
+        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+        for (int i = 1; i < elements.length; i++) {
+            final StackTraceElement s = elements[i];
+            System.err.print(" - " + s.getFileName() + ":" + s.getLineNumber());
+            if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
+                break;
+            }
+        }
+//        System.err.println(" po1:" + this.position.offset);
+        System.err.println("ListOffsetR:" + node);
         return client.send(node, builder)
                 .compose(new RequestFutureAdapter<ClientResponse, ListOffsetResult>() {
                     @Override
