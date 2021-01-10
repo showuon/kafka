@@ -117,7 +117,7 @@ import static java.util.Collections.emptyList;
  * thread may process responses. Other operations are single-threaded and invoked only from
  * the thread polling the consumer.
  * <ul>
- *     <li>If a response handler accesses any shared state of the Fetcher (e.g. FetchSessionHandler),
+ *     <li>If a a response handler accesses any shared state of the Fetcher (e.g. FetchSessionHandler),
  *     all access to that state must be synchronized on the Fetcher instance.</li>
  *     <li>If a response handler accesses any shared state of the coordinator (e.g. SubscriptionState),
  *     it is assumed that all access to that state is synchronized on the coordinator instance by
