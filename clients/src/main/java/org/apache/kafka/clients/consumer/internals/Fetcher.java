@@ -1013,7 +1013,7 @@ public class Fetcher<K, V> implements Closeable {
             }
         }
 //        System.err.println(" po1:" + this.position.offset);
-        System.err.println("ListOffsetR:" + timestampsToSearch.keySet() + node);
+        System.err.println("ListOffsetR:" + node);
         return client.send(node, builder)
                 .compose(new RequestFutureAdapter<ClientResponse, ListOffsetResult>() {
                     @Override
