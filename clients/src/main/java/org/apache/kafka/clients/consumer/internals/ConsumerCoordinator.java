@@ -478,6 +478,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             // group proactively due to application inactivity even if (say) the coordinator cannot be found.
             pollHeartbeat(timer.currentTimeMs());
             if (coordinatorUnknown() && !ensureCoordinatorReady(timer)) {
+                System.err.println("f1:");
                 return false;
             }
 
@@ -498,9 +499,10 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
                     }
 
                     if (!client.ensureFreshMetadata(timer)) {
+                        System.err.println("f2:");
                         return false;
                     }
-
+               
                     maybeUpdateSubscriptionMetadata();
                 }
 
@@ -509,7 +511,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
                     // since we may use a different timer in the callee, we'd still need
                     // to update the original timer's current time after the call
                     timer.update(time.milliseconds());
-
+                    System.err.println("f3:" + waitForJoinGroup);
                     return false;
                 }
             }
