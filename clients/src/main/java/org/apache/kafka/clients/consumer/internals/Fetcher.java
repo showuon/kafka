@@ -122,7 +122,7 @@ import static java.util.Collections.emptyList;
  *     <li>If a response handler accesses any shared state of the coordinator (e.g. SubscriptionState),
  *     it is assumed that all access to that state is synchronized on the coordinator instance by
  *     the caller.</li>
- *     <li>Responses thgat collate partial responses from multiple brokers (e.g. to list offsets) are
+ *     <li>Responses thgat czollate partial responses from multiple brokers (e.g. to list offsets) are
  *     synchronized on the response future.</li>
  *     <li>At most one request is pending for each node at any time. Nodes with pending requests are
  *     tracked and updated after processing the response. This ensures that any state (e.g. epoch)
