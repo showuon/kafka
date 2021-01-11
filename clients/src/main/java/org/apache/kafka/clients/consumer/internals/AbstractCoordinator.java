@@ -301,6 +301,7 @@ public abstract class AbstractCoordinator implements Closeable {
      * @return true if it should, false otherwise
      */
     protected synchronized boolean rejoinNeededOrPending() {
+        System.err.print("joinf:" + joinFuture + rejoinNeeded);
         // if there's a pending joinFuture, we should try to complete handling it.
         return rejoinNeeded || joinFuture != null;
     }
@@ -408,6 +409,11 @@ public abstract class AbstractCoordinator implements Closeable {
      * @return true iff the operation succeeded
      */
     boolean joinGroupIfNeeded(final Timer timer) {
+//        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+//        for (int i = 1; i < elements.length; i++) {
+//            final StackTraceElement s = elements[i];
+//            System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+//        }
         while (rejoinNeededOrPending()) {
             if (!ensureCoordinatorReady(timer)) {
                 System.err.println("!ready");
@@ -427,10 +433,13 @@ public abstract class AbstractCoordinator implements Closeable {
             }
 
             final RequestFuture<ByteBuffer> future = initiateJoinGroup();
+//            System.err.println("!!! future:" + future);
             client.poll(future, timer);
+//            System.err.println("!!! after poll future:" + future);
             if (!future.isDone()) {
                 // we ran out of time
-                System.err.println("future not done");
+
+                System.err.print("future not done ");
                 return false;
             }
 
@@ -494,6 +503,7 @@ public abstract class AbstractCoordinator implements Closeable {
 
     private synchronized void resetJoinGroupFuture() {
         this.joinFuture = null;
+        System.err.print("reset:" + this.joinFuture);
     }
 
     private synchronized RequestFuture<ByteBuffer> initiateJoinGroup() {
@@ -510,11 +520,13 @@ public abstract class AbstractCoordinator implements Closeable {
             joinFuture.addListener(new RequestFutureListener<ByteBuffer>() {
                 @Override
                 public void onSuccess(ByteBuffer value) {
+                    System.err.println("joinFu suc");
                     // do nothing since all the handler logic are in SyncGroupResponseHandler already
                 }
 
                 @Override
                 public void onFailure(RuntimeException e) {
+                    System.err.println("joinFu fail:" + e);
                     // we handle failures below after the request finishes. if the join completes
                     // after having been woken up, the exception is ignored and we will rejoin;
                     // this can be triggered when either join or sync request failed
@@ -734,9 +746,11 @@ public abstract class AbstractCoordinator implements Closeable {
         @Override
         public void handle(SyncGroupResponse syncResponse,
                            RequestFuture<ByteBuffer> future) {
+            System.err.println("handle sgrh");
             Errors error = syncResponse.error();
             if (error == Errors.NONE) {
                 if (isProtocolTypeInconsistent(syncResponse.data().protocolType())) {
+                    System.err.println("ipt:" + syncResponse.data().protocolType() + protocolType());
                     log.error("SyncGroup failed due to inconsistent Protocol Type, received {} but expected {}",
                         syncResponse.data().protocolType(), protocolType());
                     future.raise(Errors.INCONSISTENT_GROUP_PROTOCOL);
@@ -752,12 +766,14 @@ public abstract class AbstractCoordinator implements Closeable {
                                 !protocolName.equals(generation.protocolName);
 
                             if (protocolNameInconsistent) {
+                                System.err.println("pnic");
                                 log.error("SyncGroup failed due to inconsistent Protocol Name, received {} but expected {}",
                                     protocolName, generation.protocolName);
 
                                 future.raise(Errors.INCONSISTENT_GROUP_PROTOCOL);
                             } else {
                                 log.info("Successfully synced group in generation {}", generation);
+                                System.err.println("suc sg");
                                 state = MemberState.STABLE;
                                 rejoinNeeded = false;
                                 // record rebalance latency
@@ -768,6 +784,7 @@ public abstract class AbstractCoordinator implements Closeable {
                                 future.complete(ByteBuffer.wrap(syncResponse.data().assignment()));
                             }
                         } else {
+                            System.err.println("gd cleared");
                             log.info("Generation data was cleared by heartbeat thread to {} and state is now {} before " +
                                 "receiving SyncGroup response, marking this rebalance as failed and retry",
                                 generation, state);

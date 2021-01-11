@@ -465,11 +465,13 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
      * @return true iff the operation succeeded
      */
     public boolean poll(Timer timer, boolean waitForJoinGroup) {
+        System.err.print("cc poll");
         maybeUpdateSubscriptionMetadata();
 
         invokeCompletedOffsetCommitCallbacks();
 
         if (subscriptions.hasAutoAssignedPartitions()) {
+//            System.err.println("!!! hasAutoAssignedPartitions");
             if (protocol == null) {
                 throw new IllegalStateException("User configured " + ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG +
                     " to empty while trying to subscribe for group protocol to auto assign partitions");
@@ -511,7 +513,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
                     // since we may use a different timer in the callee, we'd still need
                     // to update the original timer's current time after the call
                     timer.update(time.milliseconds());
-                    System.err.println("f3:" + waitForJoinGroup);
+                    System.err.println("f3:");
                     return false;
                 }
             }
@@ -771,6 +773,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         // we need to rejoin if we performed the assignment and metadata has changed;
         // also for those owned-but-no-longer-existed partitions we should drop them as lost
         if (assignmentSnapshot != null && !assignmentSnapshot.matches(metadataSnapshot)) {
+            System.err.println("assignment metadata has changed:" + assignmentSnapshot + metadataSnapshot);
             log.info("Requesting to re-join the group and trigger rebalance since the assignment metadata has changed from {} to {}",
                     assignmentSnapshot, metadataSnapshot);
 
@@ -780,6 +783,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
 
         // we need to join if our subscription has changed since the last join
         if (joinedSubscription != null && !joinedSubscription.equals(subscriptions.subscription())) {
+            System.err.println("subscription has changed from:" + joinedSubscription + subscriptions.subscription());
             log.info("Requesting to re-join the group and trigger rebalance since the subscription has changed from {} to {}",
                 joinedSubscription, subscriptions.subscription());
 
