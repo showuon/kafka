@@ -301,7 +301,7 @@ public abstract class AbstractCoordinator implements Closeable {
      * @return true if it should, false otherwise
      */
     protected synchronized boolean rejoinNeededOrPending() {
-        System.err.print("joinf:" + (joinFuture == null) + rejoinNeeded);
+        System.err.print("joinf:" + (joinFuture == null) + rejoinNeeded + " ");
         // if there's a pending joinFuture, we should try to complete handling it.
         return rejoinNeeded || joinFuture != null;
     }
