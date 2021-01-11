@@ -794,6 +794,7 @@ public abstract class AbstractCoordinator implements Closeable {
                     }
                 }
             } else {
+                System.err.println("err:" + error.code());
                 requestRejoin();
 
                 if (error == Errors.GROUP_AUTHORIZATION_FAILED) {
@@ -975,6 +976,15 @@ public abstract class AbstractCoordinator implements Closeable {
     }
 
     private synchronized void resetStateAndRejoin() {
+        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+        for (int i = 1; i < elements.length; i++) {
+            final StackTraceElement s = elements[i];
+            System.err.print(" - " + s.getFileName() + ":" + s.getLineNumber());
+            if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
+                break;
+            }
+        }
+        System.err.println(" resetS ");
         resetState();
         rejoinNeeded = true;
     }
@@ -992,6 +1002,15 @@ public abstract class AbstractCoordinator implements Closeable {
     }
 
     public synchronized void requestRejoin() {
+        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+        for (int i = 1; i < elements.length; i++) {
+            final StackTraceElement s = elements[i];
+            System.err.print(" - " + s.getFileName() + ":" + s.getLineNumber());
+            if (s.getFileName() != null && s.getFileName().equals("PlaintextConsumerTest.scala")) {
+                break;
+            }
+        }
+        System.err.println(" reqR");
         this.rejoinNeeded = true;
     }
 
