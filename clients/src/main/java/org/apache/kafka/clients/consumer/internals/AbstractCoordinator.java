@@ -363,7 +363,7 @@ public abstract class AbstractCoordinator implements Closeable {
         // always ensure that the coordinator is ready because we may have been disconnected
         // when sending heartbeats and does not necessarily require us to rejoin the group.
         if (!ensureCoordinatorReady(timer)) {
-            System.err.println("not ready");
+            System.err.println("not ready!");
             return false;
         }
 
