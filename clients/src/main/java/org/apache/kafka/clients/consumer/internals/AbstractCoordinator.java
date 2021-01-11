@@ -301,7 +301,9 @@ public abstract class AbstractCoordinator implements Closeable {
      * @return true if it should, false otherwise
      */
     protected synchronized boolean rejoinNeededOrPending() {
-        System.err.print("joinf:" + (joinFuture == null) + rejoinNeeded + " ");
+        if (rejoinNeeded || joinFuture != null) {
+            System.err.print("-" + (joinFuture == null) + rejoinNeeded + " ");
+        }
         // if there's a pending joinFuture, we should try to complete handling it.
         return rejoinNeeded || joinFuture != null;
     }
@@ -439,7 +441,7 @@ public abstract class AbstractCoordinator implements Closeable {
             if (!future.isDone()) {
                 // we ran out of time
 
-                System.err.print("future not done ");
+                System.err.print("not done ");
                 return false;
             }
 
@@ -503,7 +505,7 @@ public abstract class AbstractCoordinator implements Closeable {
 
     private synchronized void resetJoinGroupFuture() {
         this.joinFuture = null;
-        System.err.print("reset:" + this.joinFuture);
+        System.err.print("reset:");
     }
 
     private synchronized RequestFuture<ByteBuffer> initiateJoinGroup() {

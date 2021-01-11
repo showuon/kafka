@@ -465,7 +465,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
      * @return true iff the operation succeeded
      */
     public boolean poll(Timer timer, boolean waitForJoinGroup) {
-        System.err.print("cc poll");
+//        System.err.print("cc poll");
         maybeUpdateSubscriptionMetadata();
 
         invokeCompletedOffsetCommitCallbacks();
