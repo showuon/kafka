@@ -885,7 +885,7 @@ class ConnectionQuotasTest {
     assertEquals(s"Number of connections on EXTERNAL listener:", maxConnections, connectionQuotas.get(listener.defaultIp))
   }
 
-  
+
    */
 
   @Test
