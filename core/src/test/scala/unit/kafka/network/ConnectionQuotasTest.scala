@@ -708,6 +708,8 @@ class ConnectionQuotasTest {
     verifyNoBlockedPercentRecordedOnAllListeners()
   }
 
+  /*
+
   @Test
   def testNonDefaultConnectionCountLimitAndRateLimit(): Unit = {
     println("!!! time is " + time)
@@ -882,6 +884,9 @@ class ConnectionQuotasTest {
     future.get(1, TimeUnit.SECONDS)
     assertEquals(s"Number of connections on EXTERNAL listener:", maxConnections, connectionQuotas.get(listener.defaultIp))
   }
+
+  
+   */
 
   @Test
   def testNonDefaultConnectionCountLimitAndRateLimit6(): Unit = {
