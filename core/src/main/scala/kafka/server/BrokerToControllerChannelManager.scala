@@ -300,6 +300,7 @@ class BrokerToControllerRequestThread(
   }
 
   def enqueue(request: BrokerToControllerQueueItem): Unit = {
+    System.out.println("!!! enqueue: " + request)
     if (!started) {
       throw new IllegalStateException("Cannot enqueue a request if the request thread is not running")
     }

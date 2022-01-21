@@ -759,9 +759,9 @@ class PlaintextAdminIntegrationTest extends BaseAdminIntegrationTest {
     // after the new replica caught up, all replicas should have same log start offset
     for (i <- 0 until brokerCount)
       assertEquals(6, servers(i).replicaManager.localLog(topicPartition).get.logStartOffset)
-
+    
     // kill the same follower again, produce more records, and delete records beyond follower's LOE
-    System.err.println("kill2")
+    System.out.println("!!! kill2")
     killBroker(followerIndex)
     println("!!! send2")
     sendRecords(producer, 100, topicPartition)
