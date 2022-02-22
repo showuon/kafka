@@ -700,6 +700,11 @@ class KafkaServer(
   override def shutdown(): Unit = {
     try {
       info("shutting down")
+      val elements = Thread.currentThread.getStackTrace
+      for (i <- 1 until elements.length) {
+        val s = elements(i)
+        System.out.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+      }
 
       if (isStartingUp.get)
         throw new IllegalStateException("Kafka server is still starting up, cannot shut down!")
