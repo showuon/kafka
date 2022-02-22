@@ -385,6 +385,12 @@ class LogManager(logDirs: Seq[File],
         jobs += jobsForDir.map(pool.submit)
       } catch {
         case e: IOException =>
+          println("!!! failed 1")
+          val elements = Thread.currentThread.getStackTrace
+          for (i <- 1 until elements.length) {
+            val s = elements(i)
+            System.out.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+          }
           offlineDirs.add((logDirAbsolutePath, e))
           error(s"Error while loading log dir $logDirAbsolutePath", e)
       }
@@ -400,8 +406,22 @@ class LogManager(logDirs: Seq[File],
       }
     } catch {
       case e: ExecutionException =>
+        println("!!! failed 2")
+        val elements = Thread.currentThread.getStackTrace
+        for (i <- 1 until elements.length) {
+          val s = elements(i)
+          System.out.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+        }
         error(s"There was an error in one of the threads during logs loading: ${e.getCause}")
         throw e.getCause
+      case e: Throwable =>
+        println("!!! failed 3")
+        val elements = Thread.currentThread.getStackTrace
+        for (i <- 1 until elements.length) {
+          val s = elements(i)
+          System.out.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+        }
+
     } finally {
       threadPools.foreach(_.shutdown())
     }

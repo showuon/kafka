@@ -33,7 +33,7 @@ public class ChangeLoggingListValueBytesStore extends ChangeLoggingKeyValueBytes
         // if the value is a tombstone, we delete the whole list and thus can save the get call
         if (value == null) {
             log(key, null);
-        } else {
+        } else {lo
             log(key, wrapped().get(key));
         }
     }
