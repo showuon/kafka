@@ -217,6 +217,9 @@ class KafkaServer(
         val (preloadedBrokerMetadataCheckpoint, initialOfflineDirs) =
           BrokerMetadataCheckpoint.getBrokerMetadataAndOfflineDirs(config.logDirs, ignoreMissing = true)
 
+        error("!!! preloadedBrokerMetadataCheckpoint:" + preloadedBrokerMetadataCheckpoint)
+        error("!!! initialOfflineDirs:" + initialOfflineDirs)
+
         if (preloadedBrokerMetadataCheckpoint.version != 0) {
           throw new RuntimeException(s"Found unexpected version in loaded `meta.properties`: " +
             s"$preloadedBrokerMetadataCheckpoint. Zk-based brokers only support version 0 " +

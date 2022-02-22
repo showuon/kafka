@@ -1546,7 +1546,9 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
     */
   def getClusterId: Option[String] = {
     val getDataRequest = GetDataRequest(ClusterIdZNode.path)
+    error("!!! getDataRequest:" + getDataRequest)
     val getDataResponse = retryRequestUntilConnected(getDataRequest)
+    error("!!! getDataResponse:" + getDataResponse)
     getDataResponse.resultCode match {
       case Code.OK => Some(ClusterIdZNode.fromJson(getDataResponse.data))
       case Code.NONODE => None
