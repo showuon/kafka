@@ -396,9 +396,9 @@ class KafkaServer(
             }.toMap
         }
 
-//        val fetchManager = new FetchManager(Time.SYSTEM,
-//          new FetchSessionCache(config.maxIncrementalFetchSessionCacheSlots,
-//            KafkaServer.MIN_INCREMENTAL_FETCH_SESSION_EVICTION_MS))
+        val fetchManager = new FetchManager(Time.SYSTEM,
+          new FetchSessionCache(config.maxIncrementalFetchSessionCacheSlots,
+            KafkaServer.MIN_INCREMENTAL_FETCH_SESSION_EVICTION_MS))
 
         /* start processing requests */
         val zkSupport = ZkSupport(adminManager, kafkaController, zkClient, forwardingManager, metadataCache)
