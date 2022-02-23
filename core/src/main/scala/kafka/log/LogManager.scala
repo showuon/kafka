@@ -311,6 +311,11 @@ class LogManager(logDirs: Seq[File],
    */
   private[log] def loadLogs(defaultConfig: LogConfig, topicConfigOverrides: Map[String, LogConfig]): Unit = {
     info(s"Loading logs from log dirs $liveLogDirs")
+    val elements = Thread.currentThread.getStackTrace
+    for (i <- 1 until elements.length) {
+      val s = elements(i)
+      info("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+    }
     val startMs = time.hiResClockMs()
     val threadPools = ArrayBuffer.empty[ExecutorService]
     val offlineDirs = mutable.Set.empty[(String, IOException)]
