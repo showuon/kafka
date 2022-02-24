@@ -277,22 +277,22 @@ class KafkaServer(
         tokenCache = new DelegationTokenCache(ScramMechanism.mechanismNames)
         credentialProvider = new CredentialProvider(ScramMechanism.mechanismNames, tokenCache)
 
-//        clientToControllerChannelManager = BrokerToControllerChannelManager(
-//          controllerNodeProvider = MetadataCacheControllerNodeProvider(config, metadataCache),
-//          time = time,
-//          metrics = metrics,
-//          config = config,
-//          channelName = "forwarding",
-//          threadNamePrefix = threadNamePrefix,
-//          retryTimeoutMs = config.requestTimeoutMs.longValue)
-//        clientToControllerChannelManager.start()
+        clientToControllerChannelManager = BrokerToControllerChannelManager(
+          controllerNodeProvider = MetadataCacheControllerNodeProvider(config, metadataCache),
+          time = time,
+          metrics = metrics,
+          config = config,
+          channelName = "forwarding",
+          threadNamePrefix = threadNamePrefix,
+          retryTimeoutMs = config.requestTimeoutMs.longValue)
+        clientToControllerChannelManager.start()
 
         /* start forwarding manager */
-//        var autoTopicCreationChannel = Option.empty[BrokerToControllerChannelManager]
-//        if (enableForwarding) {
-//          this.forwardingManager = Some(ForwardingManager(clientToControllerChannelManager))
-//          autoTopicCreationChannel = Some(clientToControllerChannelManager)
-//        }
+        var autoTopicCreationChannel = Option.empty[BrokerToControllerChannelManager]
+        if (enableForwarding) {
+          this.forwardingManager = Some(ForwardingManager(clientToControllerChannelManager))
+          autoTopicCreationChannel = Some(clientToControllerChannelManager)
+        }
 
         val apiVersionManager = ApiVersionManager(
           ListenerType.ZK_BROKER,
@@ -335,7 +335,7 @@ class KafkaServer(
         val brokerEpoch = zkClient.registerBroker(brokerInfo)
 
         // Now that the broker is successfully registered, checkpoint its metadata
-        checkpointBrokerMetadata(ZkMetaProperties(clusterId, config.brokerId))
+//        checkpointBrokerMetadata(ZkMetaProperties(clusterId, config.brokerId))
 
         /* start token manager */
         tokenManager = new DelegationTokenManager(config, tokenCache, time , zkClient)
@@ -349,38 +349,38 @@ class KafkaServer(
 
         /* start group coordinator */
         // Hardcode Time.SYSTEM for now as some Streams tests fail otherwise, it would be good to fix the underlying issue
-//        groupCoordinator = GroupCoordinator(config, replicaManager, Time.SYSTEM, metrics)
-//        groupCoordinator.startup(() => zkClient.getTopicPartitionCount(Topic.GROUP_METADATA_TOPIC_NAME).getOrElse(config.offsetsTopicPartitions))
+        groupCoordinator = GroupCoordinator(config, replicaManager, Time.SYSTEM, metrics)
+        groupCoordinator.startup(() => zkClient.getTopicPartitionCount(Topic.GROUP_METADATA_TOPIC_NAME).getOrElse(config.offsetsTopicPartitions))
 
         /* create producer ids manager */
-//        val producerIdManager = if (config.interBrokerProtocolVersion.isAllocateProducerIdsSupported) {
-//          ProducerIdManager.rpc(
-//            config.brokerId,
-//            brokerEpochSupplier = () => kafkaController.brokerEpoch,
-//            clientToControllerChannelManager,
-//            config.requestTimeoutMs
-//          )
-//        } else {
-//          ProducerIdManager.zk(config.brokerId, zkClient)
-//        }
-//        /* start transaction coordinator, with a separate background thread scheduler for transaction expiration and log loading */
-//        // Hardcode Time.SYSTEM for now as some Streams tests fail otherwise, it would be good to fix the underlying issue
-//        transactionCoordinator = TransactionCoordinator(config, replicaManager, new KafkaScheduler(threads = 1, threadNamePrefix = "transaction-log-manager-"),
-//          () => producerIdManager, metrics, metadataCache, Time.SYSTEM)
-//        transactionCoordinator.startup(
-//          () => zkClient.getTopicPartitionCount(Topic.TRANSACTION_STATE_TOPIC_NAME).getOrElse(config.transactionTopicPartitions))
+        val producerIdManager = if (config.interBrokerProtocolVersion.isAllocateProducerIdsSupported) {
+          ProducerIdManager.rpc(
+            config.brokerId,
+            brokerEpochSupplier = () => kafkaController.brokerEpoch,
+            clientToControllerChannelManager,
+            config.requestTimeoutMs
+          )
+        } else {
+          ProducerIdManager.zk(config.brokerId, zkClient)
+        }
+        /* start transaction coordinator, with a separate background thread scheduler for transaction expiration and log loading */
+        // Hardcode Time.SYSTEM for now as some Streams tests fail otherwise, it would be good to fix the underlying issue
+        transactionCoordinator = TransactionCoordinator(config, replicaManager, new KafkaScheduler(threads = 1, threadNamePrefix = "transaction-log-manager-"),
+          () => producerIdManager, metrics, metadataCache, Time.SYSTEM)
+        transactionCoordinator.startup(
+          () => zkClient.getTopicPartitionCount(Topic.TRANSACTION_STATE_TOPIC_NAME).getOrElse(config.transactionTopicPartitions))
 
         /* start auto topic creation manager */
-//        this.autoTopicCreationManager = AutoTopicCreationManager(
-//          config,
-//          metadataCache,
-//          threadNamePrefix,
-//          autoTopicCreationChannel,
-//          Some(adminManager),
-//          Some(kafkaController),
-//          groupCoordinator,
-//          transactionCoordinator
-//        )
+        this.autoTopicCreationManager = AutoTopicCreationManager(
+          config,
+          metadataCache,
+          threadNamePrefix,
+          autoTopicCreationChannel,
+          Some(adminManager),
+          Some(kafkaController),
+          groupCoordinator,
+          transactionCoordinator
+        )
 
         /* Get the authorizer and initialize it if one is specified.*/
         authorizer = config.authorizer
@@ -835,12 +835,12 @@ class KafkaServer(
    *
    * @param brokerMetadata
    */
-  private def checkpointBrokerMetadata(brokerMetadata: ZkMetaProperties) = {
-    for (logDir <- config.logDirs if logManager.isLogDirOnline(new File(logDir).getAbsolutePath)) {
-      val checkpoint = brokerMetadataCheckpoints(logDir)
-      checkpoint.write(brokerMetadata.toProperties)
-    }
-  }
+//  private def checkpointBrokerMetadata(brokerMetadata: ZkMetaProperties) = {
+//    for (logDir <- config.logDirs if logManager.isLogDirOnline(new File(logDir).getAbsolutePath)) {
+//      val checkpoint = brokerMetadataCheckpoints(logDir)
+//      checkpoint.write(brokerMetadata.toProperties)
+//    }
+//  }
 
   /**
    * Generates new brokerId if enabled or reads from meta.properties based on following conditions
