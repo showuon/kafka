@@ -1168,7 +1168,7 @@ class LogManager(logDirs: Seq[File],
     try {
       deletableLogs.foreach {
         case (topicPartition, log) =>
-          debug(s"Garbage collecting '${log.name}'")
+          info(s"!!! Garbage collecting '${log.name}'")
           total += log.deleteOldSegments()
 
           val futureLog = futureLogs.get(topicPartition)

@@ -139,7 +139,7 @@ public class PurgeRepartitionTopicIntegrationTest {
                 for (final LogDirDescription partitionInfo : logDirInfo) {
                     final ReplicaInfo replicaInfo =
                         partitionInfo.replicaInfos().get(new TopicPartition(REPARTITION_TOPIC, 0));
-                    System.err.print(" size:" + replicaInfo.size());
+                    System.out.println("!!! size:" + replicaInfo.size());
                     if (replicaInfo != null && verifier.verify(replicaInfo.size())) {
                         return true;
                     }
@@ -208,17 +208,17 @@ public class PurgeRepartitionTopicIntegrationTest {
         TestUtils.waitForCondition(new RepartitionTopicCreatedWithExpectedConfigs(), 60000,
                 "Repartition topic " + REPARTITION_TOPIC + " not created with the expected configs after 60000 ms.");
 
-        System.err.println(">0");
+        System.out.println("!!! >0");
         TestUtils.waitForCondition(
-            new RepartitionTopicVerified(currentSize -> currentSize > 0),
+            new RepartitionTopicVerified(currentSize -> currentSize > PURGE_SEGMENT_BYTES),
             60000,
             "Repartition topic " + REPARTITION_TOPIC + " not received data after 60000 ms."
         );
 
-        System.err.println("<");
+        System.out.println("!!! <");
         // we need long enough timeout to by-pass the log manager's InitialTaskDelayMs, which is hard-coded on server side
         TestUtils.waitForCondition(
-            new RepartitionTopicVerified(currentSize -> currentSize <= PURGE_SEGMENT_BYTES),
+            new RepartitionTopicVerified(currentSize -> currentSize < PURGE_SEGMENT_BYTES),
             60000,
             "Repartition topic " + REPARTITION_TOPIC + " not purged data after 60000 ms."
         );

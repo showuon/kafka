@@ -1210,13 +1210,14 @@ public class TaskManager {
     }
 
     void maybePurgeCommittedRecords() {
+        log.error("!!! maybePurgeCommittedRecords");
         // we do not check any possible exceptions since none of them are fatal
         // that should cause the application to fail, and we will try delete with
         // newer offsets anyways.
         if (deleteRecordsResult == null || deleteRecordsResult.all().isDone()) {
 
             if (deleteRecordsResult != null && deleteRecordsResult.all().isCompletedExceptionally()) {
-                log.debug("Previous delete-records request has failed: {}. Try sending the new request now",
+                log.error("!!! Previous delete-records request has failed: {}. Try sending the new request now",
                           deleteRecordsResult.lowWatermarks());
             }
 
@@ -1226,9 +1227,10 @@ public class TaskManager {
                     recordsToDelete.put(entry.getKey(), RecordsToDelete.beforeOffset(entry.getValue()));
                 }
             }
+            log.error("!!! recordsToDelete:" + recordsToDelete);
             if (!recordsToDelete.isEmpty()) {
                 deleteRecordsResult = adminClient.deleteRecords(recordsToDelete);
-                log.trace("Sent delete-records request: {}", recordsToDelete);
+                log.error("!!! Sent delete-records request: {}", recordsToDelete);
             }
         }
     }
