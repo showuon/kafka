@@ -2114,7 +2114,9 @@ class KafkaApis(val requestChannel: RequestChannel,
   }
 
   def handleDeleteRecordsRequest(request: RequestChannel.Request): Unit = {
+
     val deleteRecordsRequest = request.body[DeleteRecordsRequest]
+    error("!!! handleDeleteRecordsRequest:" + deleteRecordsRequest)
 
     val unauthorizedTopicResponses = mutable.Map[TopicPartition, DeleteRecordsPartitionResult]()
     val nonExistingTopicResponses = mutable.Map[TopicPartition, DeleteRecordsPartitionResult]()
@@ -2142,6 +2144,7 @@ class KafkaApis(val requestChannel: RequestChannel,
 
     // the callback for sending a DeleteRecordsResponse
     def sendResponseCallback(authorizedTopicResponses: Map[TopicPartition, DeleteRecordsPartitionResult]): Unit = {
+      error("!!! sendResponseCallback:" + authorizedTopicResponses)
       val mergedResponseStatus = authorizedTopicResponses ++ unauthorizedTopicResponses ++ nonExistingTopicResponses
       mergedResponseStatus.forKeyValue { (topicPartition, status) =>
         if (status.errorCode != Errors.NONE.code) {
@@ -2168,6 +2171,8 @@ class KafkaApis(val requestChannel: RequestChannel,
           }
           }.toList.asJava.iterator()))))
     }
+
+    error("!!! authorizedForDeleteTopicOffsets:" + authorizedForDeleteTopicOffsets)
 
     if (authorizedForDeleteTopicOffsets.isEmpty)
       sendResponseCallback(Map.empty)
