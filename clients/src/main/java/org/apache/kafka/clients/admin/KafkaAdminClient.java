@@ -3007,6 +3007,7 @@ public class KafkaAdminClient extends AdminClient {
                         @Override
                         void handleResponse(AbstractResponse abstractResponse) {
                             DeleteRecordsResponse response = (DeleteRecordsResponse) abstractResponse;
+                            log.error("!!! response:" + response);
                             for (DeleteRecordsTopicResult topicResult: response.data().topics()) {
                                 for (DeleteRecordsResponseData.DeleteRecordsPartitionResult partitionResult : topicResult.partitions()) {
                                     KafkaFutureImpl<DeletedRecords> future = futures.get(new TopicPartition(topicResult.name(), partitionResult.partitionIndex()));
