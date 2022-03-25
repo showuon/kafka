@@ -525,6 +525,8 @@ public class StreamThread extends Thread {
             .getInt(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG);
         this.commitTimeMs = config.getLong(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG);
         this.purgeTimeMs = config.getLong(StreamsConfig.REPARTITION_PURGE_INTERVAL_MS_CONFIG);
+        log.error("!!! purgeTimeMs:" + purgeTimeMs);
+        log.error("!!! commitTimeMs:" + commitTimeMs);
 
         this.numIterations = 1;
         this.eosEnabled = eosEnabled(config);
@@ -1100,6 +1102,9 @@ public class StreamThread extends Thread {
                     .filter(t -> t.state() == Task.State.RUNNING || t.state() == Task.State.RESTORING)
                     .collect(Collectors.toSet())
             );
+            if (committed > 0) {
+                log.error("!!! committed:" + committed);
+            }
 
             if (committed > 0 && (now - lastPurgeMs) > purgeTimeMs) {
                 // try to purge the committed records for repartition topics if possible
