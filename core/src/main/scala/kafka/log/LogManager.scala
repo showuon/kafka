@@ -368,14 +368,14 @@ class LogManager(logDirs: Seq[File],
           Files.createDirectories(logDir.toPath)
           val topicPartition = UnifiedLog.parseTopicPartitionName(logDir)
           val segments = new LogSegments(topicPartition)
-          numTotalLogs += segments.values(0, Long.MaxValue).size
+          totalSegments += segments.values(0, Long.MaxValue).size
           val runnable: Runnable = () => {
             try {
               info(s"Loading log $logDir")
 
               val logLoadStartMs = time.hiResClockMs()
               val log = loadLog(logDir, hadCleanShutdown, recoveryPoints, logStartOffsets,
-                defaultConfig, topicConfigOverrides, numTotalLogs)
+                defaultConfig, topicConfigOverrides, totalSegments)
               val logLoadDurationMs = time.hiResClockMs() - logLoadStartMs
               val currentNumLoaded = numLogsLoaded.incrementAndGet()
 

@@ -413,7 +413,7 @@ class LogLoader(
     // If we have the clean shutdown marker, skip recovery.
     if (!hadCleanShutdown) {
       val unflushedValues = segments.values(recoveryPointCheckpoint, Long.MaxValue)
-      val unflushedSize = unflushedValues.size
+//      val unflushedSize = unflushedValues.size
       info(s"total segments ${total}")
       val unflushed = unflushedValues.iterator
       var truncated = false
