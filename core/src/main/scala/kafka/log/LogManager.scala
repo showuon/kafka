@@ -261,7 +261,8 @@ class LogManager(logDirs: Seq[File],
                            recoveryPoints: Map[TopicPartition, Long],
                            logStartOffsets: Map[TopicPartition, Long],
                            defaultConfig: LogConfig,
-                           topicConfigOverrides: Map[String, LogConfig]): UnifiedLog = {
+                           topicConfigOverrides: Map[String, LogConfig],
+                           total: Int): UnifiedLog = {
     val topicPartition = UnifiedLog.parseTopicPartitionName(logDir)
     val config = topicConfigOverrides.getOrElse(topicPartition.topic, defaultConfig)
     val logRecoveryPoint = recoveryPoints.getOrElse(topicPartition, 0L)
@@ -281,7 +282,8 @@ class LogManager(logDirs: Seq[File],
       logDirFailureChannel = logDirFailureChannel,
       lastShutdownClean = hadCleanShutdown,
       topicId = None,
-      keepPartitionMetadataFile = keepPartitionMetadataFile)
+      keepPartitionMetadataFile = keepPartitionMetadataFile,
+      total = total)
 
     if (logDir.getName.endsWith(UnifiedLog.DeleteDirSuffix)) {
       addLogToBeDeleted(log)
@@ -360,14 +362,20 @@ class LogManager(logDirs: Seq[File],
         val numLogsLoaded = new AtomicInteger(0)
         numTotalLogs += logsToLoad.length
 
+        val totalSegments = 0
         val jobsForDir = logsToLoad.map { logDir =>
+          // create the log directory if it doesn't exist
+          Files.createDirectories(logDir.toPath)
+          val topicPartition = UnifiedLog.parseTopicPartitionName(logDir)
+          val segments = new LogSegments(topicPartition)
+          numTotalLogs += segments.values(0, Long.MaxValue).size
           val runnable: Runnable = () => {
             try {
               info(s"Loading log $logDir")
 
               val logLoadStartMs = time.hiResClockMs()
               val log = loadLog(logDir, hadCleanShutdown, recoveryPoints, logStartOffsets,
-                defaultConfig, topicConfigOverrides)
+                defaultConfig, topicConfigOverrides, numTotalLogs)
               val logLoadDurationMs = time.hiResClockMs() - logLoadStartMs
               val currentNumLoaded = numLogsLoaded.incrementAndGet()
 
