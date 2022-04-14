@@ -385,11 +385,11 @@ class LogLoader(
    */
   private[log] def recoverLog(): (Long, Long) = {
     info("!!! recoveryLog")
-    val elements = Thread.currentThread.getStackTrace
-    for (i <- 1 until elements.length) {
-      val s = elements(i)
-      info("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
-    }
+//    val elements = Thread.currentThread.getStackTrace
+//    for (i <- 1 until elements.length) {
+//      val s = elements(i)
+//      info("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+//    }
 
     /** return the log end offset if valid */
     def deleteSegmentsIfLogStartGreaterThanLogEnd(): Option[Long] = {
