@@ -78,7 +78,7 @@ class LogLoader(
   recoveryPointCheckpoint: Long,
   leaderEpochCache: Option[LeaderEpochFileCache],
   producerStateManager: ProducerStateManager,
-  total: Int
+  total: Int = 0
 ) extends Logging {
   logIdent = s"[LogLoader partition=$topicPartition, dir=${dir.getParent}, thread=${Thread.currentThread().getId}] "
 
