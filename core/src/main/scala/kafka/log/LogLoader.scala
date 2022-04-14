@@ -79,7 +79,7 @@ class LogLoader(
   leaderEpochCache: Option[LeaderEpochFileCache],
   producerStateManager: ProducerStateManager
 ) extends Logging {
-  logIdent = s"[LogLoader partition=$topicPartition, dir=${dir.getParent}, thread=${Thread.currentThread().getName}] "
+  logIdent = s"[LogLoader partition=$topicPartition, dir=${dir.getParent}, thread=${Thread.currentThread().getId}] "
 
   /**
    * Load the log segments from the log files on disk, and returns the components of the loaded log.
