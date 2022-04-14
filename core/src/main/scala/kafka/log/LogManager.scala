@@ -362,7 +362,7 @@ class LogManager(logDirs: Seq[File],
         val numLogsLoaded = new AtomicInteger(0)
         numTotalLogs += logsToLoad.length
 
-        val totalSegments = 0
+        var totalSegments = 0
         val jobsForDir = logsToLoad.map { logDir =>
           // create the log directory if it doesn't exist
           Files.createDirectories(logDir.toPath)
