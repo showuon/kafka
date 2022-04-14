@@ -137,7 +137,7 @@ class LogManager(logDirs: Seq[File],
       Map("logDirectory" -> dir.getAbsolutePath))
   }
 
-  newGauge("LogRecoveryRemaining", () => offlineLogDirs.size)
+  newGauge("LogRecoveryRemaining", () => totalSegments.get())
 
   /**
    * Create and check validity of the given directories that are not in the given offline directories, specifically:
