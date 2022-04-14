@@ -89,6 +89,7 @@ class LogManager(logDirs: Seq[File],
   private val _liveLogDirs: ConcurrentLinkedQueue[File] = createAndValidateLogDirs(logDirs, initialOfflineDirs)
   @volatile private var _currentDefaultConfig = initialDefaultConfig
   @volatile private var numRecoveryThreadsPerDataDir = recoveryThreadsPerDataDir
+  var totalSegments = new AtomicInteger(0)
 
   // This map contains all partitions whose logs are getting loaded and initialized. If log configuration
   // of these partitions get updated at the same time, the corresponding entry in this map is set to "true",
@@ -129,11 +130,14 @@ class LogManager(logDirs: Seq[File],
 
   newGauge("OfflineLogDirectoryCount", () => offlineLogDirs.size)
 
+
   for (dir <- logDirs) {
     newGauge("LogDirectoryOffline",
       () => if (_liveLogDirs.contains(dir)) 0 else 1,
       Map("logDirectory" -> dir.getAbsolutePath))
   }
+
+  newGauge("LogRecoveryRemaining", () => offlineLogDirs.size)
 
   /**
    * Create and check validity of the given directories that are not in the given offline directories, specifically:
@@ -262,7 +266,7 @@ class LogManager(logDirs: Seq[File],
                            logStartOffsets: Map[TopicPartition, Long],
                            defaultConfig: LogConfig,
                            topicConfigOverrides: Map[String, LogConfig],
-                           total: Int): UnifiedLog = {
+                           remaining: AtomicInteger): UnifiedLog = {
     val topicPartition = UnifiedLog.parseTopicPartitionName(logDir)
     val config = topicConfigOverrides.getOrElse(topicPartition.topic, defaultConfig)
     val logRecoveryPoint = recoveryPoints.getOrElse(topicPartition, 0L)
@@ -283,7 +287,7 @@ class LogManager(logDirs: Seq[File],
       lastShutdownClean = hadCleanShutdown,
       topicId = None,
       keepPartitionMetadataFile = keepPartitionMetadataFile,
-      total = total)
+      remaining = remaining)
 
     if (logDir.getName.endsWith(UnifiedLog.DeleteDirSuffix)) {
       addLogToBeDeleted(log)
@@ -362,14 +366,14 @@ class LogManager(logDirs: Seq[File],
         val numLogsLoaded = new AtomicInteger(0)
         numTotalLogs += logsToLoad.length
 
-        var totalSegments = 0
+
         val jobsForDir = logsToLoad.map { logDir =>
           // create the log directory if it doesn't exist
-          Files.createDirectories(logDir.toPath)
-          val topicPartition = UnifiedLog.parseTopicPartitionName(logDir)
-          val segments = new LogSegments(topicPartition)
-          info("!!! size:" + segments.values(0, Long.MaxValue).size)
-          totalSegments += segments.values(0, Long.MaxValue).size
+//          Files.createDirectories(logDir.toPath)
+//          val topicPartition = UnifiedLog.parseTopicPartitionName(logDir)
+//          val segments = new LogSegments(topicPartition)
+//          info("!!! size:" + segments.values(0, Long.MaxValue).size)
+//          totalSegments += segments.values(0, Long.MaxValue).size
           val runnable: Runnable = () => {
             try {
               info(s"Loading log $logDir")

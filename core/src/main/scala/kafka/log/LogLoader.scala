@@ -78,7 +78,7 @@ class LogLoader(
   recoveryPointCheckpoint: Long,
   leaderEpochCache: Option[LeaderEpochFileCache],
   producerStateManager: ProducerStateManager,
-  total: Int = 0
+  remaining: AtomicInteger = new AtomicInteger(0)
 ) extends Logging {
   logIdent = s"[LogLoader partition=$topicPartition, dir=${dir.getParent}, thread=${Thread.currentThread().getId}] "
 
@@ -413,16 +413,17 @@ class LogLoader(
     // If we have the clean shutdown marker, skip recovery.
     if (!hadCleanShutdown) {
       val unflushedValues = segments.values(recoveryPointCheckpoint, Long.MaxValue)
-//      val unflushedSize = unflushedValues.size
-      info(s"total segments ${total}")
+      remaining.set(unflushedValues.size)
+      info(s"!!! total segments ${remaining}")
       val unflushed = unflushedValues.iterator
       var truncated = false
       val numSegmentsRecovered = new AtomicInteger(0)
 
       while (unflushed.hasNext && !truncated) {
         val segment = unflushed.next()
+        remaining.decrementAndGet()
 
-        info(s"Recovering unflushed segment ${segment.baseOffset}, ${numSegmentsRecovered.getAndIncrement()}/$total")
+        info(s"Recovering unflushed segment ${segment.baseOffset}, ${numSegmentsRecovered.getAndIncrement()}")
         val truncatedBytes =
           try {
             recoverSegment(segment)

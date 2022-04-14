@@ -42,6 +42,7 @@ import org.apache.kafka.common.requests.ProduceResponse.RecordError
 import org.apache.kafka.common.utils.{Time, Utils}
 import org.apache.kafka.common.{InvalidRecordException, KafkaException, TopicPartition, Uuid}
 
+import java.util.concurrent.atomic.AtomicInteger
 import scala.annotation.nowarn
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable.ListBuffer
@@ -1787,7 +1788,7 @@ object UnifiedLog extends Logging {
             lastShutdownClean: Boolean = true,
             topicId: Option[Uuid],
             keepPartitionMetadataFile: Boolean,
-            total: Int = 0): UnifiedLog = {
+            remaining: AtomicInteger = new AtomicInteger(0)): UnifiedLog = {
     // create the log directory if it doesn't exist
     Files.createDirectories(dir.toPath)
     val topicPartition = UnifiedLog.parseTopicPartitionName(dir)
@@ -1813,7 +1814,7 @@ object UnifiedLog extends Logging {
       recoveryPoint,
       leaderEpochCache,
       producerStateManager,
-      total
+      remaining
     ).load()
     val localLog = new LocalLog(dir, config, segments, offsets.recoveryPoint,
       offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel)
