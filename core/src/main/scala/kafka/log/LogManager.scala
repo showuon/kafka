@@ -363,7 +363,7 @@ class LogManager(logDirs: Seq[File],
         val jobsForDir = logsToLoad.map { logDir =>
           val runnable: Runnable = () => {
             try {
-              debug(s"Loading log $logDir")
+              info(s"Loading log $logDir")
 
               val logLoadStartMs = time.hiResClockMs()
               val log = loadLog(logDir, hadCleanShutdown, recoveryPoints, logStartOffsets,

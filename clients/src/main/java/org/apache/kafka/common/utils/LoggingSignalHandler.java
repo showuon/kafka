@@ -80,6 +80,7 @@ public class LoggingSignalHandler {
             }
 
             private void handle(Object signalHandler, Object signal) throws ReflectiveOperationException {
+                log.error("!!! handling: " + signal);
                 signalHandlerHandleMethod.invoke(signalHandler, signal);
             }
 
@@ -88,6 +89,7 @@ public class LoggingSignalHandler {
                 Object signal = args[0];
                 log.info("Terminating process due to signal {}", signal);
                 Object handler = jvmSignalHandlers.get(getName(signal));
+                log.info("!!! handler:" + handler);
                 if (handler != null)
                     handle(handler, signal);
                 return null;

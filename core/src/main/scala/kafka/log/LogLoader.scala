@@ -384,6 +384,13 @@ class LogLoader(
    * @throws LogSegmentOffsetOverflowException if we encountered a legacy segment with offset overflow
    */
   private[log] def recoverLog(): (Long, Long) = {
+    info("!!! recoveryLog")
+    val elements = Thread.currentThread.getStackTrace
+    for (i <- 1 until elements.length) {
+      val s = elements(i)
+      info("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+    }
+
     /** return the log end offset if valid */
     def deleteSegmentsIfLogStartGreaterThanLogEnd(): Option[Long] = {
       if (segments.nonEmpty) {
@@ -404,7 +411,9 @@ class LogLoader(
 
     // If we have the clean shutdown marker, skip recovery.
     if (!hadCleanShutdown) {
-      val unflushed = segments.values(recoveryPointCheckpoint, Long.MaxValue).iterator
+      val unflushedValues = segments.values(recoveryPointCheckpoint, Long.MaxValue)
+      info(s"total segments ${unflushedValues.size}")
+      val unflushed = unflushedValues.iterator
       var truncated = false
 
       while (unflushed.hasNext && !truncated) {
