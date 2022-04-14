@@ -321,7 +321,7 @@ class LogManager(logDirs: Seq[File],
       val logDirAbsolutePath = dir.getAbsolutePath
       var hadCleanShutdown: Boolean = false
       try {
-        val pool = Executors.newFixedThreadPool(numRecoveryThreadsPerDataDir,
+        val pool = Executors.newFixedThreadPool(2,
           KafkaThread.nonDaemon(s"log-recovery-$logDirAbsolutePath", _))
         threadPools.append(pool)
 
@@ -382,6 +382,7 @@ class LogManager(logDirs: Seq[File],
           runnable
         }
 
+        info("!!! log size:" + jobsForDir.size)
         jobs += jobsForDir.map(pool.submit)
       } catch {
         case e: IOException =>
