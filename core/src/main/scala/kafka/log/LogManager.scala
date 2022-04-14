@@ -368,6 +368,7 @@ class LogManager(logDirs: Seq[File],
           Files.createDirectories(logDir.toPath)
           val topicPartition = UnifiedLog.parseTopicPartitionName(logDir)
           val segments = new LogSegments(topicPartition)
+          info("!!! size:" + segments.values(0, Long.MaxValue).size)
           totalSegments += segments.values(0, Long.MaxValue).size
           val runnable: Runnable = () => {
             try {
