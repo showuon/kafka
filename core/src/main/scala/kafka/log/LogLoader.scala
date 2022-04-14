@@ -19,7 +19,6 @@ package kafka.log
 
 import java.io.{File, IOException}
 import java.nio.file.{Files, NoSuchFileException}
-
 import kafka.common.LogSegmentOffsetOverflowException
 import kafka.log.UnifiedLog.{CleanedFileSuffix, DeletedFileSuffix, SwapFileSuffix, isIndexFile, isLogFile, offsetFromFile}
 import kafka.server.{LogDirFailureChannel, LogOffsetMetadata}
@@ -29,6 +28,7 @@ import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.errors.InvalidOffsetException
 import org.apache.kafka.common.utils.Time
 
+import java.util.concurrent.atomic.AtomicInteger
 import scala.collection.{Set, mutable}
 
 case class LoadedLogOffsets(logStartOffset: Long,
@@ -412,13 +412,16 @@ class LogLoader(
     // If we have the clean shutdown marker, skip recovery.
     if (!hadCleanShutdown) {
       val unflushedValues = segments.values(recoveryPointCheckpoint, Long.MaxValue)
+      val unflushedSize = unflushedValues.size
       info(s"total segments ${unflushedValues.size}")
       val unflushed = unflushedValues.iterator
       var truncated = false
+      val numSegmentsRecovered = new AtomicInteger(0)
 
       while (unflushed.hasNext && !truncated) {
         val segment = unflushed.next()
-        info(s"Recovering unflushed segment ${segment.baseOffset}")
+
+        info(s"Recovering unflushed segment ${segment.baseOffset}, ${numSegmentsRecovered.getAndIncrement()}/$unflushedSize")
         val truncatedBytes =
           try {
             recoverSegment(segment)
