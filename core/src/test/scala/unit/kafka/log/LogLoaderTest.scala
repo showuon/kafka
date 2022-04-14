@@ -104,7 +104,7 @@ class LogLoaderTest {
 
         override def loadLog(logDir: File, hadCleanShutdown: Boolean, recoveryPoints: Map[TopicPartition, Long],
                              logStartOffsets: Map[TopicPartition, Long], defaultConfig: LogConfig,
-                             topicConfigs: Map[String, LogConfig], total:Int = 0): UnifiedLog = {
+                             topicConfigs: Map[String, LogConfig], total:Int): UnifiedLog = {
           if (simulateError.hasError) {
             throw new RuntimeException("Simulated error")
           }
