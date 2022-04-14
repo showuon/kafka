@@ -390,7 +390,7 @@ class LogManager(logDirs: Seq[File],
           runnable
         }
 
-        info("!!! log size:" + jobsForDir.size)
+        info("!!! log size:" + totalSegments)
         jobs += jobsForDir.map(pool.submit)
       } catch {
         case e: IOException =>
