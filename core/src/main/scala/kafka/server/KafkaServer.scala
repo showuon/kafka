@@ -462,7 +462,7 @@ class KafkaServer(
     }
     catch {
       case e: Throwable =>
-        fatal("Fatal error during KafkaServer startup. Prepare to shutdown", e)
+        fatal("!!! Fatal error during KafkaServer startup. Prepare to shutdown", e)
         isStartingUp.set(false)
         shutdown()
         throw e

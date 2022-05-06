@@ -377,7 +377,7 @@ class LogManager(logDirs: Seq[File],
             } catch {
               case e: IOException =>
                 offlineDirs.add((logDirAbsolutePath, e))
-                error(s"Error while loading log dir $logDirAbsolutePath", e)
+                error(s"!!! Error while loading log dir $logDirAbsolutePath", e)
             }
           }
           runnable
@@ -387,7 +387,7 @@ class LogManager(logDirs: Seq[File],
       } catch {
         case e: IOException =>
           offlineDirs.add((logDirAbsolutePath, e))
-          error(s"Error while loading log dir $logDirAbsolutePath", e)
+          error(s"!!! 2 Error while loading log dir $logDirAbsolutePath", e)
       }
     }
 
@@ -401,8 +401,8 @@ class LogManager(logDirs: Seq[File],
       }
     } catch {
       case e: ExecutionException =>
-        error(s"There was an error in one of the threads during logs loading: ${e.getCause}")
-        throw e.getCause
+        error(s"!!! There was an error in one of the threads during logs loading: ${e}")
+        throw e
     } finally {
       threadPools.foreach(_.shutdown())
     }

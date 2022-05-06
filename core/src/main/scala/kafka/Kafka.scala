@@ -100,7 +100,7 @@ object Kafka extends Logging {
         try server.shutdown()
         catch {
           case _: Throwable =>
-            fatal("Halting Kafka.")
+            fatal("!!! Halting Kafka.")
             // Calling exit() can lead to deadlock as exit() can be called multiple times. Force exit.
             Exit.halt(1)
         }
@@ -110,7 +110,7 @@ object Kafka extends Logging {
       catch {
         case e: Throwable =>
           // KafkaServer.startup() calls shutdown() in case of exceptions, so we invoke `exit` to set the status code
-          fatal("Exiting Kafka due to fatal exception during startup.", e)
+          fatal("!!! Exiting Kafka due to fatal exception during startup.", e)
           Exit.exit(1)
       }
 
