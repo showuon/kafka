@@ -550,8 +550,8 @@ class LogManager(logDirs: Seq[File],
           checkpointLogStartOffsetsInDir(dir, logs)
 
           // mark that the shutdown was clean by creating marker file
-          debug(s"Writing clean shutdown marker at $dir")
-          CoreUtils.swallow(Files.createFile(new File(dir, LogLoader.CleanShutdownFile).toPath), this)
+          error(s"!!! Writing clean shutdown marker at $dir")
+          Files.createFile(new File(dir, LogLoader.CleanShutdownFile).toPath)
         }
       }
     } finally {
