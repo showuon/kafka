@@ -375,7 +375,7 @@ class LogManager(logDirs: Seq[File],
               info(s"Completed load of $log with ${log.numberOfSegments} segments in ${logLoadDurationMs}ms " +
                 s"($currentNumLoaded/${logsToLoad.length} loaded in $logDirAbsolutePath)")
             } catch {
-              case e: IOException =>
+              case e: IOException | KafkaStorageException =>
                 offlineDirs.add((logDirAbsolutePath, e))
                 error(s"!!! Error while loading log dir $logDirAbsolutePath", e)
             }
