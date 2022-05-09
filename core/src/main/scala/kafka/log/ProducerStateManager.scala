@@ -752,7 +752,7 @@ class ProducerStateManager(
       val snapshotFile = SnapshotFile(UnifiedLog.producerSnapshotFile(_logDir, lastMapOffset))
       val start = time.hiResClockMs()
       writeSnapshot(snapshotFile.file, producers)
-      info(s"Wrote producer snapshot at offset $lastMapOffset with ${producers.size} producer ids in ${time.hiResClockMs() - start} ms.")
+      info(s"!!! ${snapshotFile.file.getAbsoluteFile} Wrote producer snapshot at offset $lastMapOffset with ${producers.size} producer ids in ${time.hiResClockMs() - start} ms.")
 
       snapshots.put(snapshotFile.offset, snapshotFile)
 

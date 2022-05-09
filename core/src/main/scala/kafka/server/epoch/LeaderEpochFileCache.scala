@@ -288,6 +288,7 @@ class LeaderEpochFileCache(topicPartition: TopicPartition,
   def epochEntries: Seq[EpochEntry] = epochs.values.asScala.toSeq
 
   private def flush(): Unit = {
+    info(s"!!! leaderEpochFile-${topicPartition} writing")
     checkpoint.write(epochs.values.asScala)
   }
 
