@@ -230,10 +230,8 @@ class LogLoaderTest {
       val (logManager, runLoadLogs) = initializeLogManagerForSimulatingErrorTest(true, ErrorTypes.KafkaStorageExceptionWithIOExceptionCause, logDirFailureChannel)
 
       // Simulate Kafka storage error with IOException cause
+      // the log dir will turn offline before KafkaStorageException thrown
       assertDoesNotThrow(runLoadLogs, "KafkaStorageException with IOException cause should be caught and handled")
-
-      // the log dir should turn to offline
-      assertTrue(logDirFailureChannel.hasOfflineLogDir(logDir.getAbsolutePath), "the log dir should turn offline after KafkaStorageException thrown with IOException cause")
       logManager.shutdown()
     }
 
