@@ -381,10 +381,11 @@ class LogManager(logDirs: Seq[File],
                 s"($currentNumLoaded/${logsToLoad.length} loaded in $logDirAbsolutePath)")
             } catch {
               case e: IOException =>
-                handleIOException(logDirAbsolutePath, e)
+//                handleIOException(logDirAbsolutePath, e)
+                error(s"!!! Don't Error while loading log dir $logDirAbsolutePath", e)
               case e: KafkaStorageException if e.getCause.isInstanceOf[IOException] =>
                 // KafkaStorageException might be thrown, ex: during writing LeaderEpochFileCache
-                error(s"Error while loading log dir $logDirAbsolutePath", e)
+                error(s"!!! Error while loading log dir $logDirAbsolutePath", e)
             }
           }
           runnable
