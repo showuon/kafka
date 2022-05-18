@@ -394,7 +394,9 @@ class LogManager(logDirs: Seq[File],
         jobs += jobsForDir.map(pool.submit)
       } catch {
         case e: IOException =>
+          error(s"!!! 3Don't Error while loading log dir $logDirAbsolutePath", e)
           handleIOException(logDirAbsolutePath, e)
+
       }
     }
 
@@ -408,8 +410,8 @@ class LogManager(logDirs: Seq[File],
       }
     } catch {
       case e: ExecutionException =>
-        error(s"There was an error in one of the threads during logs loading: ${e.getCause}")
-        throw e.getCause
+        error(s"!!! There was an error in one of the threads during logs loading: ${e}")
+        throw e
     } finally {
       threadPools.foreach(_.shutdown())
     }
