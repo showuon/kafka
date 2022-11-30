@@ -276,14 +276,18 @@ public class KafkaAdminClientTest {
     private static final int THROTTLE = 10;
 
     @Test
-    public void testDefaultApiTimeoutAndRequestTimeoutConflicts() {
+    public void testDefaultApiTimeoutAndRequestTimeoutConflicts() throws InterruptedException {
         final AdminClientConfig config = newConfMap(AdminClientConfig.CLIENT_ID_CONFIG, "ccc");//newConfMap(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, "500");
 //        KafkaException exception = assertThrows(KafkaException.class,
 //            () -> KafkaAdminClient.createInternal(config, null));
 //        System.out.println("!!! ex:" + exception.getStackTrace());
 //        assertTrue(exception.getCause() instanceof ConfigException);
 
+        System.out.println("!!! sleeping");
+        Thread.sleep(20000);
+
         KafkaAdminClient.createInternal(config, null);
+        System.out.println("!!! completed");
     }
 
     @Test
