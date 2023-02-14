@@ -96,6 +96,24 @@ public abstract class Type {
          */
         public abstract String documentation();
 
+        public Object read(ByteBuffer buffer) {
+            int size = calculateSize(buffer);
+            if (!validateSize(buffer, size)) {
+                // used for nullable objects
+                return null;
+            }
+            return documentTypeRead(buffer, size);
+        }
+
+        public abstract Object documentTypeRead(ByteBuffer buffer, int size);
+        public int calculateSize(ByteBuffer buffer) {
+            return buffer.remaining();
+        }
+
+        public boolean validateSize(ByteBuffer buffer, int size) {
+            return true;
+        }
+
         @Override
         public String toString() {
             return typeName();
@@ -118,7 +136,7 @@ public abstract class Type {
         }
 
         @Override
-        public Object read(ByteBuffer buffer) {
+        public Object documentTypeRead(ByteBuffer buffer, int size) {
             byte value = buffer.get();
             return value != 0;
         }
@@ -156,7 +174,7 @@ public abstract class Type {
         }
 
         @Override
-        public Object read(ByteBuffer buffer) {
+        public Object documentTypeRead(ByteBuffer buffer, int size) {
             return buffer.get();
         }
 
@@ -191,7 +209,7 @@ public abstract class Type {
         }
 
         @Override
-        public Object read(ByteBuffer buffer) {
+        public Object documentTypeRead(ByteBuffer buffer, int size) {
             return buffer.getShort();
         }
 
@@ -228,7 +246,7 @@ public abstract class Type {
         }
 
         @Override
-        public Object read(ByteBuffer buffer) {
+        public Object documentTypeRead(ByteBuffer buffer, int size) {
             short value = buffer.getShort();
             return Integer.valueOf(Short.toUnsignedInt(value));
         }
@@ -265,7 +283,7 @@ public abstract class Type {
         }
 
         @Override
-        public Object read(ByteBuffer buffer) {
+        public Object documentTypeRead(ByteBuffer buffer, int size) {
             return buffer.getInt();
         }
 
@@ -301,7 +319,7 @@ public abstract class Type {
         }
 
         @Override
-        public Object read(ByteBuffer buffer) {
+        public Object documentTypeRead(ByteBuffer buffer, int size) {
             return ByteUtils.readUnsignedInt(buffer);
         }
 
@@ -337,7 +355,7 @@ public abstract class Type {
         }
 
         @Override
-        public Object read(ByteBuffer buffer) {
+        public Object documentTypeRead(ByteBuffer buffer, int size) {
             return buffer.getLong();
         }
 
@@ -375,7 +393,7 @@ public abstract class Type {
         }
 
         @Override
-        public Object read(ByteBuffer buffer) {
+        public Object documentTypeRead(ByteBuffer buffer, int size) {
             return new Uuid(buffer.getLong(), buffer.getLong());
         }
 
@@ -411,7 +429,7 @@ public abstract class Type {
         }
 
         @Override
-        public Object read(ByteBuffer buffer) {
+        public Object documentTypeRead(ByteBuffer buffer, int size) {
             return ByteUtils.readDouble(buffer);
         }
 
@@ -451,15 +469,24 @@ public abstract class Type {
         }
 
         @Override
-        public String read(ByteBuffer buffer) {
-            short length = buffer.getShort();
+        public String documentTypeRead(ByteBuffer buffer, int length) {
+            String result = Utils.utf8(buffer, length);
+            buffer.position(buffer.position() + length);
+            return result;
+        }
+
+        @Override
+        public int calculateSize(ByteBuffer buffer) {
+            return buffer.getShort();
+        }
+
+        @Override
+        public boolean validateSize(ByteBuffer buffer, int length) {
             if (length < 0)
                 throw new SchemaException("String length " + length + " cannot be negative");
             if (length > buffer.remaining())
                 throw new SchemaException("Error reading string of length " + length + ", only " + buffer.remaining() + " bytes available");
-            String result = Utils.utf8(buffer, length);
-            buffer.position(buffer.position() + length);
-            return result;
+            return true;
         }
 
         @Override
@@ -499,17 +526,26 @@ public abstract class Type {
         }
 
         @Override
-        public String read(ByteBuffer buffer) {
-            int length = ByteUtils.readUnsignedVarint(buffer) - 1;
+        public String documentTypeRead(ByteBuffer buffer, int length) {
+            String result = Utils.utf8(buffer, length);
+            buffer.position(buffer.position() + length);
+            return result;
+        }
+
+        @Override
+        public int calculateSize(ByteBuffer buffer) {
+            return ByteUtils.readUnsignedVarint(buffer) - 1;
+        }
+
+        @Override
+        public boolean validateSize(ByteBuffer buffer, int length) {
             if (length < 0)
                 throw new SchemaException("String length " + length + " cannot be negative");
             if (length > Short.MAX_VALUE)
                 throw new SchemaException("String length " + length + " is larger than the maximum string length.");
             if (length > buffer.remaining())
                 throw new SchemaException("Error reading string of length " + length + ", only " + buffer.remaining() + " bytes available");
-            String result = Utils.utf8(buffer, length);
-            buffer.position(buffer.position() + length);
-            return result;
+            return true;
         }
 
         @Override
@@ -559,15 +595,24 @@ public abstract class Type {
         }
 
         @Override
-        public String read(ByteBuffer buffer) {
-            short length = buffer.getShort();
-            if (length < 0)
-                return null;
-            if (length > buffer.remaining())
-                throw new SchemaException("Error reading string of length " + length + ", only " + buffer.remaining() + " bytes available");
+        public String documentTypeRead(ByteBuffer buffer, int length) {
             String result = Utils.utf8(buffer, length);
             buffer.position(buffer.position() + length);
             return result;
+        }
+
+        @Override
+        public int calculateSize(ByteBuffer buffer) {
+            return buffer.getShort();
+        }
+
+        @Override
+        public boolean validateSize(ByteBuffer buffer, int length) {
+            if (length < 0)
+                return false;
+            if (length > buffer.remaining())
+                throw new SchemaException("Error reading string of length " + length + ", only " + buffer.remaining() + " bytes available");
+            return true;
         }
 
         @Override
@@ -622,19 +667,27 @@ public abstract class Type {
         }
 
         @Override
-        public String read(ByteBuffer buffer) {
-            int length = ByteUtils.readUnsignedVarint(buffer) - 1;
+        public String documentTypeRead(ByteBuffer buffer, int length) {
+            String result = Utils.utf8(buffer, length);
+            buffer.position(buffer.position() + length);
+            return result;
+        }
+
+        @Override
+        public int calculateSize(ByteBuffer buffer) {
+            return ByteUtils.readUnsignedVarint(buffer) - 1;
+        }
+
+        @Override
+        public boolean validateSize(ByteBuffer buffer, int length) {
             if (length < 0) {
-                return null;
+                return false;
             } else if (length > Short.MAX_VALUE) {
                 throw new SchemaException("String length " + length + " is larger than the maximum string length.");
             } else if (length > buffer.remaining()) {
                 throw new SchemaException("Error reading string of length " + length + ", only " + buffer.remaining() + " bytes available");
-            } else {
-                String result = Utils.utf8(buffer, length);
-                buffer.position(buffer.position() + length);
-                return result;
             }
+            return true;
         }
 
         @Override
@@ -681,17 +734,25 @@ public abstract class Type {
         }
 
         @Override
-        public Object read(ByteBuffer buffer) {
-            int size = buffer.getInt();
-            if (size < 0)
-                throw new SchemaException("Bytes size " + size + " cannot be negative");
-            if (size > buffer.remaining())
-                throw new SchemaException("Error reading bytes of size " + size + ", only " + buffer.remaining() + " bytes available");
-
+        public Object documentTypeRead(ByteBuffer buffer, int size) {
             ByteBuffer val = buffer.slice();
             val.limit(size);
             buffer.position(buffer.position() + size);
             return val;
+        }
+
+        @Override
+        public int calculateSize(ByteBuffer buffer) {
+            return buffer.getInt();
+        }
+
+        @Override
+        public boolean validateSize(ByteBuffer buffer, int size) {
+            if (size < 0)
+                throw new SchemaException("Bytes size " + size + " cannot be negative");
+            if (size > buffer.remaining())
+                throw new SchemaException("Error reading bytes of size " + size + ", only " + buffer.remaining() + " bytes available");
+            return true;
         }
 
         @Override
@@ -731,17 +792,25 @@ public abstract class Type {
         }
 
         @Override
-        public Object read(ByteBuffer buffer) {
-            int size = ByteUtils.readUnsignedVarint(buffer) - 1;
-            if (size < 0)
-                throw new SchemaException("Bytes size " + size + " cannot be negative");
-            if (size > buffer.remaining())
-                throw new SchemaException("Error reading bytes of size " + size + ", only " + buffer.remaining() + " bytes available");
-
+        public Object documentTypeRead(ByteBuffer buffer, int size) {
             ByteBuffer val = buffer.slice();
             val.limit(size);
             buffer.position(buffer.position() + size);
             return val;
+        }
+
+        @Override
+        public int calculateSize(ByteBuffer buffer) {
+            return ByteUtils.readUnsignedVarint(buffer) - 1;
+        }
+
+        @Override
+        public boolean validateSize(ByteBuffer buffer, int size) {
+            if (size < 0)
+                throw new SchemaException("Bytes size " + size + " cannot be negative");
+            if (size > buffer.remaining())
+                throw new SchemaException("Error reading bytes of size " + size + ", only " + buffer.remaining() + " bytes available");
+            return true;
         }
 
         @Override
@@ -792,17 +861,25 @@ public abstract class Type {
         }
 
         @Override
-        public Object read(ByteBuffer buffer) {
-            int size = buffer.getInt();
-            if (size < 0)
-                return null;
-            if (size > buffer.remaining())
-                throw new SchemaException("Error reading bytes of size " + size + ", only " + buffer.remaining() + " bytes available");
-
+        public Object documentTypeRead(ByteBuffer buffer, int size) {
             ByteBuffer val = buffer.slice();
             val.limit(size);
             buffer.position(buffer.position() + size);
             return val;
+        }
+
+        @Override
+        public int calculateSize(ByteBuffer buffer) {
+            return buffer.getInt();
+        }
+
+        @Override
+        public boolean validateSize(ByteBuffer buffer, int size) {
+            if (size < 0)
+                return false;
+            if (size > buffer.remaining())
+                throw new SchemaException("Error reading bytes of size " + size + ", only " + buffer.remaining() + " bytes available");
+            return true;
         }
 
         @Override
@@ -857,17 +934,25 @@ public abstract class Type {
         }
 
         @Override
-        public Object read(ByteBuffer buffer) {
-            int size = ByteUtils.readUnsignedVarint(buffer) - 1;
-            if (size < 0)
-                return null;
-            if (size > buffer.remaining())
-                throw new SchemaException("Error reading bytes of size " + size + ", only " + buffer.remaining() + " bytes available");
-
+        public Object documentTypeRead(ByteBuffer buffer, int size) {
             ByteBuffer val = buffer.slice();
             val.limit(size);
             buffer.position(buffer.position() + size);
             return val;
+        }
+
+        @Override
+        public int calculateSize(ByteBuffer buffer) {
+            return ByteUtils.readUnsignedVarint(buffer) - 1;
+        }
+
+        @Override
+        public boolean validateSize(ByteBuffer buffer, int size) {
+            if (size < 0)
+                return false;
+            if (size > buffer.remaining())
+                throw new SchemaException("Error reading bytes of size " + size + ", only " + buffer.remaining() + " bytes available");
+            return true;
         }
 
         @Override
@@ -922,7 +1007,7 @@ public abstract class Type {
         }
 
         @Override
-        public MemoryRecords read(ByteBuffer buffer) {
+        public MemoryRecords documentTypeRead(ByteBuffer buffer, int length) {
             ByteBuffer recordsBuffer = (ByteBuffer) COMPACT_NULLABLE_BYTES.read(buffer);
             if (recordsBuffer == null) {
                 return null;
@@ -985,7 +1070,7 @@ public abstract class Type {
         }
 
         @Override
-        public MemoryRecords read(ByteBuffer buffer) {
+        public MemoryRecords documentTypeRead(ByteBuffer buffer, int size) {
             ByteBuffer recordsBuffer = (ByteBuffer) NULLABLE_BYTES.read(buffer);
             if (recordsBuffer == null) {
                 return null;
@@ -1034,7 +1119,7 @@ public abstract class Type {
         }
 
         @Override
-        public Integer read(ByteBuffer buffer) {
+        public Integer documentTypeRead(ByteBuffer buffer, int size) {
             return ByteUtils.readVarint(buffer);
         }
 
@@ -1069,7 +1154,7 @@ public abstract class Type {
         }
 
         @Override
-        public Long read(ByteBuffer buffer) {
+        public Long documentTypeRead(ByteBuffer buffer, int size) {
             return ByteUtils.readVarlong(buffer);
         }
 
