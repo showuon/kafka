@@ -244,6 +244,8 @@ class UnifiedLog(@volatile var logStartOffset: Long,
 
   def highWatermark: Long = highWatermarkMetadata.messageOffset
 
+  @volatile private var highestOffsetWithRemoteIndex: Long = -1L
+
   /**
    * Update the high watermark to a new offset. The new high watermark will be lower
    * bounded by the log start offset and upper bounded by the log end offset.
@@ -276,6 +278,15 @@ class UnifiedLog(@volatile var logStartOffset: Long,
 
     updateHighWatermarkMetadata(newHighWatermarkMetadata)
     newHighWatermarkMetadata.messageOffset
+  }
+
+  def updateRemoteIndexHighestOffset(offset: Long): Unit = {
+    if (!remoteLogEnabled()) {
+      warn(s"Received update for highest offset with remote index as: $offset, the existing value: $highestOffsetWithRemoteIndex")
+      /* TODO: check if this `if` condition should be here. What if highestOffsetWithRemoteIndex has reduced because
+      unclean leader election invalidated some remote log segments because they were not part of the unclean leader's epoch history?
+       */
+    } else if (offset > highestOffsetWithRemoteIndex) highestOffsetWithRemoteIndex = offset
   }
 
   /**

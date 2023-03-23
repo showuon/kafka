@@ -49,15 +49,29 @@ public class LeaderEpochFileCache {
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final TreeMap<Integer, EpochEntry> epochs = new TreeMap<>();
 
+    private final TopicPartition topicPartition;
+
     /**
      * @param topicPartition the associated topic partition
      * @param checkpoint     the checkpoint file
      */
     public LeaderEpochFileCache(TopicPartition topicPartition, LeaderEpochCheckpoint checkpoint) {
+        this.topicPartition = topicPartition;
         this.checkpoint = checkpoint;
         LogContext logContext = new LogContext("[LeaderEpochCache " + topicPartition + "] ");
         log = logContext.logger(LeaderEpochFileCache.class);
         checkpoint.read().forEach(this::assign);
+    }
+
+    public LeaderEpochFileCache writeTo(LeaderEpochCheckpoint leaderEpochCheckpoint) {
+        lock.readLock().lock();
+
+        try {
+            leaderEpochCheckpoint.write(epochEntries());
+            return new LeaderEpochFileCache(this.topicPartition, leaderEpochCheckpoint);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     /**

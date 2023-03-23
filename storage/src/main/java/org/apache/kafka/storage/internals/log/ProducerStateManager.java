@@ -159,6 +159,10 @@ public class ProducerStateManager {
         return lastTimestamp > 0 && (currentTimeMs - lastTimestamp) > maxTransactionTimeoutMs + ProducerStateManager.LATE_TRANSACTION_BUFFER_MS;
     }
 
+    public Optional fetchSnapshot(long offset) {
+        return Optional.of(snapshots.get(offset)).map(SnapshotFile::file);
+    }
+
     public void truncateFullyAndReloadSnapshots() throws IOException {
         log.info("Reloading the producer state snapshots");
         truncateFullyAndStartAt(0L);

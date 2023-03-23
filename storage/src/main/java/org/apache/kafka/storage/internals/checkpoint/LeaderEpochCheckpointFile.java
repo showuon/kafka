@@ -64,7 +64,7 @@ public class LeaderEpochCheckpointFile implements LeaderEpochCheckpoint {
         return new File(dir, LEADER_EPOCH_CHECKPOINT_FILENAME);
     }
 
-    private static class Formatter implements EntryFormatter<EpochEntry> {
+    public static class Formatter implements EntryFormatter<EpochEntry> {
 
         public String toString(EpochEntry entry) {
             return entry.epoch + " " + entry.startOffset;
