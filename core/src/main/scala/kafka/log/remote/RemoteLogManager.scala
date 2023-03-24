@@ -211,7 +211,7 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
   def onLeadershipChange(partitionsBecomeLeader: Set[Partition],
                          partitionsBecomeFollower: Set[Partition],
                          topicIds: util.Map[String, Uuid]): Unit = {
-    debug(s"Received leadership changes for leaders: $partitionsBecomeLeader and followers: $partitionsBecomeFollower")
+    info(s"!!! Received leadership changes for leaders: $partitionsBecomeLeader and followers: $partitionsBecomeFollower")
 
     // Partitions logs are available when this callback is invoked.
     // Compact topics and internal topics are filtered here as they are not supported with tiered storage.
