@@ -23,6 +23,7 @@ import kafka.utils.MockTime
 import org.apache.kafka.common.config.AbstractConfig
 import org.apache.kafka.common.record.FileRecords.TimestampAndOffset
 import org.apache.kafka.common.record.{CompressionType, MemoryRecords, SimpleRecord}
+import org.apache.kafka.common.utils.Time
 import org.apache.kafka.common.{KafkaException, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.server.log.remote.storage.RemoteStorageManager.IndexType
 import org.apache.kafka.server.log.remote.storage._
@@ -71,7 +72,7 @@ class RemoteLogManagerTest {
   def setUp(): Unit = {
     val props = new Properties()
     remoteLogManagerConfig = createRLMConfig(props)
-    remoteLogManager = new RemoteLogManager(remoteLogManagerConfig, brokerId, logDir) {
+    remoteLogManager = new RemoteLogManager(tp => null, (TopicPartition, Long) => {}, Time.SYSTEM, remoteLogManagerConfig, brokerId, logDir) {
       override private[remote] def createRemoteStorageManager() = remoteStorageManager
       override private[remote] def createRemoteLogMetadataManager() = remoteLogMetadataManager
     }
@@ -107,7 +108,7 @@ class RemoteLogManagerTest {
   def testGetClassLoaderAwareRemoteStorageManager(): Unit = {
     val rsmManager: ClassLoaderAwareRemoteStorageManager = mock(classOf[ClassLoaderAwareRemoteStorageManager])
     val remoteLogManager =
-      new RemoteLogManager(remoteLogManagerConfig, brokerId, logDir) {
+      new RemoteLogManager(tp => null, (TopicPartition, Long) => {}, Time.SYSTEM, remoteLogManagerConfig, brokerId, logDir) {
         override private[remote] def createRemoteStorageManager(): ClassLoaderAwareRemoteStorageManager = rsmManager
       }
     assertEquals(rsmManager, remoteLogManager.storageManager())
@@ -142,12 +143,12 @@ class RemoteLogManagerTest {
     verifyInCache(followerTopicIdPartition, leaderTopicIdPartition)
 
     // Evicts from topicId cache
-    remoteLogManager.stopPartitions(leaderTopicIdPartition.topicPartition(), delete = true)
+    remoteLogManager.stopPartitions(Set(leaderTopicIdPartition.topicPartition()), delete = true, (TopicPartition, Throwable) => {})
     verifyNotInCache(leaderTopicIdPartition)
     verifyInCache(followerTopicIdPartition)
 
     // Evicts from topicId cache
-    remoteLogManager.stopPartitions(followerTopicIdPartition.topicPartition(), delete = true)
+    remoteLogManager.stopPartitions(Set(followerTopicIdPartition.topicPartition()), delete = true, (TopicPartition, Throwable) => {})
     verifyNotInCache(leaderTopicIdPartition, followerTopicIdPartition)
   }
 

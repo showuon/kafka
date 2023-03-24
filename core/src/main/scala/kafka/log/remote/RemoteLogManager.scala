@@ -18,35 +18,33 @@ package kafka.log.remote
 
 import kafka.cluster.Partition
 import kafka.log.UnifiedLog
-import kafka.server.{BrokerTopicStats, KafkaConfig}
+import kafka.server.KafkaConfig
 import kafka.utils.Logging
 import org.apache.kafka.clients.CommonClientConfigs
 import org.apache.kafka.common._
 import org.apache.kafka.common.errors.OffsetOutOfRangeException
-import org.apache.kafka.common.message.FetchResponseData
+import org.apache.kafka.common.message.FetchResponseData.AbortedTransaction
 import org.apache.kafka.common.record.FileRecords.TimestampAndOffset
-import org.apache.kafka.common.record.{MemoryRecords, RecordBatch, Records, RemoteLogInputStream}
+import org.apache.kafka.common.record.{MemoryRecords, RecordBatch, RemoteLogInputStream}
 import org.apache.kafka.common.requests.FetchRequest.PartitionData
 import org.apache.kafka.common.utils.{ChildFirstClassLoader, KafkaThread, Time, Utils}
 import org.apache.kafka.server.common.CheckpointFile.CheckpointWriteBuffer
-import org.apache.kafka.server.log.remote.metadata.storage.{ClassLoaderAwareRemoteLogMetadataManager, TopicBasedRemoteLogMetadataManagerConfig}
+import org.apache.kafka.server.log.remote.metadata.storage.ClassLoaderAwareRemoteLogMetadataManager
 import org.apache.kafka.server.log.remote.storage._
 import org.apache.kafka.storage.internals.checkpoint.{LeaderEpochCheckpoint, LeaderEpochCheckpointFile}
 import org.apache.kafka.storage.internals.epoch.LeaderEpochFileCache
-import org.apache.kafka.storage.internals.log.{EpochEntry, LogOffsetMetadata}
-import sun.security.ec.point.ProjectivePoint.Immutable
+import org.apache.kafka.storage.internals.log.{AbortedTxn, EpochEntry, FetchDataInfo, FetchIsolation, LogOffsetMetadata, OffsetPosition, RemoteStorageFetchInfo}
 
 import java.io.{BufferedWriter, ByteArrayOutputStream, Closeable, File, InputStream, OutputStreamWriter}
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.security.{AccessController, PrivilegedAction}
 import java.util
-import java.util.Optional
+import java.util.{Optional, OptionalInt}
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap, Future, ScheduledFuture, ScheduledThreadPoolExecutor, ThreadFactory, TimeUnit}
 import scala.collection.Searching.{Found, InsertionPoint}
-import scala.collection.{Set, mutable}
-import scala.collection.convert.ImplicitConversions.`collection AsScalaIterable`
+import scala.collection.Set
 import scala.jdk.CollectionConverters._
 
 /**
@@ -92,6 +90,9 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
   private val delayInMs = rlmConfig.remoteLogManagerTaskIntervalMs
   private val poolSize = rlmConfig.remoteLogManagerThreadPoolSize
   private val rlmScheduledThreadPool = new RLMScheduledThreadPool(poolSize)
+
+  private val remoteStorageFetcherThreadPool = new RemoteStorageReaderThreadPool(rlmConfig.remoteLogReaderThreads,
+    rlmConfig.remoteLogReaderMaxPendingTasks, time)
 
 
   private[remote] def createRemoteStorageManager(): RemoteStorageManager = {
@@ -147,10 +148,6 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
     // initialize and configure RSM and RLMM
     configureRSM()
     configureRLMM(serverEndPoint)
-  }
-
-  def storageManager(): RemoteStorageManager = {
-    remoteLogStorageManager
   }
 
   private def configureRSM(): Unit = {
@@ -224,16 +221,30 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
         .map(partition => new TopicIdPartition(topicIds.get(partition.topic), partition.topicPartition))
     }
 
+    def filterLeaderPartitions(partitions: Set[Partition]): Map[TopicIdPartition, Int] = {
+      // We are not specifically checking for internal topics etc here as `log.remoteLogEnabled()` already handles that.
+      partitions.filter(partition => partition.log.exists(log => log.remoteLogEnabled()))
+        .map(partition => new TopicIdPartition(topicIds.get(partition.topic), partition.topicPartition) -> partition.getLeaderEpoch).toMap
+    }
+
     val followerTopicPartitions = filterPartitions(partitionsBecomeFollower)
-    val leaderTopicPartitions = filterPartitions(partitionsBecomeLeader)
+    val leaderTopicPartitions = filterLeaderPartitions(partitionsBecomeLeader)
     debug(s"Effective topic partitions after filtering compact and internal topics, leaders: $leaderTopicPartitions " +
       s"and followers: $followerTopicPartitions")
 
     if (leaderTopicPartitions.nonEmpty || followerTopicPartitions.nonEmpty) {
-      leaderTopicPartitions.foreach(x => topicPartitionIds.put(x.topicPartition(), x.topicId()))
+      leaderTopicPartitions.foreach(x => topicPartitionIds.put(x._1.topicPartition(), x._1.topicId()))
       followerTopicPartitions.foreach(x => topicPartitionIds.put(x.topicPartition(), x.topicId()))
 
-      remoteLogMetadataManager.onPartitionLeadershipChanges(leaderTopicPartitions.asJava, followerTopicPartitions.asJava)
+      remoteLogMetadataManager.onPartitionLeadershipChanges(leaderTopicPartitions.keySet.asJava, followerTopicPartitions.asJava)
+
+      followerTopicPartitions.foreach {
+        topicIdPartition => doHandleLeaderOrFollowerPartitions(topicIdPartition, _.convertToFollower())
+      }
+      leaderTopicPartitions.foreach {
+        case (topicIdPartition, epoch) =>
+          doHandleLeaderOrFollowerPartitions(topicIdPartition, _.convertToLeader(epoch))
+      }
     }
   }
 
@@ -391,6 +402,37 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
   }
 
   /**
+   * A remote log read task returned by asyncRead(). The caller of asyncRead() can use this object to cancel a
+   * pending task or check if the task is done.
+   */
+  case class AsyncReadTask(future: Future[Unit]) {
+    def cancel(mayInterruptIfRunning: Boolean): Boolean = {
+      val r = future.cancel(mayInterruptIfRunning)
+      if (r) {
+        // Removed the cancelled task from task queue
+        remoteStorageFetcherThreadPool.purge()
+      }
+      r
+    }
+
+    def isCancelled: Boolean = future.isCancelled
+
+    def isDone: Boolean = future.isDone
+  }
+
+  /**
+   * Submit a remote log read task.
+   *
+   * This method returns immediately. The read operation is executed in a thread pool.
+   * The callback will be called when the task is done.
+   *
+   * @throws RejectedExecutionException if the task cannot be accepted for execution (task queue is full)
+   */
+  def asyncRead(fetchInfo: RemoteStorageFetchInfo, callback: RemoteLogReadResult => Unit): AsyncReadTask = {
+    AsyncReadTask(remoteStorageFetcherThreadPool.submit(new RemoteLogReader(fetchInfo, this, null, callback)))
+  }
+
+  /**
    * Closes and releases all the resources like RemoterStorageManager and RemoteLogMetadataManager.
    */
   def close(): Unit = {
@@ -419,18 +461,18 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
   }
 
   class InMemoryLeaderEpochCheckpoint extends LeaderEpochCheckpoint {
-    private var epochs: Seq[EpochEntry] = Seq()
+    private var epochs: util.List[EpochEntry] = new util.ArrayList[EpochEntry]()
 
-    override def write(epochs: util.Collection[EpochEntry]): Unit = this.epochs = epochs.toSeq
+    override def write(epochs: util.Collection[EpochEntry]): Unit = this.epochs = new util.ArrayList[EpochEntry](epochs)
 
-    override def read(): Seq[EpochEntry] = this.epochs
+    override def read(): util.List[EpochEntry] = this.epochs
 
     def readAsByteBuffer(): ByteBuffer = {
       val stream = new ByteArrayOutputStream()
       val writer = new BufferedWriter(new OutputStreamWriter(stream, StandardCharsets.UTF_8))
-      val writeBuffer = new CheckpointWriteBuffer[EpochEntry](writer, 0, LeaderEpochCheckpointFile.Formatter)
+      val writeBuffer = new CheckpointWriteBuffer[EpochEntry](writer, 0, new LeaderEpochCheckpointFile.Formatter())
       try {
-        writeBuffer.write(epochs.asJava)
+        writeBuffer.write(epochs)
         writer.flush()
         ByteBuffer.wrap(stream.toByteArray)
       } finally {
@@ -471,7 +513,7 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
     val tp = remoteStorageFetchInfo.topicPartition
     val fetchInfo: PartitionData = remoteStorageFetchInfo.fetchInfo
 
-    val includeAbortedTxns = remoteStorageFetchInfo.fetchIsolation == FetchTxnCommitted
+    val includeAbortedTxns = remoteStorageFetchInfo.fetchIsolation == FetchIsolation.TXN_COMMITTED
 
     val offset = fetchInfo.fetchOffset
     val maxBytes = Math.min(fetchMaxBytes, fetchInfo.maxBytes)
@@ -522,8 +564,8 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
       val firstBatch = findFirstBatch()
 
       if (firstBatch == null)
-        return FetchDataInfo(new LogOffsetMetadata(offset), MemoryRecords.EMPTY,
-          abortedTransactions = if (includeAbortedTxns) Some(List.empty) else None)
+        return new FetchDataInfo(new LogOffsetMetadata(offset), MemoryRecords.EMPTY, false,
+          if (includeAbortedTxns) Optional.of(util.Collections.emptyList[org.apache.kafka.common.message.FetchResponseData.AbortedTransaction]()) else Optional.empty())
 
       val updatedFetchSize =
         if (remoteStorageFetchInfo.minOneMessage && firstBatch.sizeInBytes() > maxBytes) firstBatch.sizeInBytes()
@@ -542,7 +584,7 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
       }
       buffer.flip()
 
-      var fetchDataInfo = FetchDataInfo(new LogOffsetMetadata(offset), MemoryRecords.readableRecords(buffer))
+      var fetchDataInfo = new FetchDataInfo(new LogOffsetMetadata(offset), MemoryRecords.readableRecords(buffer))
       if (includeAbortedTxns) {
         fetchDataInfo = addAbortedTransactions(firstBatch.baseOffset(), rlsMetadata.get(), fetchDataInfo)
       }
@@ -552,6 +594,75 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
     }
   }
 
+
+  private[remote] def addAbortedTransactions(startOffset: Long,
+                                             segmentMetadata: RemoteLogSegmentMetadata,
+                                             fetchInfo: FetchDataInfo): FetchDataInfo = {
+    val fetchSize = fetchInfo.records.sizeInBytes
+    val startOffsetPosition = new OffsetPosition(fetchInfo.fetchOffsetMetadata.messageOffset,
+      fetchInfo.fetchOffsetMetadata.relativePositionInSegment)
+
+    val offsetIndex = indexCache.getIndexEntry(segmentMetadata).offsetIndex
+    val upperBoundOffset = offsetIndex.fetchUpperBoundOffset(startOffsetPosition, fetchSize)
+      .map(_.offset).orElse(segmentMetadata.endOffset() + 1)
+
+    val abortedTransactions = new util.ArrayList[AbortedTransaction]
+
+    def accumulator(abortedTxn: util.List[AbortedTxn]): Unit = abortedTxn.forEach( e => abortedTransactions.add(e.asAbortedTransaction()) )
+
+    collectAbortedTransactions(startOffset, upperBoundOffset, segmentMetadata, accumulator)
+
+    new FetchDataInfo(fetchInfo.fetchOffsetMetadata,
+      fetchInfo.records,
+      fetchInfo.firstEntryIncomplete,
+      Optional.of(abortedTransactions))
+  }
+
+  private[remote] def collectAbortedTransactions(startOffset: Long,
+                                                 upperBoundOffset: Long,
+                                                 segmentMetadata: RemoteLogSegmentMetadata,
+                                                 accumulator: util.List[AbortedTxn] => Unit): Unit = {
+    val topicPartition = segmentMetadata.topicIdPartition().topicPartition()
+    val localLogSegments = fetchLog(topicPartition).map(log => log.logSegments.iterator).getOrElse(Iterator.empty)
+
+    var searchInLocalLog = false
+    var nextSegmentMetadataOpt = Option.apply(segmentMetadata)
+    var txnIndexOpt = nextSegmentMetadataOpt.map(metadata => indexCache.getIndexEntry(metadata).txnIndex)
+    while (txnIndexOpt.isDefined) {
+      val searchResult = txnIndexOpt.get.collectAbortedTxns(startOffset, upperBoundOffset)
+      accumulator(searchResult.abortedTransactions)
+      if (!searchResult.isComplete) {
+        if (!searchInLocalLog) {
+          nextSegmentMetadataOpt = nextSegmentMetadataOpt.flatMap(x => findNextSegmentMetadata(x))
+          txnIndexOpt = nextSegmentMetadataOpt.map(x => indexCache.getIndexEntry(x).txnIndex)
+          if (txnIndexOpt.isEmpty) {
+            searchInLocalLog = true
+          }
+        }
+        if (searchInLocalLog) {
+          txnIndexOpt = if (localLogSegments.hasNext) Some(localLogSegments.next().txnIndex) else None
+        }
+      } else {
+        return
+      }
+    }
+  }
+
+  private[remote] def findNextSegmentMetadata(segmentMetadata: RemoteLogSegmentMetadata): Option[RemoteLogSegmentMetadata] = {
+    val topicPartition = segmentMetadata.topicIdPartition().topicPartition()
+    val nextSegmentBaseOffset = segmentMetadata.endOffset() + 1
+    var epoch = OptionalInt.of(segmentMetadata.segmentLeaderEpochs().lastEntry().getKey.toInt)
+    var result: Option[RemoteLogSegmentMetadata] = Option.empty;
+    fetchLog(topicPartition).foreach(log => {
+      log.leaderEpochCache.foreach(cache => {
+        while (result.isEmpty && epoch.isPresent) {
+          result = Option(fetchRemoteLogSegmentMetadata(topicPartition, epoch.getAsInt, nextSegmentBaseOffset).orElse(null))
+          epoch = cache.nextEpoch(epoch.getAsInt)
+        }
+      })
+    })
+    result
+  }
 
 
   //----
@@ -646,9 +757,14 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
                 val endOffset = nextOffset - 1
                 val producerIdSnapshotFile: File = log.producerStateManager.fetchSnapshot(nextOffset).get().asInstanceOf[File]
 
-                val segmentLeaderEpochs = getLeaderEpochCheckpoint(log, segment.baseOffset, nextOffset).read().map {
-                  case epochEntry => Integer.valueOf(epochEntry.epoch) -> java.lang.Long.valueOf(epochEntry.startOffset)
-                }.toMap.asJava
+                val segmentLeaderEpochs = getLeaderEpochCheckpoint(log, segment.baseOffset, nextOffset).read().asScala.map(
+                  entry => java.lang.Integer.valueOf(entry.epoch) -> java.lang.Long.valueOf(entry.startOffset)).toMap.asJava
+
+
+
+//                  .stream().collect(
+//                  Collectors.toMap(epochEntry => epochEntry.epoch, epochEntry => epochEntry.startOffset))
+
 
                 val remoteLogSegmentMetadata = new RemoteLogSegmentMetadata(id, segment.baseOffset, endOffset,
                   segment.largestTimestamp, brokerId, time.milliseconds(), segment.log.sizeInBytes(),
@@ -742,7 +858,7 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
             }
 
             log.leaderEpochCache.foreach { cache =>
-              cache.epochEntries.find { epochEntry =>
+              cache.epochEntries.stream().filter { epochEntry =>
                 val segmentsIterator = remoteLogMetadataManager.listRemoteLogSegments(tpId, epochEntry.epoch)
                 var isSegmentDeleted = true
                 while (isSegmentDeleted && segmentsIterator.hasNext) {
@@ -845,23 +961,6 @@ class RLMScheduledThreadPool(poolSize: Int) extends Logging {
     scheduledThreadPool.awaitTermination(2, TimeUnit.MINUTES)
   }
 }
-
-
-
-sealed trait FetchIsolation
-case object FetchLogEnd extends FetchIsolation
-case object FetchHighWatermark extends FetchIsolation
-case object FetchTxnCommitted extends FetchIsolation
-
-case class FetchDataInfo(fetchOffsetMetadata: LogOffsetMetadata,
-                         records: Records,
-                         firstEntryIncomplete: Boolean = false,
-                         abortedTransactions: Option[List[FetchResponseData.AbortedTransaction]] = None,
-                         delayedRemoteStorageFetch: Option[RemoteStorageFetchInfo] = None)
-
-case class RemoteStorageFetchInfo(fetchMaxBytes: Int, minOneMessage: Boolean, topicPartition: TopicPartition,
-                                  fetchInfo: PartitionData, fetchIsolation: FetchIsolation)
-
 
 trait CancellableRunnable extends Runnable {
   @volatile private var cancelled = false

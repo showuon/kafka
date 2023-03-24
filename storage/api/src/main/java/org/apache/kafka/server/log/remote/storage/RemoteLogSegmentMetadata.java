@@ -145,19 +145,6 @@ public class RemoteLogSegmentMetadata extends RemoteLogMetadata {
                 segmentLeaderEpochs);
     }
 
-    public RemoteLogSegmentMetadata(RemoteLogSegmentId remoteLogSegmentId,
-                                    long startOffset,
-                                    long endOffset) {
-        this(remoteLogSegmentId,
-            startOffset,
-            endOffset,
-            maxTimestampMs,
-            brokerId,
-            eventTimestampMs, segmentSizeInBytes,
-            RemoteLogSegmentState.COPY_SEGMENT_STARTED,
-            segmentLeaderEpochs);
-    }
-
 
     /**
      * @return unique id of this segment.

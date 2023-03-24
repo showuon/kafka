@@ -162,6 +162,13 @@ class UnifiedLog(@volatile var logStartOffset: Long,
     logOffsetsListener = listener
   }
 
+  def updateLogStartOffsetFromRemoteTier(remoteLogStartOffset: Long): Unit = {
+    if (!remoteLogEnabled()) {
+      warn("Ignoring the call as the remote log storage is disabled")
+    }
+    maybeIncrementLogStartOffset(remoteLogStartOffset, LogStartOffsetIncrementReason.SegmentDeletion)
+  }
+
   def remoteLogEnabled(): Boolean = {
     // Remote log is enabled only for non-compact and non-internal topics
     remoteStorageSystemEnable &&
