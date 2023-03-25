@@ -67,6 +67,7 @@ public class LeaderEpochFileCache {
         lock.readLock().lock();
 
         try {
+
             leaderEpochCheckpoint.write(epochEntries());
             return new LeaderEpochFileCache(this.topicPartition, leaderEpochCheckpoint);
         } finally {
@@ -397,11 +398,11 @@ public class LeaderEpochFileCache {
 
     // Visible for testing
     public List<EpochEntry> epochEntries() {
-        lock.writeLock().lock();
+        lock.readLock().lock();
         try {
             return new ArrayList<>(epochs.values());
         } finally {
-            lock.writeLock().unlock();
+            lock.readLock().unlock();
         }
     }
 

@@ -74,7 +74,6 @@ class RemoteLogManager(fetchLog: TopicIdPartition => Option[UnifiedLog],
     }
   }
 
-  println("!!! RemoteLogManager")
 
   private val leaderOrFollowerTasks: ConcurrentHashMap[TopicIdPartition, RLMTaskWithFuture] =
     new ConcurrentHashMap[TopicIdPartition, RLMTaskWithFuture]()
@@ -464,11 +463,16 @@ class RemoteLogManager(fetchLog: TopicIdPartition => Option[UnifiedLog],
   }
 
   class InMemoryLeaderEpochCheckpoint extends LeaderEpochCheckpoint {
-    private var epochs: util.List[EpochEntry] = new util.ArrayList[EpochEntry]()
+    private val epochs: util.List[EpochEntry] = new util.ArrayList[EpochEntry]()
 
-    override def write(epochs: util.Collection[EpochEntry]): Unit = this.epochs = new util.ArrayList[EpochEntry](epochs)
+    override def write(epochs: util.Collection[EpochEntry]): Unit = {
 
-    override def read(): util.List[EpochEntry] = this.epochs
+      this.epochs.addAll(epochs)
+    }
+
+    override def read(): util.List[EpochEntry] = {
+      this.epochs
+    }
 
     def readAsByteBuffer(): ByteBuffer = {
       val stream = new ByteArrayOutputStream()
@@ -512,6 +516,9 @@ class RemoteLogManager(fetchLog: TopicIdPartition => Option[UnifiedLog],
   }
 
   def read(remoteStorageFetchInfo: RemoteStorageFetchInfo): FetchDataInfo = {
+    info("!!! read:" + remoteStorageFetchInfo)
+
+
     val fetchMaxBytes = remoteStorageFetchInfo.fetchMaxBytes
     val tp = remoteStorageFetchInfo.topicPartition
     val fetchInfo: PartitionData = remoteStorageFetchInfo.fetchInfo
@@ -726,7 +733,7 @@ class RemoteLogManager(fetchLog: TopicIdPartition => Option[UnifiedLog],
             // copy segments only till the min of high-watermark or stable-offset
             // remote storage should contain only committed/acked messages
             val fetchOffset = lso
-            debug(s"Checking for segments to copy, readOffset: $readOffset and fetchOffset: $fetchOffset")
+            info(s"Checking for segments to copy, readOffset: $readOffset and fetchOffset: $fetchOffset")
             val activeSegBaseOffset = log.activeSegment.baseOffset
             // log-start-offset can be ahead of the read-offset, when:
             // 1) log-start-offset gets incremented via delete-records API (or)
@@ -738,7 +745,7 @@ class RemoteLogManager(fetchLog: TopicIdPartition => Option[UnifiedLog],
               case InsertionPoint(y) => y - 1
             }
             if (index < 0) {
-              debug(s"No segments found to be copied for partition $tpId with read offset: $readOffset and active " +
+              info(s"No segments found to be copied for partition $tpId with read offset: $readOffset and active " +
                 s"baseoffset: $activeSegBaseOffset")
             } else {
               sortedSegments.slice(0, index).foreach { segment =>
@@ -761,8 +768,12 @@ class RemoteLogManager(fetchLog: TopicIdPartition => Option[UnifiedLog],
                 val endOffset = nextOffset - 1
                 val producerIdSnapshotFile: File = log.producerStateManager.fetchSnapshot(nextOffset).get().asInstanceOf[File]
 
+
                 val segmentLeaderEpochs = getLeaderEpochCheckpoint(log, segment.baseOffset, nextOffset).read().asScala.map(
-                  entry => java.lang.Integer.valueOf(entry.epoch) -> java.lang.Long.valueOf(entry.startOffset)).toMap.asJava
+                  entry => {
+                    java.lang.Integer.valueOf(entry.epoch) -> java.lang.Long.valueOf(entry.startOffset)
+                  }).toMap.asJava
+
 
 
 
@@ -774,11 +785,13 @@ class RemoteLogManager(fetchLog: TopicIdPartition => Option[UnifiedLog],
                   segment.largestTimestamp, brokerId, time.milliseconds(), segment.log.sizeInBytes(),
                   segmentLeaderEpochs)
 
+
                 remoteLogMetadataManager.addRemoteLogSegmentMetadata(remoteLogSegmentMetadata)
 
                 val leaderEpochsIndex = getLeaderEpochCheckpoint(log, startOffset = -1, nextOffset).readAsByteBuffer()
+
                 val segmentData = new LogSegmentData(logFile.toPath, segment.lazyOffsetIndex.get.file().toPath,
-                  segment.lazyTimeIndex.get.file().toPath, Optional.ofNullable(segment.txnIndex.file().toPath),
+                  segment.lazyTimeIndex.get.file().toPath, Optional.ofNullable(if (segment.txnIndex.file().exists()) segment.txnIndex.file().toPath else null),
                   producerIdSnapshotFile.toPath, leaderEpochsIndex)
                 remoteLogStorageManager.copyLogSegmentData(remoteLogSegmentMetadata, segmentData)
 

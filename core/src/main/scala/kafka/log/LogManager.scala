@@ -17,7 +17,7 @@
 
 package kafka.log
 
-import kafka.log.remote.RemoteIndexCache
+import kafka.log.remote.{RemoteIndexCache}
 
 import java.io._
 import java.nio.file.Files
@@ -40,6 +40,7 @@ import org.apache.kafka.common.config.TopicConfig
 
 import java.util.Properties
 import org.apache.kafka.server.common.MetadataVersion
+import org.apache.kafka.server.log.remote.storage.RemoteLogManagerConfig
 import org.apache.kafka.storage.internals.log.LogConfig.MessageFormatVersion
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
 import org.apache.kafka.server.util.Scheduler
@@ -76,7 +77,8 @@ class LogManager(logDirs: Seq[File],
                  brokerTopicStats: BrokerTopicStats,
                  logDirFailureChannel: LogDirFailureChannel,
                  time: Time,
-                 val keepPartitionMetadataFile: Boolean) extends Logging {
+                 val keepPartitionMetadataFile: Boolean,
+                 remoteLogManagerConfig: RemoteLogManagerConfig) extends Logging {
 
   import LogManager._
 
@@ -289,6 +291,7 @@ class LogManager(logDirs: Seq[File],
       logDirFailureChannel = logDirFailureChannel,
       lastShutdownClean = hadCleanShutdown,
       topicId = None,
+      remoteStorageSystemEnable = remoteLogManagerConfig.enableRemoteStorageSystem(),
       keepPartitionMetadataFile = keepPartitionMetadataFile,
       numRemainingSegments = numRemainingSegments)
 
@@ -971,6 +974,7 @@ class LogManager(logDirs: Seq[File],
           brokerTopicStats = brokerTopicStats,
           logDirFailureChannel = logDirFailureChannel,
           topicId = topicId,
+          remoteStorageSystemEnable = remoteLogManagerConfig.enableRemoteStorageSystem(),
           keepPartitionMetadataFile = keepPartitionMetadataFile)
 
         if (isFuture)
@@ -1372,7 +1376,8 @@ object LogManager {
             time: Time,
             brokerTopicStats: BrokerTopicStats,
             logDirFailureChannel: LogDirFailureChannel,
-            keepPartitionMetadataFile: Boolean): LogManager = {
+            keepPartitionMetadataFile: Boolean,
+            remoteLogManagerConfig: RemoteLogManagerConfig): LogManager = {
     val defaultProps = config.extractLogConfigMap
 
     LogConfig.validateValues(defaultProps)
@@ -1398,7 +1403,8 @@ object LogManager {
       logDirFailureChannel = logDirFailureChannel,
       time = time,
       keepPartitionMetadataFile = keepPartitionMetadataFile,
-      interBrokerProtocolVersion = config.interBrokerProtocolVersion)
+      interBrokerProtocolVersion = config.interBrokerProtocolVersion,
+      remoteLogManagerConfig = remoteLogManagerConfig)
   }
 
 }

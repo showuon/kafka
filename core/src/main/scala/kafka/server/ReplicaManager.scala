@@ -1061,7 +1061,7 @@ class ReplicaManager(val config: KafkaConfig,
     quota: ReplicaQuota,
     responseCallback: Seq[(TopicIdPartition, FetchPartitionData)] => Unit
   ): Unit = {
-    info("!!! fetch message")
+//    info("!!! fetch message")
     // check if this fetch request can be satisfied right away
     val logReadResults = readFromLocalLog(params, fetchInfos, quota, readFromPurgatory = false)
     var bytesReadable: Long = 0

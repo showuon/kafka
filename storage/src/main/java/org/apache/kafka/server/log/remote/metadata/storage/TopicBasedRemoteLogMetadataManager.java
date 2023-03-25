@@ -440,9 +440,10 @@ public class TopicBasedRemoteLogMetadataManager implements RemoteLogMetadataMana
 
     private boolean isPartitionsCountSameAsConfigured(AdminClient adminClient,
                                                       String topicName) throws InterruptedException, ExecutionException {
-        log.debug("Getting topic details to check for partition count and replication factor.");
+        log.info("Getting topic details to check for partition count and replication factor.");
         TopicDescription topicDescription = adminClient.describeTopics(Collections.singleton(topicName))
                                                        .topicNameValues().get(topicName).get();
+        log.info("topic des:" + topicDescription);
         int expectedPartitions = rlmmConfig.metadataTopicPartitionsCount();
         int topicPartitionsSize = topicDescription.partitions().size();
 

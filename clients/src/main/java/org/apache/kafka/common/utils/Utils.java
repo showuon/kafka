@@ -945,10 +945,11 @@ public final class Utils {
     public static void atomicMoveWithFallback(Path source, Path target, boolean needFlushParentDir) throws IOException {
         try {
             Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+
         } catch (IOException outer) {
             try {
                 Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
-                log.debug("Non-atomic move of {} to {} succeeded after atomic move failed due to {}", source, target,
+                log.error("Non-atomic move of {} to {} succeeded after atomic move failed due to {}", source, target,
                         outer.getMessage());
             } catch (IOException inner) {
                 inner.addSuppressed(outer);
@@ -959,6 +960,7 @@ public final class Utils {
                 flushDir(target.toAbsolutePath().normalize().getParent());
             }
         }
+
     }
 
     /**
