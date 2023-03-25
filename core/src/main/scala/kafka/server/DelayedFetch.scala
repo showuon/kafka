@@ -18,7 +18,7 @@
 package kafka.server
 
 import java.util.concurrent.TimeUnit
-import org.apache.kafka.common.TopicIdPartition
+import org.apache.kafka.common.{TopicIdPartition}
 import org.apache.kafka.common.errors._
 import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.FetchRequest.PartitionData
@@ -36,6 +36,26 @@ case class FetchPartitionStatus(startOffsetMetadata: LogOffsetMetadata, fetchInf
       ", fetchInfo: " + fetchInfo +
       "]"
   }
+}
+
+/**
+ * The fetch metadata maintained by the delayed fetch operation
+ */
+case class FetchMetadata(fetchMinBytes: Int,
+                         fetchMaxBytes: Int,
+                         hardMaxBytesLimit: Boolean,
+                         fetchOnlyLeader: Boolean,
+                         fetchIsolation: FetchIsolation,
+                         isFromFollower: Boolean,
+                         replicaId: Int,
+                         fetchPartitionStatus: Seq[(TopicIdPartition, FetchPartitionStatus)]) {
+
+  override def toString = "FetchMetadata(minBytes=" + fetchMinBytes + ", " +
+    "maxBytes=" + fetchMaxBytes + ", " +
+    "onlyLeader=" + fetchOnlyLeader + ", " +
+    "fetchIsolation=" + fetchIsolation + ", " +
+    "replicaId=" + replicaId + ", " +
+    "partitionStatus=" + fetchPartitionStatus + ")"
 }
 
 /**
@@ -77,7 +97,7 @@ class DelayedFetch(
         val fetchLeaderEpoch = fetchStatus.fetchInfo.currentLeaderEpoch
         try {
           if (fetchOffset != LogOffsetMetadata.UNKNOWN_OFFSET_METADATA) {
-            val partition = replicaManager.getPartitionOrException(topicIdPartition.topicPartition)
+            val partition = replicaManager.getPartitionOrException(topicIdPartition.topicPartition())
             val offsetSnapshot = partition.fetchOffsetSnapshot(fetchLeaderEpoch, params.fetchOnlyLeader)
 
             val endOffset = params.isolation match {

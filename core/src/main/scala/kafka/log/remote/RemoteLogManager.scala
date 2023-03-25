@@ -57,7 +57,7 @@ import scala.jdk.CollectionConverters._
  * @param brokerId  id of the current broker.
  * @param logDir    directory of Kafka log segments.
  */
-class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
+class RemoteLogManager(fetchLog: TopicIdPartition => Option[UnifiedLog],
                        updateRemoteLogStartOffset: (TopicPartition, Long) => Unit,
                        time: Time = Time.SYSTEM,
                        rlmConfig: RemoteLogManagerConfig,
@@ -73,6 +73,8 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
       }
     }
   }
+
+  println("!!! RemoteLogManager")
 
   private val leaderOrFollowerTasks: ConcurrentHashMap[TopicIdPartition, RLMTaskWithFuture] =
     new ConcurrentHashMap[TopicIdPartition, RLMTaskWithFuture]()
@@ -229,7 +231,7 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
 
     val followerTopicPartitions = filterPartitions(partitionsBecomeFollower)
     val leaderTopicPartitions = filterLeaderPartitions(partitionsBecomeLeader)
-    debug(s"Effective topic partitions after filtering compact and internal topics, leaders: $leaderTopicPartitions " +
+    info(s"Effective topic partitions after filtering compact and internal topics, leaders: $leaderTopicPartitions " +
       s"and followers: $followerTopicPartitions")
 
     if (leaderTopicPartitions.nonEmpty || followerTopicPartitions.nonEmpty) {
@@ -255,7 +257,7 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
    * @param delete         flag to indicate whether the given topic partitions to be deleted or not.
    */
   def stopPartitions(allPartitions: Set[TopicPartition], delete: Boolean, errorHandler: (TopicPartition, Throwable) => Unit): Unit = {
-    debug(s"Stopping ${allPartitions.size} partitions, delete: $delete")
+    info(s"Stopping ${allPartitions.size} partitions, delete: $delete")
     val partitionsByTopic = allPartitions.groupBy(_.topic())
     partitionsByTopic.foreachEntry((_, partitions) => {
       // FIXME: When to remove the topicId from topicIds map? (leaving them can lead to memory leak)
@@ -429,6 +431,7 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
    * @throws RejectedExecutionException if the task cannot be accepted for execution (task queue is full)
    */
   def asyncRead(fetchInfo: RemoteStorageFetchInfo, callback: RemoteLogReadResult => Unit): AsyncReadTask = {
+    info("!!! asyncRead:" + fetchInfo)
     AsyncReadTask(remoteStorageFetcherThreadPool.submit(new RemoteLogReader(fetchInfo, this, null, callback)))
   }
 
@@ -448,7 +451,7 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
 
   def findHighestRemoteOffset(topicIdPartition: TopicIdPartition): Long = {
     var offset: Optional[java.lang.Long] = Optional.empty()
-    fetchLog(topicIdPartition.topicPartition()).foreach { log =>
+    fetchLog(topicIdPartition).foreach { log =>
       log.leaderEpochCache.foreach(cache => {
         var epoch = cache.latestEpoch
         while (!offset.isPresent && epoch.isPresent) {
@@ -526,7 +529,7 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
       log.leaderEpochCache.foreach(cache => {
         var epoch = cache.latestEpoch
         while (!rlsMetadata.isPresent && epoch.isPresent) {
-          rlsMetadata = fetchRemoteLogSegmentMetadata(tp, epoch.getAsInt, offset)
+          rlsMetadata = fetchRemoteLogSegmentMetadata(tp.topicPartition(), epoch.getAsInt, offset)
           epoch = cache.previousEpoch(epoch.getAsInt)
         }
       })
@@ -565,7 +568,8 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
 
       if (firstBatch == null)
         return new FetchDataInfo(new LogOffsetMetadata(offset), MemoryRecords.EMPTY, false,
-          if (includeAbortedTxns) Optional.of(util.Collections.emptyList[org.apache.kafka.common.message.FetchResponseData.AbortedTransaction]()) else Optional.empty())
+          if (includeAbortedTxns) Optional.of(util.Collections.emptyList[org.apache.kafka.common.message.FetchResponseData.AbortedTransaction]()) else Optional.empty(),
+          Optional.empty())
 
       val updatedFetchSize =
         if (remoteStorageFetchInfo.minOneMessage && firstBatch.sizeInBytes() > maxBytes) firstBatch.sizeInBytes()
@@ -622,8 +626,8 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
                                                  upperBoundOffset: Long,
                                                  segmentMetadata: RemoteLogSegmentMetadata,
                                                  accumulator: util.List[AbortedTxn] => Unit): Unit = {
-    val topicPartition = segmentMetadata.topicIdPartition().topicPartition()
-    val localLogSegments = fetchLog(topicPartition).map(log => log.logSegments.iterator).getOrElse(Iterator.empty)
+    val topicIdPartition = segmentMetadata.topicIdPartition()
+    val localLogSegments = fetchLog(topicIdPartition).map(log => log.logSegments.iterator).getOrElse(Iterator.empty)
 
     var searchInLocalLog = false
     var nextSegmentMetadataOpt = Option.apply(segmentMetadata)
@@ -649,14 +653,14 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
   }
 
   private[remote] def findNextSegmentMetadata(segmentMetadata: RemoteLogSegmentMetadata): Option[RemoteLogSegmentMetadata] = {
-    val topicPartition = segmentMetadata.topicIdPartition().topicPartition()
+    val topicIdPartition = segmentMetadata.topicIdPartition()
     val nextSegmentBaseOffset = segmentMetadata.endOffset() + 1
     var epoch = OptionalInt.of(segmentMetadata.segmentLeaderEpochs().lastEntry().getKey.toInt)
     var result: Option[RemoteLogSegmentMetadata] = Option.empty;
-    fetchLog(topicPartition).foreach(log => {
+    fetchLog(topicIdPartition).foreach(log => {
       log.leaderEpochCache.foreach(cache => {
         while (result.isEmpty && epoch.isPresent) {
-          result = Option(fetchRemoteLogSegmentMetadata(topicPartition, epoch.getAsInt, nextSegmentBaseOffset).orElse(null))
+          result = Option(fetchRemoteLogSegmentMetadata(topicIdPartition.topicPartition(), epoch.getAsInt, nextSegmentBaseOffset).orElse(null))
           epoch = cache.nextEpoch(epoch.getAsInt)
         }
       })
@@ -713,7 +717,7 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
       try {
         maybeUpdateReadOffset()
         val readOffset = readOffsetOption.get
-        fetchLog(tpId.topicPartition()).foreach { log =>
+        fetchLog(tpId).foreach { log =>
           // LSO indicates the offset below are ready to be consumed(high-watermark or committed)
           val lso = log.lastStableOffset
           if (lso < 0) {
@@ -790,7 +794,7 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
               }
             }
           } else {
-            debug(s"Skipping copying segments, current read offset:$readOffset is and LSO:$lso ")
+            info(s"Skipping copying segments, current read offset:$readOffset is and LSO:$lso ")
           }
         }
       } catch {
@@ -818,7 +822,7 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
         // the collection every time.
         val segmentMetadataList = remoteLogMetadataManager.listRemoteLogSegments(tpId).asScala.toSeq
         if (segmentMetadataList.nonEmpty) {
-          fetchLog(tpId.topicPartition()).foreach { log =>
+          fetchLog(tpId).foreach { log =>
             val retentionMs = log.config.retentionMs
             val totalSize = log.size + segmentMetadataList.map(_.segmentSizeInBytes()).sum
             val (checkTimestampRetention, cleanupTs) = (retentionMs > -1, time.milliseconds() - retentionMs)
@@ -893,7 +897,7 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[UnifiedLog],
           // We do not need any cleanup on followers from remote segments perspective.
           handleExpiredRemoteLogSegments()
         } else {
-          fetchLog(tpId.topicPartition()).foreach { log =>
+          fetchLog(tpId).foreach { log =>
             val offset = findHighestRemoteOffset(tpId)
             log.updateRemoteIndexHighestOffset(offset)
           }

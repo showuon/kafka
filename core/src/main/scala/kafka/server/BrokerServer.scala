@@ -518,7 +518,7 @@ class BrokerServer(
         })
       }
 
-      Some(new RemoteLogManager(tp => logManager.getLog(tp), updateRemoteLogStartOffset, Time.SYSTEM, remoteLogManagerConfig, config.brokerId, config.logDirs.head))
+      Some(new RemoteLogManager(tp => logManager.getLog(tp.topicPartition()), updateRemoteLogStartOffset, Time.SYSTEM, remoteLogManagerConfig, config.brokerId, config.logDirs.head))
     } else {
       None
     }

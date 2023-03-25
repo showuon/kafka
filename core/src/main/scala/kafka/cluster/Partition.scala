@@ -23,6 +23,7 @@ import kafka.api.LeaderAndIsr
 import kafka.common.UnexpectedAppendOffsetException
 import kafka.controller.{KafkaController, StateChangeLogger}
 import kafka.log._
+import kafka.log.remote.RemoteLogManager
 import kafka.server._
 import kafka.server.checkpoints.OffsetCheckpoints
 import kafka.server.metadata.{KRaftMetadataCache, ZkMetadataCache}
@@ -503,6 +504,17 @@ class Partition(val topicPartition: TopicPartition,
   def localLogOrException: UnifiedLog = log.getOrElse {
     throw new NotLeaderOrFollowerException(s"Log for partition $topicPartition is not available " +
       s"on broker $localBrokerId")
+  }
+
+  def localLogWithEpochOrException(currentLeaderEpoch: Optional[Integer],
+                                   requireLeader: Boolean): UnifiedLog = {
+    getLocalLog(currentLeaderEpoch, requireLeader) match {
+      case Left(localLog) => localLog
+      case Right(error) =>
+        throw error.exception(s"Failed to find ${if (requireLeader) "leader" else ""} log for " +
+          s"partition $topicPartition with leader epoch $currentLeaderEpoch. The current leader " +
+          s"is $leaderReplicaIdOpt and the current epoch $leaderEpoch")
+    }
   }
 
   def futureLocalLogOrException: UnifiedLog = futureLog.getOrElse {
@@ -1456,7 +1468,8 @@ class Partition(val topicPartition: TopicPartition,
   def fetchOffsetForTimestamp(timestamp: Long,
                               isolationLevel: Option[IsolationLevel],
                               currentLeaderEpoch: Optional[Integer],
-                              fetchOnlyFromLeader: Boolean): Option[TimestampAndOffset] = inReadLock(leaderIsrUpdateLock) {
+                              fetchOnlyFromLeader: Boolean,
+                              remoteLogManager: Option[RemoteLogManager] = None): Option[TimestampAndOffset] = inReadLock(leaderIsrUpdateLock) {
     // decide whether to only fetch from leader
     val localLog = localLogWithEpochOrThrow(currentLeaderEpoch, fetchOnlyFromLeader)
 
