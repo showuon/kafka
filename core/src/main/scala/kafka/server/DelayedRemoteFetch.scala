@@ -19,7 +19,7 @@ package kafka.server
 
 import java.util.concurrent.CompletableFuture
 import kafka.log.remote.{RemoteLogManager, RemoteLogReadResult}
-import org.apache.kafka.common.{TopicIdPartition}
+import org.apache.kafka.common.TopicIdPartition
 import org.apache.kafka.common.errors._
 import org.apache.kafka.storage.internals.log.{FetchPartitionData, LogOffsetMetadata, RemoteStorageFetchInfo}
 
@@ -53,6 +53,7 @@ class DelayedRemoteFetch(remoteFetchTask: RemoteLogManager#AsyncReadTask,
    * Upon completion, should return whatever data is available for each valid partition
    */
   override def tryComplete(): Boolean = {
+    info("tryComplete:" + remoteFetchResult.isDone)
     fetchMetadata.fetchPartitionStatus.foreach {
       case (topicPartition, fetchStatus) =>
         val fetchOffset = fetchStatus.startOffsetMetadata
@@ -63,17 +64,17 @@ class DelayedRemoteFetch(remoteFetchTask: RemoteLogManager#AsyncReadTask,
           }
         } catch {
           case _: KafkaStorageException => // Case d
-            debug(s"Partition $topicPartition is in an offline log directory, satisfy $fetchMetadata immediately")
+            info(s"Partition $topicPartition is in an offline log directory, satisfy $fetchMetadata immediately")
             return forceComplete()
           case _: UnknownTopicOrPartitionException => // Case b
-            debug(s"Broker no longer knows of partition $topicPartition, satisfy $fetchMetadata immediately")
+            info(s"Broker no longer knows of partition $topicPartition, satisfy $fetchMetadata immediately")
             return forceComplete()
           case _: FencedLeaderEpochException => // Case e
-            debug(s"Broker is the leader of partition $topicPartition, but the requested epoch " +
+            info(s"Broker is the leader of partition $topicPartition, but the requested epoch " +
               s"$fetchLeaderEpoch is fenced by the latest leader epoch, satisfy $fetchMetadata immediately")
             return forceComplete()
           case _: NotLeaderOrFollowerException =>  // Case a
-            debug("Broker is no longer the leader of %s, satisfy %s immediately".format(topicPartition, fetchMetadata))
+            info("Broker is no longer the leader of %s, satisfy %s immediately".format(topicPartition, fetchMetadata))
             return forceComplete()
         }
     }
@@ -92,24 +93,40 @@ class DelayedRemoteFetch(remoteFetchTask: RemoteLogManager#AsyncReadTask,
    * Upon completion, read whatever data is available and pass to the complete callback
    */
   override def onComplete():Unit = {
+    println("onComplete:" + localReadResults)
     val fetchPartitionData = localReadResults.map { case (tp, result) =>
+      println(s"1:${tp.equals(remoteFetchInfo.topicPartition)}, 2:${remoteFetchResult.isDone}, 3:${result.exception.isEmpty}, 4:${result.info.delayedRemoteStorageFetch.isPresent}")
       if (tp.equals(remoteFetchInfo.topicPartition) && remoteFetchResult.isDone
         && result.exception.isEmpty && result.info.delayedRemoteStorageFetch.isPresent) {
+        println("if:" + remoteFetchResult)
         if (remoteFetchResult.get.error.isDefined) {
+          println("error defined")
           val r = replicaManager.createLogReadResult(remoteFetchResult.get.error.get)
           tp -> new FetchPartitionData(r.error, r.highWatermark, r.leaderLogStartOffset, r.info.records,
-            Optional.empty(), OptionalLong.of(r.lastStableOffset.get), r.info.abortedTransactions, OptionalInt.of(r.preferredReadReplica.get), false)
+            null, null, null, null, false)
         } else {
+          println("error not defined")
+          new FetchPartitionData(result.error, result.highWatermark, result.leaderLogStartOffset, null,
+            null, null, null, null, false)
           val info = remoteFetchResult.get.info.get
-          tp -> new FetchPartitionData(result.error, result.highWatermark, result.leaderLogStartOffset, info.records,
-            Optional.empty(), OptionalLong.of(result.lastStableOffset.get), info.abortedTransactions, OptionalInt.of(result.preferredReadReplica.get), false)
+          println("info:" + info)
+          val fetchR = new FetchPartitionData(result.error, result.highWatermark, result.leaderLogStartOffset, info.records,
+            null, null, null, null, false)
+          println("fetchR:" + fetchR)
+          tp -> fetchR
         }
       } else {
-        tp -> new FetchPartitionData(result.error, result.highWatermark, result.leaderLogStartOffset, result.info.records,
+        println("else")
+        val fetchResult = new FetchPartitionData(result.error, result.highWatermark, result.leaderLogStartOffset, result.info.records,
           Optional.empty(), OptionalLong.of(result.lastStableOffset.get), result.info.abortedTransactions, OptionalInt.of(result.preferredReadReplica.get), false)
+        println("else:" + fetchResult)
+        tp -> fetchResult
       }
     }
+    println("123")
 
+
+    println("!!! onComplete: " + fetchPartitionData)
     responseCallback(fetchPartitionData)
   }
 }

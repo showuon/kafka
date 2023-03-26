@@ -32,6 +32,7 @@ class RemoteLogReader(fetchInfo: RemoteStorageFetchInfo,
     val result = {
       try {
         val r = rlm.read(fetchInfo)
+        println("!!! execute:" + r)
 //        brokerTopicStats.topicStats(fetchInfo.topicPartition.topic()).remoteBytesInRate.mark(r.records.sizeInBytes())
 //        brokerTopicStats.allTopicsStats.remoteBytesInRate.mark(r.records.sizeInBytes())
         RemoteLogReadResult(Some(r), None)

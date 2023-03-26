@@ -193,7 +193,7 @@ class ReplicaManager(val config: KafkaConfig,
                      delayedFetchPurgatoryParam: Option[DelayedOperationPurgatory[DelayedFetch]] = None,
                      delayedDeleteRecordsPurgatoryParam: Option[DelayedOperationPurgatory[DelayedDeleteRecords]] = None,
                      delayedElectLeaderPurgatoryParam: Option[DelayedOperationPurgatory[DelayedElectLeader]] = None,
-                     delayedRemoteFetchPurgatory: Option[DelayedOperationPurgatory[DelayedRemoteFetch]] = None,
+                     delayedRemoteFetchPurgatoryParam: Option[DelayedOperationPurgatory[DelayedRemoteFetch]] = None,
                      threadNamePrefix: Option[String] = None,
                      brokerEpochSupplier: () => Long = () => -1
                      ) extends Logging {
@@ -214,6 +214,9 @@ class ReplicaManager(val config: KafkaConfig,
   val delayedElectLeaderPurgatory = delayedElectLeaderPurgatoryParam.getOrElse(
     DelayedOperationPurgatory[DelayedElectLeader](
       purgatoryName = "ElectLeader", brokerId = config.brokerId))
+  val delayedRemoteFetchPurgatory = delayedRemoteFetchPurgatoryParam.getOrElse(
+    DelayedOperationPurgatory[DelayedRemoteFetch](
+      purgatoryName = "RemoteFetch", brokerId = config.brokerId))
 
   /* epoch of the controller that last changed the leader */
   @volatile private[server] var controllerEpoch: Int = KafkaController.InitialControllerEpoch
@@ -1125,8 +1128,9 @@ class ReplicaManager(val config: KafkaConfig,
         var remoteFetchTask: RemoteLogManager#AsyncReadTask = null
         try {
           remoteFetchTask = remoteLogManager.get.asyncRead(remoteFetchInfo.get, (result: RemoteLogReadResult) => {
+            System.out.println("!!! result:" + result + ";;" + key)
             remoteFetchResult.complete(result)
-            delayedRemoteFetchPurgatory.foreach( d => d.checkAndComplete(key) )
+            delayedRemoteFetchPurgatory.checkAndComplete(key)
 
           })
         } catch {
@@ -1151,7 +1155,8 @@ class ReplicaManager(val config: KafkaConfig,
         val remoteFetch = new DelayedRemoteFetch(remoteFetchTask, remoteFetchResult, remoteFetchInfo.get, params.maxWaitMs,
           fetchMetadata, logReadResults, this, quota, responseCallback)
 
-        delayedRemoteFetchPurgatory.foreach(d => d.tryCompleteElseWatch(remoteFetch, Seq(key)))
+        println("put into watch:" + key)
+        delayedRemoteFetchPurgatory.tryCompleteElseWatch(remoteFetch, Seq(key))
       } else {
 
         // create a list of (topic, partition) pairs to use as keys for this delayed fetch operation

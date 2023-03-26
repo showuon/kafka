@@ -837,6 +837,7 @@ class KafkaApis(val requestChannel: RequestChannel,
 
     // the callback for process a fetch response, invoked before throttling
     def processResponseCallback(responsePartitionData: Seq[(TopicIdPartition, FetchPartitionData)]): Unit = {
+      info("processResponseCallback:" + responsePartitionData)
       val partitions = new util.LinkedHashMap[TopicIdPartition, FetchResponseData.PartitionData]
       val reassigningPartitions = mutable.Set[TopicIdPartition]()
       responsePartitionData.foreach { case (tp, data) =>
@@ -886,6 +887,8 @@ class KafkaApis(val requestChannel: RequestChannel,
             }
           }
         }
+
+        info("response:" + response)
         response
       }
 
@@ -1112,6 +1115,9 @@ class KafkaApis(val requestChannel: RequestChannel,
               isolationLevelOpt,
               if (partition.currentLeaderEpoch == ListOffsetsResponse.UNKNOWN_EPOCH) Optional.empty() else Optional.of(partition.currentLeaderEpoch),
               fetchOnlyFromLeader)
+
+
+            System.out.println("!!! found")
 
             val response = foundOpt match {
               case Some(found) =>
