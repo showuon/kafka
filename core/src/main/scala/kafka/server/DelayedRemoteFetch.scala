@@ -105,13 +105,13 @@ class DelayedRemoteFetch(remoteFetchTask: RemoteLogManager#AsyncReadTask,
           tp -> new FetchPartitionData(r.error, r.highWatermark, r.leaderLogStartOffset, r.info.records,
             null, null, null, null, false)
         } else {
-          println("error not defined")
-          new FetchPartitionData(result.error, result.highWatermark, result.leaderLogStartOffset, null,
-            null, null, null, null, false)
+          println("error not defined:" + result.lastStableOffset + ";;" + result.preferredReadReplica)
           val info = remoteFetchResult.get.info.get
           println("info:" + info)
+          //tp -> new FetchPartitionData(result.error, result.highWatermark, result.leaderLogStartOffset, info.records,
+          //            Optional.empty(), OptionalLong.of(result.lastStableOffset.get), info.abortedTransactions, OptionalInt.of(result.preferredReadReplica.get), false)
           val fetchR = new FetchPartitionData(result.error, result.highWatermark, result.leaderLogStartOffset, info.records,
-            null, null, null, null, false)
+            Optional.empty(), OptionalLong.of(result.lastStableOffset.getOrElse(null)), info.abortedTransactions, OptionalInt.of(result.preferredReadReplica.getOrElse(null)), false)
           println("fetchR:" + fetchR)
           tp -> fetchR
         }
