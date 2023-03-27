@@ -175,7 +175,7 @@ public class TopicBasedRemoteLogMetadataManager implements RemoteLogMetadataMana
     private CompletableFuture<Void> storeRemoteLogMetadata(TopicIdPartition topicIdPartition,
                                                            RemoteLogMetadata remoteLogMetadata)
             throws RemoteStorageException {
-        log.info("!!! Storing metadata for partition: [{}] with context: [{}]", topicIdPartition, remoteLogMetadata);
+        log.info("Storing metadata for partition: [{}] with context: [{}]", topicIdPartition, remoteLogMetadata);
 
         try {
             // Publish the message to the metadata topic.

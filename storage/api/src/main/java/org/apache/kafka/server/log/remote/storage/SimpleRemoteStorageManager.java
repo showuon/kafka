@@ -71,11 +71,7 @@ public class SimpleRemoteStorageManager implements RemoteStorageManager {
     }
 
     private String getBlobName(RemoteLogSegmentMetadata remoteLogSegmentMetadata, String suffix) {
-        // Azure blob name requirements
-        // https://docs.microsoft.com/en-us/rest/api/storageservices/naming-and-referencing-containers--blobs--and-metadata#blob-names
         int partition = remoteLogSegmentMetadata.remoteLogSegmentId().topicIdPartition().topicPartition().partition();
-        // kafka.common.Uuid.toString() uses Base64 encoding, which may contain '/' and '+'. They are valid in blob names.
-        // However, we use canonical UUID naming for simplicity.
         Uuid id = remoteLogSegmentMetadata.remoteLogSegmentId().id();
         String logSegmentId = new UUID(id.getMostSignificantBits(), id.getLeastSignificantBits()).toString();
         return String.format("%d.%s.%s", partition, logSegmentId, suffix);
@@ -116,7 +112,7 @@ public class SimpleRemoteStorageManager implements RemoteStorageManager {
 
     @Override
     public void deleteLogSegmentData(RemoteLogSegmentMetadata remoteLogSegmentMetadata) throws RemoteStorageException {
-        System.out.println("!!! deleteLogSegmentData:" + remoteLogSegmentMetadata);
+        System.out.println("deleteLogSegmentData:" + remoteLogSegmentMetadata);
         String name = getBlobName(remoteLogSegmentMetadata, "segment");
         Path path = tmpdir.resolve(name);
         try {

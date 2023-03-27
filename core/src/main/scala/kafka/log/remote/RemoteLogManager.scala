@@ -292,7 +292,6 @@ class RemoteLogManager(fetchLog: TopicIdPartition => Option[UnifiedLog],
 
   private def deleteRemoteLogSegment(segmentMetadata: RemoteLogSegmentMetadata, predicate: RemoteLogSegmentMetadata => Boolean): Boolean = {
     if (predicate(segmentMetadata)) {
-      info("passed predicate")
       // Publish delete segment started event.
       remoteLogMetadataManager.updateRemoteLogSegmentMetadata(
         new RemoteLogSegmentMetadataUpdate(segmentMetadata.remoteLogSegmentId(), time.milliseconds(),
@@ -850,7 +849,7 @@ class RemoteLogManager(fetchLog: TopicIdPartition => Option[UnifiedLog],
                 // It is fine to have logStartOffset as `metadata.endOffset() + 1` as the segment offset intervals
                 // are ascending with in an epoch.
                 logStartOffset = Some(metadata.endOffset() + 1)
-                info(s"!!! Deleted remote log segment ${metadata.remoteLogSegmentId()} due to retention time " +
+                info(s"Deleted remote log segment ${metadata.remoteLogSegmentId()} due to retention time " +
                   s"${retentionMs}ms breach based on the largest record timestamp in the segment")
               }
               isSegmentDeleted
