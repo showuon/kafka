@@ -839,7 +839,6 @@ class RemoteLogManager(fetchLog: TopicIdPartition => Option[UnifiedLog],
         if (segmentMetadataList.nonEmpty) {
 
           fetchLog(tpId).foreach { log =>
-            info("log:" + log)
             val retentionMs = log.config.retentionMs
             val totalSize = log.size + segmentMetadataList.map(_.segmentSizeInBytes()).sum
             val (checkTimestampRetention, cleanupTs) = (retentionMs > -1, time.milliseconds() - retentionMs)
@@ -847,16 +846,9 @@ class RemoteLogManager(fetchLog: TopicIdPartition => Option[UnifiedLog],
             var remainingSize = totalSize - log.config.retentionSize
             var logStartOffset: Option[Long] = None
 
-            info("checkTimestampRetention:" + checkTimestampRetention + ";;" + retentionMs + ";;" + cleanupTs)
-
-
             def deleteRetentionTimeBreachedSegments(metadata: RemoteLogSegmentMetadata): Boolean = {
               val isSegmentDeleted = deleteRemoteLogSegment(
-                metadata, (m) => {
-                  println(s"m:$m, ${cleanupTs >= m.maxTimestampMs()};; ${checkTimestampRetention && m.maxTimestampMs() <= cleanupTs}")
-                  checkTimestampRetention && m.maxTimestampMs() <= cleanupTs
-                })
-              info("isSegmentDeleted:" + isSegmentDeleted)
+                metadata, checkTimestampRetention && _.maxTimestampMs() <= cleanupTs)
               if (isSegmentDeleted) {
                 remainingSize = Math.max(0, remainingSize - metadata.segmentSizeInBytes())
                 // It is fine to have logStartOffset as `metadata.endOffset() + 1` as the segment offset intervals
@@ -885,15 +877,12 @@ class RemoteLogManager(fetchLog: TopicIdPartition => Option[UnifiedLog],
               isSegmentDeleted
             }
 
-            info("log.leaderEpochCache:" + log.leaderEpochCache)
             log.leaderEpochCache.foreach { cache =>
-              cache.epochEntries.stream().filter { epochEntry =>
-                info("epochEntry:" + epochEntry)
+              cache.epochEntries.asScala.find { epochEntry =>
                 val segmentsIterator = remoteLogMetadataManager.listRemoteLogSegments(tpId, epochEntry.epoch)
                 var isSegmentDeleted = true
                 while (isSegmentDeleted && segmentsIterator.hasNext) {
                   val metadata = segmentsIterator.next()
-                  info("metadata:" + metadata)
                   isSegmentDeleted = deleteRetentionTimeBreachedSegments(metadata) ||
                     deleteRetentionSizeBreachedSegments(metadata)
                 }

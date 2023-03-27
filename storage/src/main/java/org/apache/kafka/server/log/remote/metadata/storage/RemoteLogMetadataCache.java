@@ -140,7 +140,7 @@ public class RemoteLogMetadataCache {
 
     public void updateRemoteLogSegmentMetadata(RemoteLogSegmentMetadataUpdate metadataUpdate)
             throws RemoteResourceNotFoundException {
-        log.debug("Updating remote log segment metadata: [{}]", metadataUpdate);
+        log.info("Updating remote log segment metadata: [{}]", metadataUpdate);
         Objects.requireNonNull(metadataUpdate, "metadataUpdate can not be null");
 
         RemoteLogSegmentState targetState = metadataUpdate.state();
@@ -200,7 +200,7 @@ public class RemoteLogMetadataCache {
     }
 
     private void handleSegmentWithDeleteSegmentFinishedState(RemoteLogSegmentMetadata remoteLogSegmentMetadata) {
-        log.debug("Removing the entry as it reached the terminal state: [{}]", remoteLogSegmentMetadata);
+        log.info("Removing the entry as it reached the terminal state: [{}]", remoteLogSegmentMetadata);
 
         doHandleSegmentStateTransitionForLeaderEpochs(remoteLogSegmentMetadata,
                                                       (leaderEpoch, remoteLogLeaderEpochState, startOffset, segmentId) ->
