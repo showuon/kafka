@@ -89,12 +89,6 @@ public class SimpleRemoteStorageManager implements RemoteStorageManager {
 
     @Override
     public InputStream fetchLogSegment(RemoteLogSegmentMetadata remoteLogSegmentMetadata, int startPosition, int endPosition) throws RemoteStorageException {
-        System.out.println("!!! fetchLogSegment:" + remoteLogSegmentMetadata);
-        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-        for (int i = 1; i < elements.length; i++) {
-            final StackTraceElement s = elements[i];
-            System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
-        }
         String name = getBlobName(remoteLogSegmentMetadata, "segment");
         Path path = tmpdir.resolve(name);
         try {
@@ -109,12 +103,6 @@ public class SimpleRemoteStorageManager implements RemoteStorageManager {
 
         @Override
     public InputStream fetchIndex(RemoteLogSegmentMetadata remoteLogSegmentMetadata, IndexType indexType) throws RemoteStorageException {
-        System.out.println("!!! fetchIndex:" + remoteLogSegmentMetadata + ";;" + indexType);
-            final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-            for (int i = 1; i < elements.length; i++) {
-                final StackTraceElement s = elements[i];
-                System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
-            }
         String name = getBlobName(remoteLogSegmentMetadata, indexType.toString());
         Path path = tmpdir.resolve(name);
         try {

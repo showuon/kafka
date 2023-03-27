@@ -1069,6 +1069,7 @@ class KafkaApis(val requestChannel: RequestChannel,
   }
 
   private def handleListOffsetRequestV1AndAbove(request : RequestChannel.Request): List[ListOffsetsTopicResponse] = {
+    info("handleListOffsetRequestV1AndAbove:" + request)
     val correlationId = request.header.correlationId
     val clientId = request.header.clientId
     val offsetRequest = request.body[ListOffsetsRequest]

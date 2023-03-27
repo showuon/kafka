@@ -431,7 +431,6 @@ class RemoteLogManager(fetchLog: TopicIdPartition => Option[UnifiedLog],
    * @throws RejectedExecutionException if the task cannot be accepted for execution (task queue is full)
    */
   def asyncRead(fetchInfo: RemoteStorageFetchInfo, callback: RemoteLogReadResult => Unit): AsyncReadTask = {
-    info("!!! asyncRead:" + fetchInfo)
     AsyncReadTask(remoteStorageFetcherThreadPool.submit(new RemoteLogReader(fetchInfo, this, null, callback)))
   }
 
@@ -517,9 +516,6 @@ class RemoteLogManager(fetchLog: TopicIdPartition => Option[UnifiedLog],
   }
 
   def read(remoteStorageFetchInfo: RemoteStorageFetchInfo): FetchDataInfo = {
-    info("!!! read:" + remoteStorageFetchInfo)
-
-
     val fetchMaxBytes = remoteStorageFetchInfo.fetchMaxBytes
     val tp = remoteStorageFetchInfo.topicPartition
     val fetchInfo: PartitionData = remoteStorageFetchInfo.fetchInfo
@@ -712,7 +708,7 @@ class RemoteLogManager(fetchLog: TopicIdPartition => Option[UnifiedLog],
 
       def maybeUpdateReadOffset(): Unit = {
         if (readOffsetOption.isEmpty) {
-          info(s"Find the highest remote offset for partition: $tpId after becoming leader, leaderEpoch: $leaderEpoch")
+          debug(s"Find the highest remote offset for partition: $tpId after becoming leader, leaderEpoch: $leaderEpoch")
 
           // This is found by traversing from the latest leader epoch from leader epoch history and find the highest offset
           // of a segment with that epoch copied into remote storage. If it can not find an entry then it checks for the
@@ -734,7 +730,7 @@ class RemoteLogManager(fetchLog: TopicIdPartition => Option[UnifiedLog],
             // copy segments only till the min of high-watermark or stable-offset
             // remote storage should contain only committed/acked messages
             val fetchOffset = lso
-            info(s"Checking for segments to copy, readOffset: $readOffset and fetchOffset: $fetchOffset")
+            debug(s"Checking for segments to copy, readOffset: $readOffset and fetchOffset: $fetchOffset")
             val activeSegBaseOffset = log.activeSegment.baseOffset
             // log-start-offset can be ahead of the read-offset, when:
             // 1) log-start-offset gets incremented via delete-records API (or)
@@ -808,7 +804,7 @@ class RemoteLogManager(fetchLog: TopicIdPartition => Option[UnifiedLog],
               }
             }
           } else {
-            info(s"Skipping copying segments, current read offset:$readOffset is and LSO:$lso ")
+            debug(s"Skipping copying segments, current read offset:$readOffset is and LSO:$lso ")
           }
         }
       } catch {

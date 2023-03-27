@@ -527,6 +527,12 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   }
 
   private def updateLogStartOffset(offset: Long): Unit = {
+    info("!!! updateLogStartOffset:" + offset)
+    val elements = Thread.currentThread.getStackTrace
+    for (i <- 1 until elements.length) {
+      val s = elements(i)
+      System.out.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+    }
     logStartOffset = offset
 
     if (highWatermark < offset) {
@@ -939,7 +945,8 @@ class UnifiedLog(@volatile var logStartOffset: Long,
    * @throws OffsetOutOfRangeException if the log start offset is greater than the high watermark
    * @return true if the log start offset was updated; otherwise false
    */
-  def maybeIncrementLogStartOffset(newLogStartOffset: Long, reason: LogStartOffsetIncrementReason): Boolean = {
+  def maybeIncrementLogStartOffset(newLogStartOffset: Long, reason: LogStartOffsetIncrementReason,
+                                   onlyLocalLogStartOffsetUpdate: Boolean = false): Boolean = {
     // We don't have to write the log start offset to log-start-offset-checkpoint immediately.
     // The deleteRecordsOffset may be lost only if all in-sync replicas of this broker are shutdown
     // in an unclean manner within log.flush.start.offset.checkpoint.interval.ms. The chance of this happening is low.
@@ -952,13 +959,21 @@ class UnifiedLog(@volatile var logStartOffset: Long,
 
         localLog.checkIfMemoryMappedBufferClosed()
         if (newLogStartOffset > logStartOffset) {
-          updatedLogStartOffset = true
-          updateLogStartOffset(newLogStartOffset)
-          _localLogStartOffset = newLogStartOffset
-          info(s"Incremented log start offset to $newLogStartOffset due to $reason")
-          leaderEpochCache.foreach(_.truncateFromStart(logStartOffset))
-          producerStateManager.onLogStartOffsetIncremented(newLogStartOffset)
-          maybeIncrementFirstUnstableOffset()
+          _localLogStartOffset = math.max(newLogStartOffset, _localLogStartOffset)
+
+          // it should always get updated  if tiered-storage is not enabled.
+          if (!onlyLocalLogStartOffsetUpdate || !remoteLogEnabled()) {
+            updatedLogStartOffset = true
+            updateLogStartOffset(newLogStartOffset)
+            _localLogStartOffset = newLogStartOffset
+            info(s"Incremented log start offset to $newLogStartOffset due to $reason")
+            leaderEpochCache.foreach(_.truncateFromStart(logStartOffset))
+            producerStateManager.onLogStartOffsetIncremented(newLogStartOffset)
+            maybeIncrementFirstUnstableOffset()
+          } else {
+            info(s"Incrementing local log start offset to ${localLogStartOffset()}")
+          }
+
         }
       }
     }
@@ -1179,15 +1194,15 @@ class UnifiedLog(@volatile var logStartOffset: Long,
    */
   @nowarn("cat=deprecation")
   def fetchOffsetByTimestamp(targetTimestamp: Long, remoteLogManager: Option[RemoteLogManager] = None): Option[TimestampAndOffset] = {
+    info("fetchOffsetByTimestamp:" + targetTimestamp + ";;" + remoteLogManager)
     maybeHandleIOException(s"Error while fetching offset by timestamp for $topicPartition in dir ${dir.getParent}") {
       debug(s"Searching offset for timestamp $targetTimestamp")
 
       def latestEpochAsOptional(leaderEpochCache: Option[LeaderEpochFileCache]): Optional[Integer] = {
         leaderEpochCache match {
-          case Some(cache) => {
+          case Some(cache) =>
             val latestEpoch = cache.latestEpoch()
             if (latestEpoch.isPresent) Optional.of(latestEpoch.getAsInt) else Optional.empty[Integer]()
-          }
           case None => Optional.empty[Integer]()
         }
       }
@@ -1206,10 +1221,12 @@ class UnifiedLog(@volatile var logStartOffset: Long,
         // The first cached epoch usually corresponds to the log start offset, but we have to verify this since
         // it may not be true following a message format version bump as the epoch will not be available for
         // log entries written in the older format.
+        info("leaderEpochCache:" + leaderEpochCache + ";;" + logStartOffset)
         val earliestEpochEntry = leaderEpochCache.asJava.flatMap(_.earliestEntry())
         val epochOpt = if (earliestEpochEntry.isPresent && earliestEpochEntry.get().startOffset <= logStartOffset) {
           Optional.of[Integer](earliestEpochEntry.get().epoch)
         } else Optional.empty[Integer]()
+
 
         Some(new TimestampAndOffset(RecordBatch.NO_TIMESTAMP, logStartOffset, epochOpt))
       } else if (targetTimestamp == ListOffsetsRequest.EARLIEST_LOCAL_TIMESTAMP) {
@@ -1366,7 +1383,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
         // remove the segments for lookups
         localLog.removeAndDeleteSegments(segmentsToDelete, asyncDelete = true, reason)
         deleteProducerSnapshots(deletable, asyncDelete = true)
-        maybeIncrementLogStartOffset(localLog.segments.firstSegmentBaseOffset.get, LogStartOffsetIncrementReason.SegmentDeletion)
+        maybeIncrementLogStartOffset(localLog.segments.firstSegmentBaseOffset.get, LogStartOffsetIncrementReason.SegmentDeletion, true)
       }
       numToDelete
     }
