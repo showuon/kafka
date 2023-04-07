@@ -237,6 +237,11 @@ public class RemoteLogManager implements Closeable {
         }
     }
 
+    // for testing
+    public RLMScheduledThreadPool rlmScheduledThreadPool() {
+        return rlmScheduledThreadPool;
+    }
+
     /**
      * Callback to receive any leadership changes for the topic partitions assigned to this broker. If there are no
      * existing tasks for a given topic partition then it will assign new leader or follower task else it will convert the
@@ -418,7 +423,7 @@ public class RemoteLogManager implements Closeable {
         return checkpoint;
     }
 
-    private class RLMTask extends CancellableRunnable {
+    class RLMTask extends CancellableRunnable {
 
         private final TopicIdPartition topicIdPartition;
         private final Logger logger;
@@ -431,7 +436,7 @@ public class RemoteLogManager implements Closeable {
             logger = logContext.logger(LeaderEpochFileCache.class);
         }
 
-        private boolean isLeader() {
+        boolean isLeader() {
             return leaderEpoch >= 0;
         }
 
@@ -628,7 +633,7 @@ public class RemoteLogManager implements Closeable {
         convertToLeaderOrFollower.accept(rlmTaskWithFuture.rlmTask);
     }
 
-    private static class RLMTaskWithFuture {
+    static class RLMTaskWithFuture {
 
         private final RLMTask rlmTask;
         private final Future<?> future;
@@ -649,7 +654,7 @@ public class RemoteLogManager implements Closeable {
 
     }
 
-    private static class InMemoryLeaderEpochCheckpoint implements LeaderEpochCheckpoint {
+    static class InMemoryLeaderEpochCheckpoint implements LeaderEpochCheckpoint {
         private List<EpochEntry> epochs = Collections.emptyList();
 
         public void write(Collection<EpochEntry> epochs) {
@@ -693,7 +698,7 @@ public class RemoteLogManager implements Closeable {
         }
     }
 
-    private static class RLMScheduledThreadPool {
+    static class RLMScheduledThreadPool {
 
         private static final Logger LOGGER = LoggerFactory.getLogger(RLMScheduledThreadPool.class);
         private final int poolSize;
