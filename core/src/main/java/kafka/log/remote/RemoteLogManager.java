@@ -577,15 +577,15 @@ Local :        <=== j1 ======================================== j2 ===>
                 // Publish delete segment started event.
                 remoteLogMetadataManager.updateRemoteLogSegmentMetadata(
                     new RemoteLogSegmentMetadataUpdate(segmentMetadata.remoteLogSegmentId(), time.milliseconds(),
-                        RemoteLogSegmentState.DELETE_SEGMENT_STARTED, brokerId))
+                        RemoteLogSegmentState.DELETE_SEGMENT_STARTED, brokerId));
 
                 // Delete the segment in remote storage.
-                remoteLogStorageManager.deleteLogSegmentData(segmentMetadata)
+                remoteLogStorageManager.deleteLogSegmentData(segmentMetadata);
 
                 // Publish delete segment finished event.
                 remoteLogMetadataManager.updateRemoteLogSegmentMetadata(
                     new RemoteLogSegmentMetadataUpdate(segmentMetadata.remoteLogSegmentId(), time.milliseconds(),
-                        RemoteLogSegmentState.DELETE_SEGMENT_FINISHED, brokerId))
+                        RemoteLogSegmentState.DELETE_SEGMENT_FINISHED, brokerId));
                 return true;
             }
             return false;
@@ -601,7 +601,7 @@ Local :        <=== j1 ======================================== j2 ===>
                 // are ascending with in an epoch.
                 logStartOffset = Optional.of(metadata.endOffset() + 1);
                 LOGGER.info("Deleted remote log segment ${metadata.remoteLogSegmentId()} due to retention time " +
-                    "${retentionMs}ms breach based on the largest record timestamp in the segment")
+                    "${retentionMs}ms breach based on the largest record timestamp in the segment");
             }
             return isSegmentDeleted;
         }
@@ -638,7 +638,7 @@ Local :        <=== j1 ======================================== j2 ===>
             return isSegmentDeleted;
         }
 
-        void handleExpiredRemoteLogSegments() {
+        public void handleExpiredRemoteLogSegments() {
             if (isCancelled())
                 return;
             try {
@@ -646,7 +646,7 @@ Local :        <=== j1 ======================================== j2 ===>
                 // Compute total size, this can be pushed to RLMM by introducing a new method instead of going through
                 // the collection every time.
 
-                fetchLog.apply(topicIdPartition.topicPartition()).map(log -> {
+                fetchLog.apply(topicIdPartition.topicPartition()).ifPresent(log -> {
                     long retentionMs = log.config().retentionMs;
                     boolean checkTimestampRetention = retentionMs > -1;
                     long cleanupTs = time.milliseconds() - retentionMs;
@@ -674,7 +674,7 @@ Local :        <=== j1 ======================================== j2 ===>
                     TreeMap<Integer, Long> validLeaderEpochs = fromLeaderEpochCacheToEpochs(log);
 
 
-                    log.leaderEpochCache().foreach(cache -> {
+                    log.leaderEpochCache().foreach( cache -> {
                         List<EpochEntry> entries = cache.epochEntries();
                         for (EpochEntry entry : entries) {
                             Iterator<RemoteLogSegmentMetadata> segmentsIterator = null;
@@ -693,23 +693,22 @@ Local :        <=== j1 ======================================== j2 ===>
                                 }
                                 try {
                                     isSegmentDeleted = deleteRetentionTimeBreachedSegments(metadata, checkTimestampRetention, cleanupTs) ||
-                                        deleteRetentionSizeBreachedSegments(metadata, shouldDeleteBySize)
+                                        deleteRetentionSizeBreachedSegments(metadata, shouldDeleteBySize);
                                 } catch (RemoteStorageException e) {
                                     throw new RuntimeException(e);
                                 }
                             }
                             if (!isSegmentDeleted) {
-                                return;
+                                return null;
                             }
                         }
 
-                        return;
+                        return null;
                     });
                     if (logStartOffset.isPresent()) {
                         handleLogStartOffsetUpdate(topicIdPartition.topicPartition(), logStartOffset.get());
                     }
 
-                    return null;
                 });
             } catch (Exception ex) {
                 if (!isCancelled()) {
@@ -827,6 +826,7 @@ Local :        <=== j1 ======================================== j2 ===>
                 if (isLeader()) {
                     // Copy log segments to remote storage
                     handleCopyLogSegmentsToRemote();
+                    handleExpiredRemoteLogSegments();
                 }
             } catch (InterruptedException ex) {
                 if (!isCancelled()) {
