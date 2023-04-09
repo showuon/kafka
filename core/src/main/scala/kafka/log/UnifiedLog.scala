@@ -1664,6 +1664,12 @@ class UnifiedLog(@volatile var logStartOffset: Long,
     localLog.segments.values(from, to)
   }
 
+  /**
+   * The size of the log in bytes for segments not yet in remote storage
+   */
+  def localOnlyLogSegmentsSize: Long = LogSegments.sizeInBytes(logSegments.filter(_.baseOffset > highestOffsetInRemoteStorage))
+
+
   def nonActiveLogSegmentsFrom(from: Long): Iterable[LogSegment] = lock synchronized {
     localLog.segments.nonActiveLogSegmentsFrom(from)
   }
@@ -1838,6 +1844,7 @@ object UnifiedLog extends Logging {
   def offsetFromFile(file: File): Long = LogFileUtils.offsetFromFile(file)
 
   def sizeInBytes(segments: Iterable[LogSegment]): Long = LogSegments.sizeInBytes(segments)
+
 
   def parseTopicPartitionName(dir: File): TopicPartition = LocalLog.parseTopicPartitionName(dir)
 
