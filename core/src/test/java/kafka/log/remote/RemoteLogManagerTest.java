@@ -53,6 +53,9 @@ import org.apache.kafka.storage.internals.log.TransactionIndex;
 import org.apache.kafka.test.TestUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.apache.kafka.server.log.remote.storage.NoOpRemoteStorageManager;
@@ -65,6 +68,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -78,6 +82,8 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -111,10 +117,15 @@ public class RemoteLogManagerTest {
     TopicIdPartition followerTopicIdPartition = new TopicIdPartition(Uuid.randomUuid(), new TopicPartition("Follower", 0));
     Map<String, Uuid> topicIds = new HashMap<>();
     TopicPartition tp = new TopicPartition("TestTopic", 5);
-    EpochEntry epochEntry0 = new EpochEntry(0, 0);
-    EpochEntry epochEntry1 = new EpochEntry(1, 100);
-    EpochEntry epochEntry2 = new EpochEntry(2, 200);
-    List<EpochEntry> totalEpochEntries = Arrays.asList(epochEntry0, epochEntry1, epochEntry2);
+    EpochEntry epochEntry0 = new EpochEntry(0, 0L);
+    EpochEntry epochEntry1 = new EpochEntry(1, 100L);
+    EpochEntry epochEntry2 = new EpochEntry(2, 200L);
+    EpochEntry epochEntry5 = new EpochEntry(5, 500L);
+
+    EpochEntry epochEntry6 = new EpochEntry(6, 600L);
+
+    List<EpochEntry> totalEpochEntries = Arrays.asList(epochEntry0, epochEntry1, epochEntry2, epochEntry5, epochEntry6);
+
     LeaderEpochCheckpoint checkpoint = new LeaderEpochCheckpoint() {
         List<EpochEntry> epochs = Collections.emptyList();
         @Override
@@ -151,7 +162,7 @@ public class RemoteLogManagerTest {
         checkpoint.write(totalEpochEntries);
         LeaderEpochFileCache cache = new LeaderEpochFileCache(tp, checkpoint);
         when(mockLog.leaderEpochCache()).thenReturn(Option.apply(cache));
-        RemoteLogManager.InMemoryLeaderEpochCheckpoint inMemoryCheckpoint = remoteLogManager.getLeaderEpochCheckpoint(mockLog, 0, 300);
+        RemoteLogManager.InMemoryLeaderEpochCheckpoint inMemoryCheckpoint = remoteLogManager.getLeaderEpochCheckpoint(mockLog, 0, 800);
         assertEquals(totalEpochEntries, inMemoryCheckpoint.read());
 
         RemoteLogManager.InMemoryLeaderEpochCheckpoint inMemoryCheckpoint2 = remoteLogManager.getLeaderEpochCheckpoint(mockLog, 100, 200);
@@ -550,6 +561,101 @@ public class RemoteLogManagerTest {
         inorder.verify(remoteLogMetadataManager, times(1)).close();
     }
 
+    @ParameterizedTest(name = "testIsRemoteSegmentConsistentWithLeaderLineage = {1}")
+    @MethodSource("remoteLogSegmentMetadataCombinations")
+    public void testIsRemoteSegmentConsistentWithLeaderLineage(Boolean expectedResult,
+                                                               RemoteLogSegmentMetadata remoteSegment) {
+        checkpoint.write(totalEpochEntries);
+        LeaderEpochFileCache cache = new LeaderEpochFileCache(tp, checkpoint);
+
+        TreeMap<Integer, Long> epochCache = cache.getEpochs();
+        System.out.println("!!! epochCache:" + epochCache);
+        boolean result = remoteLogManager.isRemoteSegmentConsistentWithLeaderLineage(epochCache, remoteSegment, 1000L);
+
+        assertEquals(expectedResult, result,
+            "RemoteSegment consistency check with leader lineage did not match the expected result");
+    }
+
+    private static RemoteLogSegmentMetadata createSegmentMetadata(int startOffset,
+                                                           int endOffset,
+                                                           Map<Integer, Long> segmentLeaderEpochs) {
+        TopicIdPartition dummyTopicPartitionId = new TopicIdPartition(Uuid.randomUuid(), new TopicPartition("test-topic", 0));
+        return new RemoteLogSegmentMetadata(
+            new RemoteLogSegmentId(dummyTopicPartitionId, Uuid.randomUuid()),
+            startOffset,
+            endOffset,
+            10, // dummy maxTimestampMs
+            0, // dummy broker id
+            -1L, // dummy eventTimestampMs
+            1024, // dummy segment size
+            segmentLeaderEpochs);
+    }
+
+
+    public static Collection<Arguments> remoteLogSegmentMetadataCombinations() {
+        // example of segment which has an epoch starting & ending within it
+        RemoteLogSegmentMetadata metadataSeg1 = createSegmentMetadata(0, 200,
+            Stream.of(new AbstractMap.SimpleImmutableEntry<>(0, 0L),
+                      new AbstractMap.SimpleImmutableEntry<>(1, 100L),
+                      new AbstractMap.SimpleImmutableEntry<>(2, 200L))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
+
+        // example of segment where epoch last epoch is the active one
+        RemoteLogSegmentMetadata metadataSeg2 = createSegmentMetadata(500, 650,
+            Stream.of(new AbstractMap.SimpleImmutableEntry<>(5, 500L),
+                    new AbstractMap.SimpleImmutableEntry<>(6, 600L))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
+
+        // example of segment where segment is the latest segment in remote but does not contain the latest epoch in local
+        RemoteLogSegmentMetadata metadataSeg3 = createSegmentMetadata(200, 550,
+            Stream.of(new AbstractMap.SimpleImmutableEntry<>(2, 210L),
+                    new AbstractMap.SimpleImmutableEntry<>(5, 500L))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
+
+        // example of inconsistent segment, case: when remote segment has a higher epoch than local leader segment
+        RemoteLogSegmentMetadata inconsistentSegment1 = createSegmentMetadata(500, 900,
+            Stream.of(new AbstractMap.SimpleImmutableEntry<>(5, 501L),
+                    new AbstractMap.SimpleImmutableEntry<>(10, 800L))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
+
+        // example of inconsistent segment, case: when remote segment has an epoch not available in local segment
+        RemoteLogSegmentMetadata inconsistentSegment2 = createSegmentMetadata(300, 400,
+            Stream.of(new AbstractMap.SimpleImmutableEntry<>(4, 310L))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
+
+        // example of inconsistent segment, case: when remote segment has divergence in lineage
+        RemoteLogSegmentMetadata inconsistentSegment3 = createSegmentMetadata(0, 100,
+            Stream.of(new AbstractMap.SimpleImmutableEntry<>(0, 0L),
+                    new AbstractMap.SimpleImmutableEntry<>(1, 93L))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
+        RemoteLogSegmentMetadata inconsistentSegment4 = createSegmentMetadata(0, 200,
+            Stream.of(new AbstractMap.SimpleImmutableEntry<>(0, 0L),
+                    new AbstractMap.SimpleImmutableEntry<>(1, 108L))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
+
+        RemoteLogSegmentMetadata inconsistentSegment5 = createSegmentMetadata(200, 500,
+            Stream.of(new AbstractMap.SimpleImmutableEntry<>(2, 200L),
+                    new AbstractMap.SimpleImmutableEntry<>(5, 424L))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
+
+        RemoteLogSegmentMetadata inconsistentSegment6 = createSegmentMetadata(200, 300,
+            Stream.of(new AbstractMap.SimpleImmutableEntry<>(2, 210L),
+                    new AbstractMap.SimpleImmutableEntry<>(5, 270L))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
+
+        return Stream.of(
+            Arguments.of(true, metadataSeg1),
+            Arguments.of(true, metadataSeg2),
+            Arguments.of(true, metadataSeg3),
+            Arguments.of(false, inconsistentSegment1),
+            Arguments.of(false, inconsistentSegment2),
+            Arguments.of(false, inconsistentSegment3),
+            Arguments.of(false, inconsistentSegment4),
+            Arguments.of(false, inconsistentSegment5),
+            Arguments.of(false, inconsistentSegment6)
+        ).collect(Collectors.toList());
+    }
+
     private Partition mockPartition(TopicIdPartition topicIdPartition) {
         TopicPartition tp = topicIdPartition.topicPartition();
         Partition partition = mock(Partition.class);
@@ -568,5 +674,7 @@ public class RemoteLogManagerTest {
         AbstractConfig config = new AbstractConfig(RemoteLogManagerConfig.CONFIG_DEF, props);
         return new RemoteLogManagerConfig(config);
     }
+
+
 
 }
