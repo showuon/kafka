@@ -260,7 +260,9 @@ class LocalLog(@volatile private var _dir: File,
    *                  (if there is one). It returns true iff the segment is deletable.
    * @return the segments ready to be deleted
    */
-  private[log] def deletableSegments(predicate: (LogSegment, Option[LogSegment]) => Boolean): Iterable[LogSegment] = {
+  private[log] def deletableSegments(predicate: (LogSegment, Option[LogSegment]) => Boolean,
+                                     highestOffsetInRemoteStorage: Long = 0,
+                                     highWatermark: Long = 0): Iterable[LogSegment] = {
     if (segments.isEmpty) {
       Seq.empty
     } else {
@@ -271,7 +273,16 @@ class LocalLog(@volatile private var _dir: File,
         val segment = segmentOpt.get
         val nextSegmentOpt = nextOption(segmentsIterator)
         val isLastSegmentAndEmpty = nextSegmentOpt.isEmpty && segment.size == 0
-        if (predicate(segment, nextSegmentOpt) && !isLastSegmentAndEmpty) {
+        val upperBoundOffset = if (nextSegmentOpt.isEmpty) logEndOffset else nextSegmentOpt.get.baseOffset
+
+        // Check not to delete segments which do not have remote indexes locally.
+        val deleteOnlyWhenRemoteIndexExistsLocally =
+          if (config.remoteLogConfig.remoteStorageEnable)
+            upperBoundOffset > 0 && upperBoundOffset - 1 <= highestOffsetInRemoteStorage
+          else true
+
+        if (deleteOnlyWhenRemoteIndexExistsLocally && highWatermark >= upperBoundOffset &&
+          predicate(segment, nextSegmentOpt) && !isLastSegmentAndEmpty) {
           deletable += segment
           segmentOpt = nextSegmentOpt
         } else {

@@ -72,13 +72,16 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
@@ -88,6 +91,7 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -127,6 +131,8 @@ public class RemoteLogManager implements Closeable {
 
     private boolean closed = false;
 
+    private final BiConsumer<TopicPartition, Long> updateRemoteLogStartOffset;
+
     /**
      * Creates RemoteLogManager instance with the given arguments.
      *
@@ -141,13 +147,14 @@ public class RemoteLogManager implements Closeable {
                             int brokerId,
                             String logDir,
                             Time time,
-                            Function<TopicPartition, Optional<UnifiedLog>> fetchLog) throws Exception {
-
+                            Function<TopicPartition, Optional<UnifiedLog>> fetchLog,
+                            BiConsumer<TopicPartition, Long> updateRemoteLogStartOffset) throws Exception {
         this.rlmConfig = rlmConfig;
         this.brokerId = brokerId;
         this.logDir = logDir;
         this.time = time;
         this.fetchLog = fetchLog;
+        this.updateRemoteLogStartOffset = updateRemoteLogStartOffset;
 
         remoteLogStorageManager = createRemoteStorageManager();
         remoteLogMetadataManager = createRemoteLogMetadataManager();
@@ -423,6 +430,98 @@ public class RemoteLogManager implements Closeable {
         return checkpoint;
     }
 
+    /***
+     * A segment has "remote leader epochs". A partition leader has "local leader epochs".
+     *
+     * For a segment to have a good lineage its leader epochs must be within the boundaries of the leader epochs
+     * of the partition leader.
+     * The first leader epoch in the segment always starts at the first offset of
+     * the segment even if the partition leader's leader epoch started at an earlier log offset.
+     * The last leader epoch in the segment always finishes at the last offset of
+     * the segment even if the partition leader's leader epoch finishes at a further log offset.
+     * CORRECT
+     * Remote:             i1 ===================== i2
+     * Local :        <=== j1 ======================================== j2 ===>
+     * CORRECT
+     * Remote:                                i1 ===================== i2
+     * Local :        <=== j1 ======================================== j2 ===>
+     * CORRECT
+     * Remote:                      i1 ===================== i2
+     * Local :        <=== j1 ======================================== j2 ===>
+     * The below is a situation where the remote segment has the same leader epoch as the currently
+     * ongoing local leader epoch.
+     * CORRECT
+     * Remote:                                i1 ===================== i2
+     * Local :        <=== j1 ===============================================>
+     * INCORRECT
+     * Remote:                                       i1 ===================== i2
+     * Local :        <=== j1 ======================================== j2 ===>
+     * INCORRECT
+     * Remote:   i1 ===================== i2
+     * Local :        <=== j1 ======================================== j2 ===>
+    ***/
+    boolean isRemoteSegmentConsistentWithLeaderLineage(TreeMap<Integer, Long> validEpochs,
+                                                       RemoteLogSegmentMetadata segmentMetadata,
+                                                       Long logEndOffset) {
+        NavigableMap<Integer, Long> segmentEpochs = segmentMetadata.segmentLeaderEpochs();
+        long segmentEndOffset = segmentMetadata.endOffset();
+        Map.Entry<Integer, Long> firstEpochInSegmentEntry = segmentEpochs.firstEntry();
+        return segmentEpochs.entrySet().stream()
+            .allMatch(entry -> {
+                int segmentEpochKey = entry.getKey();
+                long segmentEpochStartOffset = entry.getValue();
+
+                if (validEpochs.containsKey(segmentEpochKey)) {
+                    long validEpochStartOffset = validEpochs.get(segmentEpochKey);
+                    Map.Entry<Integer, Long> validEpochNextEntry = validEpochs.higherEntry(segmentEpochKey);
+                    Map.Entry<Integer, Long> remoteSegmentEpochNextEntry = segmentEpochs.higherEntry(segmentEpochKey);
+
+                    if (validEpochNextEntry == null && remoteSegmentEpochNextEntry != null) {
+                        // Segment in remote has a greater leader epoch than local.
+                        RemoteLogSegmentId remoteLogSegmentId = segmentMetadata.remoteLogSegmentId();
+                        TopicIdPartition topicIdPartition = segmentMetadata.topicIdPartition();
+                        int extraneousSegmentLeaderEpoch = remoteSegmentEpochNextEntry.getKey();
+                        LOGGER.debug("[Segment {} TopicPartition {}]: Remote Segment has at least one more leader epoch ({}) than locally ({})",
+                            remoteLogSegmentId, topicIdPartition, extraneousSegmentLeaderEpoch, segmentEpochKey);
+                        return false;
+                    } else if (validEpochNextEntry != null && remoteSegmentEpochNextEntry == null) {
+                        // Remote has fewer entries than local
+                        if (firstEpochInSegmentEntry.getKey() == segmentEpochKey) {
+                            // the 1st epoch entry in remote segment, allow to have larger epoch start offset
+                            return segmentEpochStartOffset >= validEpochStartOffset && segmentEndOffset < validEpochNextEntry.getValue().longValue();
+                        } else {
+                            return segmentEpochStartOffset == validEpochStartOffset && segmentEndOffset < validEpochNextEntry.getValue().longValue();
+                        }
+                    } else if (validEpochNextEntry != null && remoteSegmentEpochNextEntry != null) {
+                        // This is not the active leader epoch for both remote and local
+                        if (firstEpochInSegmentEntry.getKey() == segmentEpochKey) {
+                            // the 1st epoch entry in remote segment, allow to have larger epoch start offset
+                            return remoteSegmentEpochNextEntry.getKey().equals(validEpochNextEntry.getKey()) &&
+                                segmentEpochStartOffset >= validEpochStartOffset &&
+                                remoteSegmentEpochNextEntry.getValue().equals(validEpochNextEntry.getValue());
+                        } else {
+                            return remoteSegmentEpochNextEntry.getKey().equals(validEpochNextEntry.getKey()) &&
+                                segmentEpochStartOffset == validEpochStartOffset &&
+                                remoteSegmentEpochNextEntry.getValue().equals(validEpochNextEntry.getValue());
+                        }
+                    } else {
+                        // This is the active leader epoch
+                        return segmentEndOffset < logEndOffset;
+                    }
+                } else {
+                    // Scenario where the leader epoch found in the segment is not part of the leader epoch history.
+                    // This could happen in situations where we have a divergence in leader epoch history between local and
+                    // remote tier due to unclean leader election.
+                    RemoteLogSegmentId remoteLogSegmentId = segmentMetadata.remoteLogSegmentId();
+                    TopicIdPartition topicIdPartition = segmentMetadata.topicIdPartition();
+                    LOGGER.info("[segment {} TopicPartition {}]: Remote Segment has a leader epoch ({}) not found locally",
+                        remoteLogSegmentId, topicIdPartition, segmentEpochKey);
+                    return false;
+                }
+            });
+    }
+
+
     class RLMTask extends CancellableRunnable {
 
         private final TopicIdPartition topicIdPartition;
@@ -430,10 +529,17 @@ public class RemoteLogManager implements Closeable {
 
         private volatile int leaderEpoch = -1;
 
+        private long remainingSize = 0;
+        private Optional<Long> logStartOffset = Optional.empty();
+
         public RLMTask(TopicIdPartition topicIdPartition) {
             this.topicIdPartition = topicIdPartition;
             LogContext logContext = new LogContext("[RemoteLogManager=" + brokerId + " partition=" + topicIdPartition + "] ");
             logger = logContext.logger(LeaderEpochFileCache.class);
+        }
+
+        void remainingSize(long size) {
+            remainingSize = size;
         }
 
         boolean isLeader() {
@@ -467,6 +573,135 @@ public class RemoteLogManager implements Closeable {
                 // previous leader epoch till it finds an entry, If there are no entries till the earliest leader epoch in leader
                 // epoch cache then it starts copying the segments from the earliest epoch entry’s offset.
                 copiedOffsetOption = OptionalLong.of(findHighestRemoteOffset(topicIdPartition));
+            }
+        }
+
+        private void handleLogStartOffsetUpdate(TopicPartition topicPartition, Long remoteLogStartOffset) {
+            logger.debug("Updating $topicPartition with remoteLogStartOffset: $remoteLogStartOffset");
+            updateRemoteLogStartOffset.accept(topicPartition, remoteLogStartOffset);
+        }
+
+        private TreeMap<Integer, Long> fromLeaderEpochCacheToEpochs(UnifiedLog log) {
+            return log.leaderEpochCache().map(c -> c.getEpochs()).getOrElse(() -> new TreeMap());
+        }
+
+        private void deleteRemoteLogSegment(RemoteLogSegmentMetadata segmentMetadata) throws RemoteStorageException {
+            // Publish delete segment started event.
+            remoteLogMetadataManager.updateRemoteLogSegmentMetadata(
+                new RemoteLogSegmentMetadataUpdate(segmentMetadata.remoteLogSegmentId(), time.milliseconds(),
+                    RemoteLogSegmentState.DELETE_SEGMENT_STARTED, brokerId));
+
+            // Delete the segment in remote storage.
+            remoteLogStorageManager.deleteLogSegmentData(segmentMetadata);
+
+            // Publish delete segment finished event.
+            remoteLogMetadataManager.updateRemoteLogSegmentMetadata(
+                new RemoteLogSegmentMetadataUpdate(segmentMetadata.remoteLogSegmentId(), time.milliseconds(),
+                    RemoteLogSegmentState.DELETE_SEGMENT_FINISHED, brokerId));
+        }
+
+
+        boolean deleteRetentionTimeBreachedSegments(RemoteLogSegmentMetadata metadata, boolean shouldDeleteByTime, long cleanupTs, long retentionMs) throws RemoteStorageException {
+            boolean isSegmentDeleted = shouldDeleteByTime && metadata.maxTimestampMs() <= cleanupTs;
+            if (isSegmentDeleted) {
+                deleteRemoteLogSegment(metadata);
+                remainingSize = Math.max(0, remainingSize - metadata.segmentSizeInBytes());
+                // It is fine to have logStartOffset as `metadata.endOffset() + 1` as the segment offset intervals
+                // are ascending with in an epoch.
+                logStartOffset = Optional.of(metadata.endOffset() + 1);
+                LOGGER.info("Deleted remote log segment {} due to retention time " +
+                    "{}ms breach based on the largest record timestamp in the segment", metadata.remoteLogSegmentId(), retentionMs);
+            }
+            return isSegmentDeleted;
+        }
+
+        boolean deleteRetentionSizeBreachedSegments(RemoteLogSegmentMetadata metadata, boolean shouldDeleteBySize, long retentionSize) throws RemoteStorageException {
+            boolean isSegmentDeleted;
+            if (shouldDeleteBySize && remainingSize > 0) {
+                remainingSize -= metadata.segmentSizeInBytes();
+                isSegmentDeleted = remainingSize >= 0;
+            } else {
+                isSegmentDeleted = false;
+            }
+            if (isSegmentDeleted) {
+                deleteRemoteLogSegment(metadata);
+                logStartOffset = Optional.of(metadata.endOffset() + 1);
+                logger.info("Deleted remote log segment {} due to retention size {} breach.",
+                    metadata.remoteLogSegmentId(), retentionSize);
+            }
+            return isSegmentDeleted;
+        }
+
+        long calculateTotalLogSize(List<RemoteLogSegmentMetadata> segmentMetadataList, UnifiedLog log, TreeMap<Integer, Long> validLeaderEpochs) {
+            Set<Uuid> setToFilterDuplicatedId = new HashSet<>();
+            long remoteOnlyLogSize = segmentMetadataList.stream()
+                .filter(metadata -> isRemoteSegmentConsistentWithLeaderLineage(validLeaderEpochs, metadata, log.logEndOffset()))
+                .filter(metadata -> setToFilterDuplicatedId.add(metadata.remoteLogSegmentId().id()))
+                .map(metadata -> metadata.segmentSizeInBytes())
+                .collect(Collectors.summingLong(Integer::intValue));
+
+            return log.localOnlyLogSegmentsSize() + remoteOnlyLogSize;
+        }
+
+        public void handleExpiredRemoteLogSegments() {
+            if (isCancelled())
+                return;
+            try {
+                // cleanup remote log segments and update the log start offset if applicable.
+                // Compute total size, this can be pushed to RLMM by introducing a new method instead of going through
+                // the collection every time.
+                fetchLog.apply(topicIdPartition.topicPartition()).ifPresent(log -> {
+                    if (log.leaderEpochCache().isEmpty()) {
+                        logger.warn("no leader epoch cache found for log: {}", log);
+                        return;
+                    }
+                    long retentionMs = log.config().retentionMs;
+                    boolean checkTimestampRetention = retentionMs > -1;
+                    long cleanupTs = time.milliseconds() - retentionMs;
+
+                    boolean shouldDeleteBySize = log.config().retentionSize > -1;
+                    List<EpochEntry> epochEntryList = log.leaderEpochCache().get().epochEntries();
+                    List<RemoteLogSegmentMetadata> segmentMetadataList = new ArrayList<>();
+
+                    try {
+                        for (EpochEntry entry : epochEntryList) {
+                            remoteLogMetadataManager.listRemoteLogSegments(topicIdPartition, entry.epoch).forEachRemaining(segmentMetadataList::add);
+                        }
+                        TreeMap<Integer, Long> validLeaderEpochs = fromLeaderEpochCacheToEpochs(log);
+                        long totalSize = calculateTotalLogSize(segmentMetadataList, log, validLeaderEpochs);
+
+                        if (shouldDeleteBySize) {
+                            remainingSize = totalSize - log.config().retentionSize;
+                        } else {
+                            remainingSize = 0;
+                        }
+
+                        logStartOffset = Optional.empty();
+
+                        for (RemoteLogSegmentMetadata metadata : segmentMetadataList) {
+                            if (!isRemoteSegmentConsistentWithLeaderLineage(validLeaderEpochs, metadata, log.logEndOffset())) {
+                                continue;
+                            }
+                            boolean isSegmentDeleted = deleteRetentionTimeBreachedSegments(metadata, checkTimestampRetention, cleanupTs, log.config().retentionMs) ||
+                                deleteRetentionSizeBreachedSegments(metadata, shouldDeleteBySize, log.config().retentionSize);
+                            if (!isSegmentDeleted) {
+                                // Since the metadata is sorted, we can stop earlier here
+                                break;
+                            }
+                        }
+                    } catch (RemoteStorageException e) {
+                        throw new RuntimeException(e);
+                    }
+
+                    if (logStartOffset.isPresent()) {
+                        handleLogStartOffsetUpdate(topicIdPartition.topicPartition(), logStartOffset.get());
+                    }
+
+                });
+            } catch (Exception ex) {
+                if (!isCancelled()) {
+                    logger.error("Error while cleaning up log segments for partition: $tpId", ex);
+                }
             }
         }
 
@@ -579,6 +814,7 @@ public class RemoteLogManager implements Closeable {
                 if (isLeader()) {
                     // Copy log segments to remote storage
                     handleCopyLogSegmentsToRemote();
+                    handleExpiredRemoteLogSegments();
                 }
             } catch (InterruptedException ex) {
                 if (!isCancelled()) {

@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.TreeMap;
@@ -406,6 +407,12 @@ public class LeaderEpochFileCache {
         } finally {
             lock.readLock().unlock();
         }
+    }
+
+    public TreeMap<Integer, Long> getEpochs() {
+        TreeMap<Integer, Long> navigableMap = new TreeMap<Integer, Long>();
+        epochs.values().forEach(entry -> navigableMap.put(entry.epoch, entry.startOffset));
+        return navigableMap;
     }
 
     private void flushTo(LeaderEpochCheckpoint leaderEpochCheckpoint) {
