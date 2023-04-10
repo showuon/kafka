@@ -569,19 +569,114 @@ public class RemoteLogManagerTest {
         LeaderEpochFileCache cache = new LeaderEpochFileCache(tp, checkpoint);
 
         TreeMap<Integer, Long> epochCache = cache.getEpochs();
-        System.out.println("!!! epochCache:" + epochCache);
         boolean result = remoteLogManager.isRemoteSegmentConsistentWithLeaderLineage(epochCache, remoteSegment, 1000L);
 
         assertEquals(expectedResult, result,
             "RemoteSegment consistency check with leader lineage did not match the expected result");
     }
 
+    @Test
+    public void testCalculateTotalLogSize() {
+        RemoteLogManager.RLMTask rlmTask = remoteLogManager.new RLMTask(leaderTopicIdPartition);
+        List<RemoteLogSegmentMetadata> remoteLogSegmentMetadataList = Arrays.asList(
+            createSegmentMetadata(0, 50, Collections.singletonMap(epochEntry0.epoch, epochEntry0.startOffset)),
+            createSegmentMetadata(51, 90, Collections.singletonMap(epochEntry0.epoch, epochEntry0.startOffset))
+        );
+        TreeMap<Integer, Long> validLeaderEpochs = new TreeMap<>();
+        validLeaderEpochs.put(0, 0L);
+        validLeaderEpochs.put(1, 100L);
+
+        when(mockLog.localOnlyLogSegmentsSize()).thenReturn(2048L);
+        when(mockLog.logEndOffset()).thenReturn(800L);
+
+        long size = rlmTask.calculateTotalLogSize(remoteLogSegmentMetadataList, mockLog, validLeaderEpochs);
+        // 1 segment metadata contains 1024 of segment size, we have 2 segment metadata (2048) + local only log segment size 2048
+        assertEquals(4096, size);
+    }
+
+    @Test
+    public void testCalculateTotalLogSizeShouldNotCountDuplicatedSegmentId() {
+        RemoteLogManager.RLMTask rlmTask = remoteLogManager.new RLMTask(leaderTopicIdPartition);
+        Uuid logSegmentUuid = Uuid.randomUuid();
+        List<RemoteLogSegmentMetadata> remoteLogSegmentMetadataList = Arrays.asList(
+            createSegmentMetadata(0, 50, Collections.singletonMap(epochEntry0.epoch, epochEntry0.startOffset), leaderTopicIdPartition.topicId(), logSegmentUuid),
+            createSegmentMetadata(51, 90, Collections.singletonMap(epochEntry0.epoch, epochEntry0.startOffset), leaderTopicIdPartition.topicId(), logSegmentUuid)
+        );
+        TreeMap<Integer, Long> validLeaderEpochs = new TreeMap<>();
+        validLeaderEpochs.put(0, 0L);
+        validLeaderEpochs.put(1, 100L);
+
+        when(mockLog.localOnlyLogSegmentsSize()).thenReturn(2048L);
+        when(mockLog.logEndOffset()).thenReturn(800L);
+
+        long size = rlmTask.calculateTotalLogSize(remoteLogSegmentMetadataList, mockLog, validLeaderEpochs);
+        // 1 segment metadata contains 1024 of segment size, we have 1 valid segment metadata without duplicated segment Id (1024)
+        // + local only log segment size 2048
+        assertEquals(3072, size);
+    }
+
+    @Test
+    public void testCalculateTotalLogSizeShouldNotCountInconsistentEpochInMetadata() {
+        RemoteLogManager.RLMTask rlmTask = remoteLogManager.new RLMTask(leaderTopicIdPartition);
+        List<RemoteLogSegmentMetadata> remoteLogSegmentMetadataList = Arrays.asList(
+            createSegmentMetadata(0, 50, Collections.singletonMap(epochEntry0.epoch, epochEntry0.startOffset)),
+            // this end offset is larger than the leader epoch 1 start offset (100), so it'll be filtered out
+            createSegmentMetadata(51, 900, Collections.singletonMap(epochEntry0.epoch, epochEntry0.startOffset))
+        );
+        TreeMap<Integer, Long> validLeaderEpochs = new TreeMap<>();
+        validLeaderEpochs.put(0, 0L);
+        validLeaderEpochs.put(1, 100L);
+
+        when(mockLog.localOnlyLogSegmentsSize()).thenReturn(2048L);
+        when(mockLog.logEndOffset()).thenReturn(800L);
+
+        long size = rlmTask.calculateTotalLogSize(remoteLogSegmentMetadataList, mockLog, validLeaderEpochs);
+        // 1 segment metadata contains 1024 of segment size, we have 1 valid segment metadata (1024) + local only log segment size 2048
+        assertEquals(3072, size);
+    }
+
+    @Test
+    public void testDeleteRetentionTimeBreachedSegments() throws RemoteStorageException {
+        RemoteLogManager.RLMTask rlmTask = remoteLogManager.new RLMTask(leaderTopicIdPartition);
+        RemoteLogSegmentMetadata metadata = createSegmentMetadata(0, 50, Collections.singletonMap(epochEntry0.epoch, epochEntry0.startOffset));
+
+        // should delete segment when cleanupTs (100) >= maxTimestamp in metadata (10)
+        assertTrue(rlmTask.deleteRetentionTimeBreachedSegments(metadata, true, 100L, 100L));
+        // should not delete segment when checkTimeStampRetention is false
+        assertFalse(rlmTask.deleteRetentionTimeBreachedSegments(metadata, false, 100L, 100L));
+        // should not delete segment when cleanupTs is smaller than maxTimeStamp in metadata (10)
+        assertFalse(rlmTask.deleteRetentionTimeBreachedSegments(metadata, true, 5L, 10L));
+    }
+
+    @Test
+    public void testDeleteRetentionSizeBreachedSegments() throws RemoteStorageException {
+        RemoteLogManager.RLMTask rlmTask = remoteLogManager.new RLMTask(leaderTopicIdPartition);
+        RemoteLogSegmentMetadata metadata = createSegmentMetadata(0, 50, Collections.singletonMap(epochEntry0.epoch, epochEntry0.startOffset));
+
+        // should delete segment when remaining size (2048) >= log segment size in metadata (1024)
+        rlmTask.remainingSize(2048L);
+        assertTrue(rlmTask.deleteRetentionSizeBreachedSegments(metadata, true, 1024L));
+        // should not delete segment when shouldDeleteBySize is false
+        assertFalse(rlmTask.deleteRetentionSizeBreachedSegments(metadata, false, 1024L));
+        // should not delete segment when remaining size (512) < log segment size in metadata (1024)
+        rlmTask.remainingSize(512L);
+        assertFalse(rlmTask.deleteRetentionSizeBreachedSegments(metadata, true, 1024L));
+    }
+
     private static RemoteLogSegmentMetadata createSegmentMetadata(int startOffset,
-                                                           int endOffset,
-                                                           Map<Integer, Long> segmentLeaderEpochs) {
-        TopicIdPartition dummyTopicPartitionId = new TopicIdPartition(Uuid.randomUuid(), new TopicPartition("test-topic", 0));
+                                                                  int endOffset,
+                                                                  Map<Integer, Long> segmentLeaderEpochs) {
+        return createSegmentMetadata(startOffset, endOffset, segmentLeaderEpochs, Uuid.randomUuid(), Uuid.randomUuid());
+    }
+
+    private static RemoteLogSegmentMetadata createSegmentMetadata(int startOffset,
+                                                                  int endOffset,
+                                                                  Map<Integer, Long> segmentLeaderEpochs,
+                                                                  Uuid topicId,
+                                                                  Uuid logSegmentUuid) {
+        TopicIdPartition dummyTopicPartitionId = new TopicIdPartition(topicId, new TopicPartition("test-topic", 0));
         return new RemoteLogSegmentMetadata(
-            new RemoteLogSegmentId(dummyTopicPartitionId, Uuid.randomUuid()),
+            new RemoteLogSegmentId(dummyTopicPartitionId, logSegmentUuid),
             startOffset,
             endOffset,
             10, // dummy maxTimestampMs
@@ -590,7 +685,6 @@ public class RemoteLogManagerTest {
             1024, // dummy segment size
             segmentLeaderEpochs);
     }
-
 
     public static Collection<Arguments> remoteLogSegmentMetadataCombinations() {
         // example of segment which has an epoch starting & ending within it
