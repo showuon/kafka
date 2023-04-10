@@ -23,6 +23,7 @@ import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.AbstractConfig;
+import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.FileRecords;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -46,6 +47,7 @@ import org.apache.kafka.storage.internals.checkpoint.LeaderEpochCheckpoint;
 import org.apache.kafka.storage.internals.epoch.LeaderEpochFileCache;
 import org.apache.kafka.storage.internals.log.EpochEntry;
 import org.apache.kafka.storage.internals.log.LazyIndex;
+import org.apache.kafka.storage.internals.log.LogConfig;
 import org.apache.kafka.storage.internals.log.OffsetIndex;
 import org.apache.kafka.storage.internals.log.ProducerStateManager;
 import org.apache.kafka.storage.internals.log.TimeIndex;
@@ -147,7 +149,7 @@ public class RemoteLogManagerTest {
         topicIds.put(followerTopicIdPartition.topicPartition().topic(), followerTopicIdPartition.topicId());
         Properties props = new Properties();
         remoteLogManagerConfig = createRLMConfig(props);
-        remoteLogManager = new RemoteLogManager(remoteLogManagerConfig, brokerId, logDir, time, tp -> Optional.of(mockLog)) {
+        remoteLogManager = new RemoteLogManager(remoteLogManagerConfig, brokerId, logDir, time, tp -> Optional.of(mockLog), (tp, i) -> mockLog.updateLogStartOffsetFromRemoteTier(i)) {
             public RemoteStorageManager createRemoteStorageManager() {
                 return remoteStorageManager;
             }
@@ -295,7 +297,7 @@ public class RemoteLogManagerTest {
         // verify remoteLogMetadataManager did add the expected RemoteLogSegmentMetadataUpdate
         ArgumentCaptor<RemoteLogSegmentMetadataUpdate> remoteLogSegmentMetadataUpdateArg = ArgumentCaptor.forClass(RemoteLogSegmentMetadataUpdate.class);
         verify(remoteLogMetadataManager, times(1)).updateRemoteLogSegmentMetadata(remoteLogSegmentMetadataUpdateArg.capture());
-        verifyRemoteLogSegmentMetadataUpdate(remoteLogSegmentMetadataUpdateArg.getValue());
+        verifyRemoteLogSegmentMetadataUpdate(remoteLogSegmentMetadataUpdateArg.getValue(), RemoteLogSegmentState.COPY_SEGMENT_FINISHED);
 
         // verify the highest remote offset is updated to the expected value
         ArgumentCaptor<Long> argument = ArgumentCaptor.forClass(Long.class);
@@ -355,11 +357,12 @@ public class RemoteLogManagerTest {
         assertEquals(RemoteLogSegmentState.COPY_SEGMENT_STARTED, remoteLogSegmentMetadata.state());
     }
 
-    private void verifyRemoteLogSegmentMetadataUpdate(RemoteLogSegmentMetadataUpdate remoteLogSegmentMetadataUpdate) {
+    private void verifyRemoteLogSegmentMetadataUpdate(RemoteLogSegmentMetadataUpdate remoteLogSegmentMetadataUpdate,
+                                                      RemoteLogSegmentState expectedState) {
         assertEquals(leaderTopicIdPartition, remoteLogSegmentMetadataUpdate.remoteLogSegmentId().topicIdPartition());
         assertEquals(brokerId, remoteLogSegmentMetadataUpdate.brokerId());
 
-        assertEquals(RemoteLogSegmentState.COPY_SEGMENT_FINISHED, remoteLogSegmentMetadataUpdate.state());
+        assertEquals(expectedState, remoteLogSegmentMetadataUpdate.state());
     }
 
     private void verifyLogSegmentData(LogSegmentData logSegmentData,
@@ -384,7 +387,7 @@ public class RemoteLogManagerTest {
     void testGetClassLoaderAwareRemoteStorageManager() throws Exception {
         ClassLoaderAwareRemoteStorageManager rsmManager = mock(ClassLoaderAwareRemoteStorageManager.class);
         RemoteLogManager remoteLogManager =
-            new RemoteLogManager(remoteLogManagerConfig, brokerId, logDir, time, t -> Optional.empty()) {
+            new RemoteLogManager(remoteLogManagerConfig, brokerId, logDir, time, t -> Optional.empty(), (tp, i) -> { }) {
                 public RemoteStorageManager createRemoteStorageManager() {
                     return rsmManager;
                 }
@@ -599,8 +602,8 @@ public class RemoteLogManagerTest {
         RemoteLogManager.RLMTask rlmTask = remoteLogManager.new RLMTask(leaderTopicIdPartition);
         Uuid logSegmentUuid = Uuid.randomUuid();
         List<RemoteLogSegmentMetadata> remoteLogSegmentMetadataList = Arrays.asList(
-            createSegmentMetadata(0, 50, Collections.singletonMap(epochEntry0.epoch, epochEntry0.startOffset), leaderTopicIdPartition.topicId(), logSegmentUuid),
-            createSegmentMetadata(51, 90, Collections.singletonMap(epochEntry0.epoch, epochEntry0.startOffset), leaderTopicIdPartition.topicId(), logSegmentUuid)
+            createSegmentMetadata(0, 50, Collections.singletonMap(epochEntry0.epoch, epochEntry0.startOffset), leaderTopicIdPartition, logSegmentUuid),
+            createSegmentMetadata(51, 90, Collections.singletonMap(epochEntry0.epoch, epochEntry0.startOffset), leaderTopicIdPartition, logSegmentUuid)
         );
         TreeMap<Integer, Long> validLeaderEpochs = new TreeMap<>();
         validLeaderEpochs.put(0, 0L);
@@ -663,20 +666,61 @@ public class RemoteLogManagerTest {
         assertFalse(rlmTask.deleteRetentionSizeBreachedSegments(metadata, true, 1024L));
     }
 
+    @ParameterizedTest
+    @MethodSource("retentionLogConfigs")
+    public void testHandleExpiredRemoteLogSegments(LogConfig logConfig) throws RemoteStorageException {
+        RemoteLogManager.RLMTask rlmTask = remoteLogManager.new RLMTask(leaderTopicIdPartition);
+        when(mockLog.config()).thenReturn(logConfig);
+        // leader epoch preparation
+        checkpoint.write(Arrays.asList(epochEntry0));
+        LeaderEpochFileCache cache = new LeaderEpochFileCache(leaderTopicIdPartition.topicPartition(), checkpoint);
+        when(mockLog.leaderEpochCache()).thenReturn(Option.apply(cache));
+
+        int logEndOffsetInMetadata = 49;
+        RemoteLogSegmentMetadata metadataToBeDeleted = createSegmentMetadata(0, logEndOffsetInMetadata, Collections.singletonMap(epochEntry0.epoch, epochEntry0.startOffset),
+            leaderTopicIdPartition, Uuid.randomUuid());
+        List<RemoteLogSegmentMetadata> remoteLogSegmentMetadataList = Arrays.asList(metadataToBeDeleted);
+        when(remoteLogMetadataManager.listRemoteLogSegments(any(TopicIdPartition.class), anyInt())).thenReturn(remoteLogSegmentMetadataList.iterator());
+
+        when(mockLog.localOnlyLogSegmentsSize()).thenReturn(2048L);
+        when(mockLog.logEndOffset()).thenReturn(800L);
+
+        rlmTask.handleExpiredRemoteLogSegments();
+
+        // verify remoteLogMetadataManager did update the expected RemoteLogSegmentMetadata
+        ArgumentCaptor<RemoteLogSegmentMetadataUpdate> remoteLogSegmentMetadataUpdateArg = ArgumentCaptor.forClass(RemoteLogSegmentMetadataUpdate.class);
+        verify(remoteLogMetadataManager, times(2)).updateRemoteLogSegmentMetadata(remoteLogSegmentMetadataUpdateArg.capture());
+        List<RemoteLogSegmentMetadataUpdate> remoteLogSegmentMetadataUpdateList = remoteLogSegmentMetadataUpdateArg.getAllValues();
+        // update twice for before/after deletion
+        assertEquals(2, remoteLogSegmentMetadataUpdateList.size());
+        verifyRemoteLogSegmentMetadataUpdate(remoteLogSegmentMetadataUpdateList.get(0), RemoteLogSegmentState.DELETE_SEGMENT_STARTED);
+        verifyRemoteLogSegmentMetadataUpdate(remoteLogSegmentMetadataUpdateList.get(1), RemoteLogSegmentState.DELETE_SEGMENT_FINISHED);
+
+        // verify deleteLogSegmentData is passing the RemoteLogSegmentMetadata we created above
+        ArgumentCaptor<RemoteLogSegmentMetadata> remoteLogSegmentMetadataArg = ArgumentCaptor.forClass(RemoteLogSegmentMetadata.class);
+        verify(remoteStorageManager, times(1)).deleteLogSegmentData(remoteLogSegmentMetadataArg.capture());
+        assertEquals(metadataToBeDeleted, remoteLogSegmentMetadataArg.getValue());
+
+        // verify the log start offset in the log is updated to the metadata end offset + 1
+        ArgumentCaptor<Long> logStartArg = ArgumentCaptor.forClass(Long.class);
+        verify(mockLog, times(1)).updateLogStartOffsetFromRemoteTier(logStartArg.capture());
+        assertEquals(logEndOffsetInMetadata + 1, logStartArg.getValue());
+    }
+
     private static RemoteLogSegmentMetadata createSegmentMetadata(int startOffset,
                                                                   int endOffset,
                                                                   Map<Integer, Long> segmentLeaderEpochs) {
-        return createSegmentMetadata(startOffset, endOffset, segmentLeaderEpochs, Uuid.randomUuid(), Uuid.randomUuid());
+        return createSegmentMetadata(startOffset, endOffset, segmentLeaderEpochs,
+            new TopicIdPartition(Uuid.randomUuid(), new TopicPartition("test-topic", 0)), Uuid.randomUuid());
     }
 
     private static RemoteLogSegmentMetadata createSegmentMetadata(int startOffset,
                                                                   int endOffset,
                                                                   Map<Integer, Long> segmentLeaderEpochs,
-                                                                  Uuid topicId,
+                                                                  TopicIdPartition topicIdPartition,
                                                                   Uuid logSegmentUuid) {
-        TopicIdPartition dummyTopicPartitionId = new TopicIdPartition(topicId, new TopicPartition("test-topic", 0));
         return new RemoteLogSegmentMetadata(
-            new RemoteLogSegmentId(dummyTopicPartitionId, logSegmentUuid),
+            new RemoteLogSegmentId(topicIdPartition, logSegmentUuid),
             startOffset,
             endOffset,
             10, // dummy maxTimestampMs
@@ -684,6 +728,22 @@ public class RemoteLogManagerTest {
             -1L, // dummy eventTimestampMs
             1024, // dummy segment size
             segmentLeaderEpochs);
+    }
+
+    public static Collection<Arguments> retentionLogConfigs() {
+        Properties disableRetentionSize = new Properties();
+        disableRetentionSize.put(TopicConfig.RETENTION_MS_CONFIG, 100);
+        // disable retention size by setting -1
+        disableRetentionSize.put(TopicConfig.RETENTION_BYTES_CONFIG, -1);
+        Properties disableRetentionTime = new Properties();
+        // disable retention time by setting -1
+        disableRetentionTime.put(TopicConfig.RETENTION_MS_CONFIG, -1);
+        disableRetentionTime.put(TopicConfig.RETENTION_BYTES_CONFIG, 100);
+
+        return Stream.of(
+            Arguments.of(new LogConfig(disableRetentionTime)),
+            Arguments.of(new LogConfig(disableRetentionSize))
+        ).collect(Collectors.toList());
     }
 
     public static Collection<Arguments> remoteLogSegmentMetadataCombinations() {

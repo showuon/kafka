@@ -515,7 +515,12 @@ class BrokerServer(
       }
 
       Some(new RemoteLogManager(remoteLogManagerConfig, config.brokerId, config.logDirs.head, time,
-        (tp: TopicPartition) => logManager.getLog(tp).asJava));
+        (tp: TopicPartition) => logManager.getLog(tp).asJava, (tp: TopicPartition, remoteLogStartOffset: java.lang.Long) => {
+          logManager.getLog(tp).foreach(log => {
+            println("!!! 1")
+            log.updateLogStartOffsetFromRemoteTier(remoteLogStartOffset)
+          })
+        }))
     } else {
       None
     }
