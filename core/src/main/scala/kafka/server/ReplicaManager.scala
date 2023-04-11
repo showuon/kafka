@@ -193,7 +193,7 @@ class ReplicaManager(val config: KafkaConfig,
                      delayedFetchPurgatoryParam: Option[DelayedOperationPurgatory[DelayedFetch]] = None,
                      delayedDeleteRecordsPurgatoryParam: Option[DelayedOperationPurgatory[DelayedDeleteRecords]] = None,
                      delayedElectLeaderPurgatoryParam: Option[DelayedOperationPurgatory[DelayedElectLeader]] = None,
-                     delayedRemoteFetchPurgatory: Option[DelayedOperationPurgatory[DelayedRemoteFetch]] = None,
+                     delayedRemoteFetchPurgatoryParam: Option[DelayedOperationPurgatory[DelayedRemoteFetch]] = None,
                      threadNamePrefix: Option[String] = None, brokerEpochSupplier: () => Long = () => -1) extends Logging {
 
   private val metricsGroup = new KafkaMetricsGroup(this.getClass)
@@ -213,6 +213,9 @@ class ReplicaManager(val config: KafkaConfig,
   val delayedElectLeaderPurgatory = delayedElectLeaderPurgatoryParam.getOrElse(
     DelayedOperationPurgatory[DelayedElectLeader](
       purgatoryName = "ElectLeader", brokerId = config.brokerId))
+  val delayedRemoteFetchPurgatory = delayedRemoteFetchPurgatoryParam.getOrElse(
+    DelayedOperationPurgatory[DelayedRemoteFetch](
+      purgatoryName = "RemoteFetch", brokerId = config.brokerId))
 
   /* epoch of the controller that last changed the leader */
   @volatile private[server] var controllerEpoch: Int = KafkaController.InitialControllerEpoch
