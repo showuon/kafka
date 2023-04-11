@@ -250,7 +250,23 @@ class BrokerServer(
       )
       alterPartitionManager.start()
 
-      this._replicaManager = new ReplicaManager(config = config, metrics = metrics, time = time, scheduler = kafkaScheduler, logManager = logManager, remoteLogManager = remoteLogManager, quotaManagers = quotaManagers, metadataCache = metadataCache, logDirFailureChannel = logDirFailureChannel, alterPartitionManager = alterPartitionManager, brokerTopicStats = brokerTopicStats, isShuttingDown = isShuttingDown, zkClient = None, delayedRemoteFetchPurgatory = None, threadNamePrefix = None, brokerEpochSupplier = () => lifecycleManager.brokerEpoch)
+      this._replicaManager = new ReplicaManager(
+        config = config,
+        metrics = metrics,
+        time = time,
+        scheduler = kafkaScheduler,
+        logManager = logManager,
+        remoteLogManager = remoteLogManager,
+        quotaManagers = quotaManagers,
+        metadataCache = metadataCache,
+        logDirFailureChannel = logDirFailureChannel,
+        alterPartitionManager = alterPartitionManager,
+        brokerTopicStats = brokerTopicStats,
+        isShuttingDown = isShuttingDown,
+        zkClient = None,
+        threadNamePrefix = None, // The ReplicaManager only runs on the broker, and already includes the ID in thread names.
+        brokerEpochSupplier = () => lifecycleManager.brokerEpoch
+      )
 
       /* start token manager */
       if (config.tokenAuthEnabled) {
