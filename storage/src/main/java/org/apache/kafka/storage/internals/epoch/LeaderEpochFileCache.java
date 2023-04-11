@@ -408,6 +408,12 @@ public class LeaderEpochFileCache {
         }
     }
 
+    public TreeMap<Integer, Long> getEpochs() {
+        TreeMap<Integer, Long> navigableMap = new TreeMap<>();
+        epochs.values().forEach(entry -> navigableMap.put(entry.epoch, entry.startOffset));
+        return navigableMap;
+    }
+
     private void flushTo(LeaderEpochCheckpoint leaderEpochCheckpoint) {
         lock.readLock().lock();
         try {

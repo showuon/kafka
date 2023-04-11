@@ -258,9 +258,11 @@ class LocalLog(@volatile private var _dir: File,
    *
    * @param predicate A function that takes in a candidate log segment, the next higher segment
    *                  (if there is one). It returns true iff the segment is deletable.
+   * @param highestOffsetInRemoteStorage the highest offset in remote storage
    * @return the segments ready to be deleted
    */
-  private[log] def deletableSegments(predicate: (LogSegment, Option[LogSegment]) => Boolean): Iterable[LogSegment] = {
+  private[log] def deletableSegments(predicate: (LogSegment, Option[LogSegment]) => Boolean,
+                                     highestOffsetInRemoteStorage: Long = 0): Iterable[LogSegment] = {
     if (segments.isEmpty) {
       Seq.empty
     } else {
@@ -271,7 +273,16 @@ class LocalLog(@volatile private var _dir: File,
         val segment = segmentOpt.get
         val nextSegmentOpt = nextOption(segmentsIterator)
         val isLastSegmentAndEmpty = nextSegmentOpt.isEmpty && segment.size == 0
-        if (predicate(segment, nextSegmentOpt) && !isLastSegmentAndEmpty) {
+        val upperBoundOffset = if (nextSegmentOpt.isEmpty) logEndOffset else nextSegmentOpt.get.baseOffset
+
+        // Check not to delete segments which do not have remote indexes locally.
+        val deleteOnlyWhenRemoteIndexExistsLocally =
+          if (config.remoteLogConfig.remoteStorageEnable)
+            upperBoundOffset > 0 && upperBoundOffset - 1 <= highestOffsetInRemoteStorage
+          else true
+
+        if (deleteOnlyWhenRemoteIndexExistsLocally &&
+          predicate(segment, nextSegmentOpt) && !isLastSegmentAndEmpty) {
           deletable += segment
           segmentOpt = nextSegmentOpt
         } else {

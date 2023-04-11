@@ -397,6 +397,54 @@ class LocalLogTest {
   }
 
   @Test
+  def testDeletableSegmentsIterationWithRemoteStorageEnabled(): Unit = {
+    // create a log with remote log storage enabled
+    val log: LocalLog = createLocalLogWithActiveSegment(config = LogTestUtils.createLogConfig(remoteLogStorageEnable = true))
+
+    try {
+      for (offset <- 0 to 8) {
+        val record = new SimpleRecord(mockTime.milliseconds, "a".getBytes)
+        appendRecords(List(record), log = log, initialOffset = offset)
+        log.roll()
+      }
+
+      assertEquals(10L, log.segments.numberOfSegments)
+
+      var offset = 0
+
+      val predicate = (segment: LogSegment, nextSegmentOpt: Option[LogSegment]) => {
+        assertEquals(offset, segment.baseOffset)
+        val floorSegmentOpt = log.segments.floorSegment(offset)
+        assertTrue(floorSegmentOpt.isDefined)
+        assertEquals(floorSegmentOpt.get, segment)
+        if (offset == log.logEndOffset) {
+          assertFalse(nextSegmentOpt.isDefined)
+        } else {
+          assertTrue(nextSegmentOpt.isDefined)
+          val higherSegmentOpt = log.segments.higherSegment(segment.baseOffset)
+          assertTrue(higherSegmentOpt.isDefined)
+          assertEquals(segment.baseOffset + 1, higherSegmentOpt.get.baseOffset)
+          assertEquals(higherSegmentOpt.get, nextSegmentOpt.get)
+        }
+        offset += 1
+        true
+      }
+
+      // expect there's no segments got deleted because every log end offset is greater than highestOffsetInRemoteStorage (-1)
+      val deletableSegments = log.deletableSegments(predicate, -1)
+      assertEquals(10L, log.segments.numberOfSegments)
+      assertEquals(0, deletableSegments.size)
+
+      // expect all non-active segments got deleted because every log end offset is < highestOffsetInRemoteStorage (10)
+      val deletableSegments2 = log.deletableSegments(predicate, 10)
+      assertEquals(10L, log.segments.numberOfSegments)
+      assertEquals(log.segments.nonActiveLogSegmentsFrom(0L).toSeq, deletableSegments2.toSeq)
+    } finally {
+      log.close()
+    }
+  }
+
+  @Test
   def testCreateAndDeleteSegment(): Unit = {
     val record = new SimpleRecord(mockTime.milliseconds, "a".getBytes)
     appendRecords(List(record))

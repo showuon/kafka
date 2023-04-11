@@ -3537,56 +3537,84 @@ class UnifiedLogTest {
   }
 
   def testEnableRemoteLogStorageOnCompactedTopics(): Unit = {
-      var logConfig = LogTestUtils.createLogConfig()
-      var log = createLog(logDir, logConfig)
-      assertFalse(log.remoteLogEnabled())
+    var logConfig = LogTestUtils.createLogConfig()
+    var log = createLog(logDir, logConfig)
+    assertFalse(log.remoteLogEnabled())
 
-      log = createLog(logDir, logConfig, remoteStorageSystemEnable = true)
-      assertFalse(log.remoteLogEnabled())
+    log = createLog(logDir, logConfig, remoteStorageSystemEnable = true)
+    assertFalse(log.remoteLogEnabled())
 
-      logConfig = LogTestUtils.createLogConfig(remoteLogStorageEnable = true)
-      log = createLog(logDir, logConfig, remoteStorageSystemEnable = true)
-      assertTrue(log.remoteLogEnabled())
+    logConfig = LogTestUtils.createLogConfig(remoteLogStorageEnable = true)
+    log = createLog(logDir, logConfig, remoteStorageSystemEnable = true)
+    assertTrue(log.remoteLogEnabled())
 
-      logConfig = LogTestUtils.createLogConfig(cleanupPolicy = TopicConfig.CLEANUP_POLICY_COMPACT, remoteLogStorageEnable = true)
-      log = createLog(logDir, logConfig, remoteStorageSystemEnable = true)
-      assertFalse(log.remoteLogEnabled())
+    logConfig = LogTestUtils.createLogConfig(cleanupPolicy = TopicConfig.CLEANUP_POLICY_COMPACT, remoteLogStorageEnable = true)
+    log = createLog(logDir, logConfig, remoteStorageSystemEnable = true)
+    assertFalse(log.remoteLogEnabled())
 
-      logConfig = LogTestUtils.createLogConfig(cleanupPolicy = TopicConfig.CLEANUP_POLICY_COMPACT + "," + TopicConfig.CLEANUP_POLICY_DELETE,
-        remoteLogStorageEnable = true)
-      log = createLog(logDir, logConfig, remoteStorageSystemEnable = true)
+    logConfig = LogTestUtils.createLogConfig(cleanupPolicy = TopicConfig.CLEANUP_POLICY_COMPACT + "," + TopicConfig.CLEANUP_POLICY_DELETE,
+      remoteLogStorageEnable = true)
+    log = createLog(logDir, logConfig, remoteStorageSystemEnable = true)
+    assertFalse(log.remoteLogEnabled())
+  }
+
+  @Test
+  def testRemoteLogStorageIsDisabledOnInternalAndRemoteLogMetadataTopic(): Unit = {
+    val partitions = Seq(TopicBasedRemoteLogMetadataManagerConfig.REMOTE_LOG_METADATA_TOPIC_NAME,
+      Topic.TRANSACTION_STATE_TOPIC_NAME, Topic.TRANSACTION_STATE_TOPIC_NAME)
+      .map(topic => new TopicPartition(topic, 0))
+    for (partition <- partitions) {
+      val logConfig = LogTestUtils.createLogConfig(remoteLogStorageEnable = true)
+      val internalLogDir = new File(TestUtils.tempDir(), partition.toString)
+      internalLogDir.mkdir()
+      val log = createLog(internalLogDir, logConfig, remoteStorageSystemEnable = true)
       assertFalse(log.remoteLogEnabled())
     }
+  }
 
-    @Test
-    def testRemoteLogStorageIsDisabledOnInternalAndRemoteLogMetadataTopic(): Unit = {
-      val partitions = Seq(TopicBasedRemoteLogMetadataManagerConfig.REMOTE_LOG_METADATA_TOPIC_NAME,
-        Topic.TRANSACTION_STATE_TOPIC_NAME, Topic.TRANSACTION_STATE_TOPIC_NAME)
-        .map(topic => new TopicPartition(topic, 0))
-      for (partition <- partitions) {
-        val logConfig = LogTestUtils.createLogConfig(remoteLogStorageEnable = true)
-        val internalLogDir = new File(TestUtils.tempDir(), partition.toString)
-        internalLogDir.mkdir()
-        val log = createLog(internalLogDir, logConfig, remoteStorageSystemEnable = true)
-        assertFalse(log.remoteLogEnabled())
-      }
+  @Test
+  def testLogStartUpdatedWhenRemoteLogStorageIsDisabled(): Unit = {
+    val logConfig = LogTestUtils.createLogConfig()
+    val log = createLog(logDir, logConfig)
+
+    for (i <- 0 until 100) {
+      val records = TestUtils.singletonRecords(value = s"test$i".getBytes)
+      log.appendAsLeader(records, leaderEpoch = 0)
     }
 
-    @Test
-    def testNoOpWhenRemoteLogStorageIsDisabled(): Unit = {
-      val logConfig = LogTestUtils.createLogConfig()
-      val log = createLog(logDir, logConfig)
+    assertEquals(0, log.logStartOffset)
+    log.updateHighWatermark(90L)
+    assertTrue(log.maybeIncrementLogStartOffset(20L, LogStartOffsetIncrementReason.SegmentDeletion, false))
+    assertEquals(20, log.logStartOffset)
+    assertEquals(log.logStartOffset, log.localLogStartOffset())
 
-      for (i <- 0 until 100) {
-        val records = TestUtils.singletonRecords(value = s"test$i".getBytes)
-        log.appendAsLeader(records, leaderEpoch = 0)
-      }
-      
-      log.updateHighWatermark(90L)
-      log.maybeIncrementLogStartOffset(20L, LogStartOffsetIncrementReason.SegmentDeletion)
-      assertEquals(20, log.logStartOffset)
-      assertEquals(log.logStartOffset, log.localLogStartOffset())
+    assertTrue(log.maybeIncrementLogStartOffset(40L, LogStartOffsetIncrementReason.SegmentDeletion, true))
+    assertEquals(40, log.logStartOffset)
+    assertEquals(log.logStartOffset, log.localLogStartOffset())
+  }
+
+  @Test
+  def testLogStartUpdateWhenRemoteLogStorageIsEnabled(): Unit = {
+    val logConfig = LogTestUtils.createLogConfig(remoteLogStorageEnable = true)
+    val log = createLog(logDir, logConfig, remoteStorageSystemEnable = true)
+
+    for (i <- 0 until 100) {
+      val records = TestUtils.singletonRecords(value = s"test$i".getBytes)
+      log.appendAsLeader(records, leaderEpoch = 0)
     }
+
+    assertEquals(0, log.logStartOffset)
+    log.updateHighWatermark(90L)
+    log.maybeIncrementLogStartOffset(20L, LogStartOffsetIncrementReason.SegmentDeletion, true)
+    // should not update log start offset since remoteLogStorage is enabled and only update local logStartOffset is true
+    assertEquals(0, log.logStartOffset)
+    assertEquals(20, log.localLogStartOffset())
+
+    log.maybeIncrementLogStartOffset(40L, LogStartOffsetIncrementReason.SegmentDeletion, false)
+    // should update log start offset since only update local logStartOffset is false
+    assertEquals(40, log.logStartOffset)
+    assertEquals(log.logStartOffset, log.localLogStartOffset())
+  }
 
   private class MockLogOffsetsListener extends LogOffsetsListener {
     private var highWatermark: Long = -1L

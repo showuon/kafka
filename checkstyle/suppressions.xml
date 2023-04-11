@@ -41,6 +41,7 @@
     <suppress checks="NPathComplexity" files="(ClusterTestExtensions|KafkaApisBuilder).java"/>
     <suppress checks="MethodLength"
               files="(KafkaClusterTestKit).java"/>
+    <suppress checks="ClassFanOutComplexity" files="RemoteLogManagerTest.java"/>
 
     <!-- Clients -->
     <suppress id="dontUseSystemExit"
