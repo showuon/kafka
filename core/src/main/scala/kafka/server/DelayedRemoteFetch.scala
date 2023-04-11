@@ -77,6 +77,8 @@ class DelayedRemoteFetch(remoteFetchTask: Future[Void],
             return forceComplete()
         }
     }
+
+    // Case c
     if (remoteFetchResult.isDone)
       forceComplete()
     else
@@ -92,7 +94,6 @@ class DelayedRemoteFetch(remoteFetchTask: Future[Void],
    * Upon completion, read whatever data is available and pass to the complete callback
    */
   override def onComplete():Unit = {
-
     val fetchPartitionData = localReadResults.map { case (tp, result) =>
       if (tp.topicPartition().equals(remoteFetchInfo.topicPartition) && remoteFetchResult.isDone
         && result.exception.isEmpty && result.info.delayedRemoteStorageFetch.isPresent) {
