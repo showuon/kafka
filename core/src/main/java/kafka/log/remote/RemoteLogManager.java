@@ -697,7 +697,7 @@ public class RemoteLogManager implements Closeable {
         return indexCache.lookupOffset(remoteLogSegmentMetadata, offset);
     }
 
-    private FetchDataInfo addAbortedTransactions(long startOffset,
+    FetchDataInfo addAbortedTransactions(long startOffset,
                                          RemoteLogSegmentMetadata segmentMetadata,
                                          FetchDataInfo fetchInfo) throws RemoteStorageException {
         int fetchSize = fetchInfo.records.sizeInBytes();
@@ -758,7 +758,7 @@ public class RemoteLogManager implements Closeable {
         }
     }
 
-    private Optional<RemoteLogSegmentMetadata> findNextSegmentMetadata(RemoteLogSegmentMetadata segmentMetadata) throws RemoteStorageException {
+    Optional<RemoteLogSegmentMetadata> findNextSegmentMetadata(RemoteLogSegmentMetadata segmentMetadata) throws RemoteStorageException {
         TopicPartition topicPartition = segmentMetadata.topicIdPartition().topicPartition();
         long nextSegmentBaseOffset = segmentMetadata.endOffset() + 1;
         OptionalInt epoch = OptionalInt.of(segmentMetadata.segmentLeaderEpochs().lastEntry().getKey());
@@ -778,7 +778,7 @@ public class RemoteLogManager implements Closeable {
         return result;
     }
 
-    private RecordBatch findFirstBatch(RemoteLogInputStream remoteLogInputStream, long offset) throws IOException {
+    RecordBatch findFirstBatch(RemoteLogInputStream remoteLogInputStream, long offset) throws IOException {
         RecordBatch nextBatch = null;
         // Look for the batch which has the desired offset
         // We will always have a batch in that segment as it is a non-compacted topic. For compacted topics, we may need
@@ -809,37 +809,6 @@ public class RemoteLogManager implements Closeable {
         }
 
         return offset.orElse(-1L);
-    }
-
-    /**
-     * A remote log read task returned by asyncRead(). The caller of asyncRead() can use this object to cancel a
-     * pending task or check if the task is done.
-     */
-    public class AsyncReadTask {
-
-        private final Future<Void> future;
-
-        AsyncReadTask(Future<Void> future) {
-            this.future = future;
-        }
-
-        public boolean cancel(boolean mayInterruptIfRunning) {
-            boolean cancelled = future.cancel(mayInterruptIfRunning);
-            if (cancelled) {
-                // Removed the cancelled task from task queue
-                remoteStorageReaderThreadPool.purge();
-            }
-
-            return cancelled;
-        }
-
-        public boolean isCancelled() {
-            return future.isCancelled();
-        }
-
-        public boolean isDone() {
-            return future.isDone();
-        }
     }
 
     /**
