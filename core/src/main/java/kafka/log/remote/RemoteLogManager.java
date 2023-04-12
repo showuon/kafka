@@ -75,6 +75,7 @@ import java.nio.file.Path;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -771,7 +772,7 @@ public class RemoteLogManager implements Closeable {
         return result;
     }
 
-    private RecordBatch findFirstBatch(RemoteLogInputStream remoteLogInputStream, long offset) throws IOException {
+    RecordBatch findFirstBatch(RemoteLogInputStream remoteLogInputStream, long offset) throws IOException {
         RecordBatch nextBatch = null;
         // Look for the batch which has the desired offset
         // We will always have a batch in that segment as it is a non-compacted topic. For compacted topics, we may need
@@ -802,37 +803,6 @@ public class RemoteLogManager implements Closeable {
         }
 
         return offset.orElse(-1L);
-    }
-
-    /**
-     * A remote log read task returned by asyncRead(). The caller of asyncRead() can use this object to cancel a
-     * pending task or check if the task is done.
-     */
-    public class AsyncReadTask {
-
-        private final Future<Void> future;
-
-        AsyncReadTask(Future<Void> future) {
-            this.future = future;
-        }
-
-        public boolean cancel(boolean mayInterruptIfRunning) {
-            boolean cancelled = future.cancel(mayInterruptIfRunning);
-            if (cancelled) {
-                // Removed the cancelled task from task queue
-                remoteStorageReaderThreadPool.purge();
-            }
-
-            return cancelled;
-        }
-
-        public boolean isCancelled() {
-            return future.isCancelled();
-        }
-
-        public boolean isDone() {
-            return future.isDone();
-        }
     }
 
     /**
