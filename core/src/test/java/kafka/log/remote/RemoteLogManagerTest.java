@@ -24,9 +24,11 @@ import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.AbstractConfig;
+import org.apache.kafka.common.message.FetchResponseData;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.FileRecords;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.record.SimpleRecord;
 import org.apache.kafka.common.utils.MockTime;
 import org.apache.kafka.common.utils.Time;
@@ -46,8 +48,11 @@ import org.apache.kafka.server.log.remote.storage.RemoteStorageManager.IndexType
 import org.apache.kafka.storage.internals.checkpoint.InMemoryLeaderEpochCheckpoint;
 import org.apache.kafka.storage.internals.checkpoint.LeaderEpochCheckpoint;
 import org.apache.kafka.storage.internals.epoch.LeaderEpochFileCache;
+import org.apache.kafka.storage.internals.log.AbortedTxn;
 import org.apache.kafka.storage.internals.log.EpochEntry;
+import org.apache.kafka.storage.internals.log.FetchDataInfo;
 import org.apache.kafka.storage.internals.log.LazyIndex;
+import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
 import org.apache.kafka.storage.internals.log.OffsetIndex;
 import org.apache.kafka.storage.internals.log.ProducerStateManager;
 import org.apache.kafka.storage.internals.log.TimeIndex;
@@ -77,6 +82,7 @@ import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 
@@ -549,6 +555,110 @@ public class RemoteLogManagerTest {
         InOrder inorder = inOrder(remoteStorageManager, remoteLogMetadataManager);
         inorder.verify(remoteStorageManager, times(1)).close();
         inorder.verify(remoteLogMetadataManager, times(1)).close();
+    }
+
+    // luke
+    private File nonExistentTempFile() throws IOException {
+        File file = TestUtils.tempFile();
+        Files.delete(file.toPath());
+        return file;
+    }
+    
+    @Test
+    public void testAbortedTransactions() throws RemoteStorageException, IOException {
+        checkpoint.write(totalEpochEntries);
+        LeaderEpochFileCache cache = new LeaderEpochFileCache(tp, checkpoint);
+        when(mockLog.leaderEpochCache()).thenReturn(Option.apply(cache));
+
+        Map<Integer, Long> nextSegmentLeaderEpochs = new TreeMap<>();
+        nextSegmentLeaderEpochs.put(epochEntry1.epoch, epochEntry1.startOffset);
+        nextSegmentLeaderEpochs.put(epochEntry2.epoch, epochEntry2.startOffset);
+
+        long baseOffset = 0;
+        TimeIndex timeIdx = new TimeIndex(nonExistentTempFile(), baseOffset, 30 * 12);
+        TransactionIndex txnIdx = new TransactionIndex(baseOffset, TestUtils.tempFile());
+        OffsetIndex offsetIdx = new OffsetIndex(nonExistentTempFile(), baseOffset, 4 * 8);
+        offsetIdx.append(baseOffset, 0);
+        offsetIdx.append(100, 300);
+
+        AbortedTxn abortedTxn1 = new AbortedTxn(0L, 50, 105, 60);
+        AbortedTxn abortedTxn2 = new AbortedTxn(1L, 55, 120, 100);
+        AbortedTxn abortedTxn3 = new AbortedTxn(2L, 150, 220, 200);
+        txnIdx.append(abortedTxn1);
+        txnIdx.append(abortedTxn2);
+        txnIdx.append(abortedTxn3);
+
+        when(remoteStorageManager.fetchIndex(any(RemoteLogSegmentMetadata.class), eq(IndexType.OFFSET))).thenReturn(new FileInputStream(offsetIdx.file()));
+        when(remoteStorageManager.fetchIndex(any(RemoteLogSegmentMetadata.class), eq(IndexType.TIMESTAMP))).thenReturn(new FileInputStream(timeIdx.file()));
+        when(remoteStorageManager.fetchIndex(any(RemoteLogSegmentMetadata.class), eq(IndexType.TRANSACTION))).thenReturn(new FileInputStream(txnIdx.file()));
+
+        remoteLogManager.onLeadershipChange(Collections.singleton(mockPartition(leaderTopicIdPartition)), Collections.emptySet(), topicIds);
+
+        Records records = mock(Records.class);
+        // it'll map to the offset 100, and then filter out "abortedTxn3" since its start offset exceeds 100
+        when(records.sizeInBytes()).thenReturn(300);
+        FetchDataInfo fetchDataInfo = new FetchDataInfo(new LogOffsetMetadata(baseOffset, -1, 0), records);
+
+        RemoteLogSegmentMetadata segmentMetadata = new RemoteLogSegmentMetadata(new RemoteLogSegmentId(leaderTopicIdPartition, Uuid.randomUuid()),
+            0, 99, -1L, brokerId, -1L, 1024, Collections.singletonMap(0, 45L));
+        FetchDataInfo expectedFetchDataInfo = remoteLogManager.addAbortedTransactions(baseOffset, segmentMetadata, fetchDataInfo);
+
+        assertTrue(expectedFetchDataInfo.abortedTransactions.isPresent());
+        List<FetchResponseData.AbortedTransaction> abortedList = new ArrayList<>();
+        // expect only 2 aborted transaction returned
+        abortedList.add(abortedTxn1.asAbortedTransaction());
+        abortedList.add(abortedTxn2.asAbortedTransaction());
+        assertEquals(abortedList, expectedFetchDataInfo.abortedTransactions.get());
+    }
+
+    @Test
+    public void testFindNextSegmentMetadata() throws RemoteStorageException {
+        checkpoint.write(totalEpochEntries);
+        LeaderEpochFileCache cache = new LeaderEpochFileCache(tp, checkpoint);
+        when(mockLog.leaderEpochCache()).thenReturn(Option.apply(cache));
+
+        Map<Integer, Long> nextSegmentLeaderEpochs = new TreeMap<>();
+        nextSegmentLeaderEpochs.put(epochEntry1.epoch, epochEntry1.startOffset);
+        nextSegmentLeaderEpochs.put(epochEntry2.epoch, epochEntry2.startOffset);
+        // set next metadata offset range to [100, 250], and leader epoch to [1->100, 2-> 200]
+        RemoteLogSegmentMetadata nextMetadata =
+            new RemoteLogSegmentMetadata(new RemoteLogSegmentId(leaderTopicIdPartition, Uuid.randomUuid()),
+                100, 250, -1L, brokerId, -1L, 1024, nextSegmentLeaderEpochs);
+
+        when(remoteLogMetadataManager.remoteLogSegmentMetadata(eq(leaderTopicIdPartition), anyInt(), anyLong()))
+            .thenAnswer(ans -> {
+                int epoch = ans.getArgument(1);
+                long offset = ans.getArgument(2);
+                if ((epoch >= epochEntry1.epoch && epoch <= epochEntry2.epoch) &&
+                    offset >= nextMetadata.startOffset() && offset <= nextMetadata.endOffset()) {
+                    return Optional.of(nextMetadata);
+                } else {
+                    return Optional.empty();
+                }
+            });
+
+        doNothing().when(remoteLogMetadataManager).onPartitionLeadershipChanges(any(Set.class), any(Set.class));
+
+        Map<Integer, Long> segmentLeaderEpochs = new TreeMap<>();
+        segmentLeaderEpochs.put(epochEntry0.epoch, epochEntry0.startOffset);
+
+        remoteLogManager.onLeadershipChange(Collections.singleton(mockPartition(leaderTopicIdPartition)), Collections.emptySet(), topicIds);
+        // end offset is 99 within the offset range of next metadata, segmentLeaderEpochs is [0->0]
+        // we should still be able to find next metadata by nextEpoch from leader epoch cache
+        RemoteLogSegmentMetadata segmentMetadata = new RemoteLogSegmentMetadata(new RemoteLogSegmentId(leaderTopicIdPartition, Uuid.randomUuid()),
+            0, 99, -1L, brokerId, -1L, 1024, segmentLeaderEpochs);
+        assertEquals(nextMetadata, remoteLogManager.findNextSegmentMetadata(segmentMetadata).get());
+
+        segmentLeaderEpochs.put(epochEntry1.epoch, epochEntry1.startOffset);
+        // end offset is still in the offset range of next metadata, and leader epoch added one more entry. Should find next metadata
+        segmentMetadata = new RemoteLogSegmentMetadata(new RemoteLogSegmentId(leaderTopicIdPartition, Uuid.randomUuid()),
+            0, 200, -1L, brokerId, -1L, 1024, segmentLeaderEpochs);
+        assertEquals(nextMetadata, remoteLogManager.findNextSegmentMetadata(segmentMetadata).get());
+
+        // end offset is our of the next segment offset range, cannot find anything
+        segmentMetadata = new RemoteLogSegmentMetadata(new RemoteLogSegmentId(leaderTopicIdPartition, Uuid.randomUuid()),
+            100, 300, -1L, brokerId, -1L, 1024, segmentLeaderEpochs);
+        assertEquals(Optional.empty(), remoteLogManager.findNextSegmentMetadata(segmentMetadata));
     }
 
     private Partition mockPartition(TopicIdPartition topicIdPartition) {
