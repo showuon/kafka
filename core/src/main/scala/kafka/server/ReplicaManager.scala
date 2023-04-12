@@ -194,7 +194,8 @@ class ReplicaManager(val config: KafkaConfig,
                      delayedDeleteRecordsPurgatoryParam: Option[DelayedOperationPurgatory[DelayedDeleteRecords]] = None,
                      delayedElectLeaderPurgatoryParam: Option[DelayedOperationPurgatory[DelayedElectLeader]] = None,
                      delayedRemoteFetchPurgatoryParam: Option[DelayedOperationPurgatory[DelayedRemoteFetch]] = None,
-                     threadNamePrefix: Option[String] = None, brokerEpochSupplier: () => Long = () => -1) extends Logging {
+                     threadNamePrefix: Option[String] = None,
+                     val brokerEpochSupplier: () => Long = () => -1) extends Logging {
 
   private val metricsGroup = new KafkaMetricsGroup(this.getClass)
 
