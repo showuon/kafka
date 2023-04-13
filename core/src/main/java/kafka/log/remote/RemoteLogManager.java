@@ -649,7 +649,7 @@ public class RemoteLogManager implements Closeable {
         if (!rlsMetadata.isPresent()) {
             String epochStr = (epoch.isPresent()) ? Integer.toString(epoch.getAsInt()) : "NOT AVAILABLE";
             throw new OffsetOutOfRangeException("Received request for offset " + offset + " for leader epoch "
-                    + epochStr + " and partition " + tp + " which does not exist in remote tier. Try again later.");
+                    + epochStr + " and partition " + tp + " which does not exist in remote tier.");
         }
 
         int startPos = lookupPositionForOffset(rlsMetadata.get(), offset);
