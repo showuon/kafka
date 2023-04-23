@@ -134,6 +134,7 @@ public class KRaftMigrationDriver implements MetadataPublisher {
     }
 
     private boolean isControllerQuorumReadyForMigration() {
+        // luke
         // TODO implement this
         return true;
     }
