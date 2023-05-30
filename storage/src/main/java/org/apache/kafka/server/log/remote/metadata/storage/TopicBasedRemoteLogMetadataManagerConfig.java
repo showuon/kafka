@@ -50,7 +50,7 @@ public final class TopicBasedRemoteLogMetadataManagerConfig {
 
     public static final int DEFAULT_REMOTE_LOG_METADATA_TOPIC_PARTITIONS = 50;
     public static final long DEFAULT_REMOTE_LOG_METADATA_TOPIC_RETENTION_MILLIS = -1L;
-    public static final short DEFAULT_REMOTE_LOG_METADATA_TOPIC_REPLICATION_FACTOR = 3;
+    public static final short DEFAULT_REMOTE_LOG_METADATA_TOPIC_REPLICATION_FACTOR = 1;
     public static final long DEFAULT_REMOTE_LOG_METADATA_CONSUME_WAIT_MS = 2 * 60 * 1000L;
     public static final long DEFAULT_REMOTE_LOG_METADATA_INITIALIZATION_RETRY_MAX_TIMEOUT_MS = 2 * 60 * 1000L;
     public static final long DEFAULT_REMOTE_LOG_METADATA_INITIALIZATION_RETRY_INTERVAL_MS = 5 * 1000L;
@@ -201,6 +201,7 @@ public final class TopicBasedRemoteLogMetadataManagerConfig {
     private Map<String, Object> createConsumerProps(HashMap<String, Object> allConsumerConfigs) {
         Map<String, Object> props = new HashMap<>(allConsumerConfigs);
 
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
         props.put(CommonClientConfigs.CLIENT_ID_CONFIG, clientIdPrefix + "_consumer");
         props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
@@ -213,6 +214,7 @@ public final class TopicBasedRemoteLogMetadataManagerConfig {
     private Map<String, Object> createProducerProps(HashMap<String, Object> allProducerConfigs) {
         Map<String, Object> props = new HashMap<>(allProducerConfigs);
 
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
         props.put(ProducerConfig.CLIENT_ID_CONFIG, clientIdPrefix + "_producer");
         props.put(ProducerConfig.ACKS_CONFIG, "all");
         props.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 1);

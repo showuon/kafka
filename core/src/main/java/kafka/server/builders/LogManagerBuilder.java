@@ -172,6 +172,7 @@ public class LogManagerBuilder {
                               brokerTopicStats,
                               logDirFailureChannel,
                               time,
-                              keepPartitionMetadataFile);
+                              keepPartitionMetadataFile,
+                false);
     }
 }

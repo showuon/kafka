@@ -105,7 +105,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
                  @volatile private var _topicId: Option[Uuid],
                  val keepPartitionMetadataFile: Boolean,
                  val remoteStorageSystemEnable: Boolean = false,
-                 remoteLogManager: Option[RemoteLogManager] = None,
+                 rlm: Option[RemoteLogManager] = None,
                  @volatile private var logOffsetsListener: LogOffsetsListener = LogOffsetsListener.NO_OP_OFFSETS_LISTENER) extends Logging {
 
   import kafka.log.UnifiedLog._
@@ -190,6 +190,9 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   }
 
   def remoteLogEnabled(): Boolean = {
+//    println("config.remoteLogConfig.remoteStorageEnable:" + config.remoteLogConfig.remoteStorageEnable)
+//    println("remoteStorageSystemEnable:" + remoteStorageSystemEnable)
+//    println("config.compact:" + config.compact)
     // Remote log is enabled only for non-compact and non-internal topics
     remoteStorageSystemEnable &&
       !(config.compact || Topic.isInternal(topicPartition.topic())
@@ -1211,7 +1214,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
    *         None if no such message is found.
    */
   @nowarn("cat=deprecation")
-  def fetchOffsetByTimestamp(targetTimestamp: Long): Option[TimestampAndOffset] = {
+  def fetchOffsetByTimestamp(targetTimestamp: Long, remoteLogManager: Option[RemoteLogManager] = None): Option[TimestampAndOffset] = {
     maybeHandleIOException(s"Error while fetching offset by timestamp for $topicPartition in dir ${dir.getParent}") {
       debug(s"Searching offset for timestamp $targetTimestamp")
 
@@ -1833,7 +1836,7 @@ object UnifiedLog extends Logging {
             keepPartitionMetadataFile: Boolean,
             numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
             remoteStorageSystemEnable: Boolean = false,
-            remoteLogManager: Option[RemoteLogManager] = None,
+            rlm: Option[RemoteLogManager] = None,
             logOffsetsListener: LogOffsetsListener = LogOffsetsListener.NO_OP_OFFSETS_LISTENER): UnifiedLog = {
     // create the log directory if it doesn't exist
     Files.createDirectories(dir.toPath)
@@ -1873,7 +1876,7 @@ object UnifiedLog extends Logging {
       topicId,
       keepPartitionMetadataFile,
       remoteStorageSystemEnable,
-      remoteLogManager,
+      rlm,
       logOffsetsListener)
   }
 

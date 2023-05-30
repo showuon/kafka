@@ -275,7 +275,7 @@ public class RemoteLogManager implements Closeable {
     public void onLeadershipChange(Set<Partition> partitionsBecomeLeader,
                                    Set<Partition> partitionsBecomeFollower,
                                    Map<String, Uuid> topicIds) {
-        LOGGER.debug("Received leadership changes for leaders: {} and followers: {}", partitionsBecomeLeader, partitionsBecomeFollower);
+        LOGGER.info("Received leadership changes for leaders: {} and followers: {}", partitionsBecomeLeader, topicIds);
 
         Map<TopicIdPartition, Integer> leaderPartitionsWithLeaderEpoch = filterPartitions(partitionsBecomeLeader)
                 .collect(Collectors.toMap(
@@ -286,8 +286,10 @@ public class RemoteLogManager implements Closeable {
         Set<TopicIdPartition> followerPartitions = filterPartitions(partitionsBecomeFollower)
                 .map(p -> new TopicIdPartition(topicIds.get(p.topic()), p.topicPartition())).collect(Collectors.toSet());
 
+
+        LOGGER.info("leaderPartitions:" + leaderPartitions + ";;" + followerPartitions);
         if (!leaderPartitions.isEmpty() || !followerPartitions.isEmpty()) {
-            LOGGER.debug("Effective topic partitions after filtering compact and internal topics, leaders: {} and followers: {}",
+            LOGGER.info("Effective topic partitions after filtering compact and internal topics, leaders: {} and followers: {}",
                     leaderPartitions, followerPartitions);
 
             leaderPartitions.forEach(this::cacheTopicPartitionIds);
@@ -504,7 +506,7 @@ public class RemoteLogManager implements Closeable {
                     // Copy segments only till the last-stable-offset as remote storage should contain only committed/acked
                     // messages
                     long toOffset = lso;
-                    logger.debug("Checking for segments to copy, copiedOffset: {} and toOffset: {}", copiedOffset, toOffset);
+                    logger.info("!!! Checking for segments to copy, copiedOffset: {} and toOffset: {}", copiedOffset, toOffset);
                     long activeSegBaseOffset = log.activeSegment().baseOffset();
                     // log-start-offset can be ahead of the read-offset, when:
                     // 1) log-start-offset gets incremented via delete-records API (or)
@@ -517,7 +519,7 @@ public class RemoteLogManager implements Closeable {
 
                     // sortedSegments becomes empty list when fromOffset and toOffset are same, and activeSegIndex becomes -1
                     if (activeSegIndex < 0) {
-                        logger.debug("No segments found to be copied for partition {} with copiedOffset: {} and active segment's base-offset: {}",
+                        logger.info("No segments found to be copied for partition {} with copiedOffset: {} and active segment's base-offset: {}",
                                 topicIdPartition, copiedOffset, activeSegBaseOffset);
                     } else {
                         ListIterator<LogSegment> logSegmentsIter = sortedSegments.subList(0, activeSegIndex).listIterator();
@@ -533,7 +535,7 @@ public class RemoteLogManager implements Closeable {
                         }
                     }
                 } else {
-                    logger.debug("Skipping copying segments, current read-offset:{}, and LSO:{}", copiedOffset, lso);
+                    logger.info("Skipping copying segments, current read-offset:{}, and LSO:{}", copiedOffset, lso);
                 }
             } catch (InterruptedException ex) {
                 throw ex;
@@ -1028,12 +1030,14 @@ public class RemoteLogManager implements Closeable {
 
     void doHandleLeaderOrFollowerPartitions(TopicIdPartition topicPartition,
                                             Consumer<RLMTask> convertToLeaderOrFollower) {
+        System.out.println("leaderOrFollowerTasks:" + leaderOrFollowerTasks + ";;" + delayInMs);
         RLMTaskWithFuture rlmTaskWithFuture = leaderOrFollowerTasks.computeIfAbsent(topicPartition,
                 topicIdPartition -> {
                     RLMTask task = new RLMTask(topicIdPartition);
                     // set this upfront when it is getting initialized instead of doing it after scheduling.
                     convertToLeaderOrFollower.accept(task);
-                    LOGGER.info("Created a new task: {} and getting scheduled", task);
+                    System.out.println("creating:" + task);
+                    LOGGER.info("!!! Created a new task: {} and getting scheduled", task);
                     ScheduledFuture future = rlmScheduledThreadPool.scheduleWithFixedDelay(task, 0, delayInMs, TimeUnit.MILLISECONDS);
                     return new RLMTaskWithFuture(task, future);
                 }

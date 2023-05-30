@@ -76,7 +76,8 @@ class LogManager(logDirs: Seq[File],
                  brokerTopicStats: BrokerTopicStats,
                  logDirFailureChannel: LogDirFailureChannel,
                  time: Time,
-                 val keepPartitionMetadataFile: Boolean) extends Logging {
+                 val keepPartitionMetadataFile: Boolean,
+                 remoteStorageSystemEnable: Boolean) extends Logging {
 
   import LogManager._
 
@@ -290,7 +291,8 @@ class LogManager(logDirs: Seq[File],
       lastShutdownClean = hadCleanShutdown,
       topicId = None,
       keepPartitionMetadataFile = keepPartitionMetadataFile,
-      numRemainingSegments = numRemainingSegments)
+      numRemainingSegments = numRemainingSegments,
+      remoteStorageSystemEnable = remoteStorageSystemEnable)
 
     if (logDir.getName.endsWith(UnifiedLog.DeleteDirSuffix)) {
       addLogToBeDeleted(log)
@@ -971,7 +973,8 @@ class LogManager(logDirs: Seq[File],
           brokerTopicStats = brokerTopicStats,
           logDirFailureChannel = logDirFailureChannel,
           topicId = topicId,
-          keepPartitionMetadataFile = keepPartitionMetadataFile)
+          keepPartitionMetadataFile = keepPartitionMetadataFile,
+          remoteStorageSystemEnable = remoteStorageSystemEnable)
 
         if (isFuture)
           futureLogs.put(topicPartition, log)
@@ -1372,7 +1375,8 @@ object LogManager {
             time: Time,
             brokerTopicStats: BrokerTopicStats,
             logDirFailureChannel: LogDirFailureChannel,
-            keepPartitionMetadataFile: Boolean): LogManager = {
+            keepPartitionMetadataFile: Boolean,
+            remoteStorageSystemEnable: Boolean = false): LogManager = {
     val defaultProps = config.extractLogConfigMap
 
     LogConfig.validateValues(defaultProps)
@@ -1398,7 +1402,8 @@ object LogManager {
       logDirFailureChannel = logDirFailureChannel,
       time = time,
       keepPartitionMetadataFile = keepPartitionMetadataFile,
-      interBrokerProtocolVersion = config.interBrokerProtocolVersion)
+      interBrokerProtocolVersion = config.interBrokerProtocolVersion,
+      remoteStorageSystemEnable = remoteStorageSystemEnable)
   }
 
 }

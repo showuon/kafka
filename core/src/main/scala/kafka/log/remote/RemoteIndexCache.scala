@@ -245,14 +245,20 @@ class RemoteIndexCache(maxSize: Int = 1024, remoteStorageManager: RemoteStorageM
             index
           })
 
-        val txnIndex: TransactionIndex = loadIndexFile(fileName, UnifiedLog.TxnIndexFileSuffix,
-          rlsMetadata => remoteStorageManager.fetchIndex(rlsMetadata, IndexType.TRANSACTION),
-          file => {
-            val index = new TransactionIndex(startOffset, file)
-            index.sanityCheck()
-            index
-          })
 
+        var txnIndex: TransactionIndex = null
+        try {
+          txnIndex = loadIndexFile(fileName, UnifiedLog.TxnIndexFileSuffix,
+            rlsMetadata => remoteStorageManager.fetchIndex(rlsMetadata, IndexType.TRANSACTION),
+            file => {
+              val index = new TransactionIndex(startOffset, file)
+              index.sanityCheck()
+              index
+            })
+        } catch {
+          case e: Exception =>
+            error("error getting index:" + e)
+        }
         new Entry(offsetIndex, timeIndex, txnIndex)
       })
     }
