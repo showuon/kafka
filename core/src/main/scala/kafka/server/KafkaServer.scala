@@ -509,6 +509,7 @@ class KafkaServer(
         remoteLogManagerOpt.foreach(rlm => {
           val listenerName = config.remoteLogManagerConfig.remoteLogMetadataManagerListenerName()
           if (listenerName != null) {
+            println("!!! listenerName:" + listenerName + ";;;" + brokerInfo.broker.endPoints)
             brokerInfo.broker.endPoints
               .find(e => e.listenerName.equals(ListenerName.normalised(listenerName)))
               .orElse(throw new ConfigException(RemoteLogManagerConfig.REMOTE_LOG_METADATA_MANAGER_LISTENER_NAME_PROP +

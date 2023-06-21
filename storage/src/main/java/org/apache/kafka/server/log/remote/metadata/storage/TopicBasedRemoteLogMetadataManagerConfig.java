@@ -149,6 +149,8 @@ public final class TopicBasedRemoteLogMetadataManagerConfig {
             }
         }
 
+        commonClientConfigs.put(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, configs.get(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG));
+
         HashMap<String, Object> allProducerConfigs = new HashMap<>(commonClientConfigs);
         allProducerConfigs.putAll(producerOnlyConfigs);
         producerProps = createProducerProps(allProducerConfigs);

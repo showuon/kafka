@@ -248,6 +248,7 @@ public class RemoteLogManager implements Closeable {
             rlmmProps.put("bootstrap.servers", e.host() + ":" + e.port());
             rlmmProps.put("security.protocol", e.securityProtocol().name);
         });
+        System.out.println("!!! rlmmProps:" + rlmmProps);
 
         remoteLogMetadataManager.configure(rlmmProps);
     }
