@@ -120,7 +120,7 @@ class ReassignPartitionsTest(ProduceConsumeValidateTest):
         # be deleted. The 8 seconds is important, since we should get 2 deleted
         # segments in this period based on the configured log roll time and the
         # retention check interval.
-        time.sleep(8)
+        time.sleep(15)
         producer.stop()
         self.logger.info("Seeded topic with %d messages which will be deleted" %\
                          producer.num_acked)
@@ -129,7 +129,7 @@ class ReassignPartitionsTest(ProduceConsumeValidateTest):
         # segment is deleted. An altenate to using timeouts is to poll each
         # partition until the log start offset matches the end offset. The
         # latter is more robust.
-        time.sleep(6)
+        time.sleep(60)
 
     @cluster(num_nodes=8)
     @matrix(bounce_brokers=[True, False],
