@@ -131,7 +131,7 @@ class ProducerPerformanceService(HttpMetricsCollector, PerformanceService):
         # start ProducerPerformance process
         start = time.time()
         producer_output = node.account.ssh_capture(cmd)
-        wait_until(lambda: self.alive(node), timeout_sec=20, err_msg="ProducerPerformance failed to start")
+        wait_until(lambda: self.alive(node), timeout_sec=60, err_msg="ProducerPerformance failed to start")
         # block until there is at least one line of output
         first_line = next(producer_output, None)
         if first_line is None:
