@@ -127,7 +127,7 @@ class QuotaTest(Test):
         return super(QuotaTest, self).min_cluster_size() + self.num_producers + self.num_consumers
 
     @cluster(num_nodes=5)
-#     @matrix(quota_type=[QuotaConfig.CLIENT_ID, QuotaConfig.USER, QuotaConfig.USER_CLIENT], override_quota=[True, False])
+    @matrix(quota_type=[QuotaConfig.CLIENT_ID, QuotaConfig.USER, QuotaConfig.USER_CLIENT], override_quota=[True, False])
     @parametrize(quota_type=QuotaConfig.CLIENT_ID, consumer_num=2)
 #     @parametrize(quota_type=QuotaConfig.CLIENT_ID, old_broker_throttling_behavior=True)
 #     @parametrize(quota_type=QuotaConfig.CLIENT_ID, old_client_throttling_behavior=True)
