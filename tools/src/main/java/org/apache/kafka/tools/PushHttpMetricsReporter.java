@@ -30,7 +30,6 @@ import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import sun.util.logging.PlatformLogger;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -125,6 +124,8 @@ public class PushHttpMetricsReporter implements MetricsReporter {
             }
         }
 
+        System.setProperty("javax.net.debug","all");
+
         executor.scheduleAtFixedRate(new HttpReporter(), period, period, TimeUnit.SECONDS);
 
         log.info("Configured PushHttpMetricsReporter for {} to report every {} seconds", url, period);
@@ -202,7 +203,6 @@ public class PushHttpMetricsReporter implements MetricsReporter {
                     os.flush();
                 }
 
-                sun.util.logging.PlatformLogger.getLogger("sun.net.www.protocol.http.HttpURLConnection").setLevel(PlatformLogger.Level.ALL);
                 int responseCode = connection.getResponseCode();
                 if (responseCode >= 400) {
                     InputStream is = connection.getErrorStream();
