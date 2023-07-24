@@ -180,6 +180,7 @@ class _ReverseForwarder(object):
 
         self._stopping = False
 
+        node.account.logger = self.logger
         self._transport = node.account.ssh_client.get_transport()
         self._transport.request_port_forward('', remote_port)
 
