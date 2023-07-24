@@ -49,6 +49,9 @@ import java.util.Scanner;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.ConsoleHandler;
+import java.util.logging.Level;
+import java.util.logging.LogManager;
 
 /**
  * MetricsReporter that aggregates metrics data and reports it via HTTP requests to a configurable
@@ -124,7 +127,14 @@ public class PushHttpMetricsReporter implements MetricsReporter {
             }
         }
 
-        System.setProperty("javax.net.debug","all");
+
+        ConsoleHandler handler = new ConsoleHandler();
+        handler.setLevel(Level.ALL);
+        java.util.logging.Logger log1 = LogManager.getLogManager().getLogger("");
+        log1.addHandler(handler);
+        log1.setLevel(Level.ALL);
+
+        
 
         executor.scheduleAtFixedRate(new HttpReporter(), period, period, TimeUnit.SECONDS);
 
