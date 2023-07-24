@@ -193,8 +193,14 @@ class QuotaTest(Test):
             msg += "number of produced messages %d doesn't equal number of consumed messages %d" % (produced_num, consumed_num)
 
         # validate that maximum_producer_throughput <= producer_quota * (1 + maximum_client_deviation_percentage/100)
+        self.logger.info('size: %d' % len(producer.metrics(group='producer-metrics', name='outgoing-byte-rate', client_id=producer.client_id)))
         for k, metrics in producer.metrics(group='producer-metrics', name='outgoing-byte-rate', client_id=producer.client_id):
-            self.logger.info('metrics: %d' % metrics)
+            for metric in metrics:
+                self.logger.info('metric: %d' % metric.value)
+            for key in k:
+                self.logger.info('key: %s' % key)
+
+        producer.metrics(group='producer-metrics', name='outgoing-byte-rate', client_id=producer.client_id).size
 
         producer_maximum_bps = max(metric.value for k, metrics in producer.metrics(group='producer-metrics', name='outgoing-byte-rate', client_id=producer.client_id) for metric in metrics)
         producer_quota_bps = self.quota_config.producer_quota
