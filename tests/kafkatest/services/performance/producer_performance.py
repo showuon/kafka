@@ -140,7 +140,7 @@ class ProducerPerformanceService(HttpMetricsCollector, PerformanceService):
             self.logger.info("!!! No output from ProducerPerformance")
             self.logger.info("!!! No output from ProducerPerformance")
             self.logger.info("!!! No output from ProducerPerformance")
-            time.sleep(600)
+            time.sleep(60000)
 
             #raise Exception("No output from ProducerPerformance")
 
