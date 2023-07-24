@@ -200,7 +200,7 @@ class QuotaTest(Test):
             for key in k:
                 self.logger.info('key: %s' % key)
 
-        
+
 
         producer_maximum_bps = max(metric.value for k, metrics in producer.metrics(group='producer-metrics', name='outgoing-byte-rate', client_id=producer.client_id) for metric in metrics)
         producer_quota_bps = self.quota_config.producer_quota
