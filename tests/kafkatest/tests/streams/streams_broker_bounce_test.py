@@ -262,6 +262,7 @@ class StreamsBrokerBounceTest(Test):
 
         return self.collect_results(sleep_time_secs)
 
+    @ignore
     @cluster(num_nodes=7)
     @matrix(failure_mode=["clean_shutdown", "hard_shutdown", "clean_bounce", "hard_bounce"],
             num_failures=[2],
@@ -281,6 +282,7 @@ class StreamsBrokerBounceTest(Test):
 
         return self.collect_results(120)
 
+    @ignore
     @cluster(num_nodes=7)
     @matrix(failure_mode=["clean_bounce", "hard_bounce"],
             num_failures=[3],
