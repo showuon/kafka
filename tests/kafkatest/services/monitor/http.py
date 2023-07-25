@@ -47,7 +47,7 @@ class HttpMetricsCollector(object):
         :param args:
         :param kwargs:
         """
-        self._http_metrics_period = kwargs.pop('period', 1)
+        self._http_metrics_period = kwargs.pop('period', 8)
 
         super(HttpMetricsCollector, self).__init__(**kwargs)
 
@@ -183,8 +183,6 @@ class _ReverseForwarder(object):
         node.account.logger = self.logger
         self._transport = node.account.ssh_client.get_transport()
         self._transport.request_port_forward('', remote_port)
-
-        self.logger.info("!!! forwarding completed")
 
         self._accept_thread = Thread(target=self._accept)
         self._accept_thread.start()

@@ -134,7 +134,7 @@ public class PushHttpMetricsReporter implements MetricsReporter {
 
 
 
-        executor.scheduleAtFixedRate(new HttpReporter(), period, period, TimeUnit.MILLISECONDS);
+        executor.scheduleAtFixedRate(new HttpReporter(), period, period, TimeUnit.SECONDS);
 
         log.info("Configured PushHttpMetricsReporter for {} to report every {} seconds", url, period);
     }
