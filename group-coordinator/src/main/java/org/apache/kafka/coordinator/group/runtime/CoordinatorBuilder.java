@@ -16,7 +16,11 @@
  */
 package org.apache.kafka.coordinator.group.runtime;
 
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.timeline.SnapshotRegistry;
+
 
 /**
  * A builder to build a {@link Coordinator} replicated state machine.
@@ -24,7 +28,7 @@ import org.apache.kafka.timeline.SnapshotRegistry;
  * @param <S> The type of the coordinator.
  * @param <U> The record type.
  */
-interface CoordinatorBuilder<S extends Coordinator<U>, U> {
+public interface CoordinatorBuilder<S extends Coordinator<U>, U> {
 
     /**
      * Sets the snapshot registry used to back all the timeline
@@ -36,6 +40,49 @@ interface CoordinatorBuilder<S extends Coordinator<U>, U> {
      */
     CoordinatorBuilder<S, U> withSnapshotRegistry(
         SnapshotRegistry snapshotRegistry
+    );
+
+    /**
+     * Sets the log context.
+     *
+     * @param logContext The log context.
+     *
+     * @return The builder.
+     */
+    CoordinatorBuilder<S, U> withLogContext(
+        LogContext logContext
+    );
+
+    /**
+     * Sets the topic partition.
+     * @param topicPartition The topic partition.
+     *
+     * @return The builder.
+     */
+    CoordinatorBuilder<S, U> withTopicPartition(
+        TopicPartition topicPartition
+    );
+
+    /**
+     * Sets the time.
+     *
+     * @param time The system time.
+     *
+     * @return The builder.
+     */
+    CoordinatorBuilder<S, U> withTime(
+        Time time
+    );
+
+    /**
+     * Sets the coordinator timer.
+     *
+     * @param timer The coordinator timer.
+     *
+     * @return The builder.
+     */
+    CoordinatorBuilder<S, U> withTimer(
+        CoordinatorTimer<Void, U> timer
     );
 
     /**

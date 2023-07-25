@@ -19,7 +19,6 @@ package kafka.controller
 import com.yammer.metrics.core.Timer
 
 import java.util.concurrent.TimeUnit
-import kafka.admin.AdminOperationException
 import kafka.api._
 import kafka.common._
 import kafka.cluster.Broker
@@ -45,7 +44,7 @@ import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.{AbstractControlRequest, ApiError, LeaderAndIsrResponse, UpdateFeaturesRequest, UpdateMetadataResponse}
 import org.apache.kafka.common.utils.{Time, Utils}
 import org.apache.kafka.metadata.LeaderRecoveryState
-import org.apache.kafka.server.common.ProducerIdsBlock
+import org.apache.kafka.server.common.{AdminOperationException, ProducerIdsBlock}
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
 import org.apache.kafka.server.util.KafkaScheduler
 import org.apache.zookeeper.KeeperException
@@ -1598,7 +1597,9 @@ class KafkaController(val config: KafkaConfig,
         !config.isFeatureVersioningSupported ||
         !featureCache.getFeatureOption.exists(
           latestFinalizedFeatures =>
-            BrokerFeatures.hasIncompatibleFeatures(broker.features, latestFinalizedFeatures.features))
+            BrokerFeatures.hasIncompatibleFeatures(broker.features,
+              latestFinalizedFeatures.finalizedFeatures().asScala.
+                map(kv => (kv._1, kv._2.toShort)).toMap))
     }
   }
 
@@ -2081,8 +2082,8 @@ class KafkaController(val config: KafkaConfig,
                                                         callback: UpdateFeaturesCallback): Unit = {
     val updates = request.featureUpdates
     val existingFeatures = featureCache.getFeatureOption
-      .map(featuresAndEpoch => featuresAndEpoch.features)
-      .getOrElse(Map[String, Short]())
+      .map(featuresAndEpoch => featuresAndEpoch.finalizedFeatures().asScala.map(kv => (kv._1, kv._2.toShort)).toMap)
+    .getOrElse(Map[String, Short]())
     // A map with key being feature name and value being finalized version.
     // This contains the target features to be eventually written to FeatureZNode.
     val targetFeatures = scala.collection.mutable.Map[String, Short]() ++ existingFeatures
