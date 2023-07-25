@@ -47,7 +47,7 @@ class HttpMetricsCollector(object):
         :param args:
         :param kwargs:
         """
-        self._http_metrics_period = kwargs.pop('period', 8)
+        self._http_metrics_period = kwargs.pop('period', 1)
 
         super(HttpMetricsCollector, self).__init__(**kwargs)
 
