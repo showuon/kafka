@@ -220,7 +220,7 @@ class StreamsBrokerBounceTest(Test):
     @matrix(failure_mode=["hard_shutdown"],
             broker_type=["controller"],
             num_threads=[1],
-            sleep_time_secs=[120],
+            sleep_time_secs=[600],
             metadata_quorum=[quorum.zk])
     def test_broker_type_bounce(self, failure_mode, broker_type, sleep_time_secs, num_threads, metadata_quorum):
         """
