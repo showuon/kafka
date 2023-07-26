@@ -135,14 +135,7 @@ class ProducerPerformanceService(HttpMetricsCollector, PerformanceService):
         # block until there is at least one line of output
         first_line = next(producer_output, None)
         if first_line is None:
-            self.logger.info("!!! No output from ProducerPerformance")
-            self.logger.info("!!! No output from ProducerPerformance")
-            self.logger.info("!!! No output from ProducerPerformance")
-            self.logger.info("!!! No output from ProducerPerformance")
-            self.logger.info("!!! No output from ProducerPerformance")
-            time.sleep(60000)
-
-            #raise Exception("No output from ProducerPerformance")
+            raise Exception("No output from ProducerPerformance")
 
         wait_until(lambda: not self.alive(node), timeout_sec=1200, backoff_sec=2, err_msg="ProducerPerformance failed to finish")
         elapsed = time.time() - start
