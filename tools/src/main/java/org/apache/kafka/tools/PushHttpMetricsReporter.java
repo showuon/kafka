@@ -190,7 +190,7 @@ public class PushHttpMetricsReporter implements MetricsReporter {
 
             MetricsReport report = new MetricsReport(new MetricClientInfo(host, clientId, now), samples);
 
-            log.info("Reporting {} metrics to {}", samples.size(), url);
+            log.trace("Reporting {} metrics to {}", samples.size(), url);
             HttpURLConnection connection = null;
             try {
                 connection = newHttpConnection(url);
