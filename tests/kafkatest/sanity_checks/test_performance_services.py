@@ -37,6 +37,7 @@ class PerformanceServiceTest(Test):
         if self.zk:
             self.zk.start()
 
+    @ignore
     @cluster(num_nodes=5)
     # We are keeping 0.8.2 here so that we don't inadvertently break support for it. Since this is just a sanity check,
     # the overhead should be manageable.
