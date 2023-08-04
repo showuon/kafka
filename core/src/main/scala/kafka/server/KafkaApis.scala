@@ -1978,7 +1978,8 @@ class KafkaApis(val requestChannel: RequestChannel,
         toCreate,
         authorizedForDescribeConfigs,
         controllerMutationQuota,
-        handleCreateTopicsResults)
+        handleCreateTopicsResults,
+        config)
     }
   }
 

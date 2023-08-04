@@ -57,6 +57,7 @@ import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.server.common.MetadataVersion;
 import org.apache.kafka.server.common.MetadataVersionValidator;
 import org.apache.kafka.server.config.ServerTopicConfigSynonyms;
+import org.apache.kafka.server.log.remote.storage.RemoteLogManagerConfig;
 import org.apache.kafka.server.record.BrokerCompressionType;
 
 public class LogConfig extends AbstractConfig {
@@ -454,7 +455,7 @@ public class LogConfig extends AbstractConfig {
                 throw new InvalidConfigurationException("Unknown topic config name: " + name);
     }
 
-    public static void validateValues(Map<?, ?> props) {
+    public static void validateValues(Map<?, ?> props, RemoteLogManagerConfig remoteLogManagerConfig) {
         long minCompactionLag = (Long) props.get(TopicConfig.MIN_COMPACTION_LAG_MS_CONFIG);
         long maxCompactionLag = (Long) props.get(TopicConfig.MAX_COMPACTION_LAG_MS_CONFIG);
         if (minCompactionLag > maxCompactionLag) {
@@ -466,6 +467,9 @@ public class LogConfig extends AbstractConfig {
         if (props.containsKey(TopicConfig.REMOTE_LOG_STORAGE_ENABLE_CONFIG)) {
             boolean isRemoteStorageEnabled = (Boolean) props.get(TopicConfig.REMOTE_LOG_STORAGE_ENABLE_CONFIG);
             String cleanupPolicy = props.get(TopicConfig.CLEANUP_POLICY_CONFIG).toString().toLowerCase(Locale.getDefault());
+            if (isRemoteStorageEnabled && !remoteLogManagerConfig.enableRemoteStorageSystem()) {
+                throw new ConfigException("Remote log storage is unsupported for the compacted topics");
+            }
             if (isRemoteStorageEnabled && cleanupPolicy.contains(TopicConfig.CLEANUP_POLICY_COMPACT)) {
                 throw new ConfigException("Remote log storage is unsupported for the compacted topics");
             }
@@ -509,10 +513,11 @@ public class LogConfig extends AbstractConfig {
     /**
      * Check that the given properties contain only valid log config names and that all values can be parsed and are valid
      */
-    public static void validate(Properties props) {
+    public static void validate(Properties props, RemoteLogManagerConfig remoteLogManagerConfig) {
         validateNames(props);
         Map<?, ?> valueMaps = CONFIG.parse(props);
-        validateValues(valueMaps);
+        validateValues(valueMaps, remoteLogManagerConfig);
+
     }
 
     public static void main(String[] args) {

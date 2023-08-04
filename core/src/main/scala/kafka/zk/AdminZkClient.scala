@@ -20,7 +20,7 @@ import java.util.Properties
 import kafka.admin.{AdminUtils, BrokerMetadata, RackAwareMode}
 import kafka.common.TopicAlreadyMarkedForDeletionException
 import kafka.controller.ReplicaAssignment
-import kafka.server.{ConfigEntityName, ConfigType, DynamicConfig}
+import kafka.server.{ConfigEntityName, ConfigType, DynamicConfig, KafkaConfig}
 import kafka.utils._
 import kafka.utils.Implicits._
 import org.apache.kafka.common.{TopicPartition, Uuid}
@@ -124,7 +124,8 @@ class AdminZkClient(zkClient: KafkaZkClient) extends Logging {
    */
   def validateTopicCreate(topic: String,
                           partitionReplicaAssignment: Map[Int, Seq[Int]],
-                          config: Properties): Unit = {
+                          config: Properties,
+                          kafkaConfig: KafkaConfig): Unit = {
     Topic.validate(topic)
     if (zkClient.isTopicMarkedForDeletion(topic)) {
       throw new TopicExistsException(s"Topic '$topic' is marked for deletion.")
@@ -157,7 +158,7 @@ class AdminZkClient(zkClient: KafkaZkClient) extends Logging {
         partitionReplicaAssignment.keys.filter(_ >= 0).sum != sequenceSum)
         throw new InvalidReplicaAssignmentException("partitions should be a consecutive 0-based integer sequence")
 
-    LogConfig.validate(config)
+    LogConfig.validate(config, kafkaConfig.remoteLogManagerConfig)
   }
 
   private def writeTopicPartitionAssignment(topic: String, replicaAssignment: Map[Int, ReplicaAssignment],

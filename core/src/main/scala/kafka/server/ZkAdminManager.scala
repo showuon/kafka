@@ -159,7 +159,8 @@ class ZkAdminManager(val config: KafkaConfig,
                    toCreate: Map[String, CreatableTopic],
                    includeConfigsAndMetadata: Map[String, CreatableTopicResult],
                    controllerMutationQuota: ControllerMutationQuota,
-                   responseCallback: Map[String, ApiError] => Unit): Unit = {
+                   responseCallback: Map[String, ApiError] => Unit,
+                   kafkaConfig: KafkaConfig): Unit = {
 
     // 1. map over topics creating assignment and calling zookeeper
     val brokers = metadataCache.getAliveBrokers()
@@ -199,7 +200,7 @@ class ZkAdminManager(val config: KafkaConfig,
 
         val configs = new Properties()
         topic.configs.forEach(entry => configs.setProperty(entry.name, entry.value))
-        adminZkClient.validateTopicCreate(topic.name, assignments, configs)
+        adminZkClient.validateTopicCreate(topic.name, assignments, configs, kafkaConfig)
         validateTopicCreatePolicy(topic, resolvedNumPartitions, resolvedReplicationFactor, assignments)
 
         // For responses with DescribeConfigs permission, populate metadata and configs. It is
