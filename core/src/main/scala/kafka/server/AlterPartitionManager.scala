@@ -187,7 +187,7 @@ class DefaultAlterPartitionManager(
   private def sendRequest(inflightAlterPartitionItems: Seq[AlterPartitionItem]): Unit = {
     val brokerEpoch = brokerEpochSupplier()
     val (request, topicNamesByIds) = buildRequest(inflightAlterPartitionItems, brokerEpoch)
-    debug(s"Sending AlterPartition to controller $request")
+    info(s"Sending AlterPartition to controller $request")
 
     // We will not timeout AlterPartition request, instead letting it retry indefinitely
     // until a response is received, or a new LeaderAndIsr overwrites the existing isrState
@@ -195,7 +195,7 @@ class DefaultAlterPartitionManager(
     controllerChannelManager.sendRequest(request,
       new ControllerRequestCompletionHandler {
         override def onComplete(response: ClientResponse): Unit = {
-          debug(s"Received AlterPartition response $response")
+          info(s"Received AlterPartition response $response")
           val error = try {
             if (response.authenticationException != null) {
               // For now we treat authentication errors as retriable. We use the
@@ -327,7 +327,7 @@ class DefaultAlterPartitionManager(
             topic.partitions.forEach { partition =>
               val tp = new TopicPartition(topicName, partition.partitionIndex)
               val apiError = Errors.forCode(partition.errorCode)
-              debug(s"Controller successfully handled AlterPartition request for $tp: $partition")
+              info(s"Controller successfully handled AlterPartition request for $tp: $partition")
               if (apiError == Errors.NONE) {
                 LeaderRecoveryState.optionalOf(partition.leaderRecoveryState).asScala match {
                   case Some(leaderRecoveryState) =>

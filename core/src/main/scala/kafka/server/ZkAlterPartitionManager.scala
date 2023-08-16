@@ -64,7 +64,7 @@ class ZkAlterPartitionManager(scheduler: Scheduler, time: Time, zkClient: KafkaZ
     leaderAndIsr: LeaderAndIsr,
     controllerEpoch: Int
   ): CompletableFuture[LeaderAndIsr]= {
-    debug(s"Writing new ISR ${leaderAndIsr.isr} to ZooKeeper with version " +
+    info(s"Writing new ISR ${leaderAndIsr.isr} to ZooKeeper with version " +
       s"${leaderAndIsr.partitionEpoch} for partition $topicIdPartition")
 
     val (updateSucceeded, newVersion) = ReplicationUtils.updateLeaderAndIsr(zkClient, topicIdPartition.topicPartition,

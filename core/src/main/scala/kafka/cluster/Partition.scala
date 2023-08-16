@@ -952,6 +952,7 @@ class Partition(val topicPartition: TopicPartition,
         // check if this replica needs to be added to the ISR
         partitionState match {
           case currentState: CommittedPartitionState if needsExpandIsr(followerReplica) =>
+            info(s"expanding ISR from $currentState to ${followerReplica.brokerId}")
             Some(prepareIsrExpand(currentState, followerReplica.brokerId))
           case _ =>
             None
@@ -1740,7 +1741,7 @@ class Partition(val topicPartition: TopicPartition,
   }
 
   private def submitAlterPartition(proposedIsrState: PendingPartitionChange): CompletableFuture[LeaderAndIsr] = {
-    debug(s"Submitting ISR state change $proposedIsrState")
+    info(s"Submitting ISR state change $proposedIsrState")
     val future = alterIsrManager.submit(
       new TopicIdPartition(topicId.getOrElse(Uuid.ZERO_UUID), topicPartition),
       proposedIsrState.sentLeaderAndIsr,
@@ -1755,7 +1756,7 @@ class Partition(val topicPartition: TopicPartition,
           // This means partitionState was updated through leader election or some other mechanism
           // before we got the AlterPartition response. We don't know what happened on the controller
           // exactly, but we do know this response is out of date so we ignore it.
-          debug(s"Ignoring failed ISR update to $proposedIsrState since we have already " +
+          info(s"Ignoring failed ISR update to $proposedIsrState since we have already " +
             s"updated state to $partitionState")
         } else if (leaderAndIsr != null) {
           hwIncremented = handleAlterPartitionUpdate(proposedIsrState, leaderAndIsr)
