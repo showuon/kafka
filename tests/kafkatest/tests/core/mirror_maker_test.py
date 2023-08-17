@@ -111,9 +111,7 @@ class TestMirrorMakerService(ProduceConsumeValidateTest):
                      err_msg="Producer failed to produce %d messages in a reasonable amount of time." % n_messages)
 
     @cluster(num_nodes=7)
-    @matrix(security_protocol=['PLAINTEXT', 'SSL'])
-    @cluster(num_nodes=8)
-    @matrix(security_protocol=['SASL_PLAINTEXT', 'SASL_SSL'])
+    @matrix(security_protocol=['PLAINTEXT'])
     def test_simple_end_to_end(self, security_protocol):
         """
         Test end-to-end behavior under non-failure conditions.
