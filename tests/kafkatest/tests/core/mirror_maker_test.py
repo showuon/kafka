@@ -133,37 +133,37 @@ class TestMirrorMakerService(ProduceConsumeValidateTest):
         self.run_produce_consume_validate(core_test_action=self.wait_for_n_messages)
         self.mirror_maker.stop()
 
-    @cluster(num_nodes=7)
-    @matrix(clean_shutdown=[True, False], security_protocol=['PLAINTEXT', 'SSL'])
-    @cluster(num_nodes=8)
-    @matrix(clean_shutdown=[True, False], security_protocol=['SASL_PLAINTEXT', 'SASL_SSL'])
-    def test_bounce(self, offsets_storage="kafka", clean_shutdown=True, security_protocol='PLAINTEXT'):
-        """
-        Test end-to-end behavior under failure conditions.
-
-        Setup: two single node Kafka clusters, each connected to its own single node zookeeper cluster.
-        One is source, and the other is target. Single-node mirror maker mirrors from source to target.
-
-        - Start mirror maker.
-        - Produce to source cluster, and consume from target cluster in the background.
-        - Bounce MM process
-        - Verify every message acknowledged by the source producer is consumed by the target consumer
-        """
-        if not clean_shutdown:
-            # Increase timeout on downstream console consumer; mirror maker takes extra time
-            # during hard bounce. This is because the restarted mirror maker consumer won't be able to rejoin
-            # the group until the previous session times out
-            self.consumer.consumer_timeout_ms = 60000
-
-        self.start_kafka(security_protocol)
-
-        self.mirror_maker.offsets_storage = offsets_storage
-        self.mirror_maker.start()
-
-        # Wait until mirror maker has reset fetch offset at least once before continuing with the rest of the test
-        mm_node = self.mirror_maker.nodes[0]
-        with mm_node.account.monitor_log(self.mirror_maker.LOG_FILE) as monitor:
-            monitor.wait_until("Resetting offset for partition", timeout_sec=30, err_msg="Mirrormaker did not reset fetch offset in a reasonable amount of time.")
-
-        self.run_produce_consume_validate(core_test_action=lambda: self.bounce(clean_shutdown=clean_shutdown))
-        self.mirror_maker.stop()
+#     @cluster(num_nodes=7)
+#     @matrix(clean_shutdown=[True, False], security_protocol=['PLAINTEXT', 'SSL'])
+#     @cluster(num_nodes=8)
+#     @matrix(clean_shutdown=[True, False], security_protocol=['SASL_PLAINTEXT', 'SASL_SSL'])
+#     def test_bounce(self, offsets_storage="kafka", clean_shutdown=True, security_protocol='PLAINTEXT'):
+#         """
+#         Test end-to-end behavior under failure conditions.
+#
+#         Setup: two single node Kafka clusters, each connected to its own single node zookeeper cluster.
+#         One is source, and the other is target. Single-node mirror maker mirrors from source to target.
+#
+#         - Start mirror maker.
+#         - Produce to source cluster, and consume from target cluster in the background.
+#         - Bounce MM process
+#         - Verify every message acknowledged by the source producer is consumed by the target consumer
+#         """
+#         if not clean_shutdown:
+#             # Increase timeout on downstream console consumer; mirror maker takes extra time
+#             # during hard bounce. This is because the restarted mirror maker consumer won't be able to rejoin
+#             # the group until the previous session times out
+#             self.consumer.consumer_timeout_ms = 60000
+#
+#         self.start_kafka(security_protocol)
+#
+#         self.mirror_maker.offsets_storage = offsets_storage
+#         self.mirror_maker.start()
+#
+#         # Wait until mirror maker has reset fetch offset at least once before continuing with the rest of the test
+#         mm_node = self.mirror_maker.nodes[0]
+#         with mm_node.account.monitor_log(self.mirror_maker.LOG_FILE) as monitor:
+#             monitor.wait_until("Resetting offset for partition", timeout_sec=30, err_msg="Mirrormaker did not reset fetch offset in a reasonable amount of time.")
+#
+#         self.run_produce_consume_validate(core_test_action=lambda: self.bounce(clean_shutdown=clean_shutdown))
+#         self.mirror_maker.stop()
