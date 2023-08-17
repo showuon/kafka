@@ -109,7 +109,7 @@ class MiniKdc(KafkaPathResolverMixin, Service):
         cmd += " for file in %s; do CLASSPATH=$CLASSPATH:$file; done;" % core_dependant_test_libs_jar
         cmd += " export CLASSPATH;"
 
-        jdk_version = java_version(nodes)
+        jdk_version = java_version(node)
         if jdk_version >= 16:
             # avoids java.lang.IllegalAccessException due to usage of internal `sun.security.krb5.Config` in `MiniKdc`
             cmd += " export KAFKA_OPTS=\"--add-exports java.security.jgss/sun.security.krb5=ALL-UNNAMED\";"
