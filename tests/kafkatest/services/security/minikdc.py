@@ -22,6 +22,7 @@ from tempfile import mkstemp
 from ducktape.services.service import Service
 
 from kafkatest.directory_layout.kafka_path import KafkaPathResolverMixin, CORE_LIBS_JAR_NAME, CORE_DEPENDANT_TEST_LIBS_JAR_NAME
+from kafkatest.utils.remote_account import java_version
 from kafkatest.version import DEV_BRANCH
 
 
