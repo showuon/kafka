@@ -36,8 +36,8 @@ import java.util.concurrent.CompletableFuture;
  * remote.log.metadata.manager.class.name is not configured.
  * </p>
  * <p>
- * <code>remote.log.metadata.manager.class.path</code> property is about the class path of the RemoteLogStorageManager
- * implementation. If specified, the RemoteLogStorageManager implementation and its dependent libraries will be loaded
+ * <code>remote.log.metadata.manager.class.path</code> property is about the class path of the RemoteLogMetadataManager
+ * implementation. If specified, the RemoteLogMetadataManager implementation and its dependent libraries will be loaded
  * by a dedicated classloader which searches this class path before the Kafka broker class path. The syntax of this
  * parameter is same with the standard Java class path string.
  * </p>
