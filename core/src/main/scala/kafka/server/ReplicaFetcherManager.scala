@@ -30,7 +30,8 @@ class ReplicaFetcherManager(brokerConfig: KafkaConfig,
                             threadNamePrefix: Option[String] = None,
                             quotaManager: ReplicationQuotaManager,
                             metadataVersionSupplier: () => MetadataVersion,
-                            brokerEpochSupplier: () => Long)
+                            brokerEpochSupplier: () => Long,
+                            brokerTopicStats: BrokerTopicStats)
       extends AbstractFetcherManager[ReplicaFetcherThread](
         name = "ReplicaFetcherManager on broker " + brokerConfig.brokerId,
         clientId = "Replica",
@@ -47,7 +48,7 @@ class ReplicaFetcherManager(brokerConfig: KafkaConfig,
     val leader = new RemoteLeaderEndPoint(logContext.logPrefix, endpoint, fetchSessionHandler, brokerConfig,
       replicaManager, quotaManager, metadataVersionSupplier, brokerEpochSupplier)
     new ReplicaFetcherThread(threadName, leader, brokerConfig, failedPartitions, replicaManager,
-      quotaManager, logContext.logPrefix, metadataVersionSupplier)
+      quotaManager, logContext.logPrefix, metadataVersionSupplier, brokerTopicStats)
   }
 
   def shutdown(): Unit = {

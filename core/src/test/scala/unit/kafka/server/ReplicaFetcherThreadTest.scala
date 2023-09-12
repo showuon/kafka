@@ -65,6 +65,8 @@ class ReplicaFetcherThreadTest {
   private val brokerEndPoint = new BrokerEndPoint(0, "localhost", 1000)
   private val failedPartitions = new FailedPartitions
 
+  private val brokerTopicStats = new BrokerTopicStats
+
   private val partitionStates = List(
     new UpdateMetadataRequestData.UpdateMetadataPartitionState()
       .setTopicName("topic1")
@@ -114,7 +116,8 @@ class ReplicaFetcherThreadTest {
       replicaMgr,
       quota,
       logContext.logPrefix,
-      () => brokerConfig.interBrokerProtocolVersion)
+      () => brokerConfig.interBrokerProtocolVersion,
+      brokerTopicStats)
   }
 
   @Test
@@ -588,7 +591,7 @@ class ReplicaFetcherThreadTest {
     val leader = new RemoteLeaderEndPoint(logContext.logPrefix, mockNetwork, fetchSessionHandler, config,
       replicaManager, quota, () => config.interBrokerProtocolVersion, () => 1)
     val thread = new ReplicaFetcherThread("bob", leader, config, failedPartitions,
-      replicaManager, quota, logContext.logPrefix, () => config.interBrokerProtocolVersion) {
+      replicaManager, quota, logContext.logPrefix, () => config.interBrokerProtocolVersion, brokerTopicStats) {
       override def processPartitionData(topicPartition: TopicPartition, fetchOffset: Long, partitionData: FetchData): Option[LogAppendInfo] = None
     }
     thread.addPartitions(Map(t1p0 -> initialFetchState(Some(topicId1), initialLEO), t1p1 -> initialFetchState(Some(topicId1), initialLEO)))
@@ -712,7 +715,8 @@ class ReplicaFetcherThreadTest {
       replicaManager,
       quota,
       logContext.logPrefix,
-      () => config.interBrokerProtocolVersion
+      () => config.interBrokerProtocolVersion,
+      brokerTopicStats
     )
 
     thread.addPartitions(Map(
@@ -807,7 +811,8 @@ class ReplicaFetcherThreadTest {
       replicaManager,
       quota,
       logContext.logPrefix,
-      () => config.interBrokerProtocolVersion
+      () => config.interBrokerProtocolVersion,
+      brokerTopicStats
     )
 
     thread.addPartitions(Map(
@@ -1229,7 +1234,8 @@ class ReplicaFetcherThreadTest {
       replicaManager,
       replicaQuota,
       logContext.logPrefix,
-      () => config.interBrokerProtocolVersion)
+      () => config.interBrokerProtocolVersion,
+      brokerTopicStats)
 
     val leaderEpoch = 1
 

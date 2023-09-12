@@ -32,12 +32,13 @@ class ReplicaFetcherThread(name: String,
                            replicaMgr: ReplicaManager,
                            quota: ReplicaQuota,
                            logPrefix: String,
-                           metadataVersionSupplier: () => MetadataVersion)
+                           metadataVersionSupplier: () => MetadataVersion,
+                           brokerTopicStats: BrokerTopicStats)
   extends AbstractFetcherThread(name = name,
                                 clientId = name,
                                 leader = leader,
                                 failedPartitions,
-                                fetchTierStateMachine = new ReplicaFetcherTierStateMachine(leader, replicaMgr),
+                                fetchTierStateMachine = new ReplicaFetcherTierStateMachine(leader, replicaMgr, brokerTopicStats),
                                 fetchBackOffMs = brokerConfig.replicaFetchBackoffMs,
                                 isInterruptible = false,
                                 replicaMgr.brokerTopicStats) {

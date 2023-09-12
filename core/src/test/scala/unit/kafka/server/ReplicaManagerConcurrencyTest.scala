@@ -180,7 +180,8 @@ class ReplicaManagerConcurrencyTest {
         metrics: Metrics,
         time: Time,
         threadNamePrefix: Option[String],
-        quotaManager: ReplicationQuotaManager
+        quotaManager: ReplicationQuotaManager,
+        brokerTopicStats: BrokerTopicStats
       ): ReplicaFetcherManager = {
         Mockito.mock(classOf[ReplicaFetcherManager])
       }

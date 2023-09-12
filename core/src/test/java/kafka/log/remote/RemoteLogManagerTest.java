@@ -17,6 +17,7 @@
 package kafka.log.remote;
 
 import com.yammer.metrics.core.Gauge;
+import java.util.concurrent.ExecutionException;
 import kafka.cluster.EndPoint;
 import kafka.cluster.Partition;
 import kafka.log.LogSegment;
@@ -28,6 +29,7 @@ import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.AbstractConfig;
+import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.network.ListenerName;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.FileRecords;
@@ -57,6 +59,7 @@ import org.apache.kafka.storage.internals.checkpoint.LeaderEpochCheckpoint;
 import org.apache.kafka.storage.internals.epoch.LeaderEpochFileCache;
 import org.apache.kafka.storage.internals.log.EpochEntry;
 import org.apache.kafka.storage.internals.log.LazyIndex;
+import org.apache.kafka.storage.internals.log.LogConfig;
 import org.apache.kafka.storage.internals.log.OffsetIndex;
 import org.apache.kafka.storage.internals.log.ProducerStateManager;
 import org.apache.kafka.storage.internals.log.TimeIndex;
@@ -472,6 +475,178 @@ public class RemoteLogManagerTest {
         assertEquals(1, brokerTopicStats.allTopicsStats().remoteCopyRequestRate().count());
         assertEquals(10, brokerTopicStats.allTopicsStats().remoteCopyBytesRate().count());
         assertEquals(0, brokerTopicStats.allTopicsStats().failedRemoteCopyRequestRate().count());
+    }
+
+    @Test
+    public void testCleanupRetentionSizeBreachedRemoteLogSegments() throws RemoteStorageException, ExecutionException, InterruptedException {
+        Set<TopicPartition> partitions = new HashSet<>();
+        partitions.add(leaderTopicIdPartition.topicPartition());
+        partitions.add(followerTopicIdPartition.topicPartition());
+
+        Properties props = new Properties();
+        props.put(TopicConfig.RETENTION_BYTES_CONFIG, 1024L);
+
+        // leader epoch preparation
+        checkpoint.write(totalEpochEntries);
+        LeaderEpochFileCache cache = new LeaderEpochFileCache(leaderTopicIdPartition.topicPartition(), checkpoint);
+        when(mockLog.leaderEpochCache()).thenReturn(Option.apply(cache));
+        when(mockLog.onlyLocalLogSegmentsSize()).thenReturn(1024L);
+        when(mockLog.logEndOffset()).thenReturn(500L);
+
+        when(mockLog.topicPartition()).thenReturn(leaderTopicIdPartition.topicPartition());
+        when(mockLog.config()).thenReturn(new LogConfig(props));
+
+        List<RemoteLogSegmentMetadata> segmentMetadataList = listRemoteLogSegmentMetadata(leaderTopicIdPartition, 5, 100, 1024, time.milliseconds());
+        when(remoteLogMetadataManager.listRemoteLogSegments(eq(leaderTopicIdPartition)))
+                .thenReturn(segmentMetadataList.iterator());
+
+        when(remoteLogMetadataManager.listRemoteLogSegments(eq(leaderTopicIdPartition), anyInt()))
+                .thenAnswer(ans -> {
+                    int leaderEpoch = ans.<Integer>getArgument(1);
+                    return segmentMetadataList.stream().filter(metadata -> metadata.segmentLeaderEpochs().containsKey(leaderEpoch)).collect(Collectors.toList()).iterator();
+                });
+
+        CompletableFuture<Void> dummyFuture = new CompletableFuture<>();
+        dummyFuture.complete(null);
+        when(remoteLogMetadataManager.updateRemoteLogSegmentMetadata(any()))
+                .thenReturn(dummyFuture);
+
+        // Verify the metrics for remote deletes and for failures is zero before attempt to delete segments
+        assertEquals(0, brokerTopicStats.topicStats(leaderTopicIdPartition.topic()).remoteDeleteRequestRate().count());
+        assertEquals(0, brokerTopicStats.topicStats(leaderTopicIdPartition.topic()).failedRemoteDeleteRequestRate().count());
+        // Verify aggregate metrics
+        assertEquals(0, brokerTopicStats.allTopicsStats().remoteDeleteRequestRate().count());
+        assertEquals(0, brokerTopicStats.allTopicsStats().failedRemoteDeleteRequestRate().count());
+
+        RemoteLogManager.RLMTask task = remoteLogManager.new RLMTask(leaderTopicIdPartition, 128);
+        task.convertToLeader(2);
+        task.cleanupExpiredRemoteLogSegments();
+
+        verify(remoteStorageManager, times(5)).deleteLogSegmentData(any());
+        verify(remoteLogMetadataManager, times(10)).updateRemoteLogSegmentMetadata(any());
+
+        // Verify the metric for remote delete is updated correctly
+        assertEquals(5, brokerTopicStats.topicStats(leaderTopicIdPartition.topic()).remoteDeleteRequestRate().count());
+        // Verify we did not report any failure for remote deletes
+        assertEquals(0, brokerTopicStats.topicStats(leaderTopicIdPartition.topic()).failedRemoteDeleteRequestRate().count());
+        // Verify aggregate metrics
+        assertEquals(5, brokerTopicStats.allTopicsStats().remoteDeleteRequestRate().count());
+        assertEquals(0, brokerTopicStats.allTopicsStats().failedRemoteDeleteRequestRate().count());
+    }
+
+    @Test
+    public void testCleanupRetentionTimeBreachedRemoteLogSegments() throws RemoteStorageException, ExecutionException, InterruptedException {
+        Set<TopicPartition> partitions = new HashSet<>();
+        partitions.add(leaderTopicIdPartition.topicPartition());
+        partitions.add(followerTopicIdPartition.topicPartition());
+
+        Properties props = new Properties();
+        props.put(TopicConfig.RETENTION_MS_CONFIG, 1000);
+
+        // leader epoch preparation
+        checkpoint.write(totalEpochEntries);
+        LeaderEpochFileCache cache = new LeaderEpochFileCache(leaderTopicIdPartition.topicPartition(), checkpoint);
+        when(mockLog.leaderEpochCache()).thenReturn(Option.apply(cache));
+        when(mockLog.onlyLocalLogSegmentsSize()).thenReturn(1024L);
+        when(mockLog.logEndOffset()).thenReturn(500L);
+
+        when(mockLog.topicPartition()).thenReturn(leaderTopicIdPartition.topicPartition());
+        when(mockLog.config()).thenReturn(new LogConfig(props));
+
+        List<RemoteLogSegmentMetadata> segmentMetadataList = listRemoteLogSegmentMetadata(leaderTopicIdPartition, 5, 100, 1024, 0);
+        when(remoteLogMetadataManager.listRemoteLogSegments(eq(leaderTopicIdPartition)))
+                .thenReturn(segmentMetadataList.iterator());
+
+        when(remoteLogMetadataManager.listRemoteLogSegments(eq(leaderTopicIdPartition), anyInt()))
+                .thenAnswer(ans -> {
+                    int leaderEpoch = ans.<Integer>getArgument(1);
+                    return segmentMetadataList.stream().filter(metadata -> metadata.segmentLeaderEpochs().containsKey(leaderEpoch)).collect(Collectors.toList()).iterator();
+                });
+
+        CompletableFuture<Void> dummyFuture = new CompletableFuture<>();
+        dummyFuture.complete(null);
+        when(remoteLogMetadataManager.updateRemoteLogSegmentMetadata(any()))
+                .thenReturn(dummyFuture);
+
+        // Verify the metrics for remote deletes and for failures is zero before attempt to delete segments
+        assertEquals(0, brokerTopicStats.topicStats(leaderTopicIdPartition.topic()).remoteDeleteRequestRate().count());
+        assertEquals(0, brokerTopicStats.topicStats(leaderTopicIdPartition.topic()).failedRemoteDeleteRequestRate().count());
+        // Verify aggregate metrics
+        assertEquals(0, brokerTopicStats.allTopicsStats().remoteDeleteRequestRate().count());
+        assertEquals(0, brokerTopicStats.allTopicsStats().failedRemoteDeleteRequestRate().count());
+
+        RemoteLogManager.RLMTask task = remoteLogManager.new RLMTask(leaderTopicIdPartition, 128);
+        task.convertToLeader(2);
+        task.cleanupExpiredRemoteLogSegments();
+
+        verify(remoteStorageManager, times(5)).deleteLogSegmentData(any());
+        verify(remoteLogMetadataManager, times(10)).updateRemoteLogSegmentMetadata(any());
+
+        // Verify the metric for remote delete is updated correctly
+        assertEquals(5, brokerTopicStats.topicStats(leaderTopicIdPartition.topic()).remoteDeleteRequestRate().count());
+        // Verify we did not report any failure for remote deletes
+        assertEquals(0, brokerTopicStats.topicStats(leaderTopicIdPartition.topic()).failedRemoteDeleteRequestRate().count());
+        // Verify aggregate metrics
+        assertEquals(5, brokerTopicStats.allTopicsStats().remoteDeleteRequestRate().count());
+        assertEquals(0, brokerTopicStats.allTopicsStats().failedRemoteDeleteRequestRate().count());
+    }
+
+    @Test
+    public void testCleanupExpiredRemoteLogSegmentsFailure() throws RemoteStorageException, ExecutionException, InterruptedException {
+        Set<TopicPartition> partitions = new HashSet<>();
+        partitions.add(leaderTopicIdPartition.topicPartition());
+        partitions.add(followerTopicIdPartition.topicPartition());
+
+        Properties props = new Properties();
+        props.put(TopicConfig.RETENTION_BYTES_CONFIG, 1024L);
+
+        // leader epoch preparation
+        checkpoint.write(totalEpochEntries);
+        LeaderEpochFileCache cache = new LeaderEpochFileCache(leaderTopicIdPartition.topicPartition(), checkpoint);
+        when(mockLog.leaderEpochCache()).thenReturn(Option.apply(cache));
+        when(mockLog.onlyLocalLogSegmentsSize()).thenReturn(1024L);
+        when(mockLog.logEndOffset()).thenReturn(500L);
+
+        when(mockLog.topicPartition()).thenReturn(leaderTopicIdPartition.topicPartition());
+        when(mockLog.config()).thenReturn(new LogConfig(props));
+
+        List<RemoteLogSegmentMetadata> segmentMetadataList = listRemoteLogSegmentMetadata(leaderTopicIdPartition, 5, 100, 1024, 0);
+        when(remoteLogMetadataManager.listRemoteLogSegments(eq(leaderTopicIdPartition)))
+                .thenReturn(segmentMetadataList.iterator());
+
+        when(remoteLogMetadataManager.listRemoteLogSegments(eq(leaderTopicIdPartition), anyInt()))
+                .thenAnswer(ans -> {
+                    int leaderEpoch = ans.<Integer>getArgument(1);
+                    return segmentMetadataList.stream().filter(metadata -> metadata.segmentLeaderEpochs().containsKey(leaderEpoch)).collect(Collectors.toList()).iterator();
+                });
+
+        CompletableFuture<Void> dummyFuture = new CompletableFuture<>();
+        dummyFuture.complete(null);
+        when(remoteLogMetadataManager.updateRemoteLogSegmentMetadata(any()))
+                .thenReturn(dummyFuture);
+
+        // Verify the metrics for remote deletes and for failures is zero before attempt to delete segments
+        assertEquals(0, brokerTopicStats.topicStats(leaderTopicIdPartition.topic()).remoteDeleteRequestRate().count());
+        assertEquals(0, brokerTopicStats.topicStats(leaderTopicIdPartition.topic()).failedRemoteDeleteRequestRate().count());
+        // Verify aggregate metrics
+        assertEquals(0, brokerTopicStats.allTopicsStats().remoteDeleteRequestRate().count());
+        assertEquals(0, brokerTopicStats.allTopicsStats().failedRemoteDeleteRequestRate().count());
+
+        RemoteLogManager.RLMTask task = remoteLogManager.new RLMTask(leaderTopicIdPartition, 128);
+        task.convertToLeader(2);
+        doThrow(new RemoteStorageException("Failed to delete segment")).when(remoteStorageManager).deleteLogSegmentData(any());
+        assertThrows(RemoteStorageException.class, () -> task.cleanupExpiredRemoteLogSegments());
+
+        verify(remoteStorageManager, times(1)).deleteLogSegmentData(any());
+        verify(remoteLogMetadataManager, times(1)).updateRemoteLogSegmentMetadata(any());
+
+        // Verify the metric for remote delete is updated correctly
+        assertEquals(1, brokerTopicStats.topicStats(leaderTopicIdPartition.topic()).remoteDeleteRequestRate().count());
+        // Verify the metric for failure is updated correctly
+        assertEquals(1, brokerTopicStats.topicStats(leaderTopicIdPartition.topic()).failedRemoteDeleteRequestRate().count());
+        // Verify aggregate metrics
+        assertEquals(1, brokerTopicStats.allTopicsStats().remoteDeleteRequestRate().count());
+        assertEquals(1, brokerTopicStats.allTopicsStats().failedRemoteDeleteRequestRate().count());
     }
 
     // We are verifying that if the size of a piece of custom metadata is bigger than the configured limit,
@@ -1318,10 +1493,11 @@ public class RemoteLogManagerTest {
         partitions.add(followerTopicIdPartition.topicPartition());
         remoteLogManager.onLeadershipChange(Collections.singleton(mockPartition(leaderTopicIdPartition)),
                 Collections.singleton(mockPartition(followerTopicIdPartition)), topicIds);
+        long timestamp = time.milliseconds();
         when(remoteLogMetadataManager.listRemoteLogSegments(eq(leaderTopicIdPartition)))
-                .thenReturn(listRemoteLogSegmentMetadata(leaderTopicIdPartition, 5, 100, 1024).iterator());
+                .thenReturn(listRemoteLogSegmentMetadata(leaderTopicIdPartition, 5, 100, 1024, timestamp).iterator());
         when(remoteLogMetadataManager.listRemoteLogSegments(eq(followerTopicIdPartition)))
-                .thenReturn(listRemoteLogSegmentMetadata(followerTopicIdPartition, 3, 100, 1024).iterator());
+                .thenReturn(listRemoteLogSegmentMetadata(followerTopicIdPartition, 3, 100, 1024, timestamp).iterator());
         CompletableFuture<Void> dummyFuture = new CompletableFuture<>();
         dummyFuture.complete(null);
         when(remoteLogMetadataManager.updateRemoteLogSegmentMetadata(any()))
@@ -1336,7 +1512,8 @@ public class RemoteLogManagerTest {
     private List<RemoteLogSegmentMetadata> listRemoteLogSegmentMetadata(TopicIdPartition topicIdPartition,
                                                                         int segmentCount,
                                                                         int recordsPerSegment,
-                                                                        int segmentSize) {
+                                                                        int segmentSize,
+                                                                        long maxTimestampMs) {
         List<RemoteLogSegmentMetadata> segmentMetadataList = new ArrayList<>();
         for (int idx = 0; idx < segmentCount; idx++) {
             long timestamp = time.milliseconds();
@@ -1344,7 +1521,7 @@ public class RemoteLogManagerTest {
             long endOffset = startOffset + recordsPerSegment - 1;
             Map<Integer, Long> segmentLeaderEpochs = truncateAndGetLeaderEpochs(totalEpochEntries, startOffset, endOffset);
             segmentMetadataList.add(new RemoteLogSegmentMetadata(new RemoteLogSegmentId(topicIdPartition,
-                    Uuid.randomUuid()), startOffset, endOffset, timestamp, brokerId, timestamp, segmentSize,
+                    Uuid.randomUuid()), startOffset, endOffset, maxTimestampMs, brokerId, timestamp, segmentSize,
                     segmentLeaderEpochs));
         }
         return segmentMetadataList;

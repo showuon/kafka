@@ -68,14 +68,16 @@ import static org.apache.kafka.storage.internals.log.LogStartOffsetIncrementReas
  */
 public class ReplicaFetcherTierStateMachine implements TierStateMachine {
     private static final Logger log = LoggerFactory.getLogger(ReplicaFetcherTierStateMachine.class);
-
+    private  BrokerTopicStats brokerTopicStats;
     private LeaderEndPoint leader;
     private ReplicaManager replicaMgr;
 
     public ReplicaFetcherTierStateMachine(LeaderEndPoint leader,
-                                          ReplicaManager replicaMgr) {
+                                          ReplicaManager replicaMgr,
+                                          BrokerTopicStats brokerTopicStats) {
         this.leader = leader;
         this.replicaMgr = replicaMgr;
+        this.brokerTopicStats = brokerTopicStats;
     }
 
 
@@ -229,6 +231,9 @@ public class ReplicaFetcherTierStateMachine implements TierStateMachine {
                 Partition partition = replicaMgr.getPartitionOrException(topicPartition);
                 partition.truncateFullyAndStartAt(nextOffset, false);
 
+                brokerTopicStats.topicStats(topicPartition.topic()).buildRemoteLogAuxStateRequestRate().mark();
+                brokerTopicStats.allTopicsStats().buildRemoteLogAuxStateRequestRate().mark();
+
                 // Build leader epoch cache.
                 unifiedLog.maybeIncrementLogStartOffset(leaderLogStartOffset, LeaderOffsetIncremented);
                 List<EpochEntry> epochs = readLeaderEpochCheckpoint(rlm, remoteLogSegmentMetadata);
@@ -249,6 +254,8 @@ public class ReplicaFetcherTierStateMachine implements TierStateMachine {
                                 "with active producers size: {}, leaderLogStartOffset: {}, and logEndOffset: {}",
                         partition, unifiedLog.producerStateManager().activeProducers().size(), leaderLogStartOffset, nextOffset);
             } else {
+                brokerTopicStats.topicStats(topicPartition.topic()).failedBuildRemoteLogAuxStateRate().mark();
+                brokerTopicStats.allTopicsStats().failedBuildRemoteLogAuxStateRate().mark();
                 throw new RemoteStorageException("Couldn't build the state from remote store for partition: " + topicPartition +
                         ", currentLeaderEpoch: " + currentLeaderEpoch +
                         ", leaderLocalLogStartOffset: " + leaderLocalLogStartOffset +
@@ -259,6 +266,8 @@ public class ReplicaFetcherTierStateMachine implements TierStateMachine {
         } else {
             // If the tiered storage is not enabled throw an exception back so that it will retry until the tiered storage
             // is set as expected.
+            brokerTopicStats.topicStats(topicPartition.topic()).failedBuildRemoteLogAuxStateRate().mark();
+            brokerTopicStats.allTopicsStats().failedBuildRemoteLogAuxStateRate().mark();
             throw new RemoteStorageException("Couldn't build the state from remote store for partition " + topicPartition + ", as remote log storage is not yet enabled");
         }
 
