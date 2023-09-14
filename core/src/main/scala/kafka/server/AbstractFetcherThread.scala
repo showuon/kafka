@@ -307,6 +307,7 @@ abstract class AbstractFetcherThread(name: String,
 
   private def processFetchRequest(sessionPartitions: util.Map[TopicPartition, FetchRequest.PartitionData],
                                   fetchRequest: FetchRequest.Builder): Unit = {
+    info("!!! processFetchRequest")
     val partitionsWithError = mutable.Set[TopicPartition]()
     val divergingEndOffsets = mutable.Map.empty[TopicPartition, EpochEndOffset]
     var responseData: Map[TopicPartition, FetchData] = Map.empty
@@ -329,6 +330,7 @@ abstract class AbstractFetcherThread(name: String,
       // process fetched data
       inLock(partitionMapLock) {
         responseData.forKeyValue { (topicPartition, partitionData) =>
+          info("!!! response:" + topicPartition + ";;" + partitionData)
           Option(partitionStates.stateValue(topicPartition)).foreach { currentFetchState =>
             // It's possible that a partition is removed and re-added or truncated when there is a pending fetch request.
             // In this case, we only want to process the fetch response if the partition state is ready for fetch and
@@ -407,7 +409,7 @@ abstract class AbstractFetcherThread(name: String,
                     partitionsWithError += topicPartition
 
                 case Errors.OFFSET_MOVED_TO_TIERED_STORAGE =>
-                  debug(s"Received error ${Errors.OFFSET_MOVED_TO_TIERED_STORAGE}, " +
+                  info(s"!!! Received error ${Errors.OFFSET_MOVED_TO_TIERED_STORAGE}, " +
                     s"at fetch offset: ${currentFetchState.fetchOffset}, " + s"topic-partition: $topicPartition")
                   if (!handleOffsetsMovedToTieredStorage(topicPartition, currentFetchState, fetchPartitionData.currentLeaderEpoch, partitionData))
                     partitionsWithError += topicPartition
@@ -757,6 +759,7 @@ abstract class AbstractFetcherThread(name: String,
                                                 fetchState: PartitionFetchState,
                                                 leaderEpochInRequest: Optional[Integer],
                                                 fetchPartitionData: PartitionData): Boolean = {
+    System.out.println("!!! handleOffsetsMovedToTieredStorage")
     try {
       val newFetchState = fetchTierStateMachine.start(topicPartition, fetchState, fetchPartitionData);
 

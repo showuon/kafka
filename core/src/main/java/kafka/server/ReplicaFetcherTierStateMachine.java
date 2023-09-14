@@ -97,6 +97,7 @@ public class ReplicaFetcherTierStateMachine implements TierStateMachine {
                                      PartitionFetchState currentFetchState,
                                      PartitionData fetchPartitionData) throws Exception {
 
+        System.out.println("!!! starting ReplicaFetcherTierStateMachine");
         OffsetAndEpoch epochAndLeaderLocalStartOffset = leader.fetchEarliestLocalOffset(topicPartition, currentFetchState.currentLeaderEpoch());
         int epoch = epochAndLeaderLocalStartOffset.leaderEpoch();
         long leaderLocalStartOffset = epochAndLeaderLocalStartOffset.offset();
