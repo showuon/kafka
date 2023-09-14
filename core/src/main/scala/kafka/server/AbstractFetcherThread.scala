@@ -324,6 +324,8 @@ abstract class AbstractFetcherThread(name: String,
           }
         }
     }
+
+    info("!!! responseData:" + responseData)
     fetcherStats.requestRate.mark()
 
     if (responseData.nonEmpty) {

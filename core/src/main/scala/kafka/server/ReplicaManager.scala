@@ -2159,6 +2159,11 @@ class ReplicaManager(val config: KafkaConfig,
    * OffsetForLeaderEpoch request.
    */
   protected def initialFetchOffset(log: UnifiedLog): Long = {
+    println("!!! ")
+    println("!!! metadataCache.metadataVersion().isTruncationOnFetchSupported:" + metadataCache.metadataVersion().isTruncationOnFetchSupported)
+    println("!!! log:" + log)
+    println("!!! log latestEpoch:" + log.latestEpoch)
+
     if (metadataCache.metadataVersion().isTruncationOnFetchSupported && log.latestEpoch.nonEmpty)
       log.logEndOffset
     else
