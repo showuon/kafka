@@ -450,6 +450,7 @@ public class LogValidator {
         long startNanos = time.nanoseconds();
         int estimatedSize = AbstractRecords.estimateSizeInBytes(toMagic, offsetCounter.value, targetCompression,
             validatedRecords);
+        System.out.println("!!! estimatedSize:" + estimatedSize + ";;" + uncompressedSizeInBytes);
         // The current implementation of BufferSupplier is naive and works best when the buffer size
         // cardinality is low, so don't use it here
         ByteBuffer buffer = ByteBuffer.allocate(estimatedSize);
@@ -458,8 +459,11 @@ public class LogValidator {
             firstBatch.producerEpoch(), firstBatch.baseSequence(), firstBatch.isTransactional(),
             partitionLeaderEpoch);
 
-        for (Record record : validatedRecords)
+        for (Record record : validatedRecords) {
+            System.out.println("!!! record:" + record.sizeInBytes());
             builder.appendWithOffset(offsetCounter.value++, record);
+        }
+
 
         MemoryRecords records = builder.build();
         System.out.println("!!! records size:" + records.sizeInBytes());

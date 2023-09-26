@@ -361,6 +361,7 @@ public class MemoryRecordsBuilder implements AutoCloseable {
             buffer.flip();
             buffer.position(initialPosition);
             builtRecords = MemoryRecords.readableRecords(buffer.slice());
+            System.out.println("!!! builtRecords:" + builtRecords.sizeInBytes() + ";;" + initialPosition);
         }
     }
 
@@ -433,6 +434,7 @@ public class MemoryRecordsBuilder implements AutoCloseable {
      */
     private void appendWithOffset(long offset, boolean isControlRecord, long timestamp, ByteBuffer key,
                                   ByteBuffer value, Header[] headers) {
+
         try {
             if (isControlRecord != isControlBatch)
                 throw new IllegalArgumentException("Control records can only be appended to control batches");
@@ -727,6 +729,7 @@ public class MemoryRecordsBuilder implements AutoCloseable {
     }
 
     private long appendLegacyRecord(long offset, long timestamp, ByteBuffer key, ByteBuffer value, byte magic) throws IOException {
+        System.out.println("!!! before stream size:" + appendStream.size());
         ensureOpenForRecordAppend();
         if (compressionType == CompressionType.NONE && timestampType == TimestampType.LOG_APPEND_TIME)
             timestamp = logAppendTime;
@@ -737,6 +740,7 @@ public class MemoryRecordsBuilder implements AutoCloseable {
         if (timestampType == TimestampType.LOG_APPEND_TIME)
             timestamp = logAppendTime;
         long crc = LegacyRecord.write(appendStream, magic, timestamp, key, value, CompressionType.NONE, timestampType);
+        System.out.println("!!! stream size:" + appendStream.size());
         recordWritten(offset, timestamp, size + Records.LOG_OVERHEAD);
         return crc;
     }
@@ -749,6 +753,7 @@ public class MemoryRecordsBuilder implements AutoCloseable {
     }
 
     private void recordWritten(long offset, long timestamp, int size) {
+        System.out.println(offset + ";;" + size);
         if (numRecords == Integer.MAX_VALUE)
             throw new IllegalArgumentException("Maximum number of records per batch exceeded, max records: " + Integer.MAX_VALUE);
         if (offset - baseOffset > Integer.MAX_VALUE)
@@ -757,12 +762,14 @@ public class MemoryRecordsBuilder implements AutoCloseable {
 
         numRecords += 1;
         uncompressedRecordsSizeInBytes += size;
+
         lastOffset = offset;
 
         if (magic > RecordBatch.MAGIC_VALUE_V0 && timestamp > maxTimestamp) {
             maxTimestamp = timestamp;
             offsetOfMaxTimestamp = offset;
         }
+
     }
 
     private void ensureOpenForRecordAppend() {
