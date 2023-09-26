@@ -445,7 +445,7 @@ public class MemoryRecordsBuilder implements AutoCloseable {
             throw new RuntimeException(e);
         }
 
-        System.out.println("!!! appendWithOffset:" + value.limit() + ";;" + key.limit() + ";;" + buffer().position());
+        System.out.println("!!! appendWithOffset:" + value + ";;" + key + ";;" + buffer().position());
 
         try {
             if (isControlRecord != isControlBatch)
