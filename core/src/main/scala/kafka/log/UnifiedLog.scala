@@ -824,7 +824,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
             // format conversion)
             if (!ignoreRecordSize && validateAndOffsetAssignResult.messageSizeMaybeChanged) {
               validRecords.batches.forEach { batch =>
-
+                println("!!! batch:" + batch.sizeInBytes())
                 if (batch.sizeInBytes > config.maxMessageSize) {
                   // we record the original message set size instead of the trimmed size
                   // to be consistent with pre-compression bytesRejectedRate recording
@@ -1182,7 +1182,11 @@ class UnifiedLog(@volatile var logStartOffset: Long,
       val batchCompression = CompressionType.forId(batch.compressionType.id)
       if (batchCompression != CompressionType.NONE)
         sourceCompression = batchCompression
+
+      println("!!! batchCompression:" + batchCompression + ";;" + sourceCompression)
     }
+
+
 
     // Apply broker-side compression if any
     val targetCompression = BrokerCompressionType.forName(config.compressionType).targetCompressionType(sourceCompression)

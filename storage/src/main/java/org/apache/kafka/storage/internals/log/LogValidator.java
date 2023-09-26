@@ -348,8 +348,11 @@ public class LogValidator {
             inPlaceAssignment = true;
 
         for (MutableRecordBatch batch : records.batches()) {
+            System.out.println("!!! before batch, size is " + uncompressedSizeInBytes + ";;" + batch);
             validateBatch(topicPartition, firstBatch, batch, origin, toMagic, metricsRecorder);
             uncompressedSizeInBytes += AbstractRecords.recordBatchHeaderSizeInBytes(toMagic, batch.compressionType());
+
+
 
             // if we are on version 2 and beyond, and we know we are going for in place assignment,
             // then we can optimize the iterator to skip key / value / headers since they would not be used at all
@@ -399,7 +402,10 @@ public class LogValidator {
                     ++batchIndex;
                 }
 
+                System.out.println("!!! after batch, size is " + uncompressedSizeInBytes + ";;" + batch);
+
                 processRecordErrors(recordErrors);
+
 
             } finally {
                 recordsIterator.close();
@@ -456,6 +462,7 @@ public class LogValidator {
             builder.appendWithOffset(offsetCounter.value++, record);
 
         MemoryRecords records = builder.build();
+        System.out.println("!!! records size:" + records.sizeInBytes());
 
         RecordsInfo info = builder.info();
 
