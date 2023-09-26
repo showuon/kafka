@@ -62,18 +62,24 @@ public class ByteBufferOutputStream extends OutputStream {
     }
 
     public void write(int b) {
+        System.out.println("write:" + b + ";;" + buffer);
         ensureRemaining(1);
         buffer.put((byte) b);
+        System.out.println("after write:" + b + ";;" + buffer);
     }
 
     public void write(byte[] bytes, int off, int len) {
+        System.out.println("write:" + len + ";;" + buffer);
         ensureRemaining(len);
         buffer.put(bytes, off, len);
+        System.out.println("after write:" + len + ";;" + buffer);
     }
 
     public void write(ByteBuffer sourceBuffer) {
+        System.out.println("write:" + sourceBuffer + ";;" + buffer);
         ensureRemaining(sourceBuffer.remaining());
         buffer.put(sourceBuffer);
+        System.out.println("after write:" + sourceBuffer + ";;" + buffer);
     }
 
     public ByteBuffer buffer() {
