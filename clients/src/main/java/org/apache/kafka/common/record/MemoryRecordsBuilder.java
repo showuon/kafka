@@ -236,6 +236,7 @@ public class MemoryRecordsBuilder implements AutoCloseable {
         if (aborted) {
             throw new IllegalStateException("Attempting to build an aborted record batch");
         }
+        System.out.println("!!! buffer build:" + buffer().position());
         close();
         return builtRecords;
     }
@@ -347,6 +348,7 @@ public class MemoryRecordsBuilder implements AutoCloseable {
         validateProducerState();
 
         closeForRecordAppends();
+        System.out.println("!!! stream again:" + buffer().position());
 
         if (numRecords == 0L) {
             buffer().position(initialPosition);
@@ -358,8 +360,11 @@ public class MemoryRecordsBuilder implements AutoCloseable {
                 this.actualCompressionRatio = (float) writeLegacyCompressedWrapperHeader() / this.uncompressedRecordsSizeInBytes;
 
             ByteBuffer buffer = buffer().duplicate();
+            System.out.println("!!! buffer:" + buffer.position());
             buffer.flip();
             buffer.position(initialPosition);
+            System.out.println("!!! buffer:" + buffer.limit());
+
             builtRecords = MemoryRecords.readableRecords(buffer.slice());
             System.out.println("!!! builtRecords:" + builtRecords.sizeInBytes() + ";;" + initialPosition);
         }
@@ -434,6 +439,13 @@ public class MemoryRecordsBuilder implements AutoCloseable {
      */
     private void appendWithOffset(long offset, boolean isControlRecord, long timestamp, ByteBuffer key,
                                   ByteBuffer value, Header[] headers) {
+        try {
+            appendStream.flush();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
+        System.out.println("!!! appendWithOffset:" + value.limit() + ";;" + key.limit() + ";;" + buffer().position());
 
         try {
             if (isControlRecord != isControlBatch)
@@ -456,6 +468,12 @@ public class MemoryRecordsBuilder implements AutoCloseable {
                 appendDefaultRecord(offset, timestamp, key, value, headers);
             } else {
                 appendLegacyRecord(offset, timestamp, key, value, magic);
+                try {
+                    appendStream.flush();
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+                System.out.println("!!! appendWithOffset2:" + buffer().position());
             }
         } catch (IOException e) {
             throw new KafkaException("I/O exception when writing to the append stream, closing", e);
@@ -729,6 +747,12 @@ public class MemoryRecordsBuilder implements AutoCloseable {
     }
 
     private long appendLegacyRecord(long offset, long timestamp, ByteBuffer key, ByteBuffer value, byte magic) throws IOException {
+        try {
+            appendStream.flush();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        System.out.println("!!! appendWithOffset11:" + buffer().position());
         System.out.println("!!! before stream size:" + appendStream.size());
         ensureOpenForRecordAppend();
         if (compressionType == CompressionType.NONE && timestampType == TimestampType.LOG_APPEND_TIME)
@@ -737,11 +761,22 @@ public class MemoryRecordsBuilder implements AutoCloseable {
         int size = LegacyRecord.recordSize(magic, key, value);
         AbstractLegacyRecordBatch.writeHeader(appendStream, toInnerOffset(offset), size);
 
+
         if (timestampType == TimestampType.LOG_APPEND_TIME)
             timestamp = logAppendTime;
+
+
+        try {
+            appendStream.flush();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        System.out.println("!!! appendWithOffset12:" + buffer().position());
         long crc = LegacyRecord.write(appendStream, magic, timestamp, key, value, CompressionType.NONE, timestampType);
-        System.out.println("!!! stream size:" + appendStream.size());
+
+
         recordWritten(offset, timestamp, size + Records.LOG_OVERHEAD);
+
         return crc;
     }
 
