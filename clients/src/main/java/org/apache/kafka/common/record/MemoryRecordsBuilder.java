@@ -766,12 +766,12 @@ public class MemoryRecordsBuilder implements AutoCloseable {
             timestamp = logAppendTime;
 
 
-        try {
-            appendStream.flush();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-        System.out.println("!!! appendWithOffset12:" + buffer().position());
+//        try {
+//            appendStream.flush();
+//        } catch (IOException e) {
+//            throw new RuntimeException(e);
+//        }
+//        System.out.println("!!! appendWithOffset12:" + buffer().position());
         long crc = LegacyRecord.write(appendStream, magic, timestamp, key, value, CompressionType.NONE, timestampType);
 
 
