@@ -760,7 +760,7 @@ public class MemoryRecordsBuilder implements AutoCloseable {
 
         int size = LegacyRecord.recordSize(magic, key, value);
         AbstractLegacyRecordBatch.writeHeader(appendStream, toInnerOffset(offset), size);
-
+        System.out.println("!!! before stream size:" + appendStream.size());
 
         if (timestampType == TimestampType.LOG_APPEND_TIME)
             timestamp = logAppendTime;
@@ -774,6 +774,14 @@ public class MemoryRecordsBuilder implements AutoCloseable {
 //        System.out.println("!!! appendWithOffset12:" + buffer().position());
         long crc = LegacyRecord.write(appendStream, magic, timestamp, key, value, CompressionType.NONE, timestampType);
 
+        System.out.println("!!! before stream size2:" + appendStream.size());
+        try {
+            appendStream.flush();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        System.out.println("!!! before stream size2:" + appendStream.size());
+        System.out.println("!!! appendWithOffset12:" + buffer().position());
 
         recordWritten(offset, timestamp, size + Records.LOG_OVERHEAD);
 
