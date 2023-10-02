@@ -60,9 +60,8 @@ public class LeaderStateTest {
             voters,
             voters,
             accumulator,
-            logContext,
-            time,
-            fetchTimeoutMs
+            fetchTimeoutMs,
+            logContext
         );
     }
 
@@ -75,9 +74,8 @@ public class LeaderStateTest {
             Collections.emptySet(),
             Collections.emptySet(),
             null,
-            logContext,
-            new MockTime(),
-            fetchTimeoutMs
+            fetchTimeoutMs,
+            logContext
         ));
     }
 

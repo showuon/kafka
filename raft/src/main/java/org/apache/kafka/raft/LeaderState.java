@@ -57,11 +57,7 @@ public class LeaderState<T> implements EpochState {
     private final Map<Integer, ReplicaState> observerStates = new HashMap<>();
     private final Logger log;
     private final BatchAccumulator<T> accumulator;
-    private final Set<Integer> fetchedVoters = new HashSet<>();
-    private final Timer fetchTimer;
     private final int fetchTimeoutMs;
-    // The majority number of the voters excluding the leader. Ex: 3 voters, the value will be 1
-    private final int majority;
 
     // This is volatile because resignation can be requested from an external thread.
     private volatile boolean resignRequested = false;
@@ -73,9 +69,8 @@ public class LeaderState<T> implements EpochState {
         Set<Integer> voters,
         Set<Integer> grantingVoters,
         BatchAccumulator<T> accumulator,
-        LogContext logContext,
-        Time time,
-        int fetchTimeoutMs
+        int fetchTimeoutMs,
+        LogContext logContext
     ) {
         this.localId = localId;
         this.epoch = epoch;
@@ -85,37 +80,33 @@ public class LeaderState<T> implements EpochState {
             boolean hasAcknowledgedLeader = voterId == localId;
             this.voterStates.put(voterId, new ReplicaState(voterId, hasAcknowledgedLeader));
         }
-        this.majority = voters.size() / 2;
         this.grantingVoters = Collections.unmodifiableSet(new HashSet<>(grantingVoters));
         this.log = logContext.logger(LeaderState.class);
         this.accumulator = Objects.requireNonNull(accumulator, "accumulator must be non-null");
         this.fetchTimeoutMs = fetchTimeoutMs;
-        this.fetchTimer = time.timer(fetchTimeoutMs);
     }
 
-    public boolean hasMajorityFollowerFetchTimeoutExpired(long currentTimeMs) {
-        fetchTimer.update(currentTimeMs);
-        boolean isExpired = fetchTimer.isExpired();
+    public boolean isMajorityFollowerFetchExpired(long currentTimeMs) {
+        int count = 0;
+        for (Map.Entry<Integer, ReplicaState> voterState : voterStates.entrySet()) {
+            int voterId = voterState.getKey();
+            // skip leader node
+            if (voterId == localId) {
+                continue;
+            }
+            ReplicaState state = voterState.getValue();
+            if (currentTimeMs - state.lastFetchTimestamp <= fetchTimeoutMs) {
+                count++;
+            }
+        }
+        // The majority number of the voters excluding the leader. Ex: 3 voters, the value will be 1
+        int majority = voterStates.size() / 2;
+        boolean isExpired = count < majority;
         if (isExpired) {
-            log.info("Did not receive fetch request from the majority of the voters within {}ms. Current fetched voters are {}.",
-                    fetchTimeoutMs, fetchedVoters);
+            log.info("Did not receive fetch request from the majority of the voters within {}ms. Current voter states are {}.",
+                    fetchTimeoutMs, voterStates);
         }
         return isExpired;
-    }
-
-    public void maybeResetMajorityFollowerFetchTimeout(int id, long currentTimeMs) {
-        updateFetchedVoters(id);
-        if (fetchedVoters.size() >= majority) {
-            fetchedVoters.clear();
-            fetchTimer.update(currentTimeMs);
-            fetchTimer.reset(fetchTimeoutMs);
-        }
-    }
-
-    private void updateFetchedVoters(int id) {
-        if (isVoter(id)) {
-            fetchedVoters.add(id);
-        }
     }
 
     public BatchAccumulator<T> accumulator() {

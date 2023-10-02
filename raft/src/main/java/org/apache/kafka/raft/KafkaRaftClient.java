@@ -966,9 +966,6 @@ public class KafkaRaftClient<T> implements RaftClient<T> {
 
         int replicaId = FetchRequest.replicaId(request);
 
-        Optional<LeaderState<T>> state = quorum.maybeLeaderState();
-        state.ifPresent(s -> s.maybeResetMajorityFollowerFetchTimeout(replicaId, currentTimeMs));
-
         FetchResponseData response = tryCompleteFetchRequest(replicaId, fetchPartition, currentTimeMs);
         FetchResponseData.PartitionData partitionResponse =
             response.responses().get(0).partitions().get(0);
@@ -1994,7 +1991,7 @@ public class KafkaRaftClient<T> implements RaftClient<T> {
         LeaderState<T> state = quorum.leaderStateOrThrow();
         maybeFireLeaderChange(state);
 
-        if (shutdown.get() != null || state.isResignRequested() || state.hasMajorityFollowerFetchTimeoutExpired(currentTimeMs)) {
+        if (shutdown.get() != null || state.isResignRequested() || state.isMajorityFollowerFetchExpired(currentTimeMs)) {
             transitionToResigned(state.nonLeaderVotersByDescendingFetchOffset());
             return 0L;
         }
