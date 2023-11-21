@@ -26,7 +26,7 @@ from kafkatest.services.zookeeper import ZookeeperService
 from kafkatest.tests.streams.utils import extract_generation_from_logs, extract_generation_id
 from kafkatest.version import LATEST_0_10_0, LATEST_0_10_1, LATEST_0_10_2, LATEST_0_11_0, LATEST_1_0, LATEST_1_1, \
     LATEST_2_0, LATEST_2_1, LATEST_2_2, LATEST_2_3, LATEST_2_4, LATEST_2_5, LATEST_2_6, LATEST_2_7, LATEST_2_8, \
-    LATEST_3_0, LATEST_3_1, LATEST_3_2, LATEST_3_3, DEV_BRANCH, DEV_VERSION, KafkaVersion
+    LATEST_3_0, LATEST_3_1, LATEST_3_2, LATEST_3_3, LATEST_3_6, DEV_BRANCH, DEV_VERSION, KafkaVersion
 
 # broker 0.10.0 is not compatible with newer Kafka Streams versions
 # broker 0.10.1 and 0.10.2 do not support headers, as required by suppress() (since v2.2.1)
@@ -35,7 +35,7 @@ broker_upgrade_versions = [str(LATEST_0_11_0), str(LATEST_1_0), str(LATEST_1_1),
                            str(LATEST_2_4), str(LATEST_2_5), str(LATEST_2_6), str(LATEST_2_7),
                            str(LATEST_2_8), str(LATEST_3_0), str(LATEST_3_1), str(LATEST_3_2),
                            str(LATEST_3_3),
-                           str(DEV_BRANCH)]
+                           str(LATEST_3_6)]
 
 metadata_1_versions = [str(LATEST_0_10_0)]
 metadata_2_versions = [str(LATEST_0_10_1), str(LATEST_0_10_2), str(LATEST_0_11_0), str(LATEST_1_0), str(LATEST_1_1),
@@ -200,9 +200,9 @@ class StreamsUpgradeTest(Test):
         processor.node.account.ssh_capture("grep SMOKE-TEST-CLIENT-CLOSED %s" % processor.STDOUT_FILE, allow_fail=False)
 
     @cluster(num_nodes=6)
-    @matrix(from_version=metadata_1_versions, to_version=[str(DEV_VERSION)])
-    @matrix(from_version=metadata_2_versions, to_version=[str(DEV_VERSION)])
-    @matrix(from_version=fk_join_versions, to_version=[str(DEV_VERSION)])
+    @matrix(from_version=metadata_1_versions, to_version=[str(LATEST_3_6)])
+    @matrix(from_version=metadata_2_versions, to_version=[str(LATEST_3_6)])
+    @matrix(from_version=fk_join_versions, to_version=[str(LATEST_3_6)])
     def test_rolling_upgrade_with_2_bounces(self, from_version, to_version):
         """
         This test verifies that the cluster successfully upgrades despite changes in the metadata and FK
@@ -268,7 +268,7 @@ class StreamsUpgradeTest(Test):
         self.stop_and_await()
 
     @cluster(num_nodes=6)
-    @matrix(from_version=[str(LATEST_3_2), str(DEV_VERSION)], to_version=[str(DEV_VERSION)], upgrade=[True, False])
+    @matrix(from_version=[str(LATEST_3_2), str(LATEST_3_6)], to_version=[str(LATEST_3_6)], upgrade=[True, False])
     def test_upgrade_downgrade_state_updater(self, from_version, to_version, upgrade):
         """
         Starts 3 KafkaStreams instances, and enables / disables state restoration
