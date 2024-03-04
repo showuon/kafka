@@ -51,8 +51,15 @@ class GetOffsetShellTest extends KafkaServerTestHarness with Logging {
 
     // Send X messages to each partition of topicX
     val producer = new KafkaProducer[String, String](props)
-    Range(1, topicCount + 1).foreach(i => Range(0, i*i)
-      .foreach(msgCount => producer.send(new ProducerRecord[String, String](topicName(i), msgCount % i, null, "val" + msgCount))))
+//    Range(1, topicCount + 1).foreach(i => Range(0, i*i)
+//      .foreach(msgCount => producer.send(new ProducerRecord[String, String](topicName(i), msgCount % i, null, "val" + msgCount))))
+
+    Range(1, topicCount + 1).foreach(i => {
+      producer.send(new ProducerRecord[String, String](topicName(i), 0, 100, null, "val20"))
+      producer.send(new ProducerRecord[String, String](topicName(i), 0, 400, null, "val15"))
+      producer.send(new ProducerRecord[String, String](topicName(i), 0, 250, null, "val15"))
+      producer.flush()
+    })
     producer.close()
 
     TestUtils.createOffsetsTopic(zkClient, servers)
@@ -109,6 +116,13 @@ class GetOffsetShellTest extends KafkaServerTestHarness with Logging {
       ),
       offsets
     )
+  }
+
+  @Test
+  def testGetOffsetsByMaxTimestampWithTimeStampSpecifiedMessageFailed(): Unit = {
+
+    executeAndParse(Array("--topic-partitions", "topic1", "--time", "-3"))
+
   }
 
   @ParameterizedTest
@@ -254,6 +268,7 @@ class GetOffsetShellTest extends KafkaServerTestHarness with Logging {
 
   private def executeAndParse(args: Array[String]): List[(String, Int, Option[Long])] = {
     val output = executeAndGrabOutput(args)
+    println("!!! executeAndParse:" + output)
     output.split(System.lineSeparator())
       .map(_.split(":"))
       .filter(_.length >= 2)
