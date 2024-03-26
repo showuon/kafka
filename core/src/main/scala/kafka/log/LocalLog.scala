@@ -358,8 +358,6 @@ class LocalLog(@volatile private var _dir: File,
            maxOffsetMetadata: LogOffsetMetadata,
            includeAbortedTxns: Boolean): FetchDataInfo = {
     maybeHandleIOException(s"Exception while reading from $topicPartition in dir ${dir.getParent}") {
-      trace(s"Reading maximum $maxLength bytes at offset $startOffset from log with " +
-        s"total length ${segments.sizeInBytes} bytes")
 
       val endOffsetMetadata = nextOffsetMetadata
       val endOffset = endOffsetMetadata.messageOffset

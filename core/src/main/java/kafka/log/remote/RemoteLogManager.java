@@ -1322,6 +1322,7 @@ public class RemoteLogManager implements Closeable {
     }
 
     public FetchDataInfo read(RemoteStorageFetchInfo remoteStorageFetchInfo) throws RemoteStorageException, IOException {
+        LOGGER.info("remote reading");
         int fetchMaxBytes = remoteStorageFetchInfo.fetchMaxBytes;
         TopicPartition tp = remoteStorageFetchInfo.topicPartition;
         FetchRequest.PartitionData fetchInfo = remoteStorageFetchInfo.fetchInfo;
@@ -1336,10 +1337,13 @@ public class RemoteLogManager implements Closeable {
 
         if (logOptional.isPresent()) {
             Option<LeaderEpochFileCache> leaderEpochCache = logOptional.get().leaderEpochCache();
+            LOGGER.info("!!! leaderEpochCache:" + leaderEpochCache);
             if (leaderEpochCache.isDefined()) {
                 epoch = leaderEpochCache.get().epochForOffset(offset);
             }
         }
+
+        LOGGER.info("!!! logOptional:" + logOptional + ";;" + epoch);
 
         Optional<RemoteLogSegmentMetadata> rlsMetadataOptional = epoch.isPresent()
                 ? fetchRemoteLogSegmentMetadata(tp, epoch.getAsInt(), offset)
@@ -1352,6 +1356,7 @@ public class RemoteLogManager implements Closeable {
         }
 
         RemoteLogSegmentMetadata remoteLogSegmentMetadata = rlsMetadataOptional.get();
+        LOGGER.info("!!! rlsMetadataOptional:" + rlsMetadataOptional + ";;" + remoteLogSegmentMetadata);
         InputStream remoteSegInputStream = null;
         try {
             int startPos = 0;
@@ -1364,6 +1369,7 @@ public class RemoteLogManager implements Closeable {
                 remoteLogSegmentMetadata = rlsMetadataOptional.get();
                 // Search forward for the position of the last offset that is greater than or equal to the target offset
                 startPos = lookupPositionForOffset(remoteLogSegmentMetadata, offset);
+                LOGGER.info("!!! startPos:" + startPos);
                 remoteSegInputStream = remoteLogStorageManager.fetchLogSegment(remoteLogSegmentMetadata, startPos);
                 RemoteLogInputStream remoteLogInputStream = getRemoteLogInputStream(remoteSegInputStream);
                 firstBatch = findFirstBatch(remoteLogInputStream, offset);
