@@ -3285,11 +3285,9 @@ class ReplicaManagerTest {
     val path1 = TestUtils.tempRelativeDir("data").getAbsolutePath
     val path2 = TestUtils.tempRelativeDir("data2").getAbsolutePath
     if (enableRemoteStorage) {
-      props.put("log.dirs", path1)
       props.put(RemoteLogManagerConfig.REMOTE_LOG_STORAGE_SYSTEM_ENABLE_PROP, enableRemoteStorage.toString)
-    } else {
-      props.put("log.dirs", path1 + "," + path2)
     }
+    props.put("log.dirs", path1 + "," + path2)
     propsModifier.apply(props)
     val config = KafkaConfig.fromProps(props)
     val logProps = new Properties()
@@ -4953,8 +4951,9 @@ class ReplicaManagerTest {
 
   // KAFKA-16031: Enabling remote storage after JBOD is supported in tiered storage
   @ParameterizedTest
-  @ValueSource(booleans = Array(false))
+  @ValueSource(booleans = Array(true))
   def testApplyDeltaShouldHandleReplicaAssignedToOnlineDirectory(enableRemoteStorage: Boolean): Unit = {
+    println("!!! 0")
     val localId = 1
     val topicPartition0 = new TopicPartition("foo", 0)
     val topicPartition1 = new TopicPartition("foo", 1)
@@ -4965,21 +4964,29 @@ class ReplicaManagerTest {
 
     try {
 
+      println("!!! 1")
       // Test applying delta as leader
       val directoryIds = replicaManager.logManager.directoryIdsSet.toList
+      println("!!! directoryIds:" + directoryIds)
       // Make the local replica the leader
       val leaderTopicsDelta = topicsCreateDelta(localId, true, partition = 0, directoryIds = directoryIds)
+      println("!!! 2")
       val leaderMetadataImage = imageFromTopics(leaderTopicsDelta.apply())
+      println("!!! 3")
       replicaManager.applyDelta(leaderTopicsDelta, leaderMetadataImage)
+      println("!!! 4")
 
       // Check the broker shouldn't updated the controller with the correct assignment.
       verifyNoInteractions(replicaManager.directoryEventHandler)
       val logDirIdHostingPartition0 = replicaManager.logManager.directoryId(replicaManager.logManager.getLog(topicPartition0).get.dir.getParent).get
       assertEquals(directoryIds.head, logDirIdHostingPartition0)
+      println("!!! 5")
 
       // Test applying delta as follower
       val followerTopicsDelta = topicsCreateDelta(localId, false, partition = 1, directoryIds = directoryIds)
+      println("!!! 6")
       val followerMetadataImage = imageFromTopics(followerTopicsDelta.apply())
+      println("!!! 7")
 
       replicaManager.applyDelta(followerTopicsDelta, followerMetadataImage)
 

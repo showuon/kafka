@@ -155,8 +155,11 @@ public abstract class TieredStorageTestHarness extends IntegrationTestHarness {
     @SuppressWarnings("deprecation")
     public static List<BrokerLocalStorage> localStorages(Seq<KafkaBroker> brokers) {
         return JavaConverters.seqAsJavaList(brokers).stream()
-                .map(b -> new BrokerLocalStorage(b.config().brokerId(), b.config().logDirs().head(),
-                        STORAGE_WAIT_TIMEOUT_SEC))
+                .map(b -> {
+                    System.out.println("!!! b.config().logDirs():" + b.config().logDirs());
+                    return new BrokerLocalStorage(b.config().brokerId(), JavaConverters.asJava(b.config().logDirs().toSet()),
+                            STORAGE_WAIT_TIMEOUT_SEC);
+                })
                 .collect(Collectors.toList());
     }
 }
