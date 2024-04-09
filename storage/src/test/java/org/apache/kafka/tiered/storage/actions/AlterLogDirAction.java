@@ -16,12 +16,8 @@
  */
 package org.apache.kafka.tiered.storage.actions;
 
-import org.apache.kafka.clients.admin.NewPartitionReassignment;
-import org.apache.kafka.clients.admin.TopicDescription;
-import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.TopicPartitionReplica;
-import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.test.TestUtils;
 import org.apache.kafka.tiered.storage.TieredStorageTestAction;
 import org.apache.kafka.tiered.storage.TieredStorageTestContext;
@@ -29,24 +25,18 @@ import org.apache.kafka.tiered.storage.utils.BrokerLocalStorage;
 
 import java.io.File;
 import java.io.PrintStream;
-import java.nio.file.Files;
 import java.util.Collections;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.ExecutionException;
-import java.util.stream.Collectors;
 
-import static org.apache.kafka.tiered.storage.utils.TieredStorageTestUtils.describeTopic;
-
-public final class AlterDirAction implements TieredStorageTestAction {
+public final class AlterLogDirAction implements TieredStorageTestAction {
 
     private final TopicPartition topicPartition;
     private final int brokerId;
 
-    public AlterDirAction(TopicPartition topicPartition,
-                          int brokerId) {
+    public AlterLogDirAction(TopicPartition topicPartition,
+                             int brokerId) {
         this.topicPartition = topicPartition;
         this.brokerId = brokerId;
     }

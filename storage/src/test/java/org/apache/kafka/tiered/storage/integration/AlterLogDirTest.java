@@ -19,15 +19,13 @@ package org.apache.kafka.tiered.storage.integration;
 import org.apache.kafka.tiered.storage.TieredStorageTestBuilder;
 import org.apache.kafka.tiered.storage.specs.KeyValueSpec;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 
 import static org.apache.kafka.common.utils.Utils.mkEntry;
 import static org.apache.kafka.common.utils.Utils.mkMap;
 
-public final class AlterDirTest extends BaseReassignReplicaTest {
+public final class AlterLogDirTest extends BaseReassignReplicaTest {
 
     /**
      * Alter dir within broker0
@@ -63,7 +61,7 @@ public final class AlterDirTest extends BaseReassignReplicaTest {
                 .produce(topicB, p0, new KeyValueSpec("k0", "v0"), new KeyValueSpec("k1", "v1"),
                         new KeyValueSpec("k2", "v2"))
                 // alter dir within the replica, we only expect one replicaId
-                .alterDir(topicB, p0, replicaIds().get(0))
+                .alterLogDir(topicB, p0, replicaIds().get(0))
                 .expectLeader(topicB, p0, broker0, true)
                 // produce some more events and verify the earliest local offset
                 .expectEarliestLocalOffsetInLogDirectory(topicB, p0, 3L)

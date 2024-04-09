@@ -209,12 +209,11 @@ public final class BrokerLocalStorage {
     private File[] getTopicPartitionFiles(TopicPartition topicPartition, Set<File> logDirs) {
         File[] files = null;
         for (File brokerDir : logDirs) {
-            files = brokerDir.listFiles((dir, name) -> {
-//                System.out.println("!!! dir:" + dir + ";;" + name);
-                return name.equals(topicPartition.toString());
-            });
-            // currently, we only expect one topic partition dir
-            if (files != null && files.length != 0) break;
+            files = brokerDir.listFiles((dir, name) -> name.equals(topicPartition.toString()));
+            // currently, we only expect one topic partition in one log dir
+            if (files != null && files.length != 0) {
+                break;
+            }
         }
         return files;
     }
