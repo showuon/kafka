@@ -27,40 +27,32 @@ import java.util.Map;
 import static org.apache.kafka.common.utils.Utils.mkEntry;
 import static org.apache.kafka.common.utils.Utils.mkMap;
 
-public final class ReassignReplicaAlterDirTest extends BaseReassignReplicaTest {
+public final class AlterDirTest extends BaseReassignReplicaTest {
 
     /**
-     * Move the replica of the topic from broker0 to broker1
+     * Alter dir within broker0
      * @return the replica-ids of the topic
      */
     @Override
     protected List<Integer> replicaIds() {
-        return Collections.singletonList(broker1);
+        return Collections.singletonList(broker0);
+    }
+
+    @Override
+    public int brokerCount() {
+        return 1;
     }
 
     @Override
     protected void writeTestSpecifications(TieredStorageTestBuilder builder) {
-        final String topicA = "topicA";
         final String topicB = "topicB";
         final Integer p0 = 0;
         final Integer partitionCount = 1;
         final Integer replicationFactor = 1;
         final Integer maxBatchCountPerSegment = 1;
-        final Map<Integer, List<Integer>> replicaAssignment = null;
         final boolean enableRemoteLogStorage = true;
-        final List<Integer> metadataPartitions = new ArrayList<>();
-        for (int i = 0; i < numRemoteLogMetadataPartitions(); i++) {
-            metadataPartitions.add(i);
-        }
 
         builder
-                // create topicA with 50 partitions and 2 RF. Using 50 partitions to ensure that the user-partitions
-                // are mapped to all the __remote_log_metadata partitions. This is required to ensure that
-                // TBRLMM able to handle the assignment of the newly created replica to one of the already assigned
-                // metadata partition
-                .createTopic(topicA, 50, 2, maxBatchCountPerSegment,
-                        replicaAssignment, enableRemoteLogStorage)
-                .expectUserTopicMappedToMetadataPartitions(topicA, metadataPartitions)
                 // create topicB with 1 partition and 1 RF
                 .createTopic(topicB, partitionCount, replicationFactor, maxBatchCountPerSegment,
                         mkMap(mkEntry(p0, Collections.singletonList(broker0))), enableRemoteLogStorage)
@@ -70,15 +62,14 @@ public final class ReassignReplicaAlterDirTest extends BaseReassignReplicaTest {
                 .expectEarliestLocalOffsetInLogDirectory(topicB, p0, 2L)
                 .produce(topicB, p0, new KeyValueSpec("k0", "v0"), new KeyValueSpec("k1", "v1"),
                         new KeyValueSpec("k2", "v2"))
-                // The newly created replica gets mapped to one of the metadata partition which is being actively
-                // consumed by both the brokers
-                .reassignReplica(topicB, p0, replicaIds())
-                .expectLeader(topicB, p0, broker1, true)
+                // alter dir within the replica, we only expect one replicaId
+                .alterDir(topicB, p0, replicaIds().get(0))
+                .expectLeader(topicB, p0, broker0, true)
                 // produce some more events and verify the earliest local offset
                 .expectEarliestLocalOffsetInLogDirectory(topicB, p0, 3L)
                 .produce(topicB, p0, new KeyValueSpec("k3", "v3"))
                 // consume from the beginning of the topic to read data from local and remote storage
-                .expectFetchFromTieredStorage(broker1, topicB, p0, 3)
+                .expectFetchFromTieredStorage(broker0, topicB, p0, 3)
                 .consume(topicB, p0, 0L, 4, 3);
     }
 }
