@@ -74,8 +74,8 @@ public final class AlterDirAction implements TieredStorageTestAction {
         context.admin().alterReplicaLogDirs(logDirs);
 
         // wait until the topic partition folder disappearing from source dir and appearing in the target dir
-        TestUtils.waitForCondition(() -> !localStorage.get().isTopicPartitionFileExistInDir(topicPartition, targetDir.get()) &&
-                    localStorage.get().isTopicPartitionFileExistInDir(topicPartition, sourceDir.get())
+        TestUtils.waitForCondition(() -> localStorage.get().isTopicPartitionFileExistInDir(topicPartition, targetDir.get()) &&
+                    !localStorage.get().isTopicPartitionFileExistInDir(topicPartition, sourceDir.get())
                 , "Failed to alter dir:" + logDirs);
     }
 
