@@ -23,20 +23,23 @@ import org.apache.kafka.common.protocol.ApiKeys
 import org.apache.kafka.common.record._
 import org.apache.kafka.common.{TopicPartition, Uuid}
 import org.junit.jupiter.api.Assertions._
-import org.junit.jupiter.api.Test
 import kafka.server.FetcherThreadTestUtils.{initialFetchState, mkBatch}
+import org.junit.jupiter.api.extension.ExtensionContext
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.{Arguments, ArgumentsProvider, ArgumentsSource}
 
 import scala.collection.Map
 
-class ReplicaFetcherTierStateMachineTest {
+class TierStateMachineTest {
 
-  val truncateOnFetch = true
+  val truncateOnFetch = false
   val topicIds = Map("topic1" -> Uuid.randomUuid(), "topic2" -> Uuid.randomUuid())
   val version = ApiKeys.FETCH.latestVersion()
   private val failedPartitions = new FailedPartitions
 
-  @Test
-  def testFollowerFetchMovedToTieredStore(): Unit = {
+  @ParameterizedTest
+  @ArgumentsSource(classOf[TierStateMachineTest.Params])
+  def testFollowerFetchMovedToTieredStore(truncateOnFetch: Boolean, useFutureLog: Boolean): Unit = {
     val partition = new TopicPartition("topic", 0)
 
     val replicaLog = Seq(
@@ -47,7 +50,7 @@ class ReplicaFetcherTierStateMachineTest {
     val replicaState = PartitionState(replicaLog, leaderEpoch = 5, highWatermark = 0L, rlmEnabled = true)
 
     val mockLeaderEndpoint = new MockLeaderEndPoint(truncateOnFetch = truncateOnFetch, version = version)
-    val mockTierStateMachine = new MockTierStateMachine(mockLeaderEndpoint)
+    val mockTierStateMachine = new MockTierStateMachine(mockLeaderEndpoint, useFutureLog)
     val fetcher = new MockFetcherThread(mockLeaderEndpoint, mockTierStateMachine)
 
     fetcher.setReplicaState(partition, replicaState)
@@ -94,8 +97,9 @@ class ReplicaFetcherTierStateMachineTest {
    *    tiered storage as well. Hence, `X < globalLogStartOffset`.
    * 4. Follower comes online and tries to fetch X from leader.
    */
-  @Test
-  def testFollowerFetchOffsetOutOfRangeWithTieredStore(): Unit = {
+  @ParameterizedTest
+  @ArgumentsSource(classOf[TierStateMachineTest.Params])
+  def testFollowerFetchOffsetOutOfRangeWithTieredStore(truncateOnFetch: Boolean, useFutureLog: Boolean): Unit = {
     val partition = new TopicPartition("topic", 0)
 
     val replicaLog = Seq(
@@ -105,8 +109,8 @@ class ReplicaFetcherTierStateMachineTest {
 
     val replicaState = PartitionState(replicaLog, leaderEpoch = 7, highWatermark = 0L, rlmEnabled = true)
 
-    val mockLeaderEndpoint = new MockLeaderEndPoint
-    val mockTierStateMachine = new MockTierStateMachine(mockLeaderEndpoint)
+    val mockLeaderEndpoint = new MockLeaderEndPoint(truncateOnFetch = truncateOnFetch, version = version)
+    val mockTierStateMachine = new MockTierStateMachine(mockLeaderEndpoint, useFutureLog)
     val fetcher = new MockFetcherThread(mockLeaderEndpoint, mockTierStateMachine)
 
     fetcher.setReplicaState(partition, replicaState)
@@ -153,12 +157,13 @@ class ReplicaFetcherTierStateMachineTest {
     assertEquals(11L, replicaState.logEndOffset)
   }
 
-  @Test
-  def testFencedOffsetResetAfterMovedToRemoteTier(): Unit = {
+  @ParameterizedTest
+  @ArgumentsSource(classOf[TierStateMachineTest.Params])
+  def testFencedOffsetResetAfterMovedToRemoteTier(truncateOnFetch: Boolean, useFutureLog: Boolean): Unit = {
     val partition = new TopicPartition("topic", 0)
     var isErrorHandled = false
     val mockLeaderEndpoint = new MockLeaderEndPoint(truncateOnFetch = truncateOnFetch, version = version)
-    val mockTierStateMachine = new MockTierStateMachine(mockLeaderEndpoint) {
+    val mockTierStateMachine = new MockTierStateMachine(mockLeaderEndpoint, useFutureLog) {
       override def start(topicPartition: TopicPartition, currentFetchState: PartitionFetchState, fetchPartitionData: FetchResponseData.PartitionData): PartitionFetchState = {
         isErrorHandled = true
         throw new FencedLeaderEpochException(s"Epoch ${currentFetchState.currentLeaderEpoch} is fenced")
@@ -188,5 +193,18 @@ class ReplicaFetcherTierStateMachineTest {
     assertTrue(isErrorHandled)
     assertTrue(fetcher.fetchState(partition).isEmpty)
     assertTrue(failedPartitions.contains(partition))
+  }
+
+}
+
+object TierStateMachineTest {
+  class Params extends ArgumentsProvider {
+    override def provideArguments(context: ExtensionContext): java.util.stream.Stream[_ <: Arguments] =
+      java.util.stream.Stream.of(
+        Arguments.of(true, true),
+        Arguments.of(true, false),
+        Arguments.of(false, true),
+        Arguments.of(false, false)
+      )
   }
 }

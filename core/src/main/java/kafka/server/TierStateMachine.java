@@ -65,15 +65,12 @@ import static org.apache.kafka.storage.internals.log.LogStartOffsetIncrementReas
  *  leader and then build the follower's remote log aux state until the leader's
  *  local log start offset.
  */
-public abstract class TierStateMachine {
+public class TierStateMachine {
     private static final Logger log = LoggerFactory.getLogger(TierStateMachine.class);
 
     private final LeaderEndPoint leader;
     private final ReplicaManager replicaMgr;
     private final boolean useFutureLog;
-
-//    public TierStateMachine() {}
-
     public TierStateMachine(LeaderEndPoint leader,
                             ReplicaManager replicaMgr,
                             boolean useFutureLog) {
