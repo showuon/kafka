@@ -2119,6 +2119,16 @@ class ReplicaManager(val config: KafkaConfig,
           val leader = BrokerEndPoint(config.brokerId, "localhost", -1)
 
           // Add future replica log to partition's map
+//          if (partition.maybeCreateFutureReplica(futureLog.parentDir, offsetCheckpoints, topicIds(partition.topic))) {
+//            val futureLogInPartition = futureLocalLogOrException(topicPartition)
+//            // pause cleaning for partitions that are being moved and start ReplicaAlterDirThread to move
+//            // replica from source dir to destination dir
+//            logManager.abortAndPauseCleaning(topicPartition)
+//
+//            futureReplicasAndInitialOffset.put(topicPartition, InitialFetchState(topicIds(topicPartition.topic), leader,
+//              partition.getLeaderEpoch, futureLogInPartition.highWatermark))
+//          }
+
           partition.createLogIfNotExists(
             isNew = false,
             isFutureReplica = true,
