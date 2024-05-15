@@ -477,7 +477,7 @@ abstract class AbstractFetcherThread(name: String,
       failedPartitions.add(topicPartition)
       removePartitions(Set(topicPartition))
     } finally partitionMapLock.unlock()
-    warn(s"Partition $topicPartition marked as failed")
+    warn(s"[Luke] Partition $topicPartition marked as failed")
   }
 
   /**

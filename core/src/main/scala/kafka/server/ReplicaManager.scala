@@ -1158,6 +1158,7 @@ class ReplicaManager(val config: KafkaConfig,
    * the partition will be created in the specified log directory when broker receives LeaderAndIsrRequest for the partition later.
    */
   def alterReplicaLogDirs(partitionDirs: Map[TopicPartition, String]): Map[TopicPartition, Errors] = {
+    logger.info("[Luke] starting alterReplicaLogDirs")
     replicaStateChangeLock synchronized {
       partitionDirs.map { case (topicPartition, destinationDir) =>
         try {

@@ -3057,6 +3057,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     val alterReplicaDirsRequest = request.body[AlterReplicaLogDirsRequest]
     if (authHelper.authorize(request.context, ALTER, CLUSTER, CLUSTER_NAME)) {
       val result = replicaManager.alterReplicaLogDirs(alterReplicaDirsRequest.partitionDirs.asScala)
+      logger.info("[Luke] AlterReplicaLogDir result:" + result)
       requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs =>
         new AlterReplicaLogDirsResponse(new AlterReplicaLogDirsResponseData()
           .setResults(result.groupBy(_._1.topic).map {

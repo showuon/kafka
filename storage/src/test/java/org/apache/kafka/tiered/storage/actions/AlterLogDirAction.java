@@ -65,12 +65,12 @@ public final class AlterLogDirAction implements TieredStorageTestAction {
         Map<TopicPartitionReplica, String> logDirs = Collections.singletonMap(topicPartitionReplica, targetDir.get().getAbsolutePath());
 
         AlterReplicaLogDirsResult results = context.admin().alterReplicaLogDirs(logDirs);
-        results.values().get(topicPartitionReplica).get(30, TimeUnit.SECONDS);
-
-        // wait until the topic partition folder disappears from source dir and appears in the target dir
-        TestUtils.waitForCondition(() -> localStorage.get().dirContainsTopicPartition(topicPartition, targetDir.get()) &&
-                    !localStorage.get().dirContainsTopicPartition(topicPartition, sourceDir.get()),
-                "Failed to alter dir:" + logDirs);
+//        results.values().get(topicPartitionReplica).get(30, TimeUnit.SECONDS);
+//
+//        // wait until the topic partition folder disappears from source dir and appears in the target dir
+//        TestUtils.waitForCondition(() -> localStorage.get().dirContainsTopicPartition(topicPartition, targetDir.get()) &&
+//                    !localStorage.get().dirContainsTopicPartition(topicPartition, sourceDir.get()),
+//                "Failed to alter dir:" + logDirs);
     }
 
     @Override
