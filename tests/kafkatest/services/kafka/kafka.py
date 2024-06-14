@@ -835,7 +835,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                 self.controller_quorum.intercontroller_security_protocol != self.controller_quorum.controller_security_protocol) \
             else [broker_to_controller_listener_name]
 
-    def start_node(self, node, timeout_sec=60, **kwargs):
+    def start_node(self, node, timeout_sec=120, **kwargs):
         if node not in self.nodes_to_start:
             return
         node.account.mkdirs(KafkaService.PERSISTENT_ROOT)
@@ -893,7 +893,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                 node.account.ssh(cmd)
                 self.wait_for_start(node, monitor, timeout_sec)
 
-    def wait_for_start(self, node, monitor, timeout_sec=60):
+    def wait_for_start(self, node, monitor, timeout_sec=120):
         # Kafka 1.0.0 and higher don't have a space between "Kafka" and "Server"
         monitor.wait_until("Kafka\s*Server.*started", timeout_sec=timeout_sec, backoff_sec=.25,
                            err_msg="Kafka server didn't finish startup in %d seconds" % timeout_sec)
