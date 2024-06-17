@@ -829,6 +829,7 @@ class ConnectDistributedTest(Test):
         metadata_quorum=[quorum.zk],
         use_new_coordinator=[False]
     )
+    @cluster(num_nodes=7)
     @matrix(
         clean=[True, False],
         connect_protocol=['sessioned', 'compatible', 'eager'],
