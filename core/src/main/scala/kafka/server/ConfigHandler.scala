@@ -69,19 +69,23 @@ class TopicConfigHandler(private val replicaManager: ReplicaManager,
 
     val logs = logManager.logsByTopic(topic)
     val wasRemoteLogEnabledBeforeUpdate = logs.exists(_.remoteLogEnabled())
+    val wasCopyDisabled = logs.exists(_.config.remoteCopyDisabled())
     val oldLogPolicy = remoteLogDisablePolicy(logs.head)
 
     logManager.updateTopicConfig(topic, props, kafkaConfig.remoteLogManagerConfig.isRemoteStorageSystemEnabled())
-    maybeUpdateRemoteLogComponents(topic, logs, wasRemoteLogEnabledBeforeUpdate, oldLogPolicy)
+    maybeUpdateRemoteLogComponents(topic, logs, wasRemoteLogEnabledBeforeUpdate, oldLogPolicy, wasCopyDisabled)
   }
 
   private[server] def maybeUpdateRemoteLogComponents(topic: String,
                                                         logs: Seq[UnifiedLog],
                                                         wasRemoteLogEnabledBeforeUpdate: Boolean,
-                                                        oldLogPolicy: String): Unit = {
+                                                        oldLogPolicy: String,
+                                                        wasCopyDisabled: Boolean): Unit = {
     val isRemoteLogEnabled = logs.exists(_.remoteLogEnabled())
     val newRemoteLogPolicy = remoteLogDisablePolicy(logs.head)
     val isNewPolicyDelete = newRemoteLogPolicy.equals("delete")
+    val newCopyDisabled = logs.exists(_.config.remoteCopyDisabled())
+
 
     val (leaderPartitions, followerPartitions) =
       logs.flatMap(log => replicaManager.onlinePartition(log.topicPartition)).partition(_.isLeader)
@@ -97,7 +101,7 @@ class TopicConfigHandler(private val replicaManager: ReplicaManager,
     //   (2) "remote.storage.enable" is false, and "remote.log.disable.policy" changes to "delete", to cancel expire task and delete remote logs
     // For (2), we don't need to worry about "retain"'s case because if it's changed from "delete" to "retain",
     // all the remote log tasks are cancelled and remote logs are deleted, nothing else needs to be done.
-    if (!isRemoteLogEnabled && (wasRemoteLogEnabledBeforeUpdate || (isNewPolicyDelete && !oldLogPolicy.equals(newRemoteLogPolicy)))) {
+    if (isRemoteLogEnabled && (!wasCopyDisabled && newCopyDisabled)) {
       val stopPartitions: java.util.HashSet[StopPartition] = new java.util.HashSet[StopPartition]()
       leaderPartitions.foreach(partition => {
         // only delete remote logs when remoteLog Policy is "delete"

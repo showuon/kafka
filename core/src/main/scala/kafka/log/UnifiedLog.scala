@@ -550,6 +550,14 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   }
 
   private def updateLogStartOffset(offset: Long): Unit = {
+    if (topicPartition.topic().contains("tieredTopic")) {
+      info("!!! updateLogStartOffset:" + offset)
+      val elements = Thread.currentThread.getStackTrace
+      for (i <- 1 until elements.length) {
+        val s = elements(i)
+        System.out.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+      }
+    }
     logStartOffset = offset
 
     if (highWatermark < offset) {

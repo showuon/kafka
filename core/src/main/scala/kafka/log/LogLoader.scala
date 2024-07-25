@@ -174,10 +174,17 @@ class LogLoader(
     }
 
     leaderEpochCache.ifPresent(_.truncateFromEndAsyncFlush(nextOffset))
+    if (topicPartition.topic().contains("tieredTopic")) {
+      info("!!! logStartOffsetCheckpoint:" + logStartOffsetCheckpoint + ";;" + segments.firstSegment.get.baseOffset)
+    }
     val newLogStartOffset = if (isRemoteLogEnabled) {
       logStartOffsetCheckpoint
     } else {
       math.max(logStartOffsetCheckpoint, segments.firstSegment.get.baseOffset)
+    }
+
+    if (topicPartition.topic().contains("tieredTopic")) {
+      info("!!! newLogStartOffset:" + newLogStartOffset)
     }
     // The earliest leader epoch may not be flushed during a hard failure. Recover it here.
     leaderEpochCache.ifPresent(_.truncateFromStartAsyncFlush(logStartOffsetCheckpoint))
