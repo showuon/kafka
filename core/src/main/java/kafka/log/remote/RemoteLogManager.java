@@ -139,8 +139,6 @@ import scala.Option;
 import scala.collection.JavaConverters;
 
 import static kafka.log.remote.quota.RLMQuotaManagerConfig.INACTIVE_SENSOR_EXPIRATION_TIME_SECONDS;
-import static org.apache.kafka.common.config.TopicConfig.REMOTE_LOG_DISABLE_POLICY_DELETE;
-import static org.apache.kafka.common.config.TopicConfig.REMOTE_LOG_DISABLE_POLICY_RETAIN;
 import static org.apache.kafka.server.config.ServerLogConfigs.LOG_DIR_CONFIG;
 import static org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManagerConfig.REMOTE_LOG_METADATA_COMMON_CLIENT_PREFIX;
 import static org.apache.kafka.server.log.remote.storage.RemoteStorageMetrics.REMOTE_LOG_MANAGER_TASKS_AVG_IDLE_PERCENT_METRIC;
@@ -492,18 +490,18 @@ public class RemoteLogManager implements Closeable {
                         return null;
                     });
 
-                    // If "delete" or null is set, we should cancel expiration task
-                    if (!REMOTE_LOG_DISABLE_POLICY_RETAIN.equals(remoteLogDisablePolicy)) {
-                        leaderExpirationRLMTasks.computeIfPresent(tpId, (topicIdPartition, task) -> {
-                            LOGGER.info("Cancelling the expiration RLM task for tpId: {}", tpId);
-                            task.cancel();
-                            return null;
-                        });
-                    }
-                    // stop remoteLogMetadataManager if "delete" is set because that's not needed anymore.
-                    if (REMOTE_LOG_DISABLE_POLICY_DELETE.equals(remoteLogDisablePolicy)) {
-                        stopRLMMPartitions.add(tpId);
-                    }
+//                    // If "delete" or null is set, we should cancel expiration task
+//                    if (!REMOTE_LOG_DISABLE_POLICY_RETAIN.equals(remoteLogDisablePolicy)) {
+//                        leaderExpirationRLMTasks.computeIfPresent(tpId, (topicIdPartition, task) -> {
+//                            LOGGER.info("Cancelling the expiration RLM task for tpId: {}", tpId);
+//                            task.cancel();
+//                            return null;
+//                        });
+//                    }
+//                    // stop remoteLogMetadataManager if "delete" is set because that's not needed anymore.
+//                    if (REMOTE_LOG_DISABLE_POLICY_DELETE.equals(remoteLogDisablePolicy)) {
+//                        stopRLMMPartitions.add(tpId);
+//                    }
 
                     removeRemoteTopicPartitionMetrics(tpId);
 

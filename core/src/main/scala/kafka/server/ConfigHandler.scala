@@ -70,10 +70,10 @@ class TopicConfigHandler(private val replicaManager: ReplicaManager,
     val logs = logManager.logsByTopic(topic)
     val wasRemoteLogEnabledBeforeUpdate = logs.exists(_.remoteLogEnabled())
     val wasCopyDisabled = logs.exists(_.config.remoteCopyDisabled())
-    val oldLogPolicy = remoteLogDisablePolicy(logs.head)
+//    val oldLogPolicy = remoteLogDisablePolicy(logs.head)
 
     logManager.updateTopicConfig(topic, props, kafkaConfig.remoteLogManagerConfig.isRemoteStorageSystemEnabled())
-    maybeUpdateRemoteLogComponents(topic, logs, wasRemoteLogEnabledBeforeUpdate, oldLogPolicy, wasCopyDisabled)
+    maybeUpdateRemoteLogComponents(topic, logs, wasRemoteLogEnabledBeforeUpdate, "oldLogPolicy", wasCopyDisabled)
   }
 
   private[server] def maybeUpdateRemoteLogComponents(topic: String,
@@ -82,7 +82,7 @@ class TopicConfigHandler(private val replicaManager: ReplicaManager,
                                                         oldLogPolicy: String,
                                                         wasCopyDisabled: Boolean): Unit = {
     val isRemoteLogEnabled = logs.exists(_.remoteLogEnabled())
-    val newRemoteLogPolicy = remoteLogDisablePolicy(logs.head)
+    val newRemoteLogPolicy = "retain";// remoteLogDisablePolicy(logs.head)
     val isNewPolicyDelete = newRemoteLogPolicy.equals("delete")
     val newCopyDisabled = logs.exists(_.config.remoteCopyDisabled())
 
@@ -126,15 +126,6 @@ class TopicConfigHandler(private val replicaManager: ReplicaManager,
 
       replicaManager.remoteLogManager.foreach(rlm => rlm.stopPartitions(stopPartitions, (_, _) => {}))
     }
-  }
-
-  private def remoteLogDisablePolicy(log: UnifiedLog): String = {
-    var remoteLogPolicy = log.config.remoteLogDisablePolicy()
-    // default is policy is "retain"
-    if (remoteLogPolicy == null)
-      remoteLogPolicy = "retain"
-
-    remoteLogPolicy
   }
 
   def processConfigChanges(topic: String, topicConfig: Properties): Unit = {

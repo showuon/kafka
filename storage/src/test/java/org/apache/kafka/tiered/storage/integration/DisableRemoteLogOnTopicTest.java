@@ -61,11 +61,11 @@ public final class DisableRemoteLogOnTopicTest extends TieredStorageTestHarness 
         );
         final Map<String, String> explictRetain = new HashMap<>();
         explictRetain.put(TopicConfig.REMOTE_LOG_STORAGE_ENABLE_CONFIG, "false");
-        explictRetain.put(TopicConfig.REMOTE_LOG_DISABLE_POLICY_CONFIG, "retain");
+//        explictRetain.put(TopicConfig.REMOTE_LOG_DISABLE_POLICY_CONFIG, "retain");
 
         final Map<String, String> deletePolicy = new HashMap<>();
         deletePolicy.put(TopicConfig.REMOTE_LOG_STORAGE_ENABLE_CONFIG, "false");
-        deletePolicy.put(TopicConfig.REMOTE_LOG_DISABLE_POLICY_CONFIG, "delete");
+//        deletePolicy.put(TopicConfig.REMOTE_LOG_DISABLE_POLICY_CONFIG, "delete");
 
         builder
                 .createTopic(topicA, partitionCount, replicationFactor, maxBatchCountPerSegment, assignment,

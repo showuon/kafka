@@ -113,7 +113,7 @@ public class LogConfig extends AbstractConfig {
     public static class RemoteLogConfig {
 
         public final boolean remoteStorageEnable;
-        public final String remoteLogDisablePolicy;
+        public final boolean remoteLogDeleteOnDisable;
         public final boolean remoteCopyDisabled;
         public final long localRetentionMs;
         public final long localRetentionBytes;
@@ -121,7 +121,7 @@ public class LogConfig extends AbstractConfig {
         private RemoteLogConfig(LogConfig config) {
             this.remoteStorageEnable = config.getBoolean(TopicConfig.REMOTE_LOG_STORAGE_ENABLE_CONFIG);
             this.remoteCopyDisabled = config.getBoolean(TopicConfig.REMOTE_COPY_DISABLED_CONFIG);
-            this.remoteLogDisablePolicy = config.getString(TopicConfig.REMOTE_LOG_DISABLE_POLICY_CONFIG);
+            this.remoteLogDeleteOnDisable = config.getBoolean(TopicConfig.REMOTE_LOG_DELETE_ON_DISABLE_CONFIG);
             this.localRetentionMs = config.getLong(TopicConfig.LOCAL_LOG_RETENTION_MS_CONFIG);
             this.localRetentionBytes = config.getLong(TopicConfig.LOCAL_LOG_RETENTION_BYTES_CONFIG);
         }
@@ -130,7 +130,8 @@ public class LogConfig extends AbstractConfig {
         public String toString() {
             return "RemoteLogConfig{" +
                     "remoteStorageEnable=" + remoteStorageEnable +
-                    ", remoteLogDisablePolicy=" + remoteLogDisablePolicy +
+                    ", remoteCopyDisabled=" + remoteCopyDisabled +
+                    ", remoteLogDeleteOnDisable=" + remoteLogDeleteOnDisable +
                     ", localRetentionMs=" + localRetentionMs +
                     ", localRetentionBytes=" + localRetentionBytes +
                     '}';
@@ -206,7 +207,7 @@ public class LogConfig extends AbstractConfig {
     // Visible for testing
     public static final Set<String> CONFIGS_WITH_NO_SERVER_DEFAULTS = Collections.unmodifiableSet(Utils.mkSet(
             TopicConfig.REMOTE_LOG_STORAGE_ENABLE_CONFIG,
-            TopicConfig.REMOTE_LOG_DISABLE_POLICY_CONFIG,
+            TopicConfig.REMOTE_LOG_DELETE_ON_DISABLE_CONFIG,
             TopicConfig.REMOTE_COPY_DISABLED_CONFIG,
             QuotaConfigs.LEADER_REPLICATION_THROTTLED_REPLICAS_CONFIG,
             QuotaConfigs.FOLLOWER_REPLICATION_THROTTLED_REPLICAS_CONFIG
@@ -328,12 +329,8 @@ public class LogConfig extends AbstractConfig {
                         TopicConfig.LOCAL_LOG_RETENTION_MS_DOC)
                 .define(TopicConfig.LOCAL_LOG_RETENTION_BYTES_CONFIG, LONG, DEFAULT_LOCAL_RETENTION_BYTES, atLeast(-2), MEDIUM,
                         TopicConfig.LOCAL_LOG_RETENTION_BYTES_DOC)
-                .define(TopicConfig.REMOTE_LOG_DISABLE_POLICY_CONFIG, STRING, TopicConfig.REMOTE_LOG_DISABLE_POLICY_RETAIN,
-                        in(TopicConfig.REMOTE_LOG_DISABLE_POLICY_RETAIN, TopicConfig.REMOTE_LOG_DISABLE_POLICY_DELETE),
-                        MEDIUM, TopicConfig.REMOTE_LOG_DISABLE_POLICY_DOC)
-                .define(TopicConfig.REMOTE_COPY_DISABLED_CONFIG, BOOLEAN, false,
-                        MEDIUM, TopicConfig.REMOTE_LOG_DISABLE_POLICY_DOC);
-
+                .define(TopicConfig.REMOTE_COPY_DISABLED_CONFIG, BOOLEAN, false, MEDIUM, TopicConfig.REMOTE_COPY_DISABLED_DOC)
+                .define(TopicConfig.REMOTE_LOG_DELETE_ON_DISABLE_CONFIG, BOOLEAN, false, MEDIUM, TopicConfig.REMOTE_LOG_DELETE_ON_DISABLE_DOC);
     }
 
     public final Set<String> overriddenConfigs;
@@ -514,8 +511,8 @@ public class LogConfig extends AbstractConfig {
         return remoteLogConfig.remoteStorageEnable;
     }
 
-    public String remoteLogDisablePolicy() {
-        return remoteLogConfig.remoteLogDisablePolicy;
+    public Boolean remoteLogDeleteOnDisable() {
+        return remoteLogConfig.remoteLogDeleteOnDisable;
     }
 
     public Boolean remoteCopyDisabled() {
@@ -636,14 +633,17 @@ public class LogConfig extends AbstractConfig {
             validateRemoteStorageRetentionTime(newConfigs);
         } else {
             // The new config "remote.storage.enable" is false, validate if it's turning from true to false
-            validateNotTurningOffRemoteStorage(existingConfigs);
+            validateTurningOffRemoteStorageWithDelete(existingConfigs, newConfigs);
         }
     }
 
-    public static void validateNotTurningOffRemoteStorage(Map<String, String> existingConfigs) {
+    public static void validateTurningOffRemoteStorageWithDelete(Map<String, String> existingConfigs, Map<?, ?> newConfigs) {
         boolean wasRemoteLogEnabledBeforeUpdate = Boolean.parseBoolean(existingConfigs.getOrDefault(TopicConfig.REMOTE_LOG_STORAGE_ENABLE_CONFIG, "false"));
-        if (wasRemoteLogEnabledBeforeUpdate) {
-            throw new InvalidConfigurationException("Disabling remote storage feature on the topic level is not supported.");
+        boolean isRemoteLogDeleteOnDisable = (Boolean) newConfigs.get(TopicConfig.REMOTE_LOG_DELETE_ON_DISABLE_DOC);
+        if (wasRemoteLogEnabledBeforeUpdate && !isRemoteLogDeleteOnDisable) {
+            throw new InvalidConfigurationException("It is invalid to disable remote storage without deleting remote data. " +
+                    "If you want to keep the remote data and turn to read only, please set `remote.storage.enable=true,remote.copy.disabled=true`. " +
+                    "If you want to disable remote storage and delete all remote data, please set `remote.storage.enable=false,remote.log.delete.on.disable=true`.");
         }
     }
 
