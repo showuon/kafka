@@ -639,7 +639,7 @@ public class LogConfig extends AbstractConfig {
 
     public static void validateTurningOffRemoteStorageWithDelete(Map<String, String> existingConfigs, Map<?, ?> newConfigs) {
         boolean wasRemoteLogEnabledBeforeUpdate = Boolean.parseBoolean(existingConfigs.getOrDefault(TopicConfig.REMOTE_LOG_STORAGE_ENABLE_CONFIG, "false"));
-        boolean isRemoteLogDeleteOnDisable = (Boolean) newConfigs.get(TopicConfig.REMOTE_LOG_DELETE_ON_DISABLE_DOC);
+        boolean isRemoteLogDeleteOnDisable = (Boolean) newConfigs.get(TopicConfig.REMOTE_LOG_DELETE_ON_DISABLE_CONFIG);
         if (wasRemoteLogEnabledBeforeUpdate && !isRemoteLogDeleteOnDisable) {
             throw new InvalidConfigurationException("It is invalid to disable remote storage without deleting remote data. " +
                     "If you want to keep the remote data and turn to read only, please set `remote.storage.enable=true,remote.copy.disabled=true`. " +
