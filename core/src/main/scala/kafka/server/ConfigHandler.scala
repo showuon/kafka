@@ -34,7 +34,7 @@ import org.apache.kafka.common.metrics.Quota._
 import org.apache.kafka.common.utils.Sanitizer
 import org.apache.kafka.security.CredentialProvider
 import org.apache.kafka.server.ClientMetricsManager
-import org.apache.kafka.storage.internals.log.ThrottledReplicaListValidator
+import org.apache.kafka.storage.internals.log.{LogStartOffsetIncrementReason, ThrottledReplicaListValidator}
 import org.apache.kafka.storage.internals.log.LogConfig.MessageFormatVersion
 
 import scala.annotation.nowarn
@@ -71,7 +71,6 @@ class TopicConfigHandler(private val replicaManager: ReplicaManager,
     val logs = logManager.logsByTopic(topic)
     val wasRemoteLogEnabled = logs.exists(_.remoteLogEnabled())
     val wasCopyDisabled = logs.exists(_.config.remoteCopyDisabled())
-//    val oldLogPolicy = remoteLogDisablePolicy(logs.head)
 
     logManager.updateTopicConfig(topic, props, kafkaConfig.remoteLogManagerConfig.isRemoteStorageSystemEnabled())
     maybeUpdateRemoteLogComponents(topic, logs, wasRemoteLogEnabled, wasCopyDisabled)
@@ -85,12 +84,11 @@ class TopicConfigHandler(private val replicaManager: ReplicaManager,
     val isCopyDisabled = logs.exists(_.config.remoteCopyDisabled())
     val isDeleteOnDisable = logs.exists(_.config.remoteLogDeleteOnDisable())
 
-
     val (leaderPartitions, followerPartitions) =
       logs.flatMap(log => replicaManager.onlinePartition(log.topicPartition)).partition(_.isLeader)
 
     // Topic configs gets updated incrementally. This check is added to prevent redundant updates.
-    // When remote log is enabled, or remote copy is enabled, we should create RLM tasks accordingly.
+    // When remote log is enabled, or remote copy is enabled, we should create RLM tasks accordingly via `onLeadershipChange`.
     if (isRemoteLogEnabled && (!wasRemoteLogEnabled || (wasCopyDisabled && !isCopyDisabled))) {
       val topicIds = Collections.singletonMap(topic, replicaManager.metadataCache.getTopicId(topic))
       replicaManager.remoteLogManager.foreach(rlm =>
@@ -128,7 +126,7 @@ class TopicConfigHandler(private val replicaManager: ReplicaManager,
 
       // update the log start offset to local log start offset for the leader replicas
       logs.filter(log => leaderPartitions.find(p => p.equals(log.topicPartition)).isDefined)
-        .foreach(log => log.updateLogStartOffsetFromRemoteTier(log.localLogStartOffset()))
+        .foreach(log => log.maybeIncrementLogStartOffset(log.localLogStartOffset(), LogStartOffsetIncrementReason.SegmentDeletion))
 
       replicaManager.remoteLogManager.foreach(rlm => rlm.stopPartitions(stopPartitions, (_, _) => {}))
     }

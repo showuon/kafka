@@ -100,7 +100,8 @@ class LogConfigTest {
       case TopicConfig.COMPRESSION_GZIP_LEVEL_CONFIG => assertPropertyInvalid(name, "not_a_number", "-2")
       case TopicConfig.COMPRESSION_LZ4_LEVEL_CONFIG => assertPropertyInvalid(name, "not_a_number", "-1")
       case TopicConfig.COMPRESSION_ZSTD_LEVEL_CONFIG => assertPropertyInvalid(name, "not_a_number", "-0.1")
-//      case TopicConfig.REMOTE_LOG_DISABLE_POLICY_CONFIG => assertPropertyInvalid(name, "not_a_number", "remove", "0", "true")
+      case TopicConfig.REMOTE_COPY_DISABLED_CONFIG => assertPropertyInvalid(name, "not_a_number", "remove", "0")
+      case TopicConfig.REMOTE_LOG_DELETE_ON_DISABLE_CONFIG => assertPropertyInvalid(name, "not_a_number", "remove", "0")
 
       case _ => assertPropertyInvalid(name, "not_a_number", "-1")
     })
@@ -356,7 +357,14 @@ class LogConfigTest {
       val message = assertThrows(classOf[InvalidConfigurationException],
         () => LogConfig.validate(Collections.singletonMap(TopicConfig.REMOTE_LOG_STORAGE_ENABLE_CONFIG, "true"),
           logProps, kafkaConfig.extractLogConfigMap, kafkaConfig.remoteLogManagerConfig.isRemoteStorageSystemEnabled()))
-      assertTrue(message.getMessage.contains("Disabling remote storage feature on the topic level is not supported."))
+      assertTrue(message.getMessage.contains("It is invalid to disable remote storage without deleting remote data. " +
+        "If you want to keep the remote data and turn to read only, please set `remote.storage.enable=true,remote.copy.disabled=true`. " +
+        "If you want to disable remote storage and delete all remote data, please set `remote.storage.enable=false,remote.log.delete.on.disable=true`."))
+
+      // It should be able to disable the remote log storage when delete on disable is set to true
+      logProps.put(TopicConfig.REMOTE_LOG_DELETE_ON_DISABLE_CONFIG, "true")
+      LogConfig.validate(Collections.singletonMap(TopicConfig.REMOTE_LOG_STORAGE_ENABLE_CONFIG, "true"),
+        logProps, kafkaConfig.extractLogConfigMap, kafkaConfig.remoteLogManagerConfig.isRemoteStorageSystemEnabled())
     } else {
       LogConfig.validate(Collections.emptyMap(), logProps, kafkaConfig.extractLogConfigMap, kafkaConfig.remoteLogManagerConfig.isRemoteStorageSystemEnabled())
       LogConfig.validate(Collections.singletonMap(TopicConfig.REMOTE_LOG_STORAGE_ENABLE_CONFIG, "false"), logProps, kafkaConfig.extractLogConfigMap, kafkaConfig.remoteLogManagerConfig.isRemoteStorageSystemEnabled())
@@ -425,21 +433,21 @@ class LogConfigTest {
     }
   }
 
-//  @ParameterizedTest
-//  @ValueSource(strings = Array(TopicConfig.REMOTE_LOG_DISABLE_POLICY_RETAIN, TopicConfig.REMOTE_LOG_DISABLE_POLICY_DELETE))
-//  def testValidRemoteLogDisablePolicy(policy: String): Unit = {
-//    val logProps = new Properties
-//    logProps.put(TopicConfig.REMOTE_LOG_DISABLE_POLICY_CONFIG, policy)
-//    LogConfig.validate(logProps)
-//  }
-//
-//  @ParameterizedTest
-//  @ValueSource(strings = Array("keep", "remove"))
-//  def testInvalidRemoteLogDisablePolicy(policy: String): Unit = {
-//    val logProps = new Properties
-//    logProps.put(TopicConfig.REMOTE_LOG_DISABLE_POLICY_CONFIG, policy)
-//    assertThrows(classOf[ConfigException], () => LogConfig.validate(logProps))
-//  }
+  @ParameterizedTest
+  @ValueSource(booleans = Array(true, false))
+  def testValidRemoteLogCopyDisabled(copyDisabled: Boolean): Unit = {
+    val logProps = new Properties
+    logProps.put(TopicConfig.REMOTE_COPY_DISABLED_CONFIG, copyDisabled)
+    LogConfig.validate(logProps)
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = Array(true, false))
+  def testValidRemoteLogDeleteOnDisable(deleteOnDisable: Boolean): Unit = {
+    val logProps = new Properties
+    logProps.put(TopicConfig.REMOTE_LOG_DELETE_ON_DISABLE_CONFIG, deleteOnDisable)
+    LogConfig.validate(logProps)
+  }
 
   /* Verify that when the deprecated config LOG_MESSAGE_TIMESTAMP_DIFFERENCE_MAX_MS_CONFIG has non default value the new configs
    * LOG_MESSAGE_TIMESTAMP_BEFORE_MAX_MS_CONFIG and LOG_MESSAGE_TIMESTAMP_AFTER_MAX_MS_CONFIG are not changed from the default we are using

@@ -496,8 +496,8 @@ public class RemoteLogManager implements Closeable {
      * {@link RemoteLogMetadataManager#onStopPartitions(Set)} when {@link StopPartition#deleteLocalLog()} is true.
      * Deletes the partitions from the remote storage when {@link StopPartition#deleteRemoteLog()} is true.
      *
-     * @param stopPartitions            topic partitions that needs to be stopped.
-     * @param errorHandler              callback to handle any errors while stopping the partitions.
+     * @param stopPartitions topic partitions that needs to be stopped.
+     * @param errorHandler   callback to handle any errors while stopping the partitions.
      */
     public void stopPartitions(Set<StopPartition> stopPartitions,
                                BiConsumer<TopicPartition, Throwable> errorHandler) {
@@ -513,14 +513,13 @@ public class RemoteLogManager implements Closeable {
                         task.cancel();
                         return null;
                     });
-                    followerRLMTasks.computeIfPresent(tpId, (topicIdPartition, task) -> {
-                        LOGGER.info("Cancelling the follower RLM task for tpId: {}", tpId);
+                    leaderExpirationRLMTasks.computeIfPresent(tpId, (topicIdPartition, task) -> {
+                        LOGGER.info("Cancelling the expiration RLM task for tpId: {}", tpId);
                         task.cancel();
                         return null;
                     });
-
-                    leaderExpirationRLMTasks.computeIfPresent(tpId, (topicIdPartition, task) -> {
-                        LOGGER.info("Cancelling the expiration RLM task for tpId: {}", tpId);
+                    followerRLMTasks.computeIfPresent(tpId, (topicIdPartition, task) -> {
+                        LOGGER.info("Cancelling the follower RLM task for tpId: {}", tpId);
                         task.cancel();
                         return null;
                     });
@@ -552,9 +551,9 @@ public class RemoteLogManager implements Closeable {
             deleteLocalPartitions.forEach(tpId -> topicIdByPartitionMap.remove(tpId.topicPartition()));
         }
 
-        stopRLMMPartitions.addAll(deleteLocalPartitions);
         // NOTE: In ZK mode, this#stopPartitions method is called when Replica state changes to Offline and
         // ReplicaDeletionStarted
+        stopRLMMPartitions.addAll(deleteLocalPartitions);
         if (!stopRLMMPartitions.isEmpty()) {
             remoteLogMetadataManager.onStopPartitions(stopRLMMPartitions);
         }
