@@ -99,7 +99,7 @@ case class LogDeleteRecordsResult(requestedOffset: Long, lowWatermark: Long, exc
   }
 }
 
-case class StopPartition(topicPartition: TopicPartition, deleteLocalLog: Boolean, deleteRemoteLog: Boolean = false, remoteLogDisablePolicy: String = null)
+case class StopPartition(topicPartition: TopicPartition, deleteLocalLog: Boolean, deleteRemoteLog: Boolean = false, stopRemoteLogMetadataManager: Boolean = false)
 
 /**
  * Result metadata of a log read operation on the log

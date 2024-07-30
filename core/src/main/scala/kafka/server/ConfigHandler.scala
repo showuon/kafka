@@ -28,6 +28,7 @@ import kafka.utils.Implicits._
 import kafka.utils.Logging
 import org.apache.kafka.server.config.{QuotaConfigs, ReplicationConfigs, ZooKeeperInternals}
 import org.apache.kafka.common.config.TopicConfig
+import org.apache.kafka.common.errors.InvalidConfigurationException
 import org.apache.kafka.common.metrics.Quota
 import org.apache.kafka.common.metrics.Quota._
 import org.apache.kafka.common.utils.Sanitizer
@@ -68,17 +69,18 @@ class TopicConfigHandler(private val replicaManager: ReplicaManager,
     }
 
     val logs = logManager.logsByTopic(topic)
-    val wasRemoteLogEnabledBeforeUpdate = logs.exists(_.remoteLogEnabled())
-//    val wasCopyDisabled = logs.exists(_.config.remoteCopyDisabled())
+    val wasRemoteLogEnabled = logs.exists(_.remoteLogEnabled())
+    val wasCopyDisabled = logs.exists(_.config.remoteCopyDisabled())
 //    val oldLogPolicy = remoteLogDisablePolicy(logs.head)
 
     logManager.updateTopicConfig(topic, props, kafkaConfig.remoteLogManagerConfig.isRemoteStorageSystemEnabled())
-    maybeUpdateRemoteLogComponents(topic, logs, wasRemoteLogEnabledBeforeUpdate)
+    maybeUpdateRemoteLogComponents(topic, logs, wasRemoteLogEnabled, wasCopyDisabled)
   }
 
   private[server] def maybeUpdateRemoteLogComponents(topic: String,
                                                      logs: Seq[UnifiedLog],
-                                                     wasRemoteLogEnabledBeforeUpdate: Boolean): Unit = {
+                                                     wasRemoteLogEnabled: Boolean,
+                                                     wasCopyDisabled: Boolean): Unit = {
     val isRemoteLogEnabled = logs.exists(_.remoteLogEnabled())
     val isCopyDisabled = logs.exists(_.config.remoteCopyDisabled())
     val isDeleteOnDisable = logs.exists(_.config.remoteLogDeleteOnDisable())
@@ -87,39 +89,45 @@ class TopicConfigHandler(private val replicaManager: ReplicaManager,
     val (leaderPartitions, followerPartitions) =
       logs.flatMap(log => replicaManager.onlinePartition(log.topicPartition)).partition(_.isLeader)
     // Topic configs gets updated incrementally. This check is added to prevent redundant updates.
-    if (!wasRemoteLogEnabledBeforeUpdate && isRemoteLogEnabled) {
+    if ((!wasRemoteLogEnabled && isRemoteLogEnabled) || (isCopyDisabled != wasCopyDisabled)) {
       val topicIds = Collections.singletonMap(topic, replicaManager.metadataCache.getTopicId(topic))
       replicaManager.remoteLogManager.foreach(rlm =>
         rlm.onLeadershipChange(leaderPartitions.toSet.asJava, followerPartitions.toSet.asJava, topicIds))
     }
+
+    // 1. isCopyDisabled is enabled
+    // 2. isCopyDisabled is disabled
+    // 3. wasRemoteLogEnabledBeforeUpdate && !isRemoteLogEnabled is disabled and isDeleteOnDisable is true
 
     // Stop partitions when
     //   (1) "remote.storage.enable" changes from true to false
     //   (2) "remote.storage.enable" is false, and "remote.log.disable.policy" changes to "delete", to cancel expire task and delete remote logs
     // For (2), we don't need to worry about "retain"'s case because if it's changed from "delete" to "retain",
     // all the remote log tasks are cancelled and remote logs are deleted, nothing else needs to be done.
-    if (isRemoteLogEnabled && (!wasCopyDisabled && newCopyDisabled)) {
+
+    if (wasRemoteLogEnabled && !isRemoteLogEnabled) {
+      if (!isDeleteOnDisable) {
+        throw new InvalidConfigurationException("It is invalid to disable remote storage without deleting remote data. " +
+          "If you want to keep the remote data and turn to read only, please set `remote.storage.enable=true,remote.copy.disabled=true`. " +
+          "If you want to disable remote storage and delete all remote data, please set `remote.storage.enable=false,remote.log.delete.on.disable=true`.")
+      }
+
       val stopPartitions: java.util.HashSet[StopPartition] = new java.util.HashSet[StopPartition]()
       leaderPartitions.foreach(partition => {
-        // only delete remote logs when remoteLog Policy is "delete"
+        // delete remote logs and stop RemoteLogMetadataManager
         stopPartitions.add(StopPartition(partition.topicPartition, deleteLocalLog = false,
-          deleteRemoteLog = isNewPolicyDelete, remoteLogDisablePolicy = newRemoteLogPolicy))
+          deleteRemoteLog = true, stopRemoteLogMetadataManager = true))
       })
 
       followerPartitions.foreach(partition => {
-        // we need to cancel follower tasks and stop RLMM if "delete" is set
+        // we need to cancel follower tasks and stop RemoteLogMetadataManager
         stopPartitions.add(StopPartition(partition.topicPartition, deleteLocalLog = false,
-          deleteRemoteLog = false, remoteLogDisablePolicy = newRemoteLogPolicy))
+          deleteRemoteLog = false, stopRemoteLogMetadataManager = true))
       })
 
-      if (isNewPolicyDelete) {
-        // update the log start offset to local log start offset for the leader replica when "delete" policy is set
-        logs.foreach(log => {
-          if (leaderPartitions.find(p => p.equals(log.topicPartition)).isDefined) {
-            log.updateLogStartOffsetFromRemoteTier(log.localLogStartOffset())
-          }
-        })
-      }
+      // update the log start offset to local log start offset for the leader replicas
+      logs.filter(log => leaderPartitions.find(p => p.equals(log.topicPartition)).isDefined)
+        .foreach(log => log.updateLogStartOffsetFromRemoteTier(log.localLogStartOffset()))
 
       replicaManager.remoteLogManager.foreach(rlm => rlm.stopPartitions(stopPartitions, (_, _) => {}))
     }
