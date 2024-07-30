@@ -440,12 +440,10 @@ public class RemoteLogManager implements Closeable {
         Map<TopicIdPartition, Boolean> leaderPartitions = filterPartitions(partitionsBecomeLeader)
                 .collect(Collectors.toMap(p -> new TopicIdPartition(topicIds.get(p.topic()), p.topicPartition()),
                         p -> p.log().exists(log -> log.config().remoteCopyDisabled())));
-                //.map(p -> new TopicIdPartition(topicIds.get(p.topic()), p.topicPartition())).collect(Collectors.toSet());
 
         Map<TopicIdPartition, Boolean> followerPartitions = filterPartitions(partitionsBecomeFollower)
                 .collect(Collectors.toMap(p -> new TopicIdPartition(topicIds.get(p.topic()), p.topicPartition()),
                         p -> p.log().exists(log -> log.config().remoteCopyDisabled())));
-                //.map(p -> new TopicIdPartition(topicIds.get(p.topic()), p.topicPartition())).collect(Collectors.toSet());
 
         if (!leaderPartitions.isEmpty() || !followerPartitions.isEmpty()) {
             LOGGER.debug("Effective topic partitions after filtering compact and internal topics, leaders: {} and followers: {}",
@@ -462,6 +460,34 @@ public class RemoteLogManager implements Closeable {
             followerPartitions.forEach((tp, __) -> removeRemoteTopicPartitionMetrics(tp));
 
             leaderPartitions.forEach(this::doHandleLeaderPartition);
+        }
+    }
+
+    public void stopLeaderCopyRLMTasks(Set<Partition> partitions) {
+        for (Partition partition : partitions) {
+            TopicPartition tp = partition.topicPartition();
+            if (topicIdByPartitionMap.containsKey(tp)) {
+                TopicIdPartition tpId = new TopicIdPartition(topicIdByPartitionMap.get(tp), tp);
+                leaderCopyRLMTasks.computeIfPresent(tpId, (topicIdPartition, task) -> {
+                    LOGGER.info("Cancelling the copy RLM task for tpId: {}", tpId);
+                    task.cancel();
+                    return null;
+                });
+            }
+        }
+    }
+
+    public void stopFollowerRLMTasks(Set<Partition> partitions) {
+        for (Partition partition : partitions) {
+            TopicPartition tp = partition.topicPartition();
+            if (topicIdByPartitionMap.containsKey(tp)) {
+                TopicIdPartition tpId = new TopicIdPartition(topicIdByPartitionMap.get(tp), tp);
+                followerRLMTasks.computeIfPresent(tpId, (topicIdPartition, task) -> {
+                    LOGGER.info("Cancelling the follower RLM task for tpId: {}", tpId);
+                    task.cancel();
+                    return null;
+                });
+            }
         }
     }
 
@@ -489,6 +515,12 @@ public class RemoteLogManager implements Closeable {
                     });
                     followerRLMTasks.computeIfPresent(tpId, (topicIdPartition, task) -> {
                         LOGGER.info("Cancelling the follower RLM task for tpId: {}", tpId);
+                        task.cancel();
+                        return null;
+                    });
+
+                    leaderExpirationRLMTasks.computeIfPresent(tpId, (topicIdPartition, task) -> {
+                        LOGGER.info("Cancelling the expiration RLM task for tpId: {}", tpId);
                         task.cancel();
                         return null;
                     });

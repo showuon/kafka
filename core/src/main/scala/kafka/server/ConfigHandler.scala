@@ -88,23 +88,24 @@ class TopicConfigHandler(private val replicaManager: ReplicaManager,
 
     val (leaderPartitions, followerPartitions) =
       logs.flatMap(log => replicaManager.onlinePartition(log.topicPartition)).partition(_.isLeader)
+
     // Topic configs gets updated incrementally. This check is added to prevent redundant updates.
-    if ((!wasRemoteLogEnabled && isRemoteLogEnabled) || (isCopyDisabled != wasCopyDisabled)) {
+    // When remote log is enabled, or remote copy is enabled, we should create RLM tasks accordingly.
+    if (isRemoteLogEnabled && (!wasRemoteLogEnabled || (wasCopyDisabled && !isCopyDisabled))) {
       val topicIds = Collections.singletonMap(topic, replicaManager.metadataCache.getTopicId(topic))
       replicaManager.remoteLogManager.foreach(rlm =>
         rlm.onLeadershipChange(leaderPartitions.toSet.asJava, followerPartitions.toSet.asJava, topicIds))
     }
 
-    // 1. isCopyDisabled is enabled
-    // 2. isCopyDisabled is disabled
-    // 3. wasRemoteLogEnabledBeforeUpdate && !isRemoteLogEnabled is disabled and isDeleteOnDisable is true
+    // When copy disabled, we should stop leaderCopyRLMTask and followerRLMTask, but keep expirationTask
+    if (isRemoteLogEnabled && !wasCopyDisabled && isCopyDisabled) {
+      replicaManager.remoteLogManager.foreach(rlm => {
+        rlm.stopLeaderCopyRLMTasks(leaderPartitions.toSet.asJava);
+        rlm.stopFollowerRLMTasks(followerPartitions.toSet.asJava)
+      })
+    }
 
-    // Stop partitions when
-    //   (1) "remote.storage.enable" changes from true to false
-    //   (2) "remote.storage.enable" is false, and "remote.log.disable.policy" changes to "delete", to cancel expire task and delete remote logs
-    // For (2), we don't need to worry about "retain"'s case because if it's changed from "delete" to "retain",
-    // all the remote log tasks are cancelled and remote logs are deleted, nothing else needs to be done.
-
+    // Disabling remote log on this topic
     if (wasRemoteLogEnabled && !isRemoteLogEnabled) {
       if (!isDeleteOnDisable) {
         throw new InvalidConfigurationException("It is invalid to disable remote storage without deleting remote data. " +
