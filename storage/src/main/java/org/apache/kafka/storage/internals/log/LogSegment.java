@@ -164,6 +164,8 @@ public class LogSegment implements Closeable {
     public boolean shouldRoll(RollParams rollParams) throws IOException {
         boolean reachedRollMs = timeWaitedForRoll(rollParams.now, rollParams.maxTimestampInMessages) > rollParams.maxSegmentMs - rollJitterMs;
         int size = size();
+//        System.out.println("!!! shouldRoll:" + rollParams + ";;" + (size > rollParams.maxSegmentBytes - rollParams.messagesSize) +
+//                (size > 0 && reachedRollMs) + offsetIndex().isFull() + timeIndex().isFull() + !canConvertToRelativeOffset(rollParams.maxOffsetInMessages));
         return size > rollParams.maxSegmentBytes - rollParams.messagesSize ||
             (size > 0 && reachedRollMs) ||
             offsetIndex().isFull() || timeIndex().isFull() || !canConvertToRelativeOffset(rollParams.maxOffsetInMessages);

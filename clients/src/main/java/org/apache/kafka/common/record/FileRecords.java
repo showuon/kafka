@@ -423,6 +423,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
 
     public static FileRecords open(File file,
                                    boolean mutable,
+                                  // boolean isRemote,
                                    boolean fileAlreadyExists,
                                    int initFileSize,
                                    boolean preallocate) throws IOException {
@@ -458,9 +459,17 @@ public class FileRecords extends AbstractRecords implements Closeable {
      */
     private static FileChannel openChannel(File file,
                                            boolean mutable,
+                                          // boolean isRemote,
                                            boolean fileAlreadyExists,
                                            int initFileSize,
                                            boolean preallocate) throws IOException {
+
+        System.out.println("!!! openChannel:" + file.getAbsolutePath());
+        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+        for (int i = 1; i < elements.length; i++) {
+            final StackTraceElement s = elements[i];
+            System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+        }
         if (mutable) {
             if (fileAlreadyExists || !preallocate) {
                 return FileChannel.open(file.toPath(), StandardOpenOption.CREATE, StandardOpenOption.READ,

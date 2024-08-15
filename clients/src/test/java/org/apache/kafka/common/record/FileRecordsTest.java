@@ -138,7 +138,7 @@ public class FileRecordsTest {
 
     @Test
     public void testSliceSizeLimitWithConcurrentWrite() throws Exception {
-        FileRecords log = FileRecords.open(tempFile());
+        FileRecords log = FileRecords.open(tempFile(), false);
         ExecutorService executor = Executors.newFixedThreadPool(2);
         int maxSizeInBytes = 16384;
 

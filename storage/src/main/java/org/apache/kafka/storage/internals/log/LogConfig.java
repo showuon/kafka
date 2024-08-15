@@ -111,27 +111,33 @@ public class LogConfig extends AbstractConfig {
     public static class RemoteLogConfig {
 
         public final boolean remoteStorageEnable;
+        public final boolean remoteCompleteStorageEnable;
         public final boolean remoteLogDeleteOnDisable;
         public final boolean remoteLogCopyDisable;
         public final long localRetentionMs;
         public final long localRetentionBytes;
+        public final String remoteLogDir;
 
         private RemoteLogConfig(LogConfig config) {
             this.remoteStorageEnable = config.getBoolean(TopicConfig.REMOTE_LOG_STORAGE_ENABLE_CONFIG);
+            this.remoteCompleteStorageEnable = config.getBoolean(TopicConfig.REMOTE_COMPLETE_LOG_STORAGE_ENABLE_CONFIG);
             this.remoteLogCopyDisable = config.getBoolean(TopicConfig.REMOTE_LOG_COPY_DISABLE_CONFIG);
             this.remoteLogDeleteOnDisable = config.getBoolean(TopicConfig.REMOTE_LOG_DELETE_ON_DISABLE_CONFIG);
             this.localRetentionMs = config.getLong(TopicConfig.LOCAL_LOG_RETENTION_MS_CONFIG);
             this.localRetentionBytes = config.getLong(TopicConfig.LOCAL_LOG_RETENTION_BYTES_CONFIG);
+            this.remoteLogDir = config.getString(TopicConfig.REMOTE_LOG_DIR_CONFIG);
         }
 
         @Override
         public String toString() {
             return "RemoteLogConfig{" +
                     "remoteStorageEnable=" + remoteStorageEnable +
+                    "remoteCompleteStorageEnable=" + remoteCompleteStorageEnable +
                     ", remoteLogCopyDisable=" + remoteLogCopyDisable +
                     ", remoteLogDeleteOnDisable=" + remoteLogDeleteOnDisable +
                     ", localRetentionMs=" + localRetentionMs +
                     ", localRetentionBytes=" + localRetentionBytes +
+                    ", remoteLogDir=" + remoteLogDir +
                     '}';
         }
     }
@@ -325,6 +331,10 @@ public class LogConfig extends AbstractConfig {
                         TopicConfig.MESSAGE_DOWNCONVERSION_ENABLE_DOC)
                 .define(TopicConfig.REMOTE_LOG_STORAGE_ENABLE_CONFIG, BOOLEAN, DEFAULT_REMOTE_STORAGE_ENABLE, null,
                         MEDIUM, TopicConfig.REMOTE_LOG_STORAGE_ENABLE_DOC)
+                .define(TopicConfig.REMOTE_COMPLETE_LOG_STORAGE_ENABLE_CONFIG, BOOLEAN, false, null,
+                        MEDIUM, TopicConfig.REMOTE_LOG_STORAGE_ENABLE_DOC)
+                .define(TopicConfig.REMOTE_LOG_DIR_CONFIG, STRING, null, null,
+                        MEDIUM, TopicConfig.REMOTE_LOG_STORAGE_ENABLE_DOC)
                 .define(TopicConfig.LOCAL_LOG_RETENTION_MS_CONFIG, LONG, DEFAULT_LOCAL_RETENTION_MS, atLeast(-2), MEDIUM,
                         TopicConfig.LOCAL_LOG_RETENTION_MS_DOC)
                 .define(TopicConfig.LOCAL_LOG_RETENTION_BYTES_CONFIG, LONG, DEFAULT_LOCAL_RETENTION_BYTES, atLeast(-2), MEDIUM,
@@ -509,6 +519,14 @@ public class LogConfig extends AbstractConfig {
 
     public boolean remoteStorageEnable() {
         return remoteLogConfig.remoteStorageEnable;
+    }
+
+    public boolean remoteCompleteStorageEnable() {
+        return remoteLogConfig.remoteCompleteStorageEnable;
+    }
+
+    public String remoteLogDir() {
+        return remoteLogConfig.remoteLogDir;
     }
 
     public Boolean remoteLogDeleteOnDisable() {

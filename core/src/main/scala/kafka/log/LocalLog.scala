@@ -509,7 +509,9 @@ class LocalLog(@volatile private var _dir: File,
         segments.lastSegment.ifPresent(_.onBecomeInactiveSegment())
       }
 
-      val newSegment = LogSegment.open(dir,
+      val logDir = if (!config.remoteCompleteStorageEnable()) dir else new File(config.remoteLogDir(), dir.getName)
+      Files.createDirectories(logDir.toPath)
+      val newSegment = LogSegment.open(logDir,
         newOffset,
         config,
         time,

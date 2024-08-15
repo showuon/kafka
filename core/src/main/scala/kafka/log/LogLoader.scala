@@ -159,10 +159,12 @@ class LogLoader(
         segments.lastSegment.get.resizeIndexes(config.maxIndexSize)
         (newRecoveryPoint, nextOffset)
       } else {
+        val logDir = if (!config.remoteCompleteStorageEnable()) dir else new File(config.remoteLogDir(), dir.getName)
+        Files.createDirectories(logDir.toPath)
         if (segments.isEmpty) {
           segments.add(
             LogSegment.open(
-              dir,
+              logDir,
               0,
               config,
               time,
@@ -452,9 +454,14 @@ class LogLoader(
 
     if (segments.isEmpty) {
       // no existing segments, create a new mutable segment beginning at logStartOffset
+      println("!!! dir:" + dir.getParent + ";;" + dir.getName + ";;" + dir.getAbsolutePath)
+
+
+      val logDir = if (!config.remoteCompleteStorageEnable()) dir else new File(config.remoteLogDir(), dir.getName)
+      Files.createDirectories(logDir.toPath)
       segments.add(
         LogSegment.open(
-          dir,
+          logDir,
           logStartOffsetCheckpoint,
           config,
           time,
