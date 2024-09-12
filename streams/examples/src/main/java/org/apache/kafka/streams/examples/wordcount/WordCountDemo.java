@@ -18,12 +18,17 @@ package org.apache.kafka.streams.examples.wordcount;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.Serdes;
+import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
+import org.apache.kafka.streams.TopologyTestDriver;
+import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.KTable;
+import org.apache.kafka.streams.kstream.Materialized;
 import org.apache.kafka.streams.kstream.Produced;
+import org.apache.kafka.streams.state.KeyValueStore;
 
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -49,7 +54,7 @@ public final class WordCountDemo {
     public static final String INPUT_TOPIC = "streams-plaintext-input";
     public static final String OUTPUT_TOPIC = "streams-wordcount-output";
 
-    static Properties getStreamsConfig(final String[] args) throws IOException {
+    static Properties streamsConfig(final String[] args) throws IOException {
         final Properties props = new Properties();
         if (args != null && args.length > 0) {
             try (final FileInputStream fis = new FileInputStream(args[0])) {
@@ -73,6 +78,10 @@ public final class WordCountDemo {
     }
 
     static void createWordCountStream(final StreamsBuilder builder) {
+//        builder.globalTable(INPUT_TOPIC, Consumed.with(Serdes.Long(), Serdes.String()),
+//                Materialized.<Long, String, KeyValueStore<Bytes, byte[]>>as("globalStore")
+//                        .withKeySerde(Serdes.Long())
+//                        .withValueSerde(Serdes.String()));
         final KStream<String, String> source = builder.stream(INPUT_TOPIC);
 
         final KTable<String, Long> counts = source
@@ -82,15 +91,29 @@ public final class WordCountDemo {
 
         // need to override value serde to Long type
         counts.toStream().to(OUTPUT_TOPIC, Produced.with(Serdes.String(), Serdes.Long()));
+//        builder.stream(OUTPUT_TOPIC, Consumed.with(Serdes.Long(), Serdes.String()));
     }
 
     public static void main(final String[] args) throws IOException {
-        final Properties props = getStreamsConfig(args);
+        System.out.println("!!! testing12");
+        final Properties props = streamsConfig(args);
 
         final StreamsBuilder builder = new StreamsBuilder();
+
         createWordCountStream(builder);
+        Properties config = new Properties();
+        config.put(StreamsConfig.APPLICATION_ID_CONFIG, "testApplicationId");
+        config.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "dummy:1234");
+        System.out.println("!!! driver");
+        TopologyTestDriver testDriver = new TopologyTestDriver(builder.build(), streamsConfig(args));
+        System.out.println("!!! driver done");
         final KafkaStreams streams = new KafkaStreams(builder.build(), props);
         final CountDownLatch latch = new CountDownLatch(1);
+
+
+
+
+
 
         // attach shutdown handler to catch control-c
         Runtime.getRuntime().addShutdownHook(new Thread("streams-wordcount-shutdown-hook") {
