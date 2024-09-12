@@ -428,6 +428,7 @@ public class TopologyTestDriver implements Closeable {
                                  final StreamsConfig streamsConfig,
                                  final StreamsMetricsImpl streamsMetrics,
                                  final ThreadCache cache) {
+        System.out.println("!!! setupGlobalTask");
         if (globalTopology != null) {
             final MockConsumer<byte[], byte[]> globalConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
             for (final String topicName : globalTopology.sourceTopics()) {
@@ -454,6 +455,7 @@ public class TopologyTestDriver implements Closeable {
                 new GlobalProcessorContextImpl(streamsConfig, globalStateManager, streamsMetrics, cache, mockWallClockTime);
             globalStateManager.setGlobalProcessorContext(globalProcessorContext);
 
+            System.out.println("!!! creating GlobalStateUpdateTask");
             globalStateTask = new GlobalStateUpdateTask(
                 logContext,
                 globalTopology,
@@ -462,6 +464,7 @@ public class TopologyTestDriver implements Closeable {
                 new LogAndContinueExceptionHandler()
             );
             globalStateTask.initialize();
+            System.out.println("!!! creating GlobalStateUpdateTask done");
             globalProcessorContext.setRecordContext(null);
         } else {
             globalStateManager = null;
