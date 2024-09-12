@@ -95,7 +95,7 @@ public final class WordCountDemo {
     }
 
     public static void main(final String[] args) throws IOException {
-        System.out.println("!!! testing12");
+        System.out.println("!!! testing123");
         final Properties props = streamsConfig(args);
 
         final StreamsBuilder builder = new StreamsBuilder();
