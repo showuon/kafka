@@ -78,24 +78,24 @@ public final class WordCountDemo {
     }
 
     static void createWordCountStream(final StreamsBuilder builder) {
-        builder.globalTable(INPUT_TOPIC, Consumed.with(Serdes.Long(), Serdes.String()),
-                Materialized.<Long, String, KeyValueStore<Bytes, byte[]>>as("globalStore")
-                        .withKeySerde(Serdes.Long())
-                        .withValueSerde(Serdes.String()));
-//        final KStream<String, String> source = builder.stream(INPUT_TOPIC);
-//
-//        final KTable<String, Long> counts = source
-//            .flatMapValues(value -> Arrays.asList(value.toLowerCase(Locale.getDefault()).split("\\W+")))
-//            .groupBy((key, value) -> value)
-//            .count();
-//
-//        // need to override value serde to Long type
-//        counts.toStream().to(OUTPUT_TOPIC, Produced.with(Serdes.String(), Serdes.Long()));
-        builder.stream(OUTPUT_TOPIC, Consumed.with(Serdes.Long(), Serdes.String()));
+//        builder.globalTable(INPUT_TOPIC, Consumed.with(Serdes.Long(), Serdes.String()),
+//                Materialized.<Long, String, KeyValueStore<Bytes, byte[]>>as("globalStore")
+//                        .withKeySerde(Serdes.Long())
+//                        .withValueSerde(Serdes.String()));
+        final KStream<String, String> source = builder.stream(INPUT_TOPIC);
+
+        final KTable<String, Long> counts = source
+            .flatMapValues(value -> Arrays.asList(value.toLowerCase(Locale.getDefault()).split("\\W+")))
+            .groupBy((key, value) -> value)
+            .count();
+
+        // need to override value serde to Long type
+        counts.toStream().to(OUTPUT_TOPIC, Produced.with(Serdes.String(), Serdes.Long()));
+//        builder.stream(OUTPUT_TOPIC, Consumed.with(Serdes.Long(), Serdes.String()));
     }
 
     public static void main(final String[] args) throws IOException {
-        System.out.println("!!! testing12");
+        System.out.println("!!! testing123");
         final Properties props = streamsConfig(args);
 
         final StreamsBuilder builder = new StreamsBuilder();
