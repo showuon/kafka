@@ -263,10 +263,10 @@ class DynamicBrokerReconfigurationTest extends QuorumTestHarness with SaslSetup 
       isSensitive = false, isReadOnly = false, expectedProps)
     val logRetentionHours = configEntry(configDesc, ServerLogConfigs.LOG_RETENTION_TIME_HOURS_CONFIG)
     verifyConfig(ServerLogConfigs.LOG_RETENTION_TIME_HOURS_CONFIG, logRetentionHours,
-      isSensitive = false, isReadOnly = true, expectedProps)
+      isSensitive = false, isReadOnly = false, expectedProps)
     val logRollHours = configEntry(configDesc, ServerLogConfigs.LOG_ROLL_TIME_HOURS_CONFIG)
     verifyConfig(ServerLogConfigs.LOG_ROLL_TIME_HOURS_CONFIG, logRollHours,
-      isSensitive = false, isReadOnly = true, expectedProps)
+      isSensitive = false, isReadOnly = false, expectedProps)
     val logCleanerThreads = configEntry(configDesc, CleanerConfig.LOG_CLEANER_THREADS_PROP)
     verifyConfig(CleanerConfig.LOG_CLEANER_THREADS_PROP, logCleanerThreads,
       isSensitive = false, isReadOnly = false, expectedProps)

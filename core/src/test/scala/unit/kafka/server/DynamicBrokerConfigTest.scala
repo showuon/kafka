@@ -19,7 +19,7 @@ package kafka.server
 
 import java.{lang, util}
 import java.util.{Properties, Map => JMap}
-import java.util.concurrent.CompletionStage
+import java.util.concurrent.{CompletionStage, TimeUnit}
 import java.util.concurrent.atomic.AtomicReference
 import kafka.controller.KafkaController
 import kafka.log.LogManager
@@ -959,6 +959,41 @@ class DynamicBrokerConfigTest {
     verify(remoteLogManager).updateFetchQuota(400)
 
     verifyNoMoreInteractions(remoteLogManager)
+  }
+
+  @Test
+  def testDynamicLogReconfigurableConfigsIncludesDeprecatedSynonyms(): Unit = {
+    assertTrue(DynamicLogConfig.ReconfigurableConfigs.contains(ServerLogConfigs.LOG_ROLL_TIME_HOURS_CONFIG))
+    assertTrue(DynamicLogConfig.ReconfigurableConfigs.contains(ServerLogConfigs.LOG_ROLL_TIME_JITTER_HOURS_CONFIG))
+    assertTrue(DynamicLogConfig.ReconfigurableConfigs.contains(ServerLogConfigs.LOG_RETENTION_TIME_MINUTES_CONFIG))
+  }
+
+  @Test
+  def testDynamicLogConfigHandlesSynonymsCorrectly(): Unit = {
+    val origProps = TestUtils.createBrokerConfig(0, null, port = 8181)
+    origProps.put(ServerLogConfigs.LOG_RETENTION_TIME_MINUTES_CONFIG, "1")
+
+    val config = KafkaConfig(origProps)
+    assertEquals(TimeUnit.MINUTES.toMillis(1), config.logRetentionTimeMillis)
+    val serverMock = Mockito.mock(classOf[BrokerServer])
+    val logManagerMock = Mockito.mock(classOf[LogManager])
+
+    Mockito.when(serverMock.config).thenReturn(config)
+    Mockito.when(serverMock.logManager).thenReturn(logManagerMock)
+    Mockito.when(logManagerMock.allLogs).thenReturn(Iterable.empty)
+
+    val currentDefaultLogConfig = new AtomicReference(new LogConfig(new Properties))
+    Mockito.when(logManagerMock.currentDefaultConfig).thenAnswer(_ => currentDefaultLogConfig.get())
+    Mockito.when(logManagerMock.reconfigureDefaultLogConfig(ArgumentMatchers.any(classOf[LogConfig])))
+      .thenAnswer(invocation => currentDefaultLogConfig.set(invocation.getArgument(0)))
+
+    config.dynamicConfig.initialize(None, None)
+    config.dynamicConfig.addBrokerReconfigurable(new DynamicLogConfig(logManagerMock, serverMock))
+
+    val props = new Properties()
+    props.put(ServerConfigs.MESSAGE_MAX_BYTES_CONFIG, "12345678")
+    config.dynamicConfig.updateDefaultConfig(props)
+    assertEquals(TimeUnit.MINUTES.toMillis(1), currentDefaultLogConfig.get().retentionMs)
   }
 
   def verifyIncorrectLogLocalRetentionProps(logLocalRetentionMs: Long,
