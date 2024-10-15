@@ -140,7 +140,7 @@ public class ReplicationConfigs {
     public static final String INTER_BROKER_SECURITY_PROTOCOL_DOC = "Security protocol used to communicate between brokers. Valid values are: " +
             String.join(", ", SecurityProtocol.names()) + ". It is an error to set this and " + INTER_BROKER_LISTENER_NAME_CONFIG +
             " properties at the same time.";
-    public static final String INTER_BROKER_LISTENER_NAME_DOC = "Name of listener used for communication between brokers. If this is unset, the listener name is defined by " + INTER_BROKER_SECURITY_PROTOCOL_CONFIG +
+    public static final String INTER_BROKER_LISTENER_NAME_DOC = "Name of listener used for communication between brokers. If this is unset, the listener name is defined by " + INTER_BROKER_SECURITY_PROTOCOL_CONFIG + ". " +
            "It is an error to set this and " + INTER_BROKER_SECURITY_PROTOCOL_CONFIG + " properties at the same time.";
 
     public static final String REPLICA_SELECTOR_CLASS_CONFIG = "replica.selector.class";
