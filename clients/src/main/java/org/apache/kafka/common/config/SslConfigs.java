@@ -123,6 +123,8 @@ public class SslConfigs {
         + "Note that this will cause a tiny delay during establishment of new connections from mTLS clients to brokers due to the extra code for examining the certificate chain provided by the client. "
         + "Note further that the implementation uses a custom truststore based on the standard Java truststore and thus might be considered a security risk due to not being as mature as the standard one.";
 
+    private static final String TIMESTAMP_CONFIG = ".timestamp";
+    public static final String SSL_KEYSTORE_KEY_TIMESTAMP_CONFIG = SSL_KEYSTORE_KEY_CONFIG + TIMESTAMP_CONFIG;
     public static void addClientSslSupport(ConfigDef config) {
         config.define(SslConfigs.SSL_PROTOCOL_CONFIG, ConfigDef.Type.STRING, SslConfigs.DEFAULT_SSL_PROTOCOL, ConfigDef.Importance.MEDIUM, SslConfigs.SSL_PROTOCOL_DOC)
                 .define(SslConfigs.SSL_PROVIDER_CONFIG, ConfigDef.Type.STRING, null, ConfigDef.Importance.MEDIUM, SslConfigs.SSL_PROVIDER_DOC)
@@ -131,8 +133,10 @@ public class SslConfigs {
                 .define(SslConfigs.SSL_KEYSTORE_TYPE_CONFIG, ConfigDef.Type.STRING, SslConfigs.DEFAULT_SSL_KEYSTORE_TYPE, ConfigDef.Importance.MEDIUM, SslConfigs.SSL_KEYSTORE_TYPE_DOC)
                 .define(SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG, ConfigDef.Type.STRING, null,  ConfigDef.Importance.HIGH, SslConfigs.SSL_KEYSTORE_LOCATION_DOC)
                 .define(SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG, ConfigDef.Type.PASSWORD, null, ConfigDef.Importance.HIGH, SslConfigs.SSL_KEYSTORE_PASSWORD_DOC)
+                .defineInternal(SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG + TIMESTAMP_CONFIG, ConfigDef.Type.LONG, -1, ConfigDef.Importance.HIGH)
                 .define(SslConfigs.SSL_KEY_PASSWORD_CONFIG, ConfigDef.Type.PASSWORD, null, ConfigDef.Importance.HIGH, SslConfigs.SSL_KEY_PASSWORD_DOC)
                 .define(SslConfigs.SSL_KEYSTORE_KEY_CONFIG, ConfigDef.Type.PASSWORD, null,  ConfigDef.Importance.HIGH, SslConfigs.SSL_KEYSTORE_KEY_DOC)
+                .defineInternal(SSL_KEYSTORE_KEY_TIMESTAMP_CONFIG, ConfigDef.Type.METADATA, -1, ConfigDef.Importance.HIGH)
                 .define(SslConfigs.SSL_KEYSTORE_CERTIFICATE_CHAIN_CONFIG, ConfigDef.Type.PASSWORD, null,  ConfigDef.Importance.HIGH, SslConfigs.SSL_KEYSTORE_CERTIFICATE_CHAIN_DOC)
                 .define(SslConfigs.SSL_TRUSTSTORE_CERTIFICATES_CONFIG, ConfigDef.Type.PASSWORD, null,  ConfigDef.Importance.HIGH, SslConfigs.SSL_TRUSTSTORE_CERTIFICATES_DOC)
                 .define(SslConfigs.SSL_TRUSTSTORE_TYPE_CONFIG, ConfigDef.Type.STRING, SslConfigs.DEFAULT_SSL_TRUSTSTORE_TYPE, ConfigDef.Importance.MEDIUM, SslConfigs.SSL_TRUSTSTORE_TYPE_DOC)
@@ -155,7 +159,11 @@ public class SslConfigs {
             SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG,
             SslConfigs.SSL_KEYSTORE_CERTIFICATE_CHAIN_CONFIG,
             SslConfigs.SSL_KEYSTORE_KEY_CONFIG,
-            SslConfigs.SSL_TRUSTSTORE_CERTIFICATES_CONFIG);
+            SslConfigs.SSL_TRUSTSTORE_CERTIFICATES_CONFIG,
+            SslConfigs.SSL_KEYSTORE_KEY_TIMESTAMP_CONFIG);
+
+    public static final Set<String> RECONFIGURABLE_TIMESTAMP_CONFIGS = Set.of(
+            SslConfigs.SSL_KEYSTORE_KEY_TIMESTAMP_CONFIG);
 
     public static final Set<String> NON_RECONFIGURABLE_CONFIGS = Set.of(
             BrokerSecurityConfigs.SSL_CLIENT_AUTH_CONFIG,

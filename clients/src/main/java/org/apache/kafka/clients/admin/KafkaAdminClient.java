@@ -2891,8 +2891,10 @@ public class KafkaAdminClient extends AdminClient {
         final Map<ConfigResource, AlterConfigsRequest.Config> requestMap = new HashMap<>(resources.size());
         for (ConfigResource resource : resources) {
             List<AlterConfigsRequest.ConfigEntry> configEntries = new ArrayList<>();
-            for (ConfigEntry configEntry: configs.get(resource).entries())
-                configEntries.add(new AlterConfigsRequest.ConfigEntry(configEntry.name(), configEntry.value()));
+            for (ConfigEntry configEntry: configs.get(resource).entries()) {
+                if (!configEntry.isSensitive())
+                    configEntries.add(new AlterConfigsRequest.ConfigEntry(configEntry.name(), configEntry.value()));
+            }
             requestMap.put(resource, new AlterConfigsRequest.Config(configEntries));
             futures.put(resource, new KafkaFutureImpl<>());
         }

@@ -50,6 +50,8 @@ class DynamicConfigPublisher(
     delta: MetadataDelta,
     newImage: MetadataImage,
   ): Unit = {
+
+
     val deltaName = s"MetadataDelta up to ${newImage.highestOffsetAndEpoch().offset}"
     try {
       // Apply configuration deltas.
@@ -71,6 +73,12 @@ class DynamicConfigPublisher(
                 }
               )
             case BROKER =>
+              println("!!! onMetadataUpdate")
+              val elements = Thread.currentThread.getStackTrace
+              for (i <- 1 until elements.length) {
+                val s = elements(i)
+                System.out.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+              }
               dynamicConfigHandlers.get(ConfigType.BROKER).foreach(nodeConfigHandler =>
                 if (resource.name().isEmpty) {
                   try {

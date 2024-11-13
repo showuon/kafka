@@ -145,7 +145,13 @@ object DynamicBrokerConfig {
     checkInvalidProps(nonDynamicConfigs(props), "Cannot update these configs dynamically")
     checkInvalidProps(securityConfigsWithoutListenerPrefix(props),
       "These security configs can be dynamically updated only per-listener using the listener prefix")
+//    checkInvalidProps(metadataType(props), "Cannot update metadata type props.")
     validateConfigTypes(props)
+//    props.keySet().stream().anyMatch(p => {
+//      println("!!! KafkaConfig.configType(p.asInstanceOf[String]):" + KafkaConfig.configType(p.asInstanceOf[String]) + ";;" + p)
+//      KafkaConfig.configType(p.asInstanceOf[String]).exists(t => t.equals(ConfigDef.Type.TIMESTAMP))
+//    })
+
     if (!perBrokerConfig) {
       checkInvalidProps(perBrokerConfigs(props),
         "Cannot update these configs at default cluster level, broker id must be specified")
@@ -435,8 +441,11 @@ class DynamicBrokerConfig(private val kafkaConfig: KafkaConfig) extends Logging 
     }
 
     props.asScala.foreachEntry { (name, value) =>
-      if (isPasswordConfig(name))
+      if (isPasswordConfig(name)) {
         decodePassword(name, value)
+        println("!!! adding:" + s"$name.timestamp")
+        props.setProperty(s"$name.timestamp", System.currentTimeMillis().toString)
+      }
     }
     props
   }
@@ -474,7 +483,14 @@ class DynamicBrokerConfig(private val kafkaConfig: KafkaConfig) extends Logging 
    * Note: The caller must acquire the read or write lock before invoking this method.
    */
   private def validatedKafkaProps(propsOverride: Properties, perBrokerConfig: Boolean): Map[String, String] = {
-    val propsResolved = DynamicBrokerConfig.resolveVariableConfigs(propsOverride)
+    println("!!! propsOverride:" + propsOverride)
+    val elements = Thread.currentThread.getStackTrace
+    for (i <- 1 until elements.length) {
+      val s = elements(i)
+      System.out.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+    }
+    val updatedProps = removeMetadataType(propsOverride)
+    val propsResolved = DynamicBrokerConfig.resolveVariableConfigs(updatedProps)
     validateConfigs(propsResolved, perBrokerConfig)
     val newProps = mutable.Map[String, String]()
     newProps ++= staticBrokerConfigs
@@ -486,6 +502,19 @@ class DynamicBrokerConfig(private val kafkaConfig: KafkaConfig) extends Logging 
       overrideProps(newProps, dynamicBrokerConfigs)
     }
     newProps
+  }
+
+  private def removeMetadataType(props: Properties): Properties = {
+    val updatedProps = new Properties
+    props.entrySet().forEach(p =>
+      if (KafkaConfig.configType(p.getKey.toString).exists(t => !t.equals(ConfigDef.Type.METADATA))) {
+        updatedProps.put(p.getKey, p.getValue)
+        warn(s"removing $p from config change because it is a METADATA type config.")
+      }
+    )
+
+    updatedProps
+    //      KafkaConfig.configType(p).exists(t => !t.equals(ConfigDef.Type.METADATA)))
   }
 
   private[server] def validate(props: Properties, perBrokerConfig: Boolean): Unit = CoreUtils.inReadLock(lock) {

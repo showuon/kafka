@@ -409,6 +409,14 @@ public class ConfigurationControlManager {
      * @param record            The ConfigRecord.
      */
     public void replay(ConfigRecord record) {
+
+        log.info("!!! replay config");
+        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+        for (int i = 1; i < elements.length; i++) {
+            final StackTraceElement s = elements[i];
+            System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+        }
+
         Type type = Type.forId(record.resourceType());
         ConfigResource configResource = new ConfigResource(type, record.resourceName());
         TimelineHashMap<String, String> configs = configData.get(configResource);

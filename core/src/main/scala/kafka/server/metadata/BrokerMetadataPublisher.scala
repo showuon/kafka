@@ -103,6 +103,7 @@ class BrokerMetadataPublisher(
     newImage: MetadataImage,
     manifest: LoaderManifest
   ): Unit = {
+
     val highestOffsetAndEpoch = newImage.highestOffsetAndEpoch()
 
     val deltaName = if (_firstPublish) {

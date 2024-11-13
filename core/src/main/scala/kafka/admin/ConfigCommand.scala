@@ -380,10 +380,11 @@ object ConfigCommand extends Logging {
           throw new InvalidConfigurationException(s"Invalid config(s): ${invalidConfigs.mkString(",")}")
 
         val newEntries = oldConfig ++ configsToBeAdded -- configsToBeDeleted
-        val sensitiveEntries = newEntries.filter(_._2.value == null)
-        if (sensitiveEntries.nonEmpty)
-          throw new InvalidConfigurationException(s"All sensitive broker config entries must be specified for --alter, missing entries: ${sensitiveEntries.keySet}")
+//        val sensitiveEntries = newEntries.filter(_._2.value == null)
+//        if (sensitiveEntries.nonEmpty)
+//          throw new InvalidConfigurationException(s"All sensitive broker config entries must be specified for --alter, missing entries: ${sensitiveEntries.keySet}")
         val newConfig = new JConfig(newEntries.asJava.values)
+
 
         val configResource = new ConfigResource(ConfigResource.Type.BROKER, entityNameHead)
         val alterOptions = new AlterConfigsOptions().timeoutMs(30000).validateOnly(false)

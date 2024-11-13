@@ -737,6 +737,7 @@ public class ConfigDef {
                         throw new ConfigException(name, value, "Expected value to be a 16-bit integer (short), but it was a " + value.getClass().getName());
                     }
                 case LONG:
+                case METADATA:
                     if (value instanceof Integer)
                         return ((Integer) value).longValue();
                     if (value instanceof Long)
@@ -884,7 +885,9 @@ public class ConfigDef {
          * of this type are not included in logs and instead replaced with "[hidden]". Values must be provided as a
          * String object, otherwise a {@link ConfigException} is thrown.
          */
-        PASSWORD;
+        PASSWORD,
+
+        METADATA;
 
         /**
          * Whether this type contains sensitive data such as a password or key.
