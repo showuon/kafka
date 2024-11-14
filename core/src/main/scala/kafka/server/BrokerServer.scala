@@ -572,6 +572,7 @@ class BrokerServer(
       // configuration.  Keep in mind that KafkaConfig.originals is a mutable field that gets set
       // by the dynamic configuration publisher. Ironically, KafkaConfig.originals does not
       // contain the original configuration values.
+      println("!!! logging")
       new KafkaConfig(config.originals(), true)
 
       // We're now ready to unfence the broker. This also allows this broker to transition

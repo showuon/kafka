@@ -48,6 +48,10 @@ class ConfigHelper(metadataCache: MetadataCache, config: KafkaConfig, configRepo
     config.originals.asScala.filter(_._2 != null) ++ config.nonInternalValues.asScala
   }
 
+  def allConfigsWithMetadata(config: AbstractConfig): mutable.Map[String, Any] = {
+    config.originals.asScala.filter(_._2 != null) ++ config.nonInternalValues.asScala ++ config.metadataConfigs.asScala
+  }
+
   def handleDescribeConfigsRequest(
     request: RequestChannel.Request,
     authHelper: AuthHelper
@@ -95,7 +99,10 @@ class ConfigHelper(metadataCache: MetadataCache, config: KafkaConfig, configRepo
             resource.configurationKeys.asScala.contains(configName)
           }.toBuffer
 
+        // luke
         val configEntries = filteredConfigPairs.map { case (name, value) => createConfigEntry(name, value) }
+
+
         new DescribeConfigsResponseData.DescribeConfigsResult().setErrorCode(Errors.NONE.code)
           .setConfigs(configEntries.asJava)
       }
@@ -119,7 +126,7 @@ class ConfigHelper(metadataCache: MetadataCache, config: KafkaConfig, configRepo
               createResponseConfig(config.dynamicConfig.currentDynamicDefaultConfigs,
                 createBrokerConfigEntry(perBrokerConfig = false, includeSynonyms, includeDocumentation))
             else if (resourceNameToBrokerId(resource.resourceName) == config.brokerId)
-              createResponseConfig(allConfigs(config),
+              createResponseConfig(allConfigsWithMetadata(config),
                 createBrokerConfigEntry(perBrokerConfig = true, includeSynonyms, includeDocumentation))
             else
               throw new InvalidRequestException(s"Unexpected broker id, expected ${config.brokerId} or empty string, but received ${resource.resourceName}")

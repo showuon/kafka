@@ -202,6 +202,7 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
 
   override def originals: util.Map[String, AnyRef] =
     if (this eq currentConfig) super.originals else currentConfig.originals
+
   override def values: util.Map[String, _] =
     if (this eq currentConfig) super.values else currentConfig.values
   override def nonInternalValues: util.Map[String, _] =
@@ -623,6 +624,10 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
     else
       Set.empty[String]
   }
+
+
+
+
 
   def interBrokerListenerName = getInterBrokerListenerNameAndSecurityProtocol._1
   def interBrokerSecurityProtocol = getInterBrokerListenerNameAndSecurityProtocol._2

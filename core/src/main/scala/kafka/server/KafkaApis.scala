@@ -2831,6 +2831,8 @@ class KafkaApis(val requestChannel: RequestChannel,
   def handleAlterConfigsRequest(request: RequestChannel.Request): Unit = {
     val original = request.body[AlterConfigsRequest]
     val preprocessingResponses = configManager.preprocess(original.data())
+    println("!!! preprocessingResponses:" + preprocessingResponses)
+
     val remaining = ConfigAdminManager.copyWithoutPreprocessed(original.data(), preprocessingResponses)
     def sendResponse(secondPart: Option[ApiMessage]): Unit = {
       secondPart match {
@@ -2843,7 +2845,9 @@ class KafkaApis(val requestChannel: RequestChannel,
         case _ => handleInvalidVersionsDuringForwarding(request)
       }
     }
+
     if (remaining.resources().isEmpty) {
+      println("!!! remaining:" + remaining)
       sendResponse(Some(new AlterConfigsResponseData()))
     } else if ((!request.isForwarded) && metadataSupport.canForward()) {
       metadataSupport.forwardingManager.get.forwardRequest(request,

@@ -211,7 +211,8 @@ public class ConfigEntry {
         DOUBLE,
         LIST,
         CLASS,
-        PASSWORD
+        PASSWORD,
+        METADATA
     }
 
     /**

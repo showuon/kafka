@@ -24,6 +24,7 @@ import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.config.types.Password;
 import org.apache.kafka.common.metadata.ConfigRecord;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
+import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.server.config.ConfigSynonym;
 
 import java.util.Collections;
@@ -31,6 +32,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static java.util.Collections.emptyList;
 import static java.util.Collections.emptyMap;
@@ -74,6 +77,8 @@ public class KafkaConfigSchema {
                 return ConfigEntry.ConfigType.CLASS;
             case PASSWORD:
                 return ConfigEntry.ConfigType.PASSWORD;
+            case METADATA:
+                return ConfigEntry.ConfigType.METADATA;
             default:
                 return ConfigEntry.ConfigType.UNKNOWN;
         }
@@ -111,6 +116,49 @@ public class KafkaConfigSchema {
                              Map<String, List<ConfigSynonym>> logConfigSynonyms) {
         this.configDefs = configDefs;
         this.logConfigSynonyms = logConfigSynonyms;
+    }
+
+    public ConfigDef.Type getType(String name) {
+        ConfigDef configDef = configDefs.get(ConfigResource.Type.BROKER);
+
+        Pattern listenerConfigRegex = Pattern.compile("listener\\.name\\.[^.]*\\.(.*)");
+
+        Matcher matcher = listenerConfigRegex.matcher(name);
+        boolean matchFound = matcher.find();
+        //if(matchFound != null) {
+        if (matchFound) {
+            System.out.println(matcher.group(1));
+            if (configDef.configKeys().get(matcher.group(1)) != null) {
+                return configDef.configKeys().get(matcher.group(1)).type;
+            }
+        }
+//        Map<String, Object> originalsCopy = Utils.castToStringObjectMap(originals);
+//        Map<String, ConfigDef.ConfigKey> metadataConfigs = new HashMap<>();
+//        for (Map.Entry<String, ConfigDef.ConfigKey> entry: definition.configKeys().entrySet()) {
+//            if (entry.getValue().type.equals(ConfigDef.Type.METADATA)) {
+//                metadataConfigs.put(entry.getKey(), entry.getValue());
+//            }
+//        }
+//        Map<String, Object> originalMap = new HashMap<>();
+//        for (Map.Entry<String, Object> entry : originalsCopy.entrySet()) {
+//            Matcher matcher = listenerConfigRegex.matcher(entry.getKey());
+//            boolean matchFound = matcher.find();
+//            //if(matchFound != null) {
+//            if (matchFound) {
+//                //System.out.println(matcher.group(1));
+//                if (!definition.metadataConfigs().contains(matcher.group(1))) {
+//                    originalMap.put(entry.getKey(), entry.getValue());
+//                } else {
+//                    System.out.println("!!! removing:" + entry.getKey());
+//                }
+//
+//            } else {
+//                originalMap.put(entry.getKey(), entry.getValue());
+//            }
+//        }
+
+//        System.out.println("!!! configDef.configKeys().get(name).type:" + configDef.configKeys().get(name).type);
+        return configDef.configKeys().get(name).type;
     }
 
     /**

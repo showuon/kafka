@@ -620,6 +620,7 @@ object ConfigCommand extends Logging {
     val describeOptions = new DescribeConfigsOptions().includeSynonyms(includeSynonyms)
     val configs = adminClient.describeConfigs(Collections.singleton(configResource), describeOptions)
       .all.get(30, TimeUnit.SECONDS)
+//    println("!!! configs:" + configs)
     configs.get(configResource).entries.asScala
       .filter(entry => configSourceFilter match {
         case Some(configSource) => entry.source == configSource

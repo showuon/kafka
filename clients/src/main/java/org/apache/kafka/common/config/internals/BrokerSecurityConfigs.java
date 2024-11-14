@@ -130,6 +130,7 @@ public class BrokerSecurityConfigs {
 
     public static final String SASL_MECHANISM_INTER_BROKER_PROTOCOL_CONFIG = "sasl.mechanism.inter.broker.protocol";
     public static final String SASL_MECHANISM_INTER_BROKER_PROTOCOL_DOC = "SASL mechanism used for inter-broker communication. Default is GSSAPI.";
+
     public static final ConfigDef CONFIG_DEF =  new ConfigDef()
             // General Security Configuration
             .define(BrokerSecurityConfigs.CONNECTIONS_MAX_REAUTH_MS_CONFIG, LONG, BrokerSecurityConfigs.DEFAULT_CONNECTIONS_MAX_REAUTH_MS, MEDIUM, BrokerSecurityConfigs.CONNECTIONS_MAX_REAUTH_MS_DOC)
@@ -149,8 +150,9 @@ public class BrokerSecurityConfigs {
             .define(SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG, STRING, null, MEDIUM, SslConfigs.SSL_KEYSTORE_LOCATION_DOC)
             .define(SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG, PASSWORD, null, MEDIUM, SslConfigs.SSL_KEYSTORE_PASSWORD_DOC)
             .define(SslConfigs.SSL_KEY_PASSWORD_CONFIG, PASSWORD, null, MEDIUM, SslConfigs.SSL_KEY_PASSWORD_DOC)
+            .defineInternal(SslConfigs.SSL_KEY_PASSWORD_TIMESTAMP_CONFIG, ConfigDef.Type.METADATA, System.currentTimeMillis(), ConfigDef.Importance.HIGH)
             .define(SslConfigs.SSL_KEYSTORE_KEY_CONFIG, PASSWORD, null, MEDIUM, SslConfigs.SSL_KEYSTORE_KEY_DOC)
-            .defineInternal(SslConfigs.SSL_KEYSTORE_KEY_TIMESTAMP_CONFIG, ConfigDef.Type.METADATA, -1, ConfigDef.Importance.HIGH)
+            .defineInternal(SslConfigs.SSL_KEYSTORE_KEY_TIMESTAMP_CONFIG, ConfigDef.Type.METADATA, System.currentTimeMillis(), ConfigDef.Importance.HIGH)
             .define(SslConfigs.SSL_KEYSTORE_CERTIFICATE_CHAIN_CONFIG, PASSWORD, null, MEDIUM, SslConfigs.SSL_KEYSTORE_CERTIFICATE_CHAIN_DOC)
             .define(SslConfigs.SSL_TRUSTSTORE_TYPE_CONFIG, STRING, SslConfigs.DEFAULT_SSL_TRUSTSTORE_TYPE, MEDIUM, SslConfigs.SSL_TRUSTSTORE_TYPE_DOC)
             .define(SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG, STRING, null, MEDIUM, SslConfigs.SSL_TRUSTSTORE_LOCATION_DOC)

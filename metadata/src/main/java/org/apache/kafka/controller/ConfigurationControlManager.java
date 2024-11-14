@@ -50,6 +50,8 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 import static org.apache.kafka.clients.admin.AlterConfigOp.OpType.APPEND;
+import static org.apache.kafka.common.config.ConfigDef.Type.METADATA;
+import static org.apache.kafka.common.config.ConfigDef.Type.PASSWORD;
 import static org.apache.kafka.common.config.TopicConfig.UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG;
 import static org.apache.kafka.common.protocol.Errors.INVALID_CONFIG;
 import static org.apache.kafka.controller.QuorumController.MAX_RECORDS_PER_USER_OP;
@@ -355,8 +357,9 @@ public class ConfigurationControlManager {
         }
         for (Entry<String, String> entry : newConfigs.entrySet()) {
             String key = entry.getKey();
-            String newValue = entry.getValue();
+            String newValue = null;
             String currentValue = currentConfigs.get(key);
+            System.out.println("!!! newV:" + newValue + ";;" + currentValue);
             if (!Objects.equals(currentValue, newValue) || configResource.type().equals(Type.BROKER)) {
                 // KAFKA-14136 We need to generate records even if the value is unchanged to trigger reloads on the brokers
                 recordsExplicitlyAltered.add(new ApiMessageAndVersion(new ConfigRecord().
@@ -364,6 +367,15 @@ public class ConfigurationControlManager {
                     setResourceName(configResource.name()).
                     setName(key).
                     setValue(newValue), (short) 0));
+
+                System.out.println("!!! key:" + key + ";;" + configSchema.getType(key) + ";;" + KafkaConfigSchema.translateConfigType(PASSWORD));
+                if (configSchema.getType(key).equals(PASSWORD)) {
+                    recordsExplicitlyAltered.add(new ApiMessageAndVersion(new ConfigRecord().
+                            setResourceType(configResource.type().id()).
+                            setResourceName(configResource.name()).
+                            setName(key + ".timestamp").
+                            setValue(String.valueOf(System.currentTimeMillis())), (short) 0));
+                }
             }
         }
         List<ApiMessageAndVersion> recordsImplicitlyDeleted = new ArrayList<>();
@@ -434,7 +446,7 @@ public class ConfigurationControlManager {
         }
         if (configSchema.isSensitive(record)) {
             log.info("Replayed ConfigRecord for {} which set configuration {} to {}",
-                    configResource, record.name(), Password.HIDDEN);
+                    configResource, record.name(), record.value());
         } else {
             log.info("Replayed ConfigRecord for {} which set configuration {} to {}",
                     configResource, record.name(), record.value());

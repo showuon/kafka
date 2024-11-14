@@ -36,6 +36,8 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -109,7 +111,37 @@ public class AbstractConfig {
      */
     @SuppressWarnings({"this-escape"})
     public AbstractConfig(ConfigDef definition, Map<?, ?> originals, Map<String, ?> configProviderProps, boolean doLog) {
+        Pattern listenerConfigRegex = Pattern.compile("listener\\.name\\.[^.]*\\.(.*)");
+
+
+//        Map<String, Object> originalsCopy = Utils.castToStringObjectMap(originals);
         Map<String, Object> originalMap = Utils.castToStringObjectMap(originals);
+//        Map<String, ConfigDef.ConfigKey> metadataConfigs = new HashMap<>();
+//        for (Map.Entry<String, ConfigDef.ConfigKey> entry: definition.configKeys().entrySet()) {
+//            if (entry.getValue().type.equals(ConfigDef.Type.METADATA)) {
+//                metadataConfigs.put(entry.getKey(), entry.getValue());
+//            }
+//        }
+//        Map<String, Object> originalMap = new HashMap<>();
+//        for (Map.Entry<String, Object> entry : originalsCopy.entrySet()) {
+//            Matcher matcher = listenerConfigRegex.matcher(entry.getKey());
+//            boolean matchFound = matcher.find();
+//            //if(matchFound != null) {
+//            if (matchFound) {
+//                //System.out.println(matcher.group(1));
+//                if (!definition.metadataConfigs().contains(matcher.group(1))) {
+//                    originalMap.put(entry.getKey(), entry.getValue());
+//                } else {
+//                    System.out.println("!!! removing:" + entry.getKey());
+//                }
+//
+//            } else {
+//                originalMap.put(entry.getKey(), entry.getValue());
+//            }
+//        }
+
+//        System.out.println("!!! originalsCopy:" + originalsCopy.size() + ";;" + originalMap.size());
+
 
         this.originals = resolveConfigVariables(configProviderProps, originalMap);
         this.values = definition.parse(this.originals);
@@ -355,7 +387,23 @@ public class AbstractConfig {
         return nonInternalConfigs;
     }
 
+    public Map<String, ?> metadataConfigs() {
+        Map<String, Object> metadataConfigs = new RecordingMap<>();
+        values.forEach((key, value) -> {
+            ConfigDef.ConfigKey configKey = definition.configKeys().get(key);
+            if (configKey != null && configKey.type.equals(ConfigDef.Type.METADATA)) {
+                metadataConfigs.put(key, value);
+            }
+        });
+        return metadataConfigs;
+    }
+
     private void logAll() {
+        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+        for (int i = 1; i < elements.length; i++) {
+            final StackTraceElement s = elements[i];
+            System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+        }
         StringBuilder b = new StringBuilder();
         b.append(getClass().getSimpleName());
         b.append(" values: ");

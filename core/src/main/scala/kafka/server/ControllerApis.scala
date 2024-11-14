@@ -50,6 +50,7 @@ import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.ResourceType.{CLUSTER, GROUP, TOPIC, USER}
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.common.Uuid
+import org.apache.kafka.common.config.ConfigDef.Type.METADATA
 import org.apache.kafka.controller.ControllerRequestContext.requestTimeoutMsToDeadlineNs
 import org.apache.kafka.controller.{Controller, ControllerRequestContext}
 import org.apache.kafka.image.publisher.ControllerRegistrationsPublisher
@@ -498,6 +499,7 @@ class ControllerApis(
     val duplicateResources = new util.HashSet[ConfigResource]
     val configChanges = new util.HashMap[ConfigResource, util.Map[String, String]]()
     alterConfigsRequest.data.resources.forEach { resource =>
+      println("!!! resource:" + resource + ";;" + KafkaConfig.configType(resource.resourceName()))
       val configResource = new ConfigResource(
         ConfigResource.Type.forId(resource.resourceType), resource.resourceName())
       if (configResource.`type`().equals(ConfigResource.Type.UNKNOWN)) {
@@ -517,8 +519,22 @@ class ControllerApis(
             setErrorMessage("Duplicate resource.").
             setResourceName(resource.resourceName()).
             setResourceType(resource.resourceType()))
+        } else {
+          val metadataConfigs = configs.asScala.filter(conf => KafkaConfig.configType(conf._1).exists(t => t.equals(METADATA)))
+          println("!!! metadataConfigs:" + metadataConfigs)
+          configChanges.remove(configResource)
+          if (metadataConfigs.nonEmpty) {
+            // luke
+            response.responses().add(new OldAlterConfigsResourceResponse().
+              setErrorCode(INVALID_REQUEST.code()).
+              setErrorMessage("Cannot update metadata type config:" + metadataConfigs).
+              setResourceName(resource.resourceName()).
+              setResourceType(resource.resourceType()))
+
+          }
         }
       }
+
     }
     val iterator = configChanges.keySet().iterator()
     while (iterator.hasNext) {

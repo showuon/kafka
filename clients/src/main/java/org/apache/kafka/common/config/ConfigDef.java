@@ -88,6 +88,7 @@ public class ConfigDef {
     public static final Object NO_DEFAULT_VALUE = new Object();
 
     private final Map<String, ConfigKey> configKeys;
+    private final Set<String> metadataConfigs;
     private final List<String> groups;
     private Set<String> configsWithNoParent;
 
@@ -95,6 +96,7 @@ public class ConfigDef {
         configKeys = new LinkedHashMap<>();
         groups = new LinkedList<>();
         configsWithNoParent = null;
+        metadataConfigs = new HashSet<>();
     }
 
     public ConfigDef(ConfigDef base) {
@@ -103,8 +105,13 @@ public class ConfigDef {
         // It is not safe to copy this from the parent because we may subsequently add to the set of configs and
         // invalidate this
         configsWithNoParent = null;
+        metadataConfigs = new HashSet<>(base.metadataConfigs);
     }
 
+    @Override
+    public String toString() {
+        return "!!! config keys:" + configKeys;
+    }
     /**
      * Returns unmodifiable set of properties names defined in this {@linkplain ConfigDef}
      *
@@ -131,6 +138,9 @@ public class ConfigDef {
             groups.add(key.group);
         }
         configKeys.put(key.name, key);
+        if (key.type.equals(Type.METADATA)) {
+            metadataConfigs.add(key.name);
+        }
         return this;
     }
 
@@ -475,6 +485,10 @@ public class ConfigDef {
         return configKeys;
     }
 
+    public Set<String> metadataConfigs() {
+        return metadataConfigs;
+    }
+
     /**
      * Get the groups for the configuration
      * @return a list of group names
@@ -797,6 +811,7 @@ public class ConfigDef {
             case DOUBLE:
             case STRING:
             case PASSWORD:
+            case METADATA:
                 return parsedValue.toString();
             case LIST:
                 List<?> valueList = (List<?>) parsedValue;
