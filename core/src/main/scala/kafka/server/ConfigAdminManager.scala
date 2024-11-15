@@ -274,10 +274,10 @@ class ConfigAdminManager(nodeId: Int,
       config => {
         props.setProperty(config.name(), config.value())
 
-        if (KafkaConfig.configType(config.name()).exists(t => t.equals(ConfigDef.Type.PASSWORD))) {
-          println("!!! adding for:" + config.name() + ".timestamp")
-          props.setProperty(config.name() + ".timestamp", System.currentTimeMillis().toString)
-        }
+//        if (KafkaConfig.configType(config.name()).exists(t => t.equals(ConfigDef.Type.PASSWORD))) {
+//          println("!!! adding for:" + config.name() + ".timestamp")
+//          props.setProperty(config.name() + ".timestamp", System.currentTimeMillis().toString)
+//        }
 
       }
     }

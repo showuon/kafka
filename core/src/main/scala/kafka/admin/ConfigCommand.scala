@@ -560,7 +560,7 @@ object ConfigCommand extends Logging {
       }
       getResourceConfig(adminClient, entityType, entity, includeSynonyms = true, describeAll).foreach { entry =>
         val synonyms = entry.synonyms.asScala.map(synonym => s"${synonym.source}:${synonym.name}=${synonym.value}").mkString(", ")
-        System.out.println(s"  ${entry.name}=${entry.value} sensitive=${entry.isSensitive} synonyms={$synonyms}")
+        System.out.println(s"  ${entry.name}=${entry.value} sensitive=${entry.isSensitive} synonyms={$synonyms} time={${entry.lastUpdatedTimestamp()}")
       }
     }
   }
@@ -620,7 +620,7 @@ object ConfigCommand extends Logging {
     val describeOptions = new DescribeConfigsOptions().includeSynonyms(includeSynonyms)
     val configs = adminClient.describeConfigs(Collections.singleton(configResource), describeOptions)
       .all.get(30, TimeUnit.SECONDS)
-//    println("!!! configs:" + configs)
+    println("!!! configs:" + configs)
     configs.get(configResource).entries.asScala
       .filter(entry => configSourceFilter match {
         case Some(configSource) => entry.source == configSource

@@ -308,6 +308,7 @@ public class KafkaConfigSchema {
             false, // "readonly" is always false, for now.
             emptyList(), // we don't populate synonyms, for now.
             translateConfigType(configKey.type()),
-            configKey.documentation);
+            configKey.documentation,
+                -1);
     }
 }

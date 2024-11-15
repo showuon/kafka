@@ -522,9 +522,9 @@ class ControllerApis(
         } else {
           val metadataConfigs = configs.asScala.filter(conf => KafkaConfig.configType(conf._1).exists(t => t.equals(METADATA)))
           println("!!! metadataConfigs:" + metadataConfigs)
-          configChanges.remove(configResource)
           if (metadataConfigs.nonEmpty) {
             // luke
+            configChanges.remove(configResource)
             response.responses().add(new OldAlterConfigsResourceResponse().
               setErrorCode(INVALID_REQUEST.code()).
               setErrorMessage("Cannot update metadata type config:" + metadataConfigs).

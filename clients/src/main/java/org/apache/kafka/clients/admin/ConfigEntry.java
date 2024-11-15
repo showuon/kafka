@@ -39,6 +39,7 @@ public class ConfigEntry {
     private final List<ConfigSynonym> synonyms;
     private final ConfigType type;
     private final String documentation;
+    private final long lastUpdatedTimestamp;
 
     /**
      * Create a configuration entry with the provided values.
@@ -48,7 +49,7 @@ public class ConfigEntry {
      */
     public ConfigEntry(String name, String value) {
         this(name, value, ConfigSource.UNKNOWN, false, false,
-            Collections.emptyList(), ConfigType.UNKNOWN, null);
+            Collections.emptyList(), ConfigType.UNKNOWN, null, -1);
     }
 
     /**
@@ -68,7 +69,8 @@ public class ConfigEntry {
             boolean isReadOnly,
             List<ConfigSynonym> synonyms,
             ConfigType type,
-            String documentation) {
+            String documentation,
+                       long lastUpdatedTimestamp) {
         Objects.requireNonNull(name, "name should not be null");
         this.name = name;
         this.value = value;
@@ -78,6 +80,7 @@ public class ConfigEntry {
         this.synonyms = synonyms;
         this.type = type;
         this.documentation = documentation;
+        this.lastUpdatedTimestamp = lastUpdatedTimestamp;
     }
 
     /**
@@ -122,6 +125,9 @@ public class ConfigEntry {
     public boolean isReadOnly() {
         return isReadOnly;
     }
+    public long lastUpdatedTimestamp() {
+        return lastUpdatedTimestamp;
+    }
 
     /**
      * Returns all config values that may be used as the value of this config along with their source,
@@ -159,6 +165,7 @@ public class ConfigEntry {
                 Objects.equals(this.value, that.value) &&
                 this.isSensitive == that.isSensitive &&
                 this.isReadOnly == that.isReadOnly &&
+                this.lastUpdatedTimestamp == that.lastUpdatedTimestamp &&
                 Objects.equals(this.source, that.source) &&
                 Objects.equals(this.synonyms, that.synonyms) &&
                 Objects.equals(this.type, that.type) &&
@@ -177,6 +184,7 @@ public class ConfigEntry {
         result = prime * result + Objects.hashCode(synonyms);
         result = prime * result + Objects.hashCode(type);
         result = prime * result + Objects.hashCode(documentation);
+        result = prime * result + Objects.hashCode(lastUpdatedTimestamp);
         return result;
     }
 
@@ -195,6 +203,7 @@ public class ConfigEntry {
                 ", synonyms=" + synonyms +
                 ", type=" + type +
                 ", documentation=" + documentation +
+                ", lastUpdatedTimestamp=" + lastUpdatedTimestamp +
                 ")";
     }
 

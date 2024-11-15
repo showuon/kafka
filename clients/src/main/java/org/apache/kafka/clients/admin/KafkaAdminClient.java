@@ -1907,7 +1907,8 @@ public class KafkaAdminClient extends AdminClient {
                     config.readOnly(),
                     Collections.emptyList(),
                     null,
-                    null);
+                    null,
+                        -1);
             }
 
             @Override
@@ -2771,6 +2772,7 @@ public class KafkaAdminClient extends AdminClient {
                 @Override
                 void handleResponse(AbstractResponse abstractResponse) {
                     DescribeConfigsResponse response = (DescribeConfigsResponse) abstractResponse;
+                    System.out.println("!!! response:" + response);
                     for (Map.Entry<ConfigResource, DescribeConfigsResponseData.DescribeConfigsResult> entry : response.resultMap().entrySet()) {
                         ConfigResource configResource = entry.getKey();
                         DescribeConfigsResponseData.DescribeConfigsResult describeConfigsResult = entry.getValue();
@@ -2830,7 +2832,8 @@ public class KafkaAdminClient extends AdminClient {
                 (config.synonyms().stream().map(synonym -> new ConfigEntry.ConfigSynonym(synonym.name(), synonym.value(),
                         DescribeConfigsResponse.ConfigSource.forId(synonym.source()).source()))).collect(Collectors.toList()),
                 DescribeConfigsResponse.ConfigType.forId(config.configType()).type(),
-                config.documentation()
+                config.documentation(),
+                config.lastUpdateTimestamp()
         )).collect(Collectors.toList()));
     }
 

@@ -350,6 +350,7 @@ public class ConfigurationControlManager {
                                            boolean newlyCreatedResource,
                                            List<ApiMessageAndVersion> outputRecords,
                                            Map<ConfigResource, ApiError> outputResults) {
+        System.out.println("!!! legacyAlterConfigResource " + configResource);
         List<ApiMessageAndVersion> recordsExplicitlyAltered = new ArrayList<>();
         Map<String, String> currentConfigs = configData.get(configResource);
         if (currentConfigs == null) {

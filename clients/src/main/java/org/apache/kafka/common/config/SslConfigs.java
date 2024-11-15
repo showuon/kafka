@@ -128,7 +128,6 @@ public class SslConfigs {
     public static final String SSL_KEY_PASSWORD_TIMESTAMP_CONFIG = SSL_KEY_PASSWORD_CONFIG + TIMESTAMP_CONFIG;
 
     public static void addClientSslSupport(ConfigDef config) {
-        long now = System.currentTimeMillis();
         config.define(SslConfigs.SSL_PROTOCOL_CONFIG, ConfigDef.Type.STRING, SslConfigs.DEFAULT_SSL_PROTOCOL, ConfigDef.Importance.MEDIUM, SslConfigs.SSL_PROTOCOL_DOC)
                 .define(SslConfigs.SSL_PROVIDER_CONFIG, ConfigDef.Type.STRING, null, ConfigDef.Importance.MEDIUM, SslConfigs.SSL_PROVIDER_DOC)
                 .define(SslConfigs.SSL_CIPHER_SUITES_CONFIG, ConfigDef.Type.LIST, null, ConfigDef.Importance.LOW, SslConfigs.SSL_CIPHER_SUITES_DOC)
@@ -136,11 +135,11 @@ public class SslConfigs {
                 .define(SslConfigs.SSL_KEYSTORE_TYPE_CONFIG, ConfigDef.Type.STRING, SslConfigs.DEFAULT_SSL_KEYSTORE_TYPE, ConfigDef.Importance.MEDIUM, SslConfigs.SSL_KEYSTORE_TYPE_DOC)
                 .define(SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG, ConfigDef.Type.STRING, null,  ConfigDef.Importance.HIGH, SslConfigs.SSL_KEYSTORE_LOCATION_DOC)
                 .define(SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG, ConfigDef.Type.PASSWORD, null, ConfigDef.Importance.HIGH, SslConfigs.SSL_KEYSTORE_PASSWORD_DOC)
-                .defineInternal(SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG + TIMESTAMP_CONFIG, ConfigDef.Type.LONG, now, ConfigDef.Importance.HIGH)
+                .defineInternal(SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG + TIMESTAMP_CONFIG, ConfigDef.Type.LONG, -1, ConfigDef.Importance.HIGH)
                 .define(SslConfigs.SSL_KEY_PASSWORD_CONFIG, ConfigDef.Type.PASSWORD, null, ConfigDef.Importance.HIGH, SslConfigs.SSL_KEY_PASSWORD_DOC)
-                .defineInternal(SSL_KEY_PASSWORD_TIMESTAMP_CONFIG, ConfigDef.Type.METADATA, now, ConfigDef.Importance.HIGH)
+                .defineInternal(SSL_KEY_PASSWORD_TIMESTAMP_CONFIG, ConfigDef.Type.METADATA, -1, ConfigDef.Importance.HIGH)
                 .define(SslConfigs.SSL_KEYSTORE_KEY_CONFIG, ConfigDef.Type.PASSWORD, null,  ConfigDef.Importance.HIGH, SslConfigs.SSL_KEYSTORE_KEY_DOC)
-                .defineInternal(SSL_KEYSTORE_KEY_TIMESTAMP_CONFIG, ConfigDef.Type.METADATA, now, ConfigDef.Importance.HIGH)
+                .defineInternal(SSL_KEYSTORE_KEY_TIMESTAMP_CONFIG, ConfigDef.Type.METADATA, -1, ConfigDef.Importance.HIGH)
                 .define(SslConfigs.SSL_KEYSTORE_CERTIFICATE_CHAIN_CONFIG, ConfigDef.Type.PASSWORD, null,  ConfigDef.Importance.HIGH, SslConfigs.SSL_KEYSTORE_CERTIFICATE_CHAIN_DOC)
                 .define(SslConfigs.SSL_TRUSTSTORE_CERTIFICATES_CONFIG, ConfigDef.Type.PASSWORD, null,  ConfigDef.Importance.HIGH, SslConfigs.SSL_TRUSTSTORE_CERTIFICATES_DOC)
                 .define(SslConfigs.SSL_TRUSTSTORE_TYPE_CONFIG, ConfigDef.Type.STRING, SslConfigs.DEFAULT_SSL_TRUSTSTORE_TYPE, ConfigDef.Importance.MEDIUM, SslConfigs.SSL_TRUSTSTORE_TYPE_DOC)

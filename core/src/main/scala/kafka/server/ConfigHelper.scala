@@ -91,7 +91,7 @@ class ConfigHelper(metadataCache: MetadataCache, config: KafkaConfig, configRepo
     resourceToConfigNames.map { resource =>
 
       def createResponseConfig(configs: Map[String, Any],
-                               createConfigEntry: (String, Any) => DescribeConfigsResponseData.DescribeConfigsResourceResult): DescribeConfigsResponseData.DescribeConfigsResult = {
+                               createConfigEntry: (String, Any, Map[String, String]) => DescribeConfigsResponseData.DescribeConfigsResourceResult): DescribeConfigsResponseData.DescribeConfigsResult = {
         val filteredConfigPairs = if (resource.configurationKeys == null || resource.configurationKeys.isEmpty)
           configs.toBuffer
         else
@@ -100,8 +100,30 @@ class ConfigHelper(metadataCache: MetadataCache, config: KafkaConfig, configRepo
           }.toBuffer
 
         // luke
-        val configEntries = filteredConfigPairs.map { case (name, value) => createConfigEntry(name, value) }
+        val metadataConfigPairs = filteredConfigPairs.filter{case (configName, _) => KafkaConfig.configType(configName).exists(p => p.equals(ConfigDef.Type.METADATA))}
+        val noMetadataConfigPairs = filteredConfigPairs.filterNot{case (configName, _) => KafkaConfig.configType(configName).exists(p => p.equals(ConfigDef.Type.METADATA))}
 
+
+        val updatedMetadataPairs = metadataConfigPairs.map {case (name, value) =>
+          val allNames = brokerSynonyms(name)
+          val valueAsString = value match {
+            case v: String => v
+            case _ => ConfigDef.convertToString(value, ConfigDef.Type.METADATA)
+          }
+          val dynamicSyn = configSynonyms(name, allNames, false)
+            .filter(_.source == ConfigSource.DYNAMIC_BROKER_CONFIG.id)
+          if (dynamicSyn.isEmpty) {
+            name -> -1
+          }
+          name -> valueAsString
+        }
+
+        val configEntries = noMetadataConfigPairs.map { case (name, value) =>
+
+          createConfigEntry(name, value, updatedMetadataPairs.toMap)
+        }
+
+        println("!!! config entries:" + configEntries)
 
         new DescribeConfigsResponseData.DescribeConfigsResult().setErrorCode(Errors.NONE.code)
           .setConfigs(configEntries.asJava)
@@ -138,7 +160,7 @@ class ConfigHelper(metadataCache: MetadataCache, config: KafkaConfig, configRepo
               throw new InvalidRequestException(s"Unexpected broker id, expected ${config.brokerId} but received ${resource.resourceName}")
             else
               createResponseConfig(Log4jController.loggers,
-                (name, value) => new DescribeConfigsResponseData.DescribeConfigsResourceResult().setName(name)
+                (name, value, _) => new DescribeConfigsResponseData.DescribeConfigsResourceResult().setName(name)
                   .setValue(value.toString).setConfigSource(ConfigSource.DYNAMIC_BROKER_LOGGER_CONFIG.id)
                   .setIsSensitive(false).setReadOnly(false).setSynonyms(List.empty.asJava))
 
@@ -193,7 +215,7 @@ class ConfigHelper(metadataCache: MetadataCache, config: KafkaConfig, configRepo
   }
 
   def createGroupConfigEntry(groupConfig: GroupConfig, groupProps: Properties, includeSynonyms: Boolean, includeDocumentation: Boolean)
-                            (name: String, value: Any): DescribeConfigsResponseData.DescribeConfigsResourceResult = {
+                            (name: String, value: Any, unused: Map[String, String]): DescribeConfigsResponseData.DescribeConfigsResourceResult = {
     val allNames = brokerSynonyms(name)
     val configEntryType = GroupConfig.configType(name).toScala
     val isSensitive = KafkaConfig.maybeSensitive(configEntryType)
@@ -218,7 +240,7 @@ class ConfigHelper(metadataCache: MetadataCache, config: KafkaConfig, configRepo
   }
 
   def createTopicConfigEntry(logConfig: LogConfig, topicProps: Properties, includeSynonyms: Boolean, includeDocumentation: Boolean)
-                            (name: String, value: Any): DescribeConfigsResponseData.DescribeConfigsResourceResult = {
+                            (name: String, value: Any, unused: Map[String, String]): DescribeConfigsResponseData.DescribeConfigsResourceResult = {
     val configEntryType = LogConfig.configType(name).toScala
     val isSensitive = KafkaConfig.maybeSensitive(configEntryType)
     val valueAsString = if (isSensitive) null else ConfigDef.convertToString(value, configEntryType.orNull)
@@ -243,7 +265,7 @@ class ConfigHelper(metadataCache: MetadataCache, config: KafkaConfig, configRepo
   }
 
   private def createBrokerConfigEntry(perBrokerConfig: Boolean, includeSynonyms: Boolean, includeDocumentation: Boolean)
-                                     (name: String, value: Any): DescribeConfigsResponseData.DescribeConfigsResourceResult = {
+                                     (name: String, value: Any, metadataConfigs: Map[String, String]): DescribeConfigsResponseData.DescribeConfigsResourceResult = {
     val allNames = brokerSynonyms(name)
     val configEntryType = KafkaConfig.configType(name)
     val isSensitive = KafkaConfig.maybeSensitive(configEntryType)
@@ -261,9 +283,14 @@ class ConfigHelper(metadataCache: MetadataCache, config: KafkaConfig, configRepo
 
     val dataType = configResponseType(configEntryType)
     val configDocumentation = if (includeDocumentation) brokerDocumentation(name) else null
-    new DescribeConfigsResponseData.DescribeConfigsResourceResult().setName(name).setValue(valueAsString).setConfigSource(source)
+    val result = new DescribeConfigsResponseData.DescribeConfigsResourceResult().setName(name).setValue(valueAsString).setConfigSource(source)
       .setIsSensitive(isSensitive).setReadOnly(readOnly).setSynonyms(synonyms.asJava)
       .setDocumentation(configDocumentation).setConfigType(dataType.id)
+    if (configEntryType.exists(t => t.equals(ConfigDef.Type.PASSWORD))) {
+      println("!!! setting last update time:" + metadataConfigs.getOrElse(name + ".timestamp", -1) + ";;" + name)
+      result.setLastUpdateTimestamp(metadataConfigs.getOrElse(name + ".timestamp", "-1").toLong)
+    }
+    result
   }
 
   private def configSynonyms(name: String, synonyms: List[String], isSensitive: Boolean): List[DescribeConfigsResponseData.DescribeConfigsSynonym] = {
@@ -283,6 +310,7 @@ class ConfigHelper(metadataCache: MetadataCache, config: KafkaConfig, configRepo
     synonyms.foreach(maybeAddSynonym(dynamicConfig.staticDefaultConfigs, ConfigSource.DEFAULT_CONFIG))
     allSynonyms.dropWhile(s => s.name != name).toList // e.g. drop listener overrides when describing base config
   }
+
 
   private def brokerSynonyms(name: String): List[String] = {
     DynamicBrokerConfig.brokerConfigSynonyms(name, matchListenerOverride = true)
