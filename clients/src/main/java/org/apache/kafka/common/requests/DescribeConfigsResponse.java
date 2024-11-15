@@ -160,7 +160,8 @@ public class DescribeConfigsResponse extends AbstractResponse {
         DOUBLE((byte) 6, org.apache.kafka.clients.admin.ConfigEntry.ConfigType.DOUBLE),
         LIST((byte) 7, org.apache.kafka.clients.admin.ConfigEntry.ConfigType.LIST),
         CLASS((byte) 8, org.apache.kafka.clients.admin.ConfigEntry.ConfigType.CLASS),
-        PASSWORD((byte) 9, org.apache.kafka.clients.admin.ConfigEntry.ConfigType.PASSWORD);
+        PASSWORD((byte) 9, org.apache.kafka.clients.admin.ConfigEntry.ConfigType.PASSWORD),
+        METADATA((byte) 10, org.apache.kafka.clients.admin.ConfigEntry.ConfigType.METADATA);
 
         final byte id;
         final org.apache.kafka.clients.admin.ConfigEntry.ConfigType type;

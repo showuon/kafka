@@ -333,6 +333,7 @@ class ConfigHelper(metadataCache: MetadataCache, config: KafkaConfig, configRepo
       case ConfigDef.Type.LIST => DescribeConfigsResponse.ConfigType.LIST
       case ConfigDef.Type.CLASS => DescribeConfigsResponse.ConfigType.CLASS
       case ConfigDef.Type.PASSWORD => DescribeConfigsResponse.ConfigType.PASSWORD
+      case ConfigDef.Type.METADATA => DescribeConfigsResponse.ConfigType.METADATA
       case _ => DescribeConfigsResponse.ConfigType.UNKNOWN
     }
   }

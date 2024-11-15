@@ -20,7 +20,8 @@
   // Version 1 adds ConfigSource and the synonyms.
   // Starting in version 2, on quota violation, brokers send out responses before throttling.
   // Version 4 enables flexible versions.
-  "validVersions": "0-4",
+  // Version 5 adds "LastUpdateTimestamp" field
+  "validVersions": "0-5",
   "flexibleVersions": "5+",
   "fields": [
     { "name": "ThrottleTimeMs", "type": "int32", "versions": "0+",
@@ -66,7 +67,7 @@
         { "name": "Documentation", "type": "string", "versions": "3+", "nullableVersions": "0+", "ignorable": true,
           "about": "The configuration documentation." },
         { "name": "LastUpdateTimestamp", "type": "int64", "versions": "5+", "ignorable": true,
-          "about": "The configuration documentation." }
+          "about": "The last updated timestamp for this config." }
       ]}
     ]}
   ]
