@@ -334,15 +334,15 @@ class ZkReplicaStateMachine(config: KafkaConfig,
     partitions: Seq[TopicPartition]
   ): (Map[TopicPartition, Either[Exception, LeaderIsrAndControllerEpoch]], Seq[TopicPartition]) = {
     println("!!! remove replica2")
-    val executor = Executors.newSingleThreadExecutor
-    val sub: Runnable = () => {
-      println("!!! getting sema")
-      zkClient.getSema()
-      println("!!! getting sema2")
-      Thread.sleep(1000000)
-      println("!!! getting sema end")
-    }
-    executor.submit(sub)
+//    val executor = Executors.newSingleThreadExecutor
+//    val sub: Runnable = () => {
+//      println("!!! getting sema")
+//      zkClient.getSema()
+//      println("!!! getting sema2")
+//      Thread.sleep(1000000)
+//      println("!!! getting sema end")
+//    }
+//    executor.submit(sub)
     val (leaderAndIsrs, partitionsWithNoLeaderAndIsrInZk) = getTopicPartitionStatesFromZk(partitions)
     val (leaderAndIsrsWithReplica, leaderAndIsrsWithoutReplica) = leaderAndIsrs.partition { case (_, result) =>
       result.map { leaderAndIsr =>
