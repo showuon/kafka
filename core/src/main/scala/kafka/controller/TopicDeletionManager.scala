@@ -316,6 +316,7 @@ class TopicDeletionManager(config: KafkaConfig,
   }
 
   private def resumeDeletions(): Unit = {
+
     val topicsQueuedForDeletion = Set.empty[String] ++ controllerContext.topicsToBeDeleted
     val topicsEligibleForRetry = mutable.Set.empty[String]
     val topicsEligibleForDeletion = mutable.Set.empty[String]

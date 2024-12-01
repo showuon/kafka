@@ -27,6 +27,8 @@ import kafka.zk.TopicPartitionStateZNode
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.errors.ControllerMovedException
 import org.apache.zookeeper.KeeperException.Code
+
+import java.util.concurrent.Executors
 import scala.collection.{Seq, mutable}
 
 abstract class ReplicaStateMachine(controllerContext: ControllerContext) extends Logging {
@@ -331,6 +333,16 @@ class ZkReplicaStateMachine(config: KafkaConfig,
     replicaId: Int,
     partitions: Seq[TopicPartition]
   ): (Map[TopicPartition, Either[Exception, LeaderIsrAndControllerEpoch]], Seq[TopicPartition]) = {
+    println("!!! remove replica2")
+    val executor = Executors.newSingleThreadExecutor
+    val sub: Runnable = () => {
+      println("!!! getting sema")
+      zkClient.getSema()
+      println("!!! getting sema2")
+      Thread.sleep(1000000)
+      println("!!! getting sema end")
+    }
+    executor.submit(sub)
     val (leaderAndIsrs, partitionsWithNoLeaderAndIsrInZk) = getTopicPartitionStatesFromZk(partitions)
     val (leaderAndIsrsWithReplica, leaderAndIsrsWithoutReplica) = leaderAndIsrs.partition { case (_, result) =>
       result.map { leaderAndIsr =>

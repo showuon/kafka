@@ -120,6 +120,7 @@ public class AdminUtils {
                                                                       int replicationFactor,
                                                                       int fixedStartIndex,
                                                                       int startPartitionId) {
+        System.out.println("!!! assignReplicasToBrokers:" + brokerMetadatas);
         if (nPartitions <= 0)
             throw new InvalidPartitionsException("Number of partitions must be larger than 0.");
         if (replicationFactor <= 0)

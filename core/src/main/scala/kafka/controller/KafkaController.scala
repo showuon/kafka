@@ -290,6 +290,7 @@ class KafkaController(val config: KafkaConfig,
     // before reading source of truth from zookeeper, register the listeners to get broker/topic callbacks
     val childChangeHandlers = Seq(brokerChangeHandler, topicChangeHandler, topicDeletionHandler, logDirEventNotificationHandler,
       isrChangeNotificationHandler)
+
     childChangeHandlers.foreach(zkClient.registerZNodeChildChangeHandler)
 
     val nodeChangeHandlers = Seq(preferredReplicaElectionHandler, partitionReassignmentHandler)
@@ -951,6 +952,7 @@ class KafkaController(val config: KafkaConfig,
   private def initializeControllerContext(): Unit = {
     // update controller cache with delete topic information
     val curBrokerAndEpochs = zkClient.getAllBrokerAndEpochsInCluster
+    println("!!! curBrokerAndEpochs:" + curBrokerAndEpochs)
     val (compatibleBrokerAndEpochs, incompatibleBrokerAndEpochs) = partitionOnFeatureCompatibility(curBrokerAndEpochs)
     if (incompatibleBrokerAndEpochs.nonEmpty) {
       warn("Ignoring registration of new brokers due to incompatibilities with finalized features: " +
@@ -1608,7 +1610,9 @@ class KafkaController(val config: KafkaConfig,
   }
 
   private def processBrokerChange(): Unit = {
+    println("!!! processBrokerChange")
     if (!isActive) return
+//    if (isActive) return
     val curBrokerAndEpochs = zkClient.getAllBrokerAndEpochsInCluster
     val curBrokerIdAndEpochs = curBrokerAndEpochs map { case (broker, epoch) => (broker.id, epoch) }
     val curBrokerIds = curBrokerIdAndEpochs.keySet
@@ -1681,6 +1685,7 @@ class KafkaController(val config: KafkaConfig,
   }
 
   private def processTopicChange(): Unit = {
+    println("!!! process topic change")
     if (!isActive) return
     val topics = zkClient.getAllTopicsInCluster(true)
     val newTopics = topics -- controllerContext.allTopics
@@ -1785,6 +1790,12 @@ class KafkaController(val config: KafkaConfig,
   }
 
   private def processTopicDeletion(): Unit = {
+    println("!!! processTopicDeletion")
+    val elements = Thread.currentThread.getStackTrace
+    for (i <- 1 until elements.length) {
+      val s = elements(i)
+      System.out.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+    }
     if (!isActive) return
     var topicsToBeDeleted = zkClient.getTopicDeletions.toSet
     debug(s"Delete topics listener fired for topics ${topicsToBeDeleted.mkString(",")} to be deleted")
@@ -2594,6 +2605,7 @@ class KafkaController(val config: KafkaConfig,
 
   override def process(event: ControllerEvent): Unit = {
     try {
+      println("!!! process:" + event)
       event match {
         case event: MockEvent =>
           // Used only in test cases
@@ -2690,7 +2702,10 @@ class BrokerModificationsHandler(eventManager: ControllerEventManager, brokerId:
 class TopicChangeHandler(eventManager: ControllerEventManager) extends ZNodeChildChangeHandler {
   override val path: String = TopicsZNode.path
 
-  override def handleChildChange(): Unit = eventManager.put(TopicChange)
+  override def handleChildChange(): Unit = {
+    println("!!! handle topic change")
+    eventManager.put(TopicChange)
+  }
 }
 
 class LogDirEventNotificationHandler(eventManager: ControllerEventManager) extends ZNodeChildChangeHandler {

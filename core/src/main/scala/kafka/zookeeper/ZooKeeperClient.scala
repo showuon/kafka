@@ -154,17 +154,21 @@ class ZooKeeperClient(connectString: String,
       val responseQueue = new ArrayBlockingQueue[Req#Response](requests.size)
 
       requests.foreach { request =>
+        println("!!! inside getting")
         inFlightRequests.acquire()
+        println("!!! inside getting 2")
         try {
           inReadLock(initializationLock) {
             send(request) { response =>
               responseQueue.add(response)
               inFlightRequests.release()
+              println("!!! success request")
               countDownLatch.countDown()
             }
           }
         } catch {
           case e: Throwable =>
+            println("!!! fail request")
             inFlightRequests.release()
             throw e
         }
@@ -172,6 +176,10 @@ class ZooKeeperClient(connectString: String,
       countDownLatch.await()
       responseQueue.asScala.toBuffer
     }
+  }
+
+  def sema(): Unit = {
+    inFlightRequests.acquire()
   }
 
   // Visibility to override for testing
