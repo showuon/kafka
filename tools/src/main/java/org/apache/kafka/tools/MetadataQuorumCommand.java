@@ -153,6 +153,17 @@ public class MetadataQuorumCommand {
                     namespace.getInt("controller_id"),
                     namespace.getString("controller_directory_id"),
                     namespace.getBoolean("dry_run"));
+            } else if (command.equals("add-controller-test")) {
+                String controllerId = namespace.getString("controllerId");
+                String dirId = namespace.getString("dirId");
+                String listener = namespace.getString("listener");
+                String host = namespace.getString("host");
+                String port = namespace.getString("port");
+                RaftVoterEndpoint endpoint = new RaftVoterEndpoint(listener, host, Integer.parseInt(port));
+                admin.addRaftVoter(Integer.parseInt(controllerId), Uuid.fromString(dirId), Collections.singleton(endpoint)).
+                        all().get();
+            } else if (command.equals("remove-controller-test")) {
+                // test
             } else {
                 throw new IllegalStateException(format("Unknown command: %s", command));
             }
@@ -335,10 +346,32 @@ public class MetadataQuorumCommand {
             .addParser("add-controller")
             .help("Add a controller to the KRaft controller cluster");
 
+
         addControllerParser
             .addArgument("--dry-run")
             .help("True if we should print what would be done, but not do it.")
             .action(Arguments.storeTrue());
+
+        Subparser addControllerParserTest = subparsers.addParser("add-controller-test")
+                .help("Add a controller to the KRaft controller cluster");
+
+        addControllerParserTest.addArgument("--controllerId")
+                .help("Property file containing configs to be passed to Admin Client. " +
+                        "For add-controller, the file is used to specify the controller properties as well.");
+        addControllerParserTest.addArgument("--dirId")
+                .help("Property file containing configs to be passed to Admin Client. " +
+                        "For add-controller, the file is used to specify the controller properties as well.");
+
+        addControllerParserTest.addArgument("--listener")
+                .help("Property file containing configs to be passed to Admin Client. " +
+                        "For add-controller, the file is used to specify the controller properties as well.");
+        addControllerParserTest.addArgument("--host")
+                .help("Property file containing configs to be passed to Admin Client. " +
+                        "For add-controller, the file is used to specify the controller properties as well.");
+        addControllerParserTest.addArgument("--port")
+                .help("Property file containing configs to be passed to Admin Client. " +
+                        "For add-controller, the file is used to specify the controller properties as well.");
+
     }
 
     static int getControllerId(Properties props) throws TerseException {
@@ -460,6 +493,10 @@ public class MetadataQuorumCommand {
         Subparser removeControllerParser = subparsers
             .addParser("remove-controller")
             .help("Remove a controller from the KRaft controller cluster");
+
+        subparsers
+                .addParser("remove-controller-test")
+                .help("Remove a controller from the KRaft controller cluster");
 
         removeControllerParser
             .addArgument("--controller-id", "-i")
