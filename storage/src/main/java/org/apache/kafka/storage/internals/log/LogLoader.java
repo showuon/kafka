@@ -142,14 +142,26 @@ public class LogLoader {
                 continue;
             }
             long baseOffset = LogFileUtils.offsetFromFile(swapFile);
-            LogSegment segment = LogSegment.open(swapFile.getParentFile(),
-                    baseOffset,
-                    config,
-                    time,
-                    false,
-                    0,
-                    false,
-                    LogFileUtils.SWAP_FILE_SUFFIX);
+            LogSegment segment = null;
+            if (config.logUseAny) {
+                segment = AnyLogSegment.open(swapFile.getParentFile(),
+                        baseOffset,
+                        config,
+                        time,
+                        false,
+                        0,
+                        false,
+                        LogFileUtils.SWAP_FILE_SUFFIX);
+            } else {
+                segment = LogSegment.open(swapFile.getParentFile(),
+                        baseOffset,
+                        config,
+                        time,
+                        false,
+                        0,
+                        false,
+                        LogFileUtils.SWAP_FILE_SUFFIX);
+            }
             logger.info("Found log file {} from interrupted swap operation, which is recoverable from {} files by renaming.", swapFile.getPath(), LogFileUtils.SWAP_FILE_SUFFIX);
             minSwapFileOffset = Math.min(segment.baseOffset(), minSwapFileOffset);
             maxSwapFileOffset = Math.max(segment.readNextOffset(), maxSwapFileOffset);
@@ -371,7 +383,14 @@ public class LogLoader {
                 // if it's a log file, load the corresponding log segment
                 long baseOffset = LogFileUtils.offsetFromFile(file);
                 boolean timeIndexFileNewlyCreated = !LogFileUtils.timeIndexFile(dir, baseOffset).exists();
-                LogSegment segment = LogSegment.open(dir, baseOffset, config, time, true, 0, false, "");
+
+                LogSegment segment = null;// LogSegment.open(dir, baseOffset, config, time, true, 0, false, "");
+
+                if (config.logUseAny) {
+                    segment = AnyLogSegment.open(dir, baseOffset, config, time, true, 0, false, "");
+                } else {
+                    segment = LogSegment.open(dir, baseOffset, config, time, true, 0, false, "");
+                }
                 try {
                     segment.sanityCheck(timeIndexFileNewlyCreated);
                 } catch (NoSuchFileException nsfe) {
@@ -500,7 +519,14 @@ public class LogLoader {
         Optional<Long> logEndOffsetOptional = deleteSegmentsIfLogStartGreaterThanLogEnd();
         if (segments.isEmpty()) {
             // no existing segments, create a new mutable segment beginning at logStartOffset
-            segments.add(LogSegment.open(dir, logStartOffsetCheckpoint, config, time, config.initFileSize(), config.preallocate));
+            LogSegment segment = null;
+            if (config.logUseAny) {
+                segment = AnyLogSegment.open(dir, logStartOffsetCheckpoint, config, time, config.initFileSize(), config.preallocate);
+            } else {
+                segment = LogSegment.open(dir, logStartOffsetCheckpoint, config, time, config.initFileSize(), config.preallocate);
+            }
+            segments.add(segment);
+
         }
 
         // Update the recovery point if there was a clean shutdown and did not perform any changes to

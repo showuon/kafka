@@ -28,7 +28,6 @@ import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.server.util.Scheduler;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -67,9 +66,9 @@ import static org.apache.kafka.storage.internals.log.LogFileUtils.isLogFile;
  * for a given segment.
  * NOTE: this class is not thread-safe, and it relies on the thread safety provided by the Log class.
  */
-public class LocalLog {
+public class AnyLog extends LocalLog {
 
-    private static final Logger LOG = LoggerFactory.getLogger(LocalLog.class);
+    private static final Logger LOG = LoggerFactory.getLogger(AnyLog.class);
 
     public static final Pattern DELETE_DIR_PATTERN = Pattern.compile("^(\\S+)-(\\S+)\\.(\\S+)" + LogFileUtils.DELETE_DIR_SUFFIX);
     public static final Pattern FUTURE_DIR_PATTERN = Pattern.compile("^(\\S+)-(\\S+)\\.(\\S+)" + LogFileUtils.FUTURE_DIR_SUFFIX);
@@ -77,14 +76,14 @@ public class LocalLog {
     public static final long UNKNOWN_OFFSET = -1L;
 
     // Last time the log was flushed
-    private  AtomicLong lastFlushedTime;
-    private  String logIdent;
-    private  LogSegments segments;
-    private  Scheduler scheduler;
-    private  Time time;
-    private  TopicPartition topicPartition;
-    private  LogDirFailureChannel logDirFailureChannel;
-    private  Logger logger;
+    private final AtomicLong lastFlushedTime;
+    private final String logIdent;
+    private final LogSegments segments;
+    private final Scheduler scheduler;
+    private final Time time;
+    private final TopicPartition topicPartition;
+    private final LogDirFailureChannel logDirFailureChannel;
+    private final Logger logger;
 
     private volatile LogOffsetMetadata nextOffsetMetadata;
     // The memory mapped buffer for index files of this log will be closed with either delete() or closeHandlers()
@@ -95,8 +94,6 @@ public class LocalLog {
     private volatile LogConfig config;
     private volatile long recoveryPoint;
     private File dir;
-
-    public LocalLog() {}
 
     /**
      * @param dir The directory in which log segments are created.
@@ -109,15 +106,15 @@ public class LocalLog {
      * @param topicPartition The topic partition associated with this log
      * @param logDirFailureChannel The LogDirFailureChannel instance to asynchronously handle Log dir failure
      */
-    public LocalLog(File dir,
-                    LogConfig config,
-                    LogSegments segments,
-                    long recoveryPoint,
-                    LogOffsetMetadata nextOffsetMetadata,
-                    Scheduler scheduler,
-                    Time time,
-                    TopicPartition topicPartition,
-                    LogDirFailureChannel logDirFailureChannel) {
+    public AnyLog(File dir,
+                  LogConfig config,
+                  LogSegments segments,
+                  long recoveryPoint,
+                  LogOffsetMetadata nextOffsetMetadata,
+                  Scheduler scheduler,
+                  Time time,
+                  TopicPartition topicPartition,
+                  LogDirFailureChannel logDirFailureChannel) {
         this.dir = dir;
         this.config = config;
         this.segments = segments;
@@ -128,7 +125,7 @@ public class LocalLog {
         this.topicPartition = topicPartition;
         this.logDirFailureChannel = logDirFailureChannel;
         this.logIdent = "[LocalLog partition=" + topicPartition + ", dir=" + dir + "] ";
-        this.logger = new LogContext(logIdent).logger(LocalLog.class);
+        this.logger = new LogContext(logIdent).logger(AnyLog.class);
         // Last time the log was flushed
         this.lastFlushedTime = new AtomicLong(time.milliseconds());
         this.parentDir = dir.getParent();
@@ -528,7 +525,8 @@ public class LocalLog {
     }
 
     public void append(long lastOffset, long largestTimestamp, long shallowOffsetOfMaxTimestamp, MemoryRecords records) throws IOException {
-        segments.activeSegment().append(lastOffset, largestTimestamp, shallowOffsetOfMaxTimestamp, records);
+        logger.info("!!! AnyLog append");
+        ((AnyLogSegment)(segments.activeSegment())).append(lastOffset, largestTimestamp, shallowOffsetOfMaxTimestamp, records);
         updateLogEndOffset(lastOffset + 1);
     }
 
@@ -905,58 +903,58 @@ public class LocalLog {
      * @param logPrefix The logging prefix
      * @return List of new segments that replace the input segment
      */
-    public static SplitSegmentResult splitOverflowedSegment(LogSegment segment,
-                                                     LogSegments existingSegments,
-                                                     File dir,
-                                                     TopicPartition topicPartition,
-                                                     LogConfig config,
-                                                     Scheduler scheduler,
-                                                     LogDirFailureChannel logDirFailureChannel,
-                                                     String logPrefix) throws IOException {
-        require(isLogFile(segment.log().file()), "Cannot split file " + segment.log().file().getAbsoluteFile());
-        require(segment.hasOverflow(), "Split operation is only permitted for segments with overflow, and the problem path is " + segment.log().file().getAbsoluteFile());
-
-        LOG.info("{}Splitting overflowed segment {}", logPrefix, segment);
-
-        List<LogSegment> newSegments = new ArrayList<>();
-        try {
-            int position = 0;
-            FileRecords sourceRecords = segment.log();
-            while (position < sourceRecords.sizeInBytes()) {
-                FileLogInputStream.FileChannelRecordBatch firstBatch = sourceRecords.batchesFrom(position).iterator().next();
-                LogSegment newSegment = createNewCleanedSegment(dir, config, firstBatch.baseOffset());
-                newSegments.add(newSegment);
-                int bytesAppended = newSegment.appendFromFile(sourceRecords, position);
-                if (bytesAppended == 0) {
-                    throw new IllegalStateException("Failed to append records from position " + position + " in " + segment);
-                }
-                position += bytesAppended;
-            }
-            // prepare new segments
-            int totalSizeOfNewSegments = 0;
-            for (LogSegment splitSegment : newSegments) {
-                splitSegment.onBecomeInactiveSegment();
-                splitSegment.flush();
-                splitSegment.setLastModified(segment.lastModified());
-                totalSizeOfNewSegments += splitSegment.log().sizeInBytes();
-            }
-            // size of all the new segments combined must equal size of the original segment
-            if (totalSizeOfNewSegments != segment.log().sizeInBytes()) {
-                throw new IllegalStateException("Inconsistent segment sizes after split before: " + segment.log().sizeInBytes() + " after: " + totalSizeOfNewSegments);
-            }
-            // replace old segment with new ones
-            LOG.info("{}Replacing overflowed segment $segment with split segments {}", logPrefix, newSegments);
-            List<LogSegment> deletedSegments = replaceSegments(existingSegments, newSegments, singletonList(segment),
-                    dir, topicPartition, config, scheduler, logDirFailureChannel, logPrefix, false);
-            return new SplitSegmentResult(deletedSegments, newSegments);
-        } catch (Exception e) {
-            for (LogSegment splitSegment : newSegments) {
-                splitSegment.close();
-                splitSegment.deleteIfExists();
-            }
-            throw e;
-        }
-    }
+//    public static SplitSegmentResult splitOverflowedSegment(LogSegment segment,
+//                                                     LogSegments existingSegments,
+//                                                     File dir,
+//                                                     TopicPartition topicPartition,
+//                                                     LogConfig config,
+//                                                     Scheduler scheduler,
+//                                                     LogDirFailureChannel logDirFailureChannel,
+//                                                     String logPrefix) throws IOException {
+//        require(isLogFile(segment.log().file()), "Cannot split file " + segment.log().file().getAbsoluteFile());
+//        require(segment.hasOverflow(), "Split operation is only permitted for segments with overflow, and the problem path is " + segment.log().file().getAbsoluteFile());
+//
+//        LOG.info("{}Splitting overflowed segment {}", logPrefix, segment);
+//
+//        List<LogSegment> newSegments = new ArrayList<>();
+//        try {
+//            int position = 0;
+//            FileRecords sourceRecords = segment.log();
+//            while (position < sourceRecords.sizeInBytes()) {
+//                FileLogInputStream.FileChannelRecordBatch firstBatch = sourceRecords.batchesFrom(position).iterator().next();
+//                LogSegment newSegment = createNewCleanedSegment(dir, config, firstBatch.baseOffset());
+//                newSegments.add(newSegment);
+//                int bytesAppended = newSegment.appendFromFile(sourceRecords, position);
+//                if (bytesAppended == 0) {
+//                    throw new IllegalStateException("Failed to append records from position " + position + " in " + segment);
+//                }
+//                position += bytesAppended;
+//            }
+//            // prepare new segments
+//            int totalSizeOfNewSegments = 0;
+//            for (LogSegment splitSegment : newSegments) {
+//                splitSegment.onBecomeInactiveSegment();
+//                splitSegment.flush();
+//                splitSegment.setLastModified(segment.lastModified());
+//                totalSizeOfNewSegments += splitSegment.log().sizeInBytes();
+//            }
+//            // size of all the new segments combined must equal size of the original segment
+//            if (totalSizeOfNewSegments != segment.log().sizeInBytes()) {
+//                throw new IllegalStateException("Inconsistent segment sizes after split before: " + segment.log().sizeInBytes() + " after: " + totalSizeOfNewSegments);
+//            }
+//            // replace old segment with new ones
+//            LOG.info("{}Replacing overflowed segment $segment with split segments {}", logPrefix, newSegments);
+//            List<LogSegment> deletedSegments = replaceSegments(existingSegments, newSegments, singletonList(segment),
+//                    dir, topicPartition, config, scheduler, logDirFailureChannel, logPrefix, false);
+//            return new SplitSegmentResult(deletedSegments, newSegments);
+//        } catch (Exception e) {
+//            for (LogSegment splitSegment : newSegments) {
+//                splitSegment.close();
+//                splitSegment.deleteIfExists();
+//            }
+//            throw e;
+//        }
+//    }
 
     /**
      * Swap one or more new segment in place and delete one or more existing segments in a crash-safe

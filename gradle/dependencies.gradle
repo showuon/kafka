@@ -139,6 +139,7 @@ versions += [
 
 libs += [
   activation: "javax.activation:activation:$versions.activation",
+  aws: "software.amazon.awssdk:s3:2.29.39",
   apacheda: "org.apache.directory.api:api-all:$versions.apacheda",
   apachedsCoreApi: "org.apache.directory.server:apacheds-core-api:$versions.apacheds",
   apachedsInterceptorKerberos: "org.apache.directory.server:apacheds-interceptor-kerberos:$versions.apacheds",
