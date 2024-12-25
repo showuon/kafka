@@ -251,7 +251,7 @@ public class AnyLogSegment extends LogSegment implements Closeable {
             ensureOffsetInRange(largestOffset);
 
             // append the messages
-            long appendedBytes = log.append(records);
+            long appendedBytes = log.append(records, largestOffset);
             LOGGER.trace("Appended {} to {} at end offset {}", appendedBytes, log.file(), largestOffset);
             // Update the in memory max timestamp and corresponding offset.
             if (largestTimestampMs > maxTimestampSoFar()) {
@@ -423,10 +423,12 @@ public class AnyLogSegment extends LogSegment implements Closeable {
      *         or null if the startOffset is larger than the largest offset in this log
      */
     public FetchDataInfo read(long startOffset, int maxSize, Optional<Long> maxPositionOpt, boolean minOneMessage) throws IOException {
+        LOGGER.info("!!! anylogseg read");
         if (maxSize < 0)
             throw new IllegalArgumentException("Invalid max size " + maxSize + " for log read from segment " + log);
 
         LogOffsetPosition startOffsetAndSize = translateOffset(startOffset);
+        System.out.println("!!! startOffsetAndSize:" + startOffsetAndSize);
 
         // if the start position is already off the end of the log, return null
         if (startOffsetAndSize == null)
@@ -448,7 +450,7 @@ public class AnyLogSegment extends LogSegment implements Closeable {
         // calculate the length of the message set to read based on whether or not they gave us a maxOffset
         int fetchSize = Math.min((int) (maxPositionOpt.get() - startPosition), adjustedMaxSize);
 
-        return new FetchDataInfo(offsetMetadata, log.slice(startPosition, fetchSize),
+        return new FetchDataInfo(offsetMetadata, log.slice(startOffset, fetchSize),
             adjustedMaxSize < startOffsetAndSize.size, Optional.empty());
     }
 
@@ -604,13 +606,14 @@ public class AnyLogSegment extends LogSegment implements Closeable {
      * This method is thread-safe.
      */
     public long readNextOffset() throws IOException {
-        FetchDataInfo fetchData = read(offsetIndex().lastOffset(), log.sizeInBytes());
-        if (fetchData == null)
-            return baseOffset;
-        else
-            return fetchData.records.lastBatch()
-                .map(batch -> batch.nextOffset())
-                .orElse(baseOffset);
+//        FetchDataInfo fetchData = read(offsetIndex().lastOffset(), log.sizeInBytes());
+//        if (fetchData == null)
+//            return baseOffset;
+//        else
+//            return fetchData.records.lastBatch()
+//                .map(batch -> batch.nextOffset())
+//                .orElse(baseOffset);
+        return baseOffset;
     }
 
     /**

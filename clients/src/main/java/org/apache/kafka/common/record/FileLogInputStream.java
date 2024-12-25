@@ -63,6 +63,13 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
     @Override
     public FileChannelRecordBatch nextBatch() throws IOException {
         FileChannel channel = fileRecords.channel();
+        if (position == 0 && end == 71) {
+            final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+            for (int i = 1; i < elements.length; i++) {
+                final StackTraceElement s = elements[i];
+                System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+            }
+        }
         if (position >= end - HEADER_SIZE_UP_TO_MAGIC)
             return null;
 
