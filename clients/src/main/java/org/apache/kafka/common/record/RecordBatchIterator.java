@@ -34,6 +34,9 @@ class RecordBatchIterator<T extends RecordBatch> extends AbstractIterator<T> {
     @Override
     protected T makeNext() {
         try {
+            if (logInputStream == null) {
+                return allDone();
+            }
             T batch = logInputStream.nextBatch();
             if (batch == null)
                 return allDone();

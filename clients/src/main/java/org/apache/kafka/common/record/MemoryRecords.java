@@ -94,8 +94,8 @@ public class MemoryRecords extends AbstractRecords {
         return written;
     }
 
-    public int writeFullyTo(long offset) {
-        System.out.println("!!! writeFullyTo S3");
+    public int writeFullyTo(long offset, String path, String suffix) {
+        System.out.println("!!! writeFullyTo S3:" + path + "/" + offset + "." + suffix);
         String accessKey = "minioadmin";
         String secretKey = "minioadmin";
         AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
@@ -113,7 +113,7 @@ public class MemoryRecords extends AbstractRecords {
 
         PutObjectRequest objectRequest = PutObjectRequest.builder()
                 .bucket("test")
-                .key(Long.toString(offset))
+                .key(path + "/" + offset + ".log" + suffix)
                 .build();
 
         int size = buffer.position();
