@@ -466,29 +466,34 @@ public class AnyLog extends LocalLog {
                        boolean minOneMessage,
                        LogOffsetMetadata maxOffsetMetadata,
                        boolean includeAbortedTxns) throws IOException {
+
         return maybeHandleIOException(
                 () -> "Exception while reading from " + topicPartition + " in dir " + dir.getParent(),
                 () -> {
-                    logger.trace("Reading maximum $maxLength bytes at offset {} from log with total length {} bytes",
-                            startOffset, segments.sizeInBytes());
+                    if (!topicPartition.topic().equals("__cluster_metadata"))
+                        logger.info("!!! Reading maximum $maxLength bytes at offset {} from log with total length {} bytes",
+                                startOffset, segments.sizeInBytes());
 
                     LogOffsetMetadata endOffsetMetadata = nextOffsetMetadata;
                     long endOffset = endOffsetMetadata.messageOffset;
                     Optional<LogSegment> segmentOpt = segments.floorSegment(startOffset);
+
+                    if (!topicPartition.topic().equals("__cluster_metadata"))
+                        logger.info("!!! maxOffsetMetadata.messageOffset:" + maxOffsetMetadata.messageOffset + ";;" + startOffset);
                     // return error on attempt to read beyond the log end offset
                     if (startOffset > endOffset || segmentOpt.isEmpty()) {
                         throw new OffsetOutOfRangeException("Received request for offset " + startOffset + " for partition " + topicPartition + ", " +
                                 "but we only have log segments upto " + endOffset + ".");
                     }
-                    if (startOffset == maxOffsetMetadata.messageOffset) return emptyFetchDataInfo(maxOffsetMetadata, includeAbortedTxns);
-                    if (startOffset > maxOffsetMetadata.messageOffset) return emptyFetchDataInfo(convertToOffsetMetadataOrThrow(startOffset), includeAbortedTxns);
+//                    if (startOffset == maxOffsetMetadata.messageOffset) return emptyFetchDataInfo(maxOffsetMetadata, includeAbortedTxns);
+//                    if (startOffset > maxOffsetMetadata.messageOffset) return emptyFetchDataInfo(convertToOffsetMetadataOrThrow(startOffset), includeAbortedTxns);
 
                     // Do the read on the segment with a base offset less than the target offset
                     // but if that segment doesn't contain any messages with an offset greater than that
                     // continue to read from successive segments until we get some messages or we reach the end of the log
                     FetchDataInfo fetchDataInfo = null;
                     while (fetchDataInfo == null && segmentOpt.isPresent()) {
-                        LogSegment segment = segmentOpt.get();
+                        AnyLogSegment segment = (AnyLogSegment) segmentOpt.get();
                         long baseOffset = segment.baseOffset();
 
                         // 1. If `maxOffsetMetadata#segmentBaseOffset < segment#baseOffset`, then return maxPosition as empty.
@@ -504,6 +509,7 @@ public class AnyLog extends LocalLog {
                             maxPositionOpt = Optional.empty();
 
                         fetchDataInfo = segment.read(startOffset, maxLength, maxPositionOpt, minOneMessage);
+                        logger.info("!!! fetchDataInfo:" + fetchDataInfo);
                         if (fetchDataInfo != null) {
                             if (includeAbortedTxns) {
                                 fetchDataInfo = addAbortedTransactions(startOffset, segment, fetchDataInfo);
