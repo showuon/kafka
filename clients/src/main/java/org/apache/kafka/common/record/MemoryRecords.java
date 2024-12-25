@@ -24,6 +24,7 @@ import org.apache.kafka.common.message.SnapshotFooterRecord;
 import org.apache.kafka.common.message.SnapshotHeaderRecord;
 import org.apache.kafka.common.message.VotersRecord;
 import org.apache.kafka.common.network.TransferableChannel;
+import org.apache.kafka.common.protocol.types.Field;
 import org.apache.kafka.common.record.MemoryRecords.RecordFilter.BatchRetention;
 import org.apache.kafka.common.record.MemoryRecords.RecordFilter.BatchRetentionResult;
 import org.apache.kafka.common.utils.AbstractIterator;
@@ -107,7 +108,7 @@ public class MemoryRecords extends AbstractRecords {
         return written;
     }
 
-    public int writeFullyTo() {
+    public int writeFullyTo(long offset) {
         System.out.println("!!! writeFullyTo S3");
         String accessKey = "minioadmin";
         String secretKey = "minioadmin";
@@ -126,10 +127,14 @@ public class MemoryRecords extends AbstractRecords {
 
         PutObjectRequest objectRequest = PutObjectRequest.builder()
                 .bucket("test")
-                .key("key")
+                .key(Long.toString(offset))
                 .build();
 
+        int size = buffer.position();
+        System.out.println("!!! size:" + size );
+
         buffer.mark();
+
 //        int written = 0;
 
 
@@ -137,7 +142,6 @@ public class MemoryRecords extends AbstractRecords {
 //            written += channel.write(buffer);
         System.out.println("!!! uploading:" + this.toString());
         PutObjectResponse response = s3.putObject(objectRequest, RequestBody.fromByteBuffer(buffer));
-        System.out.println("!!! response:" + response);
 //        return response.whenComplete((resp, ex) -> {
 //            if (ex != null) {
 //                throw new RuntimeException("Failed to upload file", ex);
@@ -146,7 +150,7 @@ public class MemoryRecords extends AbstractRecords {
 
 
         buffer.reset();
-        return response.size().intValue();
+        return this.sizeInBytes();
     }
 
     /**
