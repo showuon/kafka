@@ -261,19 +261,19 @@ public class AnyLog extends LocalLog {
      * @param offset The offset to flush up to (non-inclusive)
      */
     public void flush(long offset) throws IOException {
-        long currentRecoveryPoint = recoveryPoint;
-        if (currentRecoveryPoint <= offset) {
-            Collection<LogSegment> segmentsToFlush = segments.values(currentRecoveryPoint, offset);
-            for (LogSegment logSegment : segmentsToFlush) {
-                logSegment.flush();
-            }
-            // If there are any new segments, we need to flush the parent directory for crash consistency.
-            if (segmentsToFlush.stream().anyMatch(s -> s.baseOffset() >= currentRecoveryPoint)) {
-                // The directory might be renamed concurrently for topic deletion, which may cause NoSuchFileException here.
-                // Since the directory is to be deleted anyways, we just swallow NoSuchFileException and let it go.
-                Utils.flushDirIfExists(dir.toPath());
-            }
-        }
+//        long currentRecoveryPoint = recoveryPoint;
+//        if (currentRecoveryPoint <= offset) {
+//            Collection<LogSegment> segmentsToFlush = segments.values(currentRecoveryPoint, offset);
+//            for (LogSegment logSegment : segmentsToFlush) {
+//                logSegment.flush();
+//            }
+//            // If there are any new segments, we need to flush the parent directory for crash consistency.
+//            if (segmentsToFlush.stream().anyMatch(s -> s.baseOffset() >= currentRecoveryPoint)) {
+//                // The directory might be renamed concurrently for topic deletion, which may cause NoSuchFileException here.
+//                // Since the directory is to be deleted anyways, we just swallow NoSuchFileException and let it go.
+//                Utils.flushDirIfExists(dir.toPath());
+//            }
+//        }
     }
 
     /**
@@ -425,7 +425,7 @@ public class AnyLog extends LocalLog {
         if (newOffset == segmentToDelete.baseOffset()) {
             segmentToDelete.changeFileSuffixes("", LogFileUtils.DELETED_FILE_SUFFIX);
         }
-        LogSegment newSegment = LogSegment.open(dir,
+        LogSegment newSegment = AnyLogSegment.open(dir,
                 newOffset,
                 config,
                 time,
@@ -590,6 +590,10 @@ public class AnyLog extends LocalLog {
         return maybeHandleIOException(
             () -> "Error while rolling log segment for " + topicPartition + " in dir " + dir.getParent(),
             () -> {
+                logger.info("!!! roll:" + expectedNextOffset);
+                if (expectedNextOffset == 0) {
+                    return segments.activeSegment();
+                }
                 long start = time.hiResClockMs();
                 checkIfMemoryMappedBufferClosed();
                 long newOffset = Math.max(expectedNextOffset, logEndOffset());
@@ -636,7 +640,7 @@ public class AnyLog extends LocalLog {
                         segments.lastSegment().get().onBecomeInactiveSegment();
                     }
                 }
-                LogSegment newSegment = LogSegment.open(dir,
+                AnyLogSegment newSegment = AnyLogSegment.open(dir,
                         newOffset,
                         config,
                         time,
@@ -883,7 +887,7 @@ public class AnyLog extends LocalLog {
 
     public static LogSegment createNewCleanedSegment(File dir, LogConfig logConfig, long baseOffset) throws IOException {
         LogSegment.deleteIfExists(dir, baseOffset, CLEANED_FILE_SUFFIX);
-        return LogSegment.open(dir, baseOffset, logConfig, Time.SYSTEM, false, logConfig.initFileSize(), logConfig.preallocate, CLEANED_FILE_SUFFIX);
+        return AnyLogSegment.open(dir, baseOffset, logConfig, Time.SYSTEM, false, logConfig.initFileSize(), logConfig.preallocate, CLEANED_FILE_SUFFIX);
     }
 
     /**

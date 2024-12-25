@@ -26,16 +26,28 @@ import org.apache.kafka.server.util.Scheduler;
 import org.apache.kafka.storage.internals.epoch.LeaderEpochFileCache;
 
 import org.slf4j.Logger;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.paginators.ListObjectsV2Iterable;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -353,6 +365,38 @@ public class LogLoader {
         }
     }
 
+    private List<String> listBucket() {
+        System.out.println("!!! list S3:");
+        String accessKey = "minioadmin";
+        String secretKey = "minioadmin";
+        AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
+        S3Client s3 = null;
+        try {
+            s3 = S3Client.builder()
+                    .region(Region.US_EAST_1)
+                    .endpointOverride(new URI("http://localhost:9000"))
+                    .credentialsProvider(StaticCredentialsProvider.create(credentials))
+                    .forcePathStyle(true)
+                    .build();
+        } catch (URISyntaxException e) {
+            throw new RuntimeException(e);
+        }
+
+        ListObjectsV2Request initialRequest = ListObjectsV2Request.builder()
+                .bucket("test")
+                .maxKeys(100)
+                .build();
+
+
+        List<String> objs = new LinkedList<>();
+        ListObjectsV2Iterable objectBytes = s3.listObjectsV2Paginator(initialRequest);
+        objectBytes.stream().forEach(response -> response.contents().forEach(s3Object -> {
+            System.out.println("!!! obj size:" + s3Object.key());
+            objs.add(s3Object.key());
+        }));
+        return objs;
+    }
+
     /**
      * Loads segments from disk.
      * <br/>
@@ -367,6 +411,7 @@ public class LogLoader {
     private void loadSegmentFiles() throws IOException {
         // load segments in ascending order because transactional data from one segment may depend on the
         // segments that come before it
+
         File[] files = dir.listFiles();
         if (files == null) files = new File[0];
         List<File> sortedFiles = Arrays.stream(files).filter(File::isFile).sorted().collect(Collectors.toList());
@@ -386,11 +431,7 @@ public class LogLoader {
 
                 LogSegment segment = null;// LogSegment.open(dir, baseOffset, config, time, true, 0, false, "");
 
-                if (config.logUseAny) {
-                    segment = AnyLogSegment.open(dir, baseOffset, config, time, true, 0, false, "");
-                } else {
-                    segment = LogSegment.open(dir, baseOffset, config, time, true, 0, false, "");
-                }
+                segment = LogSegment.open(dir, baseOffset, config, time, true, 0, false, "");
                 try {
                     segment.sanityCheck(timeIndexFileNewlyCreated);
                 } catch (NoSuchFileException nsfe) {
@@ -405,6 +446,35 @@ public class LogLoader {
                 segments.add(segment);
             }
         }
+
+        if (config.logUseAny) {
+            List<String> baseOffsets = listBucket().stream().filter(name -> name.contains(dir.getName())).sorted().toList();
+            for (String baseOffsetStr : baseOffsets) {
+                long baseOffset = Long.parseLong(baseOffsetStr.substring(baseOffsetStr.lastIndexOf('/') + 1, baseOffsetStr.lastIndexOf('.')));
+                System.out.println("!!! baseOffsetStr:" + baseOffsetStr + ";;" + baseOffset);
+                boolean timeIndexFileNewlyCreated = !LogFileUtils.timeIndexFile(dir, baseOffset).exists();
+
+                LogSegment segment = null;// LogSegment.open(dir, baseOffset, config, time, true, 0, false, "");
+
+                segment = AnyLogSegment.open(dir, baseOffset, config, time, true, 0, false, "");
+                try {
+                    segment.sanityCheck(timeIndexFileNewlyCreated);
+                } catch (NoSuchFileException nsfe) {
+                    if (hadCleanShutdown || segment.baseOffset() < recoveryPointCheckpoint) {
+                        logger.error("Could not find offset index file corresponding to log file {}, recovering segment and rebuilding index files...", segment.log());
+                    }
+                    recoverSegment(segment);
+                } catch (CorruptIndexException cie) {
+                    logger.warn("Found a corrupted index file corresponding to log file {} due to {}, recovering segment and rebuilding index files...", segment.log(), cie.getMessage());
+                    recoverSegment(segment);
+                }
+                logger.info("!!! adding:" + segment.toString());
+                segments.add(segment);
+            }
+        }
+
+
+
     }
 
     /**

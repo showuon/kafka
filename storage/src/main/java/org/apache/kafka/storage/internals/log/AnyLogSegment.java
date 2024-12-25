@@ -161,11 +161,12 @@ public class AnyLogSegment extends LogSegment implements Closeable {
     }
 
     public boolean shouldRoll(RollParams rollParams) throws IOException {
-        boolean reachedRollMs = timeWaitedForRoll(rollParams.now, rollParams.maxTimestampInMessages) > rollParams.maxSegmentMs - rollJitterMs;
-        int size = size();
-        return size > rollParams.maxSegmentBytes - rollParams.messagesSize ||
-            (size > 0 && reachedRollMs) ||
-            offsetIndex().isFull() || timeIndex().isFull() || !canConvertToRelativeOffset(rollParams.maxOffsetInMessages);
+//        boolean reachedRollMs = timeWaitedForRoll(rollParams.now, rollParams.maxTimestampInMessages) > rollParams.maxSegmentMs - rollJitterMs;
+//        int size = size();
+//        return size > rollParams.maxSegmentBytes - rollParams.messagesSize ||
+//            (size > 0 && reachedRollMs) ||
+//            offsetIndex().isFull() || timeIndex().isFull() || !canConvertToRelativeOffset(rollParams.maxOffsetInMessages);
+        return true;
     }
 
     public void resizeIndexes(int size) throws IOException {
@@ -682,7 +683,7 @@ public class AnyLogSegment extends LogSegment implements Closeable {
         timeIndex().maybeAppend(maxTimestampSoFar(), shallowOffsetOfMaxTimestampSoFar(), true);
         offsetIndex().trimToValidSize();
         timeIndex().trimToValidSize();
-        log.trim();
+//        log.trim();
     }
 
     /**
@@ -841,7 +842,7 @@ public class AnyLogSegment extends LogSegment implements Closeable {
      * The last modified time of this log segment as a unix time stamp
      */
     public long lastModified() {
-        return log.file().lastModified();
+        return -1;
     }
 
     /**
@@ -861,7 +862,7 @@ public class AnyLogSegment extends LogSegment implements Closeable {
         long maxTimestampSoFar = maxTimestampSoFar();
         if (maxTimestampSoFar >= 0)
             return maxTimestampSoFar;
-        return lastModified();
+        return System.currentTimeMillis();
     }
 
     /**
@@ -881,8 +882,9 @@ public class AnyLogSegment extends LogSegment implements Closeable {
     public static AnyLogSegment open(File dir, long baseOffset, LogConfig config, Time time, boolean fileAlreadyExists,
                                      int initFileSize, boolean preallocate, String fileSuffix) throws IOException {
         int maxIndexSize = config.maxIndexSize;
+        System.out.println("!!! open:" + fileSuffix);
         return new AnyLogSegment(
-            AnyRecords.open(LogFileUtils.logFile(dir, baseOffset, fileSuffix), fileAlreadyExists, initFileSize, preallocate),
+            AnyRecords.open(LogFileUtils.logFile(dir, baseOffset, fileSuffix), fileAlreadyExists, initFileSize, preallocate, baseOffset, dir.toString(), fileSuffix),
             LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize),
             LazyIndex.forTime(LogFileUtils.timeIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize),
             new TransactionIndex(baseOffset, LogFileUtils.transactionIndexFile(dir, baseOffset, fileSuffix)),
