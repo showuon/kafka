@@ -44,6 +44,7 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
     private final int end;
     private final FileRecords fileRecords;
     private final ByteBuffer logHeaderBuffer = ByteBuffer.allocate(HEADER_SIZE_UP_TO_MAGIC);
+    private final boolean anyRecord;
 
     /**
      * Create a new log input stream over the FileChannel
@@ -53,28 +54,40 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
      */
     FileLogInputStream(FileRecords records,
                        int start,
-                       int end) {
+                       int end,
+                       boolean anyRecord) {
         this.fileRecords = records;
         this.position = start;
         this.end = end;
+        this.anyRecord = anyRecord;
+    }
+
+    FileLogInputStream(FileRecords records,
+                       int start,
+                       int end) {
+        this(records, start, end, false);
     }
 
 
     @Override
     public FileChannelRecordBatch nextBatch() throws IOException {
         FileChannel channel = fileRecords.channel();
-        if (position == 0 && end == 71) {
-            final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-            for (int i = 1; i < elements.length; i++) {
-                final StackTraceElement s = elements[i];
-                System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
-            }
-        }
+//        if (position == 0 && end == 71) {
+//            final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+//            for (int i = 1; i < elements.length; i++) {
+//                final StackTraceElement s = elements[i];
+//                System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+//            }
+//        }
         if (position >= end - HEADER_SIZE_UP_TO_MAGIC)
             return null;
 
         logHeaderBuffer.rewind();
-        Utils.readFullyOrFail(channel, logHeaderBuffer, position, "log header");
+        if (anyRecord) {
+            Utils.readFullyOrFail(channel, logHeaderBuffer, 0, "log header");
+        } else {
+            Utils.readFullyOrFail(channel, logHeaderBuffer, position, "log header");
+        }
 
         logHeaderBuffer.rewind();
         long offset = logHeaderBuffer.getLong(OFFSET_OFFSET);
@@ -94,7 +107,7 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
         if (magic < RecordBatch.MAGIC_VALUE_V2)
             batch = new LegacyFileChannelRecordBatch(offset, magic, fileRecords, position, size);
         else
-            batch = new DefaultFileChannelRecordBatch(offset, magic, fileRecords, position, size);
+            batch = new DefaultFileChannelRecordBatch(offset, magic, fileRecords, (anyRecord ? 0 : position), size);
 
         position += batch.sizeInBytes();
         return batch;

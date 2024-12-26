@@ -94,7 +94,7 @@ public class AnyRecords extends FileRecords implements Closeable {
                String suffix) throws IOException {
         this.file = file;
         this.channel = channel;
-        this.start = start;
+        this.start = 0;
         this.end = end;
         this.isSlice = isSlice;
         this.size = null;
@@ -245,23 +245,25 @@ public class AnyRecords extends FileRecords implements Closeable {
      * Commit all written data to the physical disk
      */
     public void flush() throws IOException {
-        channel.force(true);
+        //channel.force(true);
     }
 
     /**
      * Close this record set
      */
     public void close() throws IOException {
-        flush();
-        trim();
-        channel.close();
+        //flush();
+        //trim();
+        if (channel != null)
+            channel.close();
     }
 
     /**
      * Close file handlers used by the FileChannel but don't write to disk. This is used when the disk may have failed
      */
     public void closeHandlers() throws IOException {
-        channel.close();
+        if (channel != null)
+            channel.close();
     }
 
     /**
@@ -317,10 +319,10 @@ public class AnyRecords extends FileRecords implements Closeable {
         if (targetSize > originalSize || targetSize < 0)
             throw new KafkaException("Attempt to truncate log segment " + file + " to " + targetSize + " bytes failed, " +
                     " size of this log segment is " + originalSize + " bytes.");
-        if (targetSize < (int) channel.size()) {
-            channel.truncate(targetSize);
-            size.set(targetSize);
-        }
+//        if (targetSize < (int) channel.size()) {
+//            //channel.truncate(targetSize);
+//            size.set(targetSize);
+//        }
         return originalSize - targetSize;
     }
 
@@ -345,7 +347,8 @@ public class AnyRecords extends FileRecords implements Closeable {
     public int writeTo(TransferableChannel destChannel, int offset, int length) throws IOException {
         // luke
 
-        readS3();
+        if (file2 == null)
+            readS3();
         channel = FileChannel.open(file2.toPath(), StandardOpenOption.CREATE, StandardOpenOption.READ,
                 StandardOpenOption.WRITE);
         System.out.println("!!! channel.size():" + channel.size() + ";;" + start + ";;" + end);
@@ -354,7 +357,7 @@ public class AnyRecords extends FileRecords implements Closeable {
         if (newSize < oldSize)
             throw new KafkaException(String.format(
                     "Size of FileRecords %s has been truncated during write: old size %d, new size %d",
-                    file.getAbsolutePath(), oldSize, newSize));
+                    path, oldSize, newSize));
 
         long position = start + offset;
         int count = Math.min(length, oldSize - offset);
@@ -477,73 +480,18 @@ public class AnyRecords extends FileRecords implements Closeable {
 //        }
         final int end;
         if (isSlice)
-            end = this.end;
+            end = this.sizeInBytes();
         else
             end = this.sizeInBytes();
-        System.out.println("!!! isSlice:" + isSlice + ";;" + end + ";;" + sizeInBytes());
+        System.out.println("!!! isSlice:" + isSlice + ";;" + end + ";;" + sizeInBytes() + ";;" + start);
 
-        // luke
-//        System.out.println("!!! get S3:" + start);
-//        String accessKey = "minioadmin";
-//        String secretKey = "minioadmin";
-//        AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
-//        S3Client s3 = null;
-//        try {
-//            s3 = S3Client.builder()
-//                    .region(Region.US_EAST_1)
-//                    .endpointOverride(new URI("http://localhost:9000"))
-//                    .credentialsProvider(StaticCredentialsProvider.create(credentials))
-//                    .forcePathStyle(true)
-//                    .build();
-//        } catch (URISyntaxException e) {
-//            throw new RuntimeException(e);
-//        }
-//
-//        GetObjectRequest objectRequest = GetObjectRequest.builder()
-//                .bucket("test")
-//                .key(Long.toString(start))
-//                .build();
-//
-////        ResponseBytes<GetObjectResponse> s3Object = s3.getObjectAsBytes(objectRequest);
-////
-////
-////        ByteBufferLogInputStream inputStream = new ByteBufferLogInputStream(s3Object.asByteBuffer(), Integer.MAX_VALUE);
-////        return new RecordBatchIterator<>(inputStream);
-//        System.out.println("!!! getting object:" + start);
-//        Path path = null;
-//        try {
-//            path = Files.createTempFile(Long.toString(start), null);
-//        } catch (IOException e) {
-//            throw new RuntimeException(e);
-//        }
-////        GetObjectResponse response = s3.getObject(objectRequest, path);
-//
-//        ResponseBytes<GetObjectResponse> objectBytes = s3.getObject(objectRequest, ResponseTransformer.toBytes());
-//        byte[] data = objectBytes.asByteArray();
-//        System.out.println("!!! len:" + data.length);
-//
-//        FileLogInputStream inputStream = null;
-//
-//        try {
-//        // Write the data to a local file.
-//            file2 = path.toFile();
-//
-//            OutputStream os = new FileOutputStream(path.toFile());
-//            os.write(data);
-//            os.close();
-//            System.out.println("!!! file:" + path.toFile().length());
-//    //        System.out.println("!!! getting object:" + response);
-//            inputStream = new FileLogInputStream(FileRecords.open(path.toFile()), (int) start, end);
-//        } catch (IOException e) {
-//            throw new RuntimeException(e);
-//        }
         FileLogInputStream inputStream = null;
         try {
             readS3();
             if (file2 == null) {
                 return new RecordBatchIterator<>(null);
             }
-            inputStream = new FileLogInputStream(FileRecords.open(file2), (int) start, end);
+            inputStream = new FileLogInputStream(FileRecords.open(file2),0, end);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -552,6 +500,11 @@ public class AnyRecords extends FileRecords implements Closeable {
 
     private void readS3() {
         System.out.println("!!! get S3:" + baseOffset);
+        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+        for (int i = 1; i < elements.length; i++) {
+            final StackTraceElement s = elements[i];
+            System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+        }
         String accessKey = "minioadmin";
         String secretKey = "minioadmin";
         AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
@@ -599,8 +552,9 @@ public class AnyRecords extends FileRecords implements Closeable {
             os.write(data);
             os.close();
             System.out.println("!!! file:" + path.toFile().length());
-            size = new AtomicInteger();
-            size.addAndGet((int) file2.length());
+            if (size == null)
+                size = new AtomicInteger();
+            size.set((int) file2.length());
             //        System.out.println("!!! getting object:" + response);
 
         } catch (Exception e) {
