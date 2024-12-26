@@ -753,12 +753,11 @@ public class AnyLogSegment extends LogSegment implements Closeable {
      */
     public Optional<FileRecords.TimestampAndOffset> findOffsetByTimestamp(long timestampMs, long startingOffset) throws IOException {
         // Get the index entry with a timestamp less than or equal to the target timestamp
-//        TimestampOffset timestampOffset = timeIndex().lookup(timestampMs);
-//        int position = offsetIndex().lookup(Math.max(timestampOffset.offset, startingOffset)).position;
-//
-//        // Search the timestamp
-//        return Optional.ofNullable(log.searchForTimestamp(timestampMs, position, startingOffset));
-        return Optional.empty();
+        TimestampOffset timestampOffset = timeIndex().lookup(timestampMs);
+        int position = offsetIndex().lookup(Math.max(timestampOffset.offset, startingOffset)).position;
+
+        // Search the timestamp
+        return Optional.ofNullable(log.searchForTimestamp(timestampMs, position, startingOffset));
     }
 
     /**
