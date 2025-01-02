@@ -149,7 +149,7 @@ public class AnyLogSegment extends LogSegment implements Closeable {
     }
 
     public FileRecords log() {
-        return null;
+        return log;
     }
 
     public long rollJitterMs() {
