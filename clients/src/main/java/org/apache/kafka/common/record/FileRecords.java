@@ -388,8 +388,8 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @param start The position to start record iteration from; must be a known position for start of a batch
      * @return An iterator over batches starting from {@code start}
      */
-    public Iterable<FileChannelRecordBatch> batchesFrom(final int start) {
-        return () -> batchIterator(start);
+    public Iterable<FileChannelRecordBatch> batchesFrom(final long start) {
+        return () -> batchIterator((int) start);
     }
 
     @Override
