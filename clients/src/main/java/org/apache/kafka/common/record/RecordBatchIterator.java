@@ -27,6 +27,10 @@ class RecordBatchIterator<T extends RecordBatch> extends AbstractIterator<T> {
 
     private final LogInputStream<T> logInputStream;
 
+    RecordBatchIterator() {
+        this.logInputStream = null;
+    }
+
     RecordBatchIterator(LogInputStream<T> logInputStream) {
         this.logInputStream = logInputStream;
     }
