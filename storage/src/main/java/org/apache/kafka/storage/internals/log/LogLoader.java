@@ -391,7 +391,6 @@ public class LogLoader {
         List<String> objs = new LinkedList<>();
         ListObjectsV2Iterable objectBytes = s3.listObjectsV2Paginator(initialRequest);
         objectBytes.stream().forEach(response -> response.contents().forEach(s3Object -> {
-            System.out.println("!!! obj size:" + s3Object.key());
             objs.add(s3Object.key());
         }));
         return objs;
@@ -451,7 +450,9 @@ public class LogLoader {
 
         if (config.logUseAny) {
             List<String> baseOffsets = listBucket().stream().filter(name -> name.contains(dir.getName())).sorted().toList();
-            for (String baseOffsetStr : baseOffsets) {
+//            for (String baseOffsetStr : baseOffsets) {
+            if (!baseOffsets.isEmpty()) {
+                String baseOffsetStr = baseOffsets.get(0);
                 long baseOffset = Long.parseLong(baseOffsetStr.substring(baseOffsetStr.lastIndexOf('/') + 1, baseOffsetStr.lastIndexOf('.')));
                 System.out.println("!!! baseOffsetStr:" + baseOffsetStr + ";;" + baseOffset);
                 boolean timeIndexFileNewlyCreated = !LogFileUtils.timeIndexFile(dir, baseOffset).exists();
@@ -459,17 +460,17 @@ public class LogLoader {
                 LogSegment segment = null;// LogSegment.open(dir, baseOffset, config, time, true, 0, false, "");
 
                 segment = AnyLogSegment.open(dir, baseOffset, config, time, true, 0, false, "");
-                try {
-                    segment.sanityCheck(timeIndexFileNewlyCreated);
-                } catch (NoSuchFileException nsfe) {
-                    if (hadCleanShutdown || segment.baseOffset() < recoveryPointCheckpoint) {
-                        logger.error("Could not find offset index file corresponding to log file {}, recovering segment and rebuilding index files...", segment.log());
-                    }
-                    recoverSegment(segment);
-                } catch (CorruptIndexException cie) {
-                    logger.warn("Found a corrupted index file corresponding to log file {} due to {}, recovering segment and rebuilding index files...", segment.log(), cie.getMessage());
-                    recoverSegment(segment);
-                }
+//                try {
+//                    segment.sanityCheck(timeIndexFileNewlyCreated);
+//                } catch (NoSuchFileException nsfe) {
+//                    if (hadCleanShutdown || segment.baseOffset() < recoveryPointCheckpoint) {
+//                        logger.error("Could not find offset index file corresponding to log file {}, recovering segment and rebuilding index files...", segment.log());
+//                    }
+//                    recoverSegment(segment);
+//                } catch (CorruptIndexException cie) {
+//                    logger.warn("Found a corrupted index file corresponding to log file {} due to {}, recovering segment and rebuilding index files...", segment.log(), cie.getMessage());
+//                    recoverSegment(segment);
+//                }
                 logger.info("!!! adding:" + segment.toString());
                 segments.add(segment);
             }

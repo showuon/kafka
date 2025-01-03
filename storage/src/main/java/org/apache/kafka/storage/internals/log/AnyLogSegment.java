@@ -166,7 +166,7 @@ public class AnyLogSegment extends LogSegment implements Closeable {
 //        return size > rollParams.maxSegmentBytes - rollParams.messagesSize ||
 //            (size > 0 && reachedRollMs) ||
 //            offsetIndex().isFull() || timeIndex().isFull() || !canConvertToRelativeOffset(rollParams.maxOffsetInMessages);
-        return true;
+        return false;
     }
 
     public void resizeIndexes(int size) throws IOException {
@@ -450,6 +450,8 @@ public class AnyLogSegment extends LogSegment implements Closeable {
 
         // calculate the length of the message set to read based on whether or not they gave us a maxOffset
         int fetchSize = Math.min((int) (maxPositionOpt.get() - startPosition), adjustedMaxSize);
+
+        System.out.println("!!! fetch size:" + fetchSize + ";;" + maxPositionOpt);
 
         return new FetchDataInfo(offsetMetadata, log.slice(startOffset, fetchSize),
             adjustedMaxSize < startOffsetAndSize.size, Optional.empty());
