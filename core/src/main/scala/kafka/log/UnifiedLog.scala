@@ -252,14 +252,14 @@ class UnifiedLog(@volatile var logStartOffset: Long,
    * @return the updated high watermark offset
    */
   def updateHighWatermark(highWatermarkMetadata: LogOffsetMetadata): Long = {
-    if (!topicPartition.topic().equals("__cluster_metadata")) {
-      logger.info("!!! updateHighWatermark:" + highWatermarkMetadata + ";;" + logStartOffset + ";;" + localLog.logEndOffsetMetadata)
-      val elements = Thread.currentThread.getStackTrace
-      for (i <- 1 until elements.length) {
-        val s = elements(i)
-        System.out.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
-      }
-    }
+//    if (!topicPartition.topic().equals("__cluster_metadata")) {
+//      logger.info("!!! updateHighWatermark:" + highWatermarkMetadata + ";;" + logStartOffset + ";;" + localLog.logEndOffsetMetadata)
+//      val elements = Thread.currentThread.getStackTrace
+//      for (i <- 1 until elements.length) {
+//        val s = elements(i)
+//        System.out.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+//      }
+//    }
 
     val endOffsetMetadata = localLog.logEndOffsetMetadata
     val newHighWatermarkMetadata = if (highWatermarkMetadata.messageOffset < logStartOffset) {
@@ -370,14 +370,14 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   private[log] def firstUnstableOffset: Option[Long] = firstUnstableOffsetMetadata.map(_.messageOffset)
 
   private def fetchLastStableOffsetMetadata: LogOffsetMetadata = {
-    if (!topicPartition.topic().equals("__cluster_metadata")) {
-      logger.info("!!! fetchLSO metadata:")
-      val elements = Thread.currentThread.getStackTrace
-      for (i <- 1 until elements.length) {
-        val s = elements(i)
-        System.out.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
-      }
-    }
+//    if (!topicPartition.topic().equals("__cluster_metadata")) {
+//      logger.info("!!! fetchLSO metadata:")
+//      val elements = Thread.currentThread.getStackTrace
+//      for (i <- 1 until elements.length) {
+//        val s = elements(i)
+//        System.out.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
+//      }
+//    }
     localLog.checkIfMemoryMappedBufferClosed()
 
     // cache the current high watermark to avoid a concurrent update invalidating the range check
@@ -423,6 +423,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   def fetchOffsetSnapshot: LogOffsetSnapshot = {
     val lastStable = fetchLastStableOffsetMetadata
     val highWatermark = fetchHighWatermarkMetadata
+    println("!!! LSO:" + lastStable + ";;" + highWatermark)
 
     new LogOffsetSnapshot(
       logStartOffset,
@@ -1261,14 +1262,16 @@ class UnifiedLog(@volatile var logStartOffset: Long,
            maxLength: Int,
            isolation: FetchIsolation,
            minOneMessage: Boolean): FetchDataInfo = {
-    if (!topicPartition.topic().equals("__cluster_metadata"))
-      info("!!! unified log read")
+
     checkLogStartOffset(startOffset)
     val maxOffsetMetadata = isolation match {
       case FetchIsolation.LOG_END => localLog.logEndOffsetMetadata
       case FetchIsolation.HIGH_WATERMARK => fetchHighWatermarkMetadata
       case FetchIsolation.TXN_COMMITTED => fetchLastStableOffsetMetadata
     }
+
+    if (!topicPartition.topic().equals("__cluster_metadata"))
+      info("!!! unified log read:" + isolation + ";;" + maxOffsetMetadata)
 
     if (config.logUseAny) {
       localLog.asInstanceOf[AnyLog].read(startOffset, maxLength, minOneMessage, maxOffsetMetadata, isolation == FetchIsolation.TXN_COMMITTED)
