@@ -60,7 +60,7 @@ class AnyRecordBatchIterator<T extends RecordBatch> extends RecordBatchIterator<
 
 
     private List<String> listBucket() {
-        System.out.println("!!! list S3:");
+//        System.out.println("!!! list S3:");
         String accessKey = "minioadmin";
         String secretKey = "minioadmin";
         AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
@@ -154,13 +154,13 @@ class AnyRecordBatchIterator<T extends RecordBatch> extends RecordBatchIterator<
     protected T makeNext() {
         try {
 
-            final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-            for (int i = 1; i < elements.length; i++) {
-                final StackTraceElement s = elements[i];
-                System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
-            }
+//            final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+//            for (int i = 1; i < elements.length; i++) {
+//                final StackTraceElement s = elements[i];
+//                System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+//            }
             List<String> baseOffsets = listBucket().stream().filter(name -> name.contains(path)).sorted().collect(Collectors.toList());
-            System.out.println("!!! baseOffsets:" + baseOffsets + path + suffix + ";;" + curOffset + ";;" + startOffset);
+//            System.out.println("!!! baseOffsets:" + baseOffsets + path + suffix + ";;" + curOffset + ";;" + startOffset);
             for (String baseOffset : baseOffsets) {
 
                 long offset = Long.parseLong(baseOffset.substring(baseOffset.lastIndexOf('/') + 1, baseOffset.lastIndexOf('.')));

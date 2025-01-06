@@ -131,7 +131,6 @@ public class MemoryRecords extends AbstractRecords {
                 .build();
 
         int size = buffer.position();
-        System.out.println("!!! size:" + size );
 
         buffer.mark();
 

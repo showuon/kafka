@@ -146,7 +146,7 @@ public class AnyRecords extends FileRecords implements Closeable {
     }
 
     private List<String> listBucket() {
-        System.out.println("!!! list S3:");
+//        System.out.println("!!! list S3:");
         String accessKey = "minioadmin";
         String secretKey = "minioadmin";
         AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
@@ -183,7 +183,6 @@ public class AnyRecords extends FileRecords implements Closeable {
             // luke
 
             List<String> baseOffsets = listBucket().stream().filter(name -> name.contains(path.substring(1))).sorted().collect(Collectors.toList());
-            System.out.println(baseOffsets);
             for (String baseOffset : baseOffsets) {
                 long offset = Long.parseLong(baseOffset.substring(baseOffset.lastIndexOf('/') + 1, baseOffset.lastIndexOf('.')));
                 readS3(offset);
@@ -411,15 +410,28 @@ public class AnyRecords extends FileRecords implements Closeable {
     @Override
     public int writeTo(TransferableChannel destChannel, int offset, int length) throws IOException {
         // luke
-        System.out.println("!!! file2:" + file2 + ";;" + currentOffset + ";;" + offset);
-        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-        for (int i = 1; i < elements.length; i++) {
-            final StackTraceElement s = elements[i];
-            System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+        System.out.println("!!! write to:" + currentOffset);
+//        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+//        for (int i = 1; i < elements.length; i++) {
+//            final StackTraceElement s = elements[i];
+//            System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+//        }
+        // luke
+        List<Long> baseOffsets = listBucket().stream().filter(name -> name.contains(path.substring(1)))
+                .map(off -> Long.parseLong(off.substring(off.lastIndexOf('/') + 1, off.lastIndexOf('.')))).sorted().collect(Collectors.toList());
+        System.out.println("!!! baseOffsets:" + baseOffsets);
+        for (long offset2 : baseOffsets) {
+//            long offset2 = Long.parseLong(baseOffset.substring(baseOffset.lastIndexOf('/') + 1, baseOffset.lastIndexOf('.')));
+            if (offset2 > currentOffset) {
+                currentOffset = offset2;
+                break;
+            }
         }
-        currentOffset++;
+
+        System.out.println("!!! new currentOffset:" + currentOffset);
         if (!file2.containsKey(currentOffset))
             readS3(currentOffset);
+
 //        System.out.println("!!! file2:" + file2 + ";;" + file2.get((long) offset) + ";;" + offset);
         channel = FileChannel.open(file2.get(currentOffset).toPath(), StandardOpenOption.CREATE, StandardOpenOption.READ,
                 StandardOpenOption.WRITE);
@@ -626,7 +638,7 @@ public class AnyRecords extends FileRecords implements Closeable {
             OutputStream os = new FileOutputStream(path.toFile());
             os.write(data);
             os.close();
-            System.out.println("!!! file:" + path.toFile().length() +  ";;" + file2);
+            System.out.println("!!! file:" + path.toFile().length());
 //            if (size == null) {
 //                size = new AtomicInteger();
 //                size.addAndGet((int) path.toFile().length());

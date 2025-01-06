@@ -509,7 +509,6 @@ public class AnyLog extends LocalLog {
                             maxPositionOpt = Optional.empty();
 
                         fetchDataInfo = segment.read(startOffset, maxLength, maxPositionOpt, minOneMessage);
-                        logger.info("!!! fetchDataInfo:" + fetchDataInfo);
                         if (fetchDataInfo != null) {
                             if (includeAbortedTxns) {
                                 fetchDataInfo = addAbortedTransactions(startOffset, segment, fetchDataInfo);
