@@ -510,12 +510,12 @@ public class AnyLogSegment extends LogSegment implements Closeable {
                 }
             }
         } catch (CorruptRecordException | InvalidRecordException e) {
-            LOGGER.warn("Found invalid messages in log segment {} at byte offset {}.", log.file().getAbsolutePath(),
+            LOGGER.warn("Found invalid messages in log segment {} at byte offset {}.", "",
                 validBytes, e);
         }
         int truncated = log.sizeInBytes() - validBytes;
         if (truncated > 0)
-            LOGGER.debug("Truncated {} invalid bytes at the end of segment {} during recovery", truncated, log.file().getAbsolutePath());
+            LOGGER.debug("Truncated {} invalid bytes at the end of segment {} during recovery", truncated, "");
 
         log.truncateTo(validBytes);
         offsetIndex().trimToValidSize();

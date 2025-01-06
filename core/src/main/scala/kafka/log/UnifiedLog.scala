@@ -423,7 +423,6 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   def fetchOffsetSnapshot: LogOffsetSnapshot = {
     val lastStable = fetchLastStableOffsetMetadata
     val highWatermark = fetchHighWatermarkMetadata
-    println("!!! LSO:" + lastStable + ";;" + highWatermark)
 
     new LogOffsetSnapshot(
       logStartOffset,
