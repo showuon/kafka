@@ -170,7 +170,7 @@ class AnyRecordBatchIterator<T extends RecordBatch> extends RecordBatchIterator<
                 curOffset = offset;
                 System.out.println("!!! curOffset:" + curOffset);
 
-                T batch = (T) readS3(startOffset).nextBatch();
+                T batch = (T) readS3(curOffset).nextBatch();
                 System.out.println("!!! batch:" + batch);
                 if (batch == null)
                     return allDone();
