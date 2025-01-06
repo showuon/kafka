@@ -56,6 +56,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -63,6 +64,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 /**
  * A {@link Records} implementation backed by a file. An optional start and end position can be applied to this
@@ -79,10 +81,11 @@ public class AnyRecords extends FileRecords implements Closeable {
     private AtomicInteger size;
     private  FileChannel channel;
     private volatile File file;
-    private volatile Map<Long, File> file2 = new HashMap<>();
+    private volatile Map<Long, File> file2;
     private long baseOffset = 0;
     private String path;
     private String suffix;
+    private long currentOffset;
 
     /**
      * The {@code FileRecords.open} methods should be used instead of this constructor whenever possible.
@@ -95,16 +98,21 @@ public class AnyRecords extends FileRecords implements Closeable {
                boolean isSlice,
                long baseOffset,
                String path,
-               String suffix) throws IOException {
+               String suffix,
+               Map<Long, File> file2,
+               long currentOffset,
+               AtomicInteger size) throws IOException {
         this.file = file;
         this.channel = channel;
         this.start = 0;
         this.end = end;
         this.isSlice = isSlice;
-        this.size = null;
+        this.size =size;
         this.baseOffset = baseOffset;
         this.path = path;
         this.suffix = suffix;
+        this.file2 = file2;
+        this.currentOffset = currentOffset;
 
 //        if (isSlice) {
 //            // don't check the file size if this is just a slice view
@@ -126,16 +134,69 @@ public class AnyRecords extends FileRecords implements Closeable {
         batches = batchesFrom((long) start);
     }
 
+    AnyRecords(File file,
+               FileChannel channel,
+               int start,
+               int end,
+               boolean isSlice,
+               long baseOffset,
+               String path,
+               String suffix) throws IOException {
+        this(file, channel, start, end, isSlice, baseOffset, path, suffix, new HashMap<>(), -1, null);
+    }
+
+    private List<String> listBucket() {
+        System.out.println("!!! list S3:");
+        String accessKey = "minioadmin";
+        String secretKey = "minioadmin";
+        AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
+        S3Client s3 = null;
+        try {
+            s3 = S3Client.builder()
+                    .region(Region.US_EAST_1)
+                    .endpointOverride(new URI("http://localhost:9000"))
+                    .credentialsProvider(StaticCredentialsProvider.create(credentials))
+                    .forcePathStyle(true)
+                    .build();
+        } catch (URISyntaxException e) {
+            throw new RuntimeException(e);
+        }
+
+        ListObjectsV2Request initialRequest = ListObjectsV2Request.builder()
+                .bucket("test")
+                .maxKeys(100)
+                .build();
+
+
+        List<String> objs = new LinkedList<>();
+        ListObjectsV2Iterable objectBytes = s3.listObjectsV2Paginator(initialRequest);
+        objectBytes.stream().forEach(response -> response.contents().forEach(s3Object -> {
+            objs.add(s3Object.key());
+        }));
+        return objs;
+    }
+
 
     @Override
     public int sizeInBytes() {
         if (size == null) {
             // luke
 
-            readS3(0);
+            List<String> baseOffsets = listBucket().stream().filter(name -> name.contains(path)).sorted().collect(Collectors.toList());
+            System.out.println(baseOffsets);
+            for (String baseOffset : baseOffsets) {
+                long offset = Long.parseLong(baseOffset.substring(baseOffset.lastIndexOf('/') + 1, baseOffset.lastIndexOf('.')));
+                readS3(offset);
+            }
+
 
         }
-        return size == null ? 0 : size.get();
+        int res = 0;
+        for (File file : file2.values()) {
+            res += file.length();
+        }
+        System.out.println("!!! size:" + res);
+        return res;
     }
 
     /**
@@ -183,7 +244,7 @@ public class AnyRecords extends FileRecords implements Closeable {
     public AnyRecords slice(long offset, int size) throws IOException {
 //        int availableBytes = availableBytes(offset, size);
 //        int startPosition = this.start + position;
-        return new AnyRecords(file, channel, (int) offset, end, true, offset, path, suffix);
+        return new AnyRecords(file, channel, (int) offset, end, true, offset, path, suffix, file2, currentOffset, this.size);
     }
 
     /**
@@ -350,24 +411,31 @@ public class AnyRecords extends FileRecords implements Closeable {
     @Override
     public int writeTo(TransferableChannel destChannel, int offset, int length) throws IOException {
         // luke
-
-        if (!file2.containsKey((long) offset))
-            readS3(offset);
-        System.out.println("!!! file2:" + file2 + ";;" + file2.get((long) offset));
-        channel = FileChannel.open(file2.get((long) offset).toPath(), StandardOpenOption.CREATE, StandardOpenOption.READ,
+        System.out.println("!!! file2:" + file2 + ";;" + currentOffset + ";;" + offset);
+        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+        for (int i = 1; i < elements.length; i++) {
+            final StackTraceElement s = elements[i];
+            System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+        }
+        currentOffset++;
+        if (!file2.containsKey(currentOffset))
+            readS3(currentOffset);
+//        System.out.println("!!! file2:" + file2 + ";;" + file2.get((long) offset) + ";;" + offset);
+        channel = FileChannel.open(file2.get(currentOffset).toPath(), StandardOpenOption.CREATE, StandardOpenOption.READ,
                 StandardOpenOption.WRITE);
         System.out.println("!!! channel.size():" + channel.size() + ";;" + start + ";;" + end);
         long newSize = Math.min(channel.size(), end) - start;
         int oldSize = sizeInBytes();
-        if (newSize < oldSize)
-            throw new KafkaException(String.format(
-                    "Size of FileRecords %s has been truncated during write: old size %d, new size %d",
-                    path, oldSize, newSize));
+//        if (newSize < oldSize)
+//            throw new KafkaException(String.format(
+//                    "Size of FileRecords %s has been truncated during write: old size %d, new size %d",
+//                    path, oldSize, newSize));
 
         long position = start + offset;
         int count = Math.min(length, oldSize - offset);
+        System.out.println("!!! position:" + position + ";;" + count);
         // safe to cast to int since `count` is an int
-        return (int) destChannel.transferFrom(channel, position, count);
+        return (int) destChannel.transferFrom(channel, 0, count);
     }
 
     /**
@@ -506,7 +574,10 @@ public class AnyRecords extends FileRecords implements Closeable {
     }
 
     private void readS3(long start) {
-        System.out.println("!!! get S3:" + baseOffset);
+        System.out.println("!!! get S3:" + start);
+        if (file2.containsKey(start)) {
+            return;
+        }
         final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
         for (int i = 1; i < elements.length; i++) {
             final StackTraceElement s = elements[i];
@@ -537,10 +608,10 @@ public class AnyRecords extends FileRecords implements Closeable {
 //
 //        ByteBufferLogInputStream inputStream = new ByteBufferLogInputStream(s3Object.asByteBuffer(), Integer.MAX_VALUE);
 //        return new RecordBatchIterator<>(inputStream);
-        System.out.println("!!! getting object:" + path + "/" + baseOffset + ".log" + suffix);
+        System.out.println("!!! getting object:" + path + "/" + start + ".log" + suffix);
         Path path = null;
         try {
-            path = Files.createTempFile(baseOffset + ".log" + suffix, null);
+            path = Files.createTempFile(start + ".log" + suffix, null);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -556,9 +627,11 @@ public class AnyRecords extends FileRecords implements Closeable {
             os.write(data);
             os.close();
             System.out.println("!!! file:" + path.toFile().length() +  ";;" + file2);
-            if (size == null)
-                size = new AtomicInteger();
-            size.addAndGet((int) path.toFile().length());
+//            if (size == null) {
+//                size = new AtomicInteger();
+//                size.addAndGet((int) path.toFile().length());
+//            }
+//            size.addAndGet((int) path.toFile().length());
             //        System.out.println("!!! getting object:" + response);
 
         } catch (Exception e) {
