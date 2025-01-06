@@ -366,7 +366,7 @@ public class LogLoader {
     }
 
     private List<String> listBucket() {
-        System.out.println("!!! list S3:");
+//        System.out.println("!!! list S3:");
         String accessKey = "minioadmin";
         String secretKey = "minioadmin";
         AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
