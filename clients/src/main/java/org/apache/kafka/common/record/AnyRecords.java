@@ -86,6 +86,7 @@ public class AnyRecords extends FileRecords implements Closeable {
     private String path;
     private String suffix;
     private long currentOffset;
+    private boolean changed = true;
 
     /**
      * The {@code FileRecords.open} methods should be used instead of this constructor whenever possible.
@@ -179,6 +180,9 @@ public class AnyRecords extends FileRecords implements Closeable {
 
     @Override
     public int sizeInBytes() {
+        if (!changed) {
+            return size == null ? 0 : size.get();
+        }
         if (size == null) {
             // luke
 
@@ -194,6 +198,11 @@ public class AnyRecords extends FileRecords implements Closeable {
         for (File file : file2.values()) {
             res += file.length();
         }
+        if (size == null) {
+            size = new AtomicInteger(0);
+        }
+        size.set(res);
+        changed = false;
         System.out.println("!!! size:" + res);
         return res;
     }
@@ -302,6 +311,7 @@ public class AnyRecords extends FileRecords implements Closeable {
         else {
             size.addAndGet(written);
         }
+        changed = true;
         return written;
     }
 
@@ -419,7 +429,7 @@ public class AnyRecords extends FileRecords implements Closeable {
         // luke
         List<Long> baseOffsets = listBucket().stream().filter(name -> name.contains(path.substring(1)))
                 .map(off -> Long.parseLong(off.substring(off.lastIndexOf('/') + 1, off.lastIndexOf('.')))).sorted().collect(Collectors.toList());
-        System.out.println("!!! baseOffsets:" + baseOffsets);
+//        System.out.println("!!! baseOffsets:" + baseOffsets);
         for (long offset2 : baseOffsets) {
 //            long offset2 = Long.parseLong(baseOffset.substring(baseOffset.lastIndexOf('/') + 1, baseOffset.lastIndexOf('.')));
             if (offset2 > currentOffset) {
@@ -586,7 +596,7 @@ public class AnyRecords extends FileRecords implements Closeable {
     }
 
     private void readS3(long start) {
-        System.out.println("!!! get S3:" + start);
+//        System.out.println("!!! get S3:" + start);
         if (file2.containsKey(start)) {
             return;
         }
