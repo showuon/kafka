@@ -471,7 +471,7 @@ public class AnyLog extends LocalLog {
                 () -> "Exception while reading from " + topicPartition + " in dir " + dir.getParent(),
                 () -> {
                     if (!topicPartition.topic().equals("__cluster_metadata"))
-                        logger.info("!!! Reading maximum $maxLength bytes at offset {} from log with total length {} bytes",
+                        logger.trace("!!! Reading maximum $maxLength bytes at offset {} from log with total length {} bytes",
                                 startOffset, segments.sizeInBytes());
 
                     LogOffsetMetadata endOffsetMetadata = nextOffsetMetadata;
