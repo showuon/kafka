@@ -182,7 +182,7 @@ public class AnyRecords extends FileRecords implements Closeable {
         if (size == null) {
             // luke
 
-            List<String> baseOffsets = listBucket().stream().filter(name -> name.contains(path)).sorted().collect(Collectors.toList());
+            List<String> baseOffsets = listBucket().stream().filter(name -> name.contains(path.substring(1))).sorted().collect(Collectors.toList());
             System.out.println(baseOffsets);
             for (String baseOffset : baseOffsets) {
                 long offset = Long.parseLong(baseOffset.substring(baseOffset.lastIndexOf('/') + 1, baseOffset.lastIndexOf('.')));
@@ -566,8 +566,8 @@ public class AnyRecords extends FileRecords implements Closeable {
             if (file2.isEmpty()) {
                 return new RecordBatchIterator<>(null);
             }
-            inputStream = new FileLogInputStream(FileRecords.open(file2.get(start)),0, (int) file2.get(start).length());
-        } catch (IOException e) {
+//            inputStream = new FileLogInputStream(FileRecords.open(file2.get(start)),0, (int) file2.get(start).length());
+        } catch (Exception e) {
             throw new RuntimeException(e);
         }
         return new AnyRecordBatchIterator<>(start, path, suffix);

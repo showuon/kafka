@@ -610,11 +610,15 @@ public class AnyLogSegment extends LogSegment implements Closeable {
      * This method is thread-safe.
      */
     public long readNextOffset() throws IOException {
+//        LOGGER.info("!!! read next fetchData for:" + log + ";;" + log.sizeInBytes() + ";;" + offsetIndex().lastOffset());
+
         FetchDataInfo fetchData = read(offsetIndex().lastOffset(), log.sizeInBytes());
 //        LOGGER.info("!!! fetchData:" + fetchData);
         if (fetchData == null)
             return baseOffset;
         else {
+//            LOGGER.info("!!! read next batch:" + fetchData.records.lastBatch());
+
             return fetchData.records.lastBatch()
                     .map(batch -> batch.nextOffset())
                     .orElse(baseOffset);
