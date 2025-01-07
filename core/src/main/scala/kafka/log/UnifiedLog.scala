@@ -1269,8 +1269,8 @@ class UnifiedLog(@volatile var logStartOffset: Long,
       case FetchIsolation.TXN_COMMITTED => fetchLastStableOffsetMetadata
     }
 
-    if (!topicPartition.topic().equals("__cluster_metadata"))
-      info("!!! unified log read:" + isolation + ";;" + maxOffsetMetadata)
+//    if (!topicPartition.topic().equals("__cluster_metadata"))
+//      info("!!! unified log read:" + isolation + ";;" + maxOffsetMetadata)
 
     if (config.logUseAny) {
       localLog.asInstanceOf[AnyLog].read(startOffset, maxLength, minOneMessage, maxOffsetMetadata, isolation == FetchIsolation.TXN_COMMITTED)
