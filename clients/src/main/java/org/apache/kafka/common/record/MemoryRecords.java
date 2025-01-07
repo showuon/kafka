@@ -95,7 +95,7 @@ public class MemoryRecords extends AbstractRecords {
     }
 
     public int writeFullyTo(long offset, String path, String suffix) {
-        System.out.println("!!! writeFullyTo S3:" + path + "/" + offset + "." + suffix);
+        System.out.println("!!! writeFullyTo S3:" + path + "/" + offset + ".log" + suffix);
         String accessKey = "minioadmin";
         String secretKey = "minioadmin";
         AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
@@ -125,7 +125,6 @@ public class MemoryRecords extends AbstractRecords {
 
 //        while (written < sizeInBytes())
 //            written += channel.write(buffer);
-        System.out.println("!!! uploading:" + this.toString());
         PutObjectResponse response = s3.putObject(objectRequest, RequestBody.fromByteBuffer(buffer));
 //        return response.whenComplete((resp, ex) -> {
 //            if (ex != null) {

@@ -241,7 +241,7 @@ public class AnyLogSegment extends LogSegment implements Closeable {
                        long largestTimestampMs,
                        long shallowOffsetOfMaxTimestamp,
                        MemoryRecords records) throws IOException {
-        LOGGER.info("!!! AnyLogSegment append");
+//        LOGGER.info("!!! AnyLogSegment append");
         if (records.sizeInBytes() > 0) {
             LOGGER.info("Inserting {} bytes at end offset {} at position {} with largest timestamp {} at offset {}",
                 records.sizeInBytes(), largestOffset, log.sizeInBytes(), largestTimestampMs, shallowOffsetOfMaxTimestamp);
@@ -424,12 +424,12 @@ public class AnyLogSegment extends LogSegment implements Closeable {
      *         or null if the startOffset is larger than the largest offset in this log
      */
     public FetchDataInfo read(long startOffset, int maxSize, Optional<Long> maxPositionOpt, boolean minOneMessage) throws IOException {
-        LOGGER.info("!!! anylogseg read");
+//        LOGGER.info("!!! anylogseg read");
         if (maxSize < 0)
             throw new IllegalArgumentException("Invalid max size " + maxSize + " for log read from segment " + log);
 
         LogOffsetPosition startOffsetAndSize = translateOffset(startOffset);
-        System.out.println("!!! startOffsetAndSize:" + startOffsetAndSize);
+//        System.out.println("!!! startOffsetAndSize:" + startOffsetAndSize);
 
         // if the start position is already off the end of the log, return null
         if (startOffsetAndSize == null)
@@ -450,8 +450,6 @@ public class AnyLogSegment extends LogSegment implements Closeable {
 
         // calculate the length of the message set to read based on whether or not they gave us a maxOffset
         int fetchSize = Math.min((int) (maxPositionOpt.get() - startPosition), adjustedMaxSize);
-
-        System.out.println("!!! fetch size:" + fetchSize + ";;" + maxPositionOpt);
 
         return new FetchDataInfo(offsetMetadata, log.slice(startOffset, fetchSize),
             adjustedMaxSize < startOffsetAndSize.size, Optional.empty());
@@ -483,7 +481,6 @@ public class AnyLogSegment extends LogSegment implements Closeable {
         maxTimestampAndOffsetSoFar = TimestampOffset.UNKNOWN;
         try {
             for (RecordBatch batch : log.batches()) {
-                LOGGER.info("!!! batch:" + batch.baseOffset() + ";;" + batch.lastOffset());
                 batch.ensureValid();
                 ensureOffsetInRange(batch.lastOffset());
 
@@ -523,7 +520,6 @@ public class AnyLogSegment extends LogSegment implements Closeable {
         timeIndex().maybeAppend(maxTimestampSoFar(), shallowOffsetOfMaxTimestampSoFar(), true);
         timeIndex().trimToValidSize();
         return truncated;
-//        return 0;
     }
 
     /**
@@ -890,7 +886,6 @@ public class AnyLogSegment extends LogSegment implements Closeable {
     public static AnyLogSegment open(File dir, long baseOffset, LogConfig config, Time time, boolean fileAlreadyExists,
                                      int initFileSize, boolean preallocate, String fileSuffix) throws IOException {
         int maxIndexSize = config.maxIndexSize;
-        System.out.println("!!! open:" + fileSuffix);
         return new AnyLogSegment(
             AnyRecords.open(LogFileUtils.logFile(dir, baseOffset, fileSuffix), fileAlreadyExists, initFileSize, preallocate, baseOffset, dir.toString(), fileSuffix),
             LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize),

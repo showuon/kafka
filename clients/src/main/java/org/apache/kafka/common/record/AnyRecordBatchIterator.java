@@ -91,7 +91,7 @@ class AnyRecordBatchIterator<T extends RecordBatch> extends RecordBatchIterator<
     }
 
     private FileLogInputStream readS3(long start) {
-        System.out.println("!!! batchFrom get S3:" + start);
+//        System.out.println("!!! batchFrom get S3:" + start);
 //        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
 //        for (int i = 1; i < elements.length; i++) {
 //            final StackTraceElement s = elements[i];
@@ -122,7 +122,7 @@ class AnyRecordBatchIterator<T extends RecordBatch> extends RecordBatchIterator<
 //
 //        ByteBufferLogInputStream inputStream = new ByteBufferLogInputStream(s3Object.asByteBuffer(), Integer.MAX_VALUE);
 //        return new RecordBatchIterator<>(inputStream);
-        System.out.println("!!! getting object:" + path + "/" + start + ".log" + suffix);
+//        System.out.println("!!! getting object:" + path + "/" + start + ".log" + suffix);
         Path path = null;
         try {
             path = Files.createTempFile(start + ".log" + suffix, null);
@@ -168,10 +168,10 @@ class AnyRecordBatchIterator<T extends RecordBatch> extends RecordBatchIterator<
                     continue;
                 }
                 curOffset = offset;
-                System.out.println("!!! curOffset:" + curOffset);
+//                System.out.println("!!! curOffset:" + curOffset);
 
                 T batch = (T) readS3(curOffset).nextBatch();
-                System.out.println("!!! batch:" + batch);
+//                System.out.println("!!! batch:" + batch);
                 if (batch == null)
                     return allDone();
                 return batch;
