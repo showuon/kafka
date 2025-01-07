@@ -48,14 +48,13 @@ public abstract class RecordsSend<T extends BaseRecords> implements Send {
 
         if (remaining > 0) {
             written = writeTo(channel, maxBytesToWrite - remaining, remaining);
-            System.out.println("!!! written " + written + " bytes of " + remaining + " bytes" + ";;" + maxBytesToWrite);
+//            System.out.println("!!! written " + written + " bytes of " + remaining + " bytes" + ";;" + maxBytesToWrite);
             if (written < 0)
                 throw new EOFException("Wrote negative bytes to channel. This shouldn't happen.");
             remaining -= written;
         }
 
         pending = channel.hasPendingWrites();
-        System.out.println("!!! pending " + pending);
         if (remaining <= 0 && pending)
             channel.write(EMPTY_BYTE_BUFFER);
 

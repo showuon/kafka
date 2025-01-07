@@ -478,8 +478,8 @@ public class AnyLog extends LocalLog {
                     long endOffset = endOffsetMetadata.messageOffset;
                     Optional<LogSegment> segmentOpt = segments.floorSegment(startOffset);
 
-                    if (!topicPartition.topic().equals("__cluster_metadata"))
-                        logger.info("!!! maxOffsetMetadata.messageOffset:" + maxOffsetMetadata + ";;" + startOffset + ";;" + segmentOpt);
+//                    if (!topicPartition.topic().equals("__cluster_metadata"))
+//                        logger.info("!!! maxOffsetMetadata.messageOffset:" + maxOffsetMetadata + ";;" + startOffset + ";;" + segmentOpt);
                     // return error on attempt to read beyond the log end offset
                     if (startOffset > endOffset || segmentOpt.isEmpty()) {
                         throw new OffsetOutOfRangeException("Received request for offset " + startOffset + " for partition " + topicPartition + ", " +
@@ -530,7 +530,7 @@ public class AnyLog extends LocalLog {
     }
 
     public void append(long lastOffset, long largestTimestamp, long shallowOffsetOfMaxTimestamp, MemoryRecords records) throws IOException {
-        logger.info("!!! AnyLog append");
+//        logger.info("!!! AnyLog append");
         ((AnyLogSegment)(segments.activeSegment())).append(lastOffset, largestTimestamp, shallowOffsetOfMaxTimestamp, records);
         updateLogEndOffset(lastOffset + 1);
     }
@@ -589,7 +589,7 @@ public class AnyLog extends LocalLog {
         return maybeHandleIOException(
             () -> "Error while rolling log segment for " + topicPartition + " in dir " + dir.getParent(),
             () -> {
-                logger.info("!!! roll:" + expectedNextOffset);
+//                logger.info("!!! roll:" + expectedNextOffset);
                 if (expectedNextOffset == 0) {
                     return segments.activeSegment();
                 }

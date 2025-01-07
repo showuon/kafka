@@ -203,7 +203,7 @@ public class AnyRecords extends FileRecords implements Closeable {
         }
         size.set(res);
         changed = false;
-        System.out.println("!!! size:" + res);
+//        System.out.println("!!! size:" + res);
         return res;
     }
 
@@ -300,7 +300,7 @@ public class AnyRecords extends FileRecords implements Closeable {
      */
     public int append(MemoryRecords records, long largestOffset) throws IOException {
 
-        System.out.println("!!! AnyRecords append");
+//        System.out.println("!!! AnyRecords append");
         if (records.sizeInBytes() > Integer.MAX_VALUE - (size == null ? 0 : size.get()))
             throw new IllegalArgumentException("Append of size " + records.sizeInBytes() +
                     " bytes is too large for segment with current file position at " + size.get());
@@ -420,7 +420,7 @@ public class AnyRecords extends FileRecords implements Closeable {
     @Override
     public int writeTo(TransferableChannel destChannel, int offset, int length) throws IOException {
         // luke
-        System.out.println("!!! write to:" + currentOffset);
+//        System.out.println("!!! write to:" + currentOffset);
 //        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
 //        for (int i = 1; i < elements.length; i++) {
 //            final StackTraceElement s = elements[i];
@@ -438,14 +438,14 @@ public class AnyRecords extends FileRecords implements Closeable {
             }
         }
 
-        System.out.println("!!! new currentOffset:" + currentOffset);
+//        System.out.println("!!! new currentOffset:" + currentOffset);
         if (!file2.containsKey(currentOffset))
             readS3(currentOffset);
 
 //        System.out.println("!!! file2:" + file2 + ";;" + file2.get((long) offset) + ";;" + offset);
         channel = FileChannel.open(file2.get(currentOffset).toPath(), StandardOpenOption.CREATE, StandardOpenOption.READ,
                 StandardOpenOption.WRITE);
-        System.out.println("!!! channel.size():" + channel.size() + ";;" + start + ";;" + end);
+//        System.out.println("!!! channel.size():" + channel.size() + ";;" + start + ";;" + end);
         long newSize = Math.min(channel.size(), end) - start;
         int oldSize = sizeInBytes();
 //        if (newSize < oldSize)
@@ -455,7 +455,7 @@ public class AnyRecords extends FileRecords implements Closeable {
 
         long position = start + offset;
         int count = Math.min(length, oldSize - offset);
-        System.out.println("!!! position:" + position + ";;" + count);
+//        System.out.println("!!! position:" + position + ";;" + count);
         // safe to cast to int since `count` is an int
         return (int) destChannel.transferFrom(channel, 0, count);
     }
@@ -471,7 +471,7 @@ public class AnyRecords extends FileRecords implements Closeable {
     public FileRecords.LogOffsetPosition searchForOffsetWithSize(long targetOffset, int startingPosition) {
         for (FileChannelRecordBatch batch : batchesFrom(targetOffset)) {
             long offset = batch.lastOffset();
-            System.out.println("!!! offset:" + offset + ";;" + targetOffset);
+//            System.out.println("!!! offset:" + offset + ";;" + targetOffset);
             if (offset >= targetOffset)
                 return new FileRecords.LogOffsetPosition(batch.baseOffset(), batch.position(), sizeInBytes());
         }
@@ -578,7 +578,7 @@ public class AnyRecords extends FileRecords implements Closeable {
             end = this.sizeInBytes();
         else
             end = this.sizeInBytes();
-        System.out.println("!!! isSlice:" + isSlice + ";;" + end + ";;" + sizeInBytes() + ";;" + start);
+//        System.out.println("!!! isSlice:" + isSlice + ";;" + end + ";;" + sizeInBytes() + ";;" + start);
 
         FileLogInputStream inputStream = null;
         try {
@@ -600,11 +600,11 @@ public class AnyRecords extends FileRecords implements Closeable {
         if (file2.containsKey(start)) {
             return;
         }
-        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-        for (int i = 1; i < elements.length; i++) {
-            final StackTraceElement s = elements[i];
-            System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
-        }
+//        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+//        for (int i = 1; i < elements.length; i++) {
+//            final StackTraceElement s = elements[i];
+//            System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+//        }
         String accessKey = "minioadmin";
         String secretKey = "minioadmin";
         AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
@@ -630,7 +630,7 @@ public class AnyRecords extends FileRecords implements Closeable {
 //
 //        ByteBufferLogInputStream inputStream = new ByteBufferLogInputStream(s3Object.asByteBuffer(), Integer.MAX_VALUE);
 //        return new RecordBatchIterator<>(inputStream);
-        System.out.println("!!! getting object:" + path + "/" + start + ".log" + suffix);
+//        System.out.println("!!! getting object:" + path + "/" + start + ".log" + suffix);
         Path path = null;
         try {
             path = Files.createTempFile(start + ".log" + suffix, null);
@@ -648,7 +648,6 @@ public class AnyRecords extends FileRecords implements Closeable {
             OutputStream os = new FileOutputStream(path.toFile());
             os.write(data);
             os.close();
-            System.out.println("!!! file:" + path.toFile().length());
 //            if (size == null) {
 //                size = new AtomicInteger();
 //                size.addAndGet((int) path.toFile().length());
@@ -671,7 +670,6 @@ public class AnyRecords extends FileRecords implements Closeable {
                                   String suffix) throws IOException {
 //        FileChannel channel = openChannel(file, mutable, fileAlreadyExists, initFileSize, preallocate);
         int end = Integer.MAX_VALUE;
-        System.out.println("!!! suffix:" + suffix);
         return new AnyRecords(null, null, 0, end, false, baseOffset, path, suffix);
     }
 

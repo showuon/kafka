@@ -389,10 +389,14 @@ public class LogLoader {
 
 
         List<String> objs = new LinkedList<>();
-        ListObjectsV2Iterable objectBytes = s3.listObjectsV2Paginator(initialRequest);
-        objectBytes.stream().forEach(response -> response.contents().forEach(s3Object -> {
-            objs.add(s3Object.key());
-        }));
+        try {
+            ListObjectsV2Iterable objectBytes = s3.listObjectsV2Paginator(initialRequest);
+            objectBytes.stream().forEach(response -> response.contents().forEach(s3Object -> {
+                objs.add(s3Object.key());
+            }));
+        } catch (Exception e) {
+            logger.info("error while listing bucket");
+        }
         return objs;
     }
 

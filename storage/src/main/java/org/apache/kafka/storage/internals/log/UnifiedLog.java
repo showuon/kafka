@@ -71,11 +71,6 @@ public class UnifiedLog {
         offsetsToSnapshot.add(Optional.of(lastOffset));
 
         LOG.info("{}Loading producer state till offset {}", logPrefix, lastOffset);
-        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-        for (int i = 1; i < elements.length; i++) {
-            final StackTraceElement s = elements[i];
-            System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
-        }
 
         // We want to avoid unnecessary scanning of the log to build the producer state when the broker is being
         // upgraded. The basic idea is to use the absence of producer snapshot files to detect the upgrade case,
