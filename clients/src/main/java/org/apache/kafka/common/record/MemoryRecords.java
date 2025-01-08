@@ -95,7 +95,6 @@ public class MemoryRecords extends AbstractRecords {
     }
 
     public int writeFullyTo(long offset, String path, String suffix) {
-        System.out.println("!!! writeFullyTo S3:" + path + "/" + offset + ".log" + suffix);
         String accessKey = "minioadmin";
         String secretKey = "minioadmin";
         AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
