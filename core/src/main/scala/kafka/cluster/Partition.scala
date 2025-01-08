@@ -498,7 +498,7 @@ class Partition(val topicPartition: TopicPartition,
         0L
       })
       val initialHighWatermark = log.updateHighWatermark(checkpointHighWatermark)
-      info(s"Log loaded for partition $topicPartition with initial high watermark $initialHighWatermark;; $offsetCheckpoints.")
+      info(s"Log loaded for partition $topicPartition with initial high watermark $initialHighWatermark")
     }
 
     logManager.initializingLog(topicPartition)

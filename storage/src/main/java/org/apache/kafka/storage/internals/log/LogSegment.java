@@ -77,14 +77,14 @@ public class LogSegment implements Closeable {
         LOG_FLUSH_TIMER = logFlushStatsMetricsGroup.newTimer("LogFlushRateAndTimeMs", TimeUnit.MILLISECONDS, TimeUnit.SECONDS);
     }
 
-    private  FileRecords log;
-    private  LazyIndex<OffsetIndex> lazyOffsetIndex;
-    private  LazyIndex<TimeIndex> lazyTimeIndex;
-    private  TransactionIndex txnIndex;
-    private  long baseOffset;
-    private  int indexIntervalBytes;
-    private  long rollJitterMs;
-    private  Time time;
+    private final FileRecords log;
+    private final LazyIndex<OffsetIndex> lazyOffsetIndex;
+    private final LazyIndex<TimeIndex> lazyTimeIndex;
+    private final TransactionIndex txnIndex;
+    private final long baseOffset;
+    private final int indexIntervalBytes;
+    private final long rollJitterMs;
+    private final Time time;
 
     // The timestamp we used for time based log rolling and for ensuring max compaction delay
     // volatile for LogCleaner to see the update
@@ -98,9 +98,7 @@ public class LogSegment implements Closeable {
 
     /* the number of bytes since we last added an entry in the offset index */
     private int bytesSinceLastIndexEntry = 0;
-    private boolean useAnyLog = false;
 
-    public LogSegment() {}
     /**
      * Create a LogSegment with the provided parameters.
      *
@@ -120,8 +118,7 @@ public class LogSegment implements Closeable {
                       long baseOffset,
                       int indexIntervalBytes,
                       long rollJitterMs,
-                      Time time,
-                      boolean useAnyLog) {
+                      Time time) {
         this.log = log;
         this.lazyOffsetIndex = lazyOffsetIndex;
         this.lazyTimeIndex = lazyTimeIndex;
@@ -131,18 +128,6 @@ public class LogSegment implements Closeable {
         this.rollJitterMs = rollJitterMs;
         this.time = time;
         this.created = time.milliseconds();
-        this.useAnyLog = useAnyLog;
-    }
-
-    public LogSegment(FileRecords log,
-                      LazyIndex<OffsetIndex> lazyOffsetIndex,
-                      LazyIndex<TimeIndex> lazyTimeIndex,
-                      TransactionIndex txnIndex,
-                      long baseOffset,
-                      int indexIntervalBytes,
-                      long rollJitterMs,
-                      Time time) {
-        this(log, lazyOffsetIndex, lazyTimeIndex, txnIndex, baseOffset, indexIntervalBytes, rollJitterMs, time, false);
     }
 
     public OffsetIndex offsetIndex() throws IOException {
@@ -180,8 +165,6 @@ public class LogSegment implements Closeable {
     public boolean shouldRoll(RollParams rollParams) throws IOException {
         boolean reachedRollMs = timeWaitedForRoll(rollParams.now, rollParams.maxTimestampInMessages) > rollParams.maxSegmentMs - rollJitterMs;
         int size = size();
-        if (rollParams.maxSegmentBytes != 1073741824)
-            LOGGER.info("!!! shouldRoll:" + size + ";;" + rollParams.maxSegmentBytes + ";;" + rollParams.messagesSize);
         return size > rollParams.maxSegmentBytes - rollParams.messagesSize ||
             (size > 0 && reachedRollMs) ||
             offsetIndex().isFull() || timeIndex().isFull() || !canConvertToRelativeOffset(rollParams.maxOffsetInMessages);
@@ -621,18 +604,13 @@ public class LogSegment implements Closeable {
      * This method is thread-safe.
      */
     public long readNextOffset() throws IOException {
-//        LOGGER.info("!!! read next fetchData for:" + log + ";;" + log.sizeInBytes() + ";;" + offsetIndex().lastOffset());
-
         FetchDataInfo fetchData = read(offsetIndex().lastOffset(), log.sizeInBytes());
-//        LOGGER.info("!!! read next fetchData:" + fetchData);
         if (fetchData == null)
             return baseOffset;
         else {
-//            LOGGER.info("!!! read next batch:" + fetchData.records.lastBatch());
-
             return fetchData.records.lastBatch()
-                    .map(batch -> batch.nextOffset())
-                    .orElse(baseOffset);
+                .map(batch -> batch.nextOffset())
+                .orElse(baseOffset);
         }
 
     }
