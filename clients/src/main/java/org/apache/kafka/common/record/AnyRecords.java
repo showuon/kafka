@@ -161,7 +161,6 @@ public class AnyRecords extends FileRecords implements Closeable {
 
     @Override
     public int sizeInBytes() {
-        System.out.println("!!! AnyRecord:" + size + ";;" + changed);
         if (!changed) {
             return size == null ? 0 : size.get();
         }
@@ -278,8 +277,6 @@ public class AnyRecords extends FileRecords implements Closeable {
      * @return the number of bytes written to the underlying file
      */
     public int append(MemoryRecords records, long largestOffset) throws IOException {
-
-        System.out.println("!!! AnyRecords append");
         if (records.sizeInBytes() > Integer.MAX_VALUE - (size == null ? 0 : size.get()))
             throw new IllegalArgumentException("Append of size " + records.sizeInBytes() +
                     " bytes is too large for segment with current file position at " + size.get());
@@ -290,7 +287,6 @@ public class AnyRecords extends FileRecords implements Closeable {
         else {
             size.addAndGet(written);
         }
-        System.out.println("!!! size " + size.get());
         changed = true;
         return written;
     }
