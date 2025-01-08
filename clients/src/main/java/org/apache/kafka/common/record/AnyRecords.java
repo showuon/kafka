@@ -180,20 +180,23 @@ public class AnyRecords extends FileRecords implements Closeable {
 
     @Override
     public int sizeInBytes() {
+        System.out.println("!!! AnyRecord:" + size + ";;" + changed);
         if (!changed) {
             return size == null ? 0 : size.get();
         }
-        if (size == null) {
+//        if (size == null) {
             // luke
 
-            List<String> baseOffsets = listBucket().stream().filter(name -> name.contains(path.substring(1))).sorted().collect(Collectors.toList());
-            for (String baseOffset : baseOffsets) {
-                long offset = Long.parseLong(baseOffset.substring(baseOffset.lastIndexOf('/') + 1, baseOffset.lastIndexOf('.')));
+        List<String> baseOffsets = listBucket().stream().filter(name -> name.contains(path.substring(1))).sorted().collect(Collectors.toList());
+        for (String baseOffset : baseOffsets) {
+            long offset = Long.parseLong(baseOffset.substring(baseOffset.lastIndexOf('/') + 1, baseOffset.lastIndexOf('.')));
+            if (offset >= this.baseOffset) {
                 readS3(offset);
             }
-
-
         }
+
+
+//        }
         int res = 0;
         for (File file : file2.values()) {
             res += file.length();
@@ -249,10 +252,10 @@ public class AnyRecords extends FileRecords implements Closeable {
      * @param size The number of bytes after the start position to include
      * @return A sliced wrapper on this message set limited based on the given position and size
      */
-    public AnyRecords slice(long offset, int size) throws IOException {
+    public AnyRecords slice(int offset, int size) throws IOException {
 //        int availableBytes = availableBytes(offset, size);
 //        int startPosition = this.start + position;
-        return new AnyRecords(file, channel, (int) offset, end, true, offset, path, suffix, file2, currentOffset, this.size);
+        return new AnyRecords(file, channel,  offset, end, true, offset, path, suffix, file2, currentOffset, this.size);
     }
 
     /**
@@ -300,7 +303,7 @@ public class AnyRecords extends FileRecords implements Closeable {
      */
     public int append(MemoryRecords records, long largestOffset) throws IOException {
 
-//        System.out.println("!!! AnyRecords append");
+        System.out.println("!!! AnyRecords append");
         if (records.sizeInBytes() > Integer.MAX_VALUE - (size == null ? 0 : size.get()))
             throw new IllegalArgumentException("Append of size " + records.sizeInBytes() +
                     " bytes is too large for segment with current file position at " + size.get());
@@ -311,6 +314,7 @@ public class AnyRecords extends FileRecords implements Closeable {
         else {
             size.addAndGet(written);
         }
+        System.out.println("!!! size " + size.get());
         changed = true;
         return written;
     }

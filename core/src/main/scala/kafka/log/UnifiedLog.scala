@@ -38,7 +38,7 @@ import org.apache.kafka.server.util.Scheduler
 import org.apache.kafka.storage.internals.checkpoint.{LeaderEpochCheckpointFile, PartitionMetadataFile}
 import org.apache.kafka.storage.internals.epoch.LeaderEpochFileCache
 import org.apache.kafka.storage.internals.log.LocalLog.SplitSegmentResult
-import org.apache.kafka.storage.internals.log.{AbortedTxn, AnyLog, AppendOrigin, BatchMetadata, CompletedTxn, FetchDataInfo, LastRecord, LeaderHwChange, LocalLog, LogAppendInfo, LogConfig, LogDirFailureChannel, LogFileUtils, LogLoader, LogOffsetMetadata, LogOffsetSnapshot, LogOffsetsListener, LogSegment, LogSegments, LogStartOffsetIncrementReason, LogValidator, OffsetResultHolder, OffsetsOutOfOrderException, ProducerAppendInfo, ProducerStateManager, ProducerStateManagerConfig, RollParams, SegmentDeletionReason, VerificationGuard, UnifiedLog => JUnifiedLog}
+import org.apache.kafka.storage.internals.log.{AbortedTxn, AppendOrigin, BatchMetadata, CompletedTxn, FetchDataInfo, LastRecord, LeaderHwChange, LocalLog, LogAppendInfo, LogConfig, LogDirFailureChannel, LogFileUtils, LogLoader, LogOffsetMetadata, LogOffsetSnapshot, LogOffsetsListener, LogSegment, LogSegments, LogStartOffsetIncrementReason, LogValidator, OffsetResultHolder, OffsetsOutOfOrderException, ProducerAppendInfo, ProducerStateManager, ProducerStateManagerConfig, RollParams, SegmentDeletionReason, VerificationGuard, UnifiedLog => JUnifiedLog}
 import org.apache.kafka.storage.log.metrics.{BrokerTopicMetrics, BrokerTopicStats}
 
 import java.io.{File, IOException}
@@ -1256,11 +1256,11 @@ class UnifiedLog(@volatile var logStartOffset: Long,
 //    if (!topicPartition.topic().equals("__cluster_metadata"))
 //      info("!!! unified log read:" + isolation + ";;" + maxOffsetMetadata)
 
-    if (config.logUseAny) {
-      localLog.asInstanceOf[AnyLog].read(startOffset, maxLength, minOneMessage, maxOffsetMetadata, isolation == FetchIsolation.TXN_COMMITTED)
-    } else {
+//    if (config.logUseAny) {
+//      localLog.asInstanceOf[AnyLog].read(startOffset, maxLength, minOneMessage, maxOffsetMetadata, isolation == FetchIsolation.TXN_COMMITTED)
+//    } else {
       localLog.read(startOffset, maxLength, minOneMessage, maxOffsetMetadata, isolation == FetchIsolation.TXN_COMMITTED)
-    }
+//    }
   }
 
   private[log] def collectAbortedTransactions(startOffset: Long, upperBoundOffset: Long): List[AbortedTxn] = {
@@ -2069,13 +2069,13 @@ object UnifiedLog extends Logging {
       isRemoteLogEnabled,
     ).load()
 
-    val localLog = if (config.logUseAny)
-      new AnyLog(dir, config, segments, offsets.recoveryPoint,
+//    val localLog = if (config.logUseAny)
+//      new AnyLog(dir, config, segments, offsets.recoveryPoint,
+//        offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel)
+//    else {
+val localLog = new LocalLog(dir, config, segments, offsets.recoveryPoint,
         offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel)
-    else {
-      new LocalLog(dir, config, segments, offsets.recoveryPoint,
-        offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel)
-    }
+//    }
     new UnifiedLog(offsets.logStartOffset,
       localLog,
       brokerTopicStats,
