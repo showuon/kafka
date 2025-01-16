@@ -135,7 +135,11 @@ public class LogSegment implements Closeable {
     }
 
     public File offsetIndexFile() {
-        return lazyOffsetIndex.file();
+        return null;
+    }
+
+    public boolean checkIfExist() {
+        return true;
     }
 
     public TimeIndex timeIndex() throws IOException {
@@ -143,7 +147,7 @@ public class LogSegment implements Closeable {
     }
 
     public File timeIndexFile() {
-        return lazyTimeIndex.file();
+        return null;
     }
 
     public long baseOffset() {
@@ -176,7 +180,7 @@ public class LogSegment implements Closeable {
     }
 
     public void sanityCheck(boolean timeIndexFileNewlyCreated) throws IOException {
-        if (offsetIndexFile().exists()) {
+        if (checkIfExist()) {
             // Resize the time index file to 0 if it is newly created.
             if (timeIndexFileNewlyCreated) 
                 timeIndex().resize(0);
@@ -185,7 +189,7 @@ public class LogSegment implements Closeable {
             // in any case so sanity checking them here is redundant.
             txnIndex.sanityCheck();
         } else
-            throw new NoSuchFileException("Offset index file " + offsetIndexFile().getAbsolutePath() + " does not exist");
+            throw new NoSuchFileException("Offset index file " + "offsetIndexFile().getAbsolutePath()" + " does not exist");
     }
 
     /**
@@ -660,16 +664,22 @@ public class LogSegment implements Closeable {
      */
     public void changeFileSuffixes(String oldSuffix, String newSuffix) throws IOException {
         log.renameTo(new File(Utils.replaceSuffix(log.file().getPath(), oldSuffix, newSuffix)));
-        lazyOffsetIndex.renameTo(new File(Utils.replaceSuffix(offsetIndexFile().getPath(), oldSuffix, newSuffix)));
-        lazyTimeIndex.renameTo(new File(Utils.replaceSuffix(timeIndexFile().getPath(), oldSuffix, newSuffix)));
+//        lazyOffsetIndex.renameTo(new File(Utils.replaceSuffix(offsetIndexFile().getPath(), oldSuffix, newSuffix)));
+        lazyOffsetIndex.renameTo(oldSuffix, newSuffix);
+        lazyTimeIndex.renameTo(oldSuffix, newSuffix);
         txnIndex.renameTo(new File(Utils.replaceSuffix(txnIndex.file().getPath(), oldSuffix, newSuffix)));
     }
 
     public boolean hasSuffix(String suffix) {
         return log.file().getName().endsWith(suffix) &&
-            offsetIndexFile().getName().endsWith(suffix) &&
-            timeIndexFile().getName().endsWith(suffix) &&
+            //offsetIndexFile().getName().endsWith(suffix) &&
+            //timeIndexFile().getName().endsWith(suffix) &&
+                checkEndsWithSuffix(suffix) &&
             txnIndex.file().getName().endsWith(suffix);
+    }
+
+    public boolean checkEndsWithSuffix(String suffix) {
+        return true;
     }
 
     /**
@@ -785,8 +795,8 @@ public class LogSegment implements Closeable {
         try {
             Utils.tryAll(asList(
                 () -> deleteTypeIfExists(() -> log.deleteIfExists(), "log", log.file(), true),
-                () -> deleteTypeIfExists(() -> lazyOffsetIndex.deleteIfExists(), "offset index", offsetIndexFile(), true),
-                () -> deleteTypeIfExists(() -> lazyTimeIndex.deleteIfExists(), "time index", timeIndexFile(), true),
+                () -> deleteTypeIfExists(() -> lazyOffsetIndex.deleteIfExists(), "offset index", Files.createTempDirectory("").toFile(), true),
+                () -> deleteTypeIfExists(() -> lazyTimeIndex.deleteIfExists(), "time index", Files.createTempDirectory("").toFile(), true),
                 () -> deleteTypeIfExists(() -> txnIndex.deleteIfExists(), "transaction index", txnIndex.file(), false)));
         } catch (Throwable t) {
             if (t instanceof IOException)
@@ -831,7 +841,8 @@ public class LogSegment implements Closeable {
 
     // Visible for testing
     public boolean deleted() {
-        return !log.file().exists() && !offsetIndexFile().exists() && !timeIndexFile().exists() && !txnIndex.file().exists();
+//        return !log.file().exists() && !offsetIndexFile().exists() && !timeIndexFile().exists() && !txnIndex.file().exists();
+        return !log.file().exists() && !txnIndex.file().exists();
     }
 
 
@@ -868,8 +879,8 @@ public class LogSegment implements Closeable {
     public void setLastModified(long ms) throws IOException {
         FileTime fileTime = FileTime.fromMillis(ms);
         Files.setLastModifiedTime(log.file().toPath(), fileTime);
-        Files.setLastModifiedTime(offsetIndexFile().toPath(), fileTime);
-        Files.setLastModifiedTime(timeIndexFile().toPath(), fileTime);
+//        Files.setLastModifiedTime(offsetIndexFile().toPath(), fileTime);
+//        Files.setLastModifiedTime(timeIndexFile().toPath(), fileTime);
     }
 
     public static LogSegment open(File dir, long baseOffset, LogConfig config, Time time, int initFileSize, boolean preallocate) throws IOException {
@@ -881,13 +892,19 @@ public class LogSegment implements Closeable {
         int maxIndexSize = config.maxIndexSize;
 
         FileRecords records = null;
-        if (config.logUseAny)
+        LazyIndex<OffsetIndex> offsetIndex = null;
+        if (config.logUseAny) {
             records = AnyRecords.open(LogFileUtils.logFile(dir, baseOffset, fileSuffix), fileAlreadyExists, initFileSize, preallocate, baseOffset, dir.toString(), fileSuffix);
-        else
+            offsetIndex = LazyIndex.forOffset(null, baseOffset, maxIndexSize);
+        }
+        else {
             records = FileRecords.open(LogFileUtils.logFile(dir, baseOffset, fileSuffix), fileAlreadyExists, initFileSize, preallocate);
+            offsetIndex = LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize);
+        }
         return new LogSegment(
             records,
-            LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize),
+            //LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize),
+            offsetIndex,
             LazyIndex.forTime(LogFileUtils.timeIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize),
             new TransactionIndex(baseOffset, LogFileUtils.transactionIndexFile(dir, baseOffset, fileSuffix)),
             baseOffset,

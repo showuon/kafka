@@ -75,18 +75,22 @@ public abstract class AbstractIndex implements Closeable {
      */
     @SuppressWarnings("this-escape")
     public AbstractIndex(File file, long baseOffset, int maxIndexSize, boolean writable) throws IOException {
-        Objects.requireNonNull(file);
+        //Objects.requireNonNull(file);
         this.file = file;
         this.baseOffset = baseOffset;
         this.maxIndexSize = maxIndexSize;
         this.writable = writable;
 
         createAndAssignMmap();
-        this.maxEntries = mmap.limit() / entrySize();
-        this.entries = mmap.position() / entrySize();
+        this.maxEntries = mmap == null ? Integer.MAX_VALUE : mmap.limit() / entrySize();
+        this.entries = mmap == null ? 0 : mmap.position() / entrySize();
     }
 
     private void createAndAssignMmap() throws IOException {
+        if (file == null) {
+            length = roundDownToExactMultiple(maxIndexSize, entrySize());
+            return;
+        }
         boolean newlyCreated = file.createNewFile();
         RandomAccessFile raf;
         if (writable)
@@ -108,7 +112,7 @@ public abstract class AbstractIndex implements Closeable {
             this.length = length;
             this.mmap = mmap;
         } finally {
-            Utils.closeQuietly(raf, "index " + file.getName());
+            Utils.closeQuietly(raf, "index " + "file.getName()");
         }
     }
 
@@ -174,6 +178,7 @@ public abstract class AbstractIndex implements Closeable {
     }
 
     public void updateParentDir(File parentDir) {
+        if (file == null) return;
         this.file = new File(parentDir, file.getName());
     }
 
@@ -187,12 +192,13 @@ public abstract class AbstractIndex implements Closeable {
      * @return a boolean indicating whether the size of the memory map and the underneath file is changed or not.
      */
     public boolean resize(int newSize) throws IOException {
+        if (mmap == null) return false;
         lock.lock();
         try {
             int roundedNewSize = roundDownToExactMultiple(newSize, entrySize());
 
             if (length == roundedNewSize) {
-                log.debug("Index {} was not resized because it already has size {}", file.getAbsolutePath(), roundedNewSize);
+                log.debug("Index {} was not resized because it already has size {}", "file.getAbsolutePath()", roundedNewSize);
                 return false;
             } else {
                 RandomAccessFile raf = new RandomAccessFile(file, "rw");
@@ -207,11 +213,11 @@ public abstract class AbstractIndex implements Closeable {
                     mmap = raf.getChannel().map(FileChannel.MapMode.READ_WRITE, 0, roundedNewSize);
                     this.maxEntries = mmap.limit() / entrySize();
                     mmap.position(position);
-                    log.debug("Resized {} to {}, position is {} and limit is {}", file.getAbsolutePath(), roundedNewSize,
+                    log.debug("Resized {} to {}, position is {} and limit is {}", "file.getAbsolutePath()", roundedNewSize,
                             mmap.position(), mmap.limit());
                     return true;
                 } finally {
-                    Utils.closeQuietly(raf, "index file " + file.getName());
+                    Utils.closeQuietly(raf, "index file " + "file.getName()");
                 }
             }
         } finally {
@@ -238,7 +244,8 @@ public abstract class AbstractIndex implements Closeable {
     public void flush() {
         lock.lock();
         try {
-            mmap.force();
+            if (mmap != null)
+                mmap.force();
         } finally {
             lock.unlock();
         }
@@ -414,6 +421,7 @@ public abstract class AbstractIndex implements Closeable {
     }
 
     protected void truncateToEntries0(int entries) {
+        if (mmap == null) return;
         this.entries = entries;
         mmap.position(entries * entrySize());
     }

@@ -49,9 +49,9 @@ public class LazyIndex<T extends AbstractIndex> implements Closeable {
     }
 
     private interface IndexWrapper extends Closeable {
-        File file();
+       // File file();
         void updateParentDir(File file);
-        void renameTo(File file) throws IOException;
+        void renameTo(String oldSuffix, String newSuffix) throws IOException;
         boolean deleteIfExists() throws IOException;
         void close() throws IOException;
         void closeHandler();
@@ -65,7 +65,7 @@ public class LazyIndex<T extends AbstractIndex> implements Closeable {
             this.file = file;
         }
 
-        @Override
+//        @Override
         public File file() {
             return file;
         }
@@ -76,15 +76,58 @@ public class LazyIndex<T extends AbstractIndex> implements Closeable {
         }
 
         @Override
-        public void renameTo(File f) throws IOException {
-            try {
-                Utils.atomicMoveWithFallback(file.toPath(), f.toPath(), false);
-            } catch (NoSuchFileException e) {
-                if (file.exists())
-                    throw e;
-            } finally {
-                file = f;
-            }
+        public void renameTo(String oldSuffix, String newSuffix) throws IOException {
+//            try {
+//                Utils.atomicMoveWithFallback(file.toPath(), f.toPath(), false);
+//            } catch (NoSuchFileException e) {
+//                if (file.exists())
+//                    throw e;
+//            } finally {
+//                file = f;
+//            }
+        }
+
+        @Override
+        public boolean deleteIfExists() throws IOException {
+            return Files.deleteIfExists(file.toPath());
+        }
+
+        @Override
+        public void close() { }
+
+        @Override
+        public void closeHandler() { }
+
+    }
+
+    private static class IndexObject implements IndexWrapper {
+
+        private volatile File file;
+
+        IndexObject(File file) {
+            this.file = file;
+        }
+
+//        @Override
+        public File file() {
+            return file;
+        }
+
+        @Override
+        public void updateParentDir(File parentDir) {
+            file = new File(parentDir, file.getName());
+        }
+
+        @Override
+        public void renameTo(String oldSuffix, String newSuffix) throws IOException {
+//            try {
+//                Utils.atomicMoveWithFallback(file.toPath(), f.toPath(), false);
+//            } catch (NoSuchFileException e) {
+//                if (file.exists())
+//                    throw e;
+//            } finally {
+//                file = f;
+//            }
         }
 
         @Override
@@ -108,7 +151,7 @@ public class LazyIndex<T extends AbstractIndex> implements Closeable {
             this.index = index;
         }
 
-        @Override
+//        @Override
         public File file() {
             return index.file();
         }
@@ -119,8 +162,8 @@ public class LazyIndex<T extends AbstractIndex> implements Closeable {
         }
 
         @Override
-        public void renameTo(File f) throws IOException {
-            index.renameTo(f);
+        public void renameTo(String oldSuffix, String newSuffix) throws IOException {
+//            index.renameTo(new);
         }
 
         @Override
@@ -154,6 +197,9 @@ public class LazyIndex<T extends AbstractIndex> implements Closeable {
     }
 
     public static LazyIndex<OffsetIndex> forOffset(File file, long baseOffset, int maxIndexSize) {
+        if (file == null) {
+            return new LazyIndex<>(new IndexObject(file), baseOffset, maxIndexSize, IndexType.OFFSET);
+        }
         return new LazyIndex<>(new IndexFile(file), baseOffset, maxIndexSize, IndexType.OFFSET);
     }
 
@@ -161,9 +207,9 @@ public class LazyIndex<T extends AbstractIndex> implements Closeable {
         return new LazyIndex<>(new IndexFile(file), baseOffset, maxIndexSize, IndexType.TIME);
     }
 
-    public File file() {
-        return indexWrapper.file();
-    }
+//    public File file() {
+//        return indexWrapper.file();
+//    }
 
     @SuppressWarnings("unchecked")
     public T get() throws IOException {
@@ -180,7 +226,13 @@ public class LazyIndex<T extends AbstractIndex> implements Closeable {
                     IndexValue<T> indexValue = new IndexValue<>(loadIndex(indexFile.file));
                     indexWrapper = indexValue;
                     return indexValue.index;
-                } else
+                } else if (indexWrapper instanceof IndexObject) {
+                    IndexObject indexFile = (IndexObject) indexWrapper;
+                    IndexValue<T> indexValue = new IndexValue<>(loadIndex(indexFile.file));
+                    indexWrapper = indexValue;
+                    return indexValue.index;
+                }
+                else
                     throw new IllegalStateException("Unexpected type for indexWrapper " + indexWrapper.getClass());
             } finally {
                 lock.unlock();
@@ -197,10 +249,10 @@ public class LazyIndex<T extends AbstractIndex> implements Closeable {
         }
     }
 
-    public void renameTo(File f) throws IOException {
+    public void renameTo(String oldSuffix, String newSuffix) throws IOException {
         lock.lock();
         try {
-            indexWrapper.renameTo(f);
+            indexWrapper.renameTo(oldSuffix, newSuffix);
         } finally {
             lock.unlock();
         }
