@@ -52,6 +52,7 @@ public abstract class AbstractIndex implements Closeable {
     private final long baseOffset;
     private final int maxIndexSize;
     private final boolean writable;
+    private boolean anyLog;
 
     private volatile File file;
 
@@ -74,16 +75,19 @@ public abstract class AbstractIndex implements Closeable {
      * @param maxIndexSize The maximum index size in bytes.
      */
     @SuppressWarnings("this-escape")
-    public AbstractIndex(File file, long baseOffset, int maxIndexSize, boolean writable) throws IOException {
+    public AbstractIndex(File file, long baseOffset, int maxIndexSize, boolean writable, boolean anyLog) throws IOException {
         Objects.requireNonNull(file);
         this.file = file;
         this.baseOffset = baseOffset;
         this.maxIndexSize = maxIndexSize;
         this.writable = writable;
+        this.anyLog = anyLog;
 
-        createAndAssignMmap();
-        this.maxEntries = mmap.limit() / entrySize();
-        this.entries = mmap.position() / entrySize();
+        if (!anyLog) {
+            createAndAssignMmap();
+            this.maxEntries = mmap.limit() / entrySize();
+            this.entries = mmap.position() / entrySize();
+        }
     }
 
     private void createAndAssignMmap() throws IOException {

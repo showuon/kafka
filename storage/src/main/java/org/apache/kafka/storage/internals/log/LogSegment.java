@@ -881,19 +881,31 @@ public class LogSegment implements Closeable {
         int maxIndexSize = config.maxIndexSize;
 
         FileRecords records = null;
-        if (config.logUseAny)
+        if (config.logUseAny) {
             records = AnyRecords.open(LogFileUtils.logFile(dir, baseOffset, fileSuffix), fileAlreadyExists, initFileSize, preallocate, baseOffset, dir.toString(), fileSuffix);
-        else
+            return new LogSegment(
+                    records,
+                    LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize, true),
+                    LazyIndex.forTime(LogFileUtils.timeIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize, true),
+                    new TransactionIndex(baseOffset, null),
+                    baseOffset,
+                    config.indexInterval,
+                    config.randomSegmentJitter(),
+                    time);
+        }
+        else {
             records = FileRecords.open(LogFileUtils.logFile(dir, baseOffset, fileSuffix), fileAlreadyExists, initFileSize, preallocate);
-        return new LogSegment(
-            records,
-            LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize),
-            LazyIndex.forTime(LogFileUtils.timeIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize),
-            new TransactionIndex(baseOffset, LogFileUtils.transactionIndexFile(dir, baseOffset, fileSuffix)),
-            baseOffset,
-            config.indexInterval,
-            config.randomSegmentJitter(),
-            time);
+            return new LogSegment(
+                    records,
+                    LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize),
+                    LazyIndex.forTime(LogFileUtils.timeIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize),
+                    new TransactionIndex(baseOffset, LogFileUtils.transactionIndexFile(dir, baseOffset, fileSuffix)),
+                    baseOffset,
+                    config.indexInterval,
+                    config.randomSegmentJitter(),
+                    time);
+        }
+
     }
 
     public static void deleteIfExists(File dir, long baseOffset, String fileSuffix) throws IOException {

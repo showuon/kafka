@@ -143,22 +143,32 @@ public class LazyIndex<T extends AbstractIndex> implements Closeable {
     private final long baseOffset;
     private final int maxIndexSize;
     private final IndexType indexType;
+    private final boolean anyLog;
 
     private volatile IndexWrapper indexWrapper;
 
-    private LazyIndex(IndexWrapper indexWrapper, long baseOffset, int maxIndexSize, IndexType indexType) {
+    private LazyIndex(IndexWrapper indexWrapper, long baseOffset, int maxIndexSize, IndexType indexType, boolean anyLog) {
         this.indexWrapper = indexWrapper;
         this.baseOffset = baseOffset;
         this.maxIndexSize = maxIndexSize;
         this.indexType = indexType;
+        this.anyLog = anyLog;
     }
 
     public static LazyIndex<OffsetIndex> forOffset(File file, long baseOffset, int maxIndexSize) {
-        return new LazyIndex<>(new IndexFile(file), baseOffset, maxIndexSize, IndexType.OFFSET);
+        return new LazyIndex<>(new IndexFile(file), baseOffset, maxIndexSize, IndexType.OFFSET, false);
+    }
+
+    public static LazyIndex<OffsetIndex> forOffset(File file, long baseOffset, int maxIndexSize, boolean anyLog) {
+        return new LazyIndex<>(new IndexFile(file), baseOffset, maxIndexSize, IndexType.OFFSET, anyLog);
     }
 
     public static LazyIndex<TimeIndex> forTime(File file, long baseOffset, int maxIndexSize) {
-        return new LazyIndex<>(new IndexFile(file), baseOffset, maxIndexSize, IndexType.TIME);
+        return new LazyIndex<>(new IndexFile(file), baseOffset, maxIndexSize, IndexType.TIME, false);
+    }
+
+    public static LazyIndex<TimeIndex> forTime(File file, long baseOffset, int maxIndexSize, boolean anyLog) {
+        return new LazyIndex<>(new IndexFile(file), baseOffset, maxIndexSize, IndexType.TIME, anyLog);
     }
 
     public File file() {
@@ -238,9 +248,9 @@ public class LazyIndex<T extends AbstractIndex> implements Closeable {
     private T loadIndex(File file) throws IOException {
         switch (indexType) {
             case OFFSET:
-                return (T) new OffsetIndex(file, baseOffset, maxIndexSize, true);
+                return (T) new OffsetIndex(file, baseOffset, maxIndexSize, true, anyLog);
             case TIME:
-                return (T) new TimeIndex(file, baseOffset, maxIndexSize, true);
+                return (T) new TimeIndex(file, baseOffset, maxIndexSize, true, anyLog);
             default:
                 throw new IllegalStateException("Unexpected indexType " + indexType);
         }

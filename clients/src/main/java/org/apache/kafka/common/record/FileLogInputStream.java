@@ -61,12 +61,17 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
 
     @Override
     public FileChannelRecordBatch nextBatch() throws IOException {
+        if (fileRecords.file() == null) {
+
+        }
+
         FileChannel channel = fileRecords.channel();
         if (position >= end - HEADER_SIZE_UP_TO_MAGIC)
             return null;
 
         logHeaderBuffer.rewind();
         Utils.readFullyOrFail(channel, logHeaderBuffer, position, "log header");
+        Utils.readFullyOrFail();
 
         logHeaderBuffer.rewind();
         long offset = logHeaderBuffer.getLong(OFFSET_OFFSET);
