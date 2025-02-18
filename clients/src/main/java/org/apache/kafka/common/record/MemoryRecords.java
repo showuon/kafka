@@ -94,6 +94,15 @@ public class MemoryRecords extends AbstractRecords {
         return written;
     }
 
+    public ByteBuffer writeFullyToMemory(ByteBuffer recordBuffer) throws IOException {
+        buffer.mark();
+        ByteBuffer temp = ByteBuffer.allocate(recordBuffer.capacity() + sizeInBytes());
+        temp.put(recordBuffer.array(), 0, recordBuffer.capacity());
+        temp.put(buffer);
+        buffer.reset();
+        return temp;
+    }
+
     public int writeFullyTo(long offset, String path, String suffix) {
         String accessKey = "minioadmin";
         String secretKey = "minioadmin";

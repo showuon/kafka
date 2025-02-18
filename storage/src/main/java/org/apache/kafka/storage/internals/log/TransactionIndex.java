@@ -69,7 +69,7 @@ public class TransactionIndex implements Closeable {
         this.startOffset = startOffset;
         this.file = file;
 
-        if (file.exists())
+        if (file != null && file.exists())
             openChannel();
     }
 
