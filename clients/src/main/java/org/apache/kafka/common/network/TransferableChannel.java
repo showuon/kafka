@@ -17,6 +17,7 @@
 package org.apache.kafka.common.network;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.GatheringByteChannel;
 
@@ -48,4 +49,6 @@ public interface TransferableChannel extends GatheringByteChannel {
      * @see FileChannel#transferTo(long, long, java.nio.channels.WritableByteChannel)
      */
     long transferFrom(FileChannel fileChannel, long position, long count) throws IOException;
+
+    default long transferFrom(FileChannel fileChannel, long position, long count, ByteBuffer buffer) throws IOException {return 0;};
 }
