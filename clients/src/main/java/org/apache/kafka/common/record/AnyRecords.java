@@ -87,6 +87,7 @@ public class AnyRecords extends FileRecords implements Closeable {
     private String suffix;
     private long currentOffset;
     private boolean changed = true;
+    private ByteBuffer recordBuffer;
 
     /**
      * The {@code FileRecords.open} methods should be used instead of this constructor whenever possible.
@@ -128,61 +129,32 @@ public class AnyRecords extends FileRecords implements Closeable {
         this(file, channel, start, end, isSlice, baseOffset, path, suffix, new HashMap<>(), -1, null);
     }
 
-    private List<String> listBucket() {
-        String accessKey = "minioadmin";
-        String secretKey = "minioadmin";
-        AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
-        S3Client s3 = null;
-        try {
-            s3 = S3Client.builder()
-                    .region(Region.US_EAST_1)
-                    .endpointOverride(new URI("http://localhost:9000"))
-                    .credentialsProvider(StaticCredentialsProvider.create(credentials))
-                    .forcePathStyle(true)
-                    .build();
-        } catch (URISyntaxException e) {
-            throw new RuntimeException(e);
-        }
-
-        ListObjectsV2Request initialRequest = ListObjectsV2Request.builder()
-                .bucket("test")
-                .maxKeys(100)
-                .build();
-
-
-        List<String> objs = new LinkedList<>();
-        ListObjectsV2Iterable objectBytes = s3.listObjectsV2Paginator(initialRequest);
-        objectBytes.stream().forEach(response -> response.contents().forEach(s3Object -> {
-            objs.add(s3Object.key());
-        }));
-        return objs;
-    }
 
 
     @Override
     public int sizeInBytes() {
-        if (!changed) {
-            return size == null ? 0 : size.get();
-        }
-
-        List<String> baseOffsets = listBucket().stream().filter(name -> name.contains(path.substring(1))).sorted().collect(Collectors.toList());
-        for (String baseOffset : baseOffsets) {
-            long offset = Long.parseLong(baseOffset.substring(baseOffset.lastIndexOf('/') + 1, baseOffset.lastIndexOf('.')));
-            if (offset >= this.baseOffset) {
-                readS3(offset);
-            }
-        }
-
-        int res = 0;
-        for (File file : file2.values()) {
-            res += file.length();
-        }
-        if (size == null) {
-            size = new AtomicInteger(0);
-        }
-        size.set(res);
-        changed = false;
-        return res;
+//        if (!changed) {
+//            return size == null ? 0 : size.get();
+//        }
+//
+//        List<String> baseOffsets = listBucket().stream().filter(name -> name.contains(path.substring(1))).sorted().collect(Collectors.toList());
+//        for (String baseOffset : baseOffsets) {
+//            long offset = Long.parseLong(baseOffset.substring(baseOffset.lastIndexOf('/') + 1, baseOffset.lastIndexOf('.')));
+//            if (offset >= this.baseOffset) {
+//                readS3(offset);
+//            }
+//        }
+//
+//        int res = 0;
+//        for (File file : file2.values()) {
+//            res += file.length();
+//        }
+//        if (size == null) {
+//            size = new AtomicInteger(0);
+//        }
+//        size.set(res);
+//        changed = false;
+        return recordBuffer.limit();
     }
 
     /**
@@ -281,14 +253,17 @@ public class AnyRecords extends FileRecords implements Closeable {
             throw new IllegalArgumentException("Append of size " + records.sizeInBytes() +
                     " bytes is too large for segment with current file position at " + size.get());
 
-        int written = records.writeFullyTo(largestOffset, path, suffix);
-        if (size == null)
-            size = new AtomicInteger(written);
-        else {
-            size.addAndGet(written);
-        }
-        changed = true;
-        return written;
+        // luke
+
+
+        recordBuffer = records.writeFullyToMemory(recordBuffer);
+//        if (size == null)
+//            size = new AtomicInteger(written);
+//        else {
+//            size.addAndGet(written);
+//        }
+//        changed = true;
+        return records.sizeInBytes();
     }
 
     /**
@@ -396,31 +371,31 @@ public class AnyRecords extends FileRecords implements Closeable {
     @Override
     public int writeTo(TransferableChannel destChannel, int offset, int length) throws IOException {
         // luke
-        List<Long> baseOffsets = listBucket().stream().filter(name -> name.contains(path.substring(1)))
-                .map(off -> Long.parseLong(off.substring(off.lastIndexOf('/') + 1, off.lastIndexOf('.')))).sorted().collect(Collectors.toList());
-        for (long offset2 : baseOffsets) {
-            if (offset2 > currentOffset) {
-                currentOffset = offset2;
-                break;
-            }
-        }
+//        List<Long> baseOffsets = listBucket().stream().filter(name -> name.contains(path.substring(1)))
+//                .map(off -> Long.parseLong(off.substring(off.lastIndexOf('/') + 1, off.lastIndexOf('.')))).sorted().collect(Collectors.toList());
+//        for (long offset2 : baseOffsets) {
+//            if (offset2 > currentOffset) {
+//                currentOffset = offset2;
+//                break;
+//            }
+//        }
+//
+//        if (!file2.containsKey(currentOffset))
+//            readS3(currentOffset);
 
-        if (!file2.containsKey(currentOffset))
-            readS3(currentOffset);
-
-        channel = FileChannel.open(file2.get(currentOffset).toPath(), StandardOpenOption.CREATE, StandardOpenOption.READ,
-                StandardOpenOption.WRITE);
-        long newSize = Math.min(channel.size(), end) - start;
-        int oldSize = sizeInBytes();
-//        if (newSize < oldSize)
-//            throw new KafkaException(String.format(
-//                    "Size of FileRecords %s has been truncated during write: old size %d, new size %d",
-//                    path, oldSize, newSize));
-
-        long position = start + offset;
-        int count = Math.min(length, oldSize - offset);
+//        channel = FileChannel.open(file2.get(currentOffset).toPath(), StandardOpenOption.CREATE, StandardOpenOption.READ,
+//                StandardOpenOption.WRITE);
+//        long newSize = Math.min(channel.size(), end) - start;
+//        int oldSize = sizeInBytes();
+////        if (newSize < oldSize)
+////            throw new KafkaException(String.format(
+////                    "Size of FileRecords %s has been truncated during write: old size %d, new size %d",
+////                    path, oldSize, newSize));
+//
+//        long position = start + offset;
+//        int count = Math.min(length, oldSize - offset);
         // safe to cast to int since `count` is an int
-        return (int) destChannel.transferFrom(channel, 0, count);
+        return (int) destChannel.transferFrom(null, 0, 0, recordBuffer);
     }
 
     /**
@@ -530,17 +505,24 @@ public class AnyRecords extends FileRecords implements Closeable {
     }
 
     private AbstractIterator<FileChannelRecordBatch> batchIterator(long start) {
-        try {
-            if (!file2.containsKey(start)) {
-                readS3(start);
-            }
-            if (file2.isEmpty()) {
-                return new RecordBatchIterator<>(null);
-            }
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-        return new AnyRecordBatchIterator<>(start, path, suffix);
+//        try {
+//            if (!file2.containsKey(start)) {
+//                readS3(start);
+//            }
+//            if (file2.isEmpty()) {
+//                return new RecordBatchIterator<>(null);
+//            }
+//        } catch (Exception e) {
+//            throw new RuntimeException(e);
+//        }
+//        return new AnyRecordBatchIterator<>(start, path, suffix);
+        final int end;
+        if (isSlice)
+            end = this.end;
+        else
+            end = this.sizeInBytes();
+        FileLogInputStream inputStream = new FileLogInputStream(this, (int)start, end);
+        return new RecordBatchIterator<>(inputStream);
     }
 
     private void readS3(long start) {

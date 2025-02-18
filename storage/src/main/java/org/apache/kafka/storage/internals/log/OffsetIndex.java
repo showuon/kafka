@@ -67,7 +67,11 @@ public final class OffsetIndex extends AbstractIndex {
     }
 
     public OffsetIndex(File file, long baseOffset, int maxIndexSize, boolean writable) throws IOException {
-        super(file, baseOffset, maxIndexSize, writable);
+        this(file, baseOffset, maxIndexSize, writable, false);
+    }
+
+    public OffsetIndex(File file, long baseOffset, int maxIndexSize, boolean writable, boolean anyLog) throws IOException {
+        super(file, baseOffset, maxIndexSize, writable, anyLog);
 
         lastOffset = lastEntry().offset;
 

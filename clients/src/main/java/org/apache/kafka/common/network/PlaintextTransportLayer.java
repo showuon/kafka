@@ -213,4 +213,13 @@ public class PlaintextTransportLayer implements TransportLayer {
     public long transferFrom(FileChannel fileChannel, long position, long count) throws IOException {
         return fileChannel.transferTo(position, count, socketChannel);
     }
+
+    @Override
+    public long transferFrom(FileChannel fileChannel, long position, long count, ByteBuffer buffer) throws IOException {
+        if (fileChannel != null) {
+            return socketChannel.write(buffer);
+        } else {
+            return fileChannel.transferTo(position, count, socketChannel);
+        }
+    }
 }
