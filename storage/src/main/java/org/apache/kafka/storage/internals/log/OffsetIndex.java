@@ -76,7 +76,7 @@ public final class OffsetIndex extends AbstractIndex {
         lastOffset = lastEntry().offset;
 
         log.debug("Loaded index file {} with maxEntries = {}, maxIndexSize = {}, entries = {}, lastOffset = {}, file position = {}",
-            file.getAbsolutePath(), maxEntries(), maxIndexSize, entries(), lastOffset, mmap().position());
+            file.getAbsolutePath(), maxEntries(), maxIndexSize, entries(), lastOffset, 0);
     }
 
     @Override
