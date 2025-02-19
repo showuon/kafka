@@ -60,6 +60,7 @@ public abstract class AbstractIndex implements Closeable {
     private volatile long length;
 
     private volatile MappedByteBuffer mmap;
+    private volatile ByteBuffer buffer;
 
     /**
      * The maximum number of entries this index can hold
@@ -87,6 +88,8 @@ public abstract class AbstractIndex implements Closeable {
             createAndAssignMmap();
             this.maxEntries = mmap.limit() / entrySize();
             this.entries = mmap.position() / entrySize();
+        } else {
+            buffer = ByteBuffer.allocate(maxIndexSize);
         }
     }
 
@@ -199,23 +202,36 @@ public abstract class AbstractIndex implements Closeable {
                 log.debug("Index {} was not resized because it already has size {}", file.getAbsolutePath(), roundedNewSize);
                 return false;
             } else {
-                RandomAccessFile raf = new RandomAccessFile(file, "rw");
-                try {
-                    int position = mmap.position();
+                if (!anyLog) {
+                    RandomAccessFile raf = new RandomAccessFile(file, "rw");
+                    try {
+                        int position = mmap.position();
+
+                        /* Windows or z/OS won't let us modify the file length while the file is mmapped :-( */
+                        if (OperatingSystem.IS_WINDOWS || OperatingSystem.IS_ZOS)
+                            safeForceUnmap();
+                        raf.setLength(roundedNewSize);
+                        this.length = roundedNewSize;
+                        mmap = raf.getChannel().map(FileChannel.MapMode.READ_WRITE, 0, roundedNewSize);
+                        this.maxEntries = mmap.limit() / entrySize();
+                        mmap.position(position);
+                        log.debug("Resized {} to {}, position is {} and limit is {}", file.getAbsolutePath(), roundedNewSize,
+                                mmap.position(), mmap.limit());
+                        return true;
+                    } finally {
+                        Utils.closeQuietly(raf, "index file " + file.getName());
+                    }
+                } else {
+                    int position = buffer.position();
 
                     /* Windows or z/OS won't let us modify the file length while the file is mmapped :-( */
-                    if (OperatingSystem.IS_WINDOWS || OperatingSystem.IS_ZOS)
-                        safeForceUnmap();
-                    raf.setLength(roundedNewSize);
                     this.length = roundedNewSize;
-                    mmap = raf.getChannel().map(FileChannel.MapMode.READ_WRITE, 0, roundedNewSize);
-                    this.maxEntries = mmap.limit() / entrySize();
-                    mmap.position(position);
+                    buffer.limit(roundedNewSize);
+                    this.maxEntries = buffer.limit() / entrySize();
+                    buffer.position(position);
                     log.debug("Resized {} to {}, position is {} and limit is {}", file.getAbsolutePath(), roundedNewSize,
-                            mmap.position(), mmap.limit());
+                            buffer.position(), buffer.limit());
                     return true;
-                } finally {
-                    Utils.closeQuietly(raf, "index file " + file.getName());
                 }
             }
         } finally {
@@ -242,7 +258,8 @@ public abstract class AbstractIndex implements Closeable {
     public void flush() {
         lock.lock();
         try {
-            mmap.force();
+            if (mmap != null)
+                mmap.force();
         } finally {
             lock.unlock();
         }
@@ -327,6 +344,10 @@ public abstract class AbstractIndex implements Closeable {
 
     protected final MappedByteBuffer mmap() {
         return mmap;
+    }
+
+    protected final ByteBuffer buffer() {
+        return buffer;
     }
 
     /*
@@ -419,7 +440,10 @@ public abstract class AbstractIndex implements Closeable {
 
     protected void truncateToEntries0(int entries) {
         this.entries = entries;
-        mmap.position(entries * entrySize());
+        if (mmap != null)
+            mmap.position(entries * entrySize());
+        else
+            buffer.position(entries * entrySize());
     }
 
     /**
