@@ -103,7 +103,8 @@ public class AnyRecords extends FileRecords implements Closeable {
                String suffix,
                Map<Long, File> file2,
                long currentOffset,
-               AtomicInteger size) throws IOException {
+               AtomicInteger size,
+               ByteBuffer recordBuffer) throws IOException {
         this.file = file;
         this.channel = channel;
         this.start = 0;
@@ -116,6 +117,7 @@ public class AnyRecords extends FileRecords implements Closeable {
         this.file2 = file2;
         this.currentOffset = currentOffset;
         batches = batchesFrom(start);
+        this.recordBuffer = recordBuffer;
     }
 
     AnyRecords(File file,
@@ -126,7 +128,16 @@ public class AnyRecords extends FileRecords implements Closeable {
                long baseOffset,
                String path,
                String suffix) throws IOException {
-        this(file, channel, start, end, isSlice, baseOffset, path, suffix, new HashMap<>(), -1, null);
+        this(file, channel, start, end, isSlice, baseOffset, path, suffix, new HashMap<>(), -1, null, null);
+    }
+
+    AnyRecords(File file,
+               FileChannel channel,
+               int start,
+               int end,
+               boolean isSlice,
+               ByteBuffer byteBuffer) throws IOException {
+        this(file, channel, start, end, isSlice, 0, null, null, new HashMap<>(), -1, null, byteBuffer);
     }
 
 
@@ -154,7 +165,7 @@ public class AnyRecords extends FileRecords implements Closeable {
 //        }
 //        size.set(res);
 //        changed = false;
-        return recordBuffer.limit();
+        return recordBuffer == null ? 0 : recordBuffer.limit();
     }
 
     /**
@@ -171,6 +182,9 @@ public class AnyRecords extends FileRecords implements Closeable {
      */
     public FileChannel channel() {
         return channel;
+    }
+    public ByteBuffer recordBuffer() {
+        return recordBuffer;
     }
 
     /**
@@ -199,10 +213,14 @@ public class AnyRecords extends FileRecords implements Closeable {
      * @param size The number of bytes after the start position to include
      * @return A sliced wrapper on this message set limited based on the given position and size
      */
-    public AnyRecords slice(int offset, int size) throws IOException {
+    public AnyRecords slice(int position, int size) throws IOException {
 //        int availableBytes = availableBytes(offset, size);
 //        int startPosition = this.start + position;
-        return new AnyRecords(file, channel,  offset, end, true, offset, path, suffix, file2, currentOffset, this.size);
+//        return new AnyRecords(file, channel,  offset, end, true, offset, path, suffix, file2, currentOffset, this.size);
+        int availableBytes = availableBytes(position, size);
+        System.out.println("!!! slice:" + position + ";;" + size + ";;" + sizeInBytes() + ";;" + availableBytes);
+        int startPosition = this.start + position;
+        return new AnyRecords(file, channel, startPosition, startPosition + availableBytes, true, recordBuffer.duplicate());
     }
 
     /**
@@ -370,6 +388,7 @@ public class AnyRecords extends FileRecords implements Closeable {
 
     @Override
     public int writeTo(TransferableChannel destChannel, int offset, int length) throws IOException {
+        System.out.println("!!! writeTo");
         // luke
 //        List<Long> baseOffsets = listBucket().stream().filter(name -> name.contains(path.substring(1)))
 //                .map(off -> Long.parseLong(off.substring(off.lastIndexOf('/') + 1, off.lastIndexOf('.')))).sorted().collect(Collectors.toList());
@@ -395,7 +414,18 @@ public class AnyRecords extends FileRecords implements Closeable {
 //        long position = start + offset;
 //        int count = Math.min(length, oldSize - offset);
         // safe to cast to int since `count` is an int
-        return (int) destChannel.transferFrom(null, 0, 0, recordBuffer);
+
+        long newSize = Math.min(recordBuffer.capacity(), end) - start;
+        int oldSize = sizeInBytes();
+        if (newSize < oldSize)
+            throw new KafkaException(String.format(
+                    "Size of FileRecords %s has been truncated during write: old size %d, new size %d",
+                    file.getAbsolutePath(), oldSize, newSize));
+
+        long position = start + offset;
+        int count = Math.min(length, oldSize - offset);
+
+        return (int) destChannel.transferFrom(null, position, count, recordBuffer);
     }
 
     /**
@@ -407,8 +437,10 @@ public class AnyRecords extends FileRecords implements Closeable {
      * @return the batch's base offset, its physical position, and its size (including log overhead)
      */
     public FileRecords.LogOffsetPosition searchForOffsetWithSize(long targetOffset, int startingPosition) {
+        System.out.println("!!! searchForOffsetWithSize:" + targetOffset + " startingPosition:" + startingPosition);
         for (FileChannelRecordBatch batch : batchesFrom(targetOffset)) {
             long offset = batch.lastOffset();
+            System.out.println("offset:" + offset + " batch:" + batch + " batch:" + sizeInBytes());
             if (offset >= targetOffset)
                 return new FileRecords.LogOffsetPosition(batch.baseOffset(), batch.position(), sizeInBytes());
         }

@@ -61,17 +61,21 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
 
     @Override
     public FileChannelRecordBatch nextBatch() throws IOException {
-        if (fileRecords.file() == null) {
-
-        }
-
-        FileChannel channel = fileRecords.channel();
         if (position >= end - HEADER_SIZE_UP_TO_MAGIC)
             return null;
 
+
         logHeaderBuffer.rewind();
-        Utils.readFullyOrFail(channel, logHeaderBuffer, position, "log header");
-        Utils.readFullyOrFail();
+        if (fileRecords.file() != null) {
+            FileChannel channel = fileRecords.channel();
+            Utils.readFullyOrFail(channel, logHeaderBuffer, position, "log header");
+        } else {
+
+            System.out.println("!!! nextBatch from memory");
+            //logHeaderBuffer.put(logHeaderBuffer.position(), ((AnyRecords) fileRecords).recordBuffer(), position, logHeaderBuffer.remaining());
+            logHeaderBuffer.put(((AnyRecords) fileRecords).recordBuffer().array(), position, logHeaderBuffer.remaining());
+        }
+
 
         logHeaderBuffer.rewind();
         long offset = logHeaderBuffer.getLong(OFFSET_OFFSET);
@@ -181,13 +185,21 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
         @Override
         public void writeTo(ByteBuffer buffer) {
             FileChannel channel = fileRecords.channel();
-            try {
+            if (channel != null) {
+                try {
+                    int limit = buffer.limit();
+                    buffer.limit(buffer.position() + sizeInBytes());
+                    Utils.readFully(channel, buffer, position);
+                    buffer.limit(limit);
+                } catch (IOException e) {
+                    throw new KafkaException("Failed to read record batch at position " + position + " from " + fileRecords, e);
+                }
+            } else {
+                System.out.println("!!! writeTo from memory");
                 int limit = buffer.limit();
                 buffer.limit(buffer.position() + sizeInBytes());
-                Utils.readFully(channel, buffer, position);
+                buffer.put(((AnyRecords) fileRecords).recordBuffer().array(), position, buffer.remaining());
                 buffer.limit(limit);
-            } catch (IOException e) {
-                throw new KafkaException("Failed to read record batch at position " + position + " from " + fileRecords, e);
             }
         }
 
@@ -214,10 +226,16 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
         }
 
         private RecordBatch loadBatchWithSize(int size, String description) {
+
             FileChannel channel = fileRecords.channel();
             try {
                 ByteBuffer buffer = ByteBuffer.allocate(size);
-                Utils.readFullyOrFail(channel, buffer, position, description);
+                if (channel != null)
+                    Utils.readFullyOrFail(channel, buffer, position, description);
+                else {
+                    System.out.println("!!! loadBatch from memory");
+                    buffer.put(((AnyRecords) fileRecords).recordBuffer().array(), position, buffer.remaining());
+                }
                 buffer.rewind();
                 return toMemoryRecordBatch(buffer);
             } catch (IOException e) {

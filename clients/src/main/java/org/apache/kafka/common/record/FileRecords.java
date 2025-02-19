@@ -135,7 +135,9 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @return A sliced wrapper on this message set limited based on the given position and size
      */
     public FileRecords slice(int position, int size) throws IOException {
+
         int availableBytes = availableBytes(position, size);
+//        System.out.println("!!! slice:" + position + ";;" + size + ";;" + sizeInBytes() + ";;" + availableBytes);
         int startPosition = this.start + position;
         return new FileRecords(file, channel, startPosition, startPosition + availableBytes, true);
     }
