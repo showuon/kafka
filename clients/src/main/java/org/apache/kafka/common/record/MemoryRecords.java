@@ -112,8 +112,14 @@ public class MemoryRecords extends AbstractRecords {
 
     public ByteBuffer writeFullyToMemory(ByteBuffer recordBuffer) throws IOException {
         buffer.mark();
-        ByteBuffer temp = ByteBuffer.allocate(recordBuffer.capacity() + sizeInBytes());
-        temp.put(recordBuffer.array(), 0, recordBuffer.capacity());
+        if (recordBuffer == null) {
+            ByteBuffer temp = ByteBuffer.allocate(sizeInBytes());
+            temp.put(buffer);
+            return temp;
+        }
+        int cap = recordBuffer.capacity();
+        ByteBuffer temp = ByteBuffer.allocate(cap + sizeInBytes());
+        temp.put(recordBuffer.array(), 0, cap);
         temp.put(buffer);
         buffer.reset();
         return temp;
