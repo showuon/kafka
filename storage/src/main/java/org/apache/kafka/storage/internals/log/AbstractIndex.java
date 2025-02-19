@@ -90,6 +90,7 @@ public abstract class AbstractIndex implements Closeable {
             this.entries = mmap.position() / entrySize();
         } else {
             buffer = ByteBuffer.allocate(maxIndexSize);
+            this.maxEntries = buffer.limit() / entrySize();
         }
     }
 
