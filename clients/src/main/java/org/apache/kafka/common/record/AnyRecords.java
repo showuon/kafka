@@ -332,7 +332,8 @@ public class AnyRecords extends FileRecords implements Closeable {
      * @param parentDir The new parent directory
      */
     public void updateParentDir(File parentDir) {
-        this.file = new File(parentDir, file.getName());
+        if (file != null)
+            this.file = new File(parentDir, file.getName());
     }
 
     /**

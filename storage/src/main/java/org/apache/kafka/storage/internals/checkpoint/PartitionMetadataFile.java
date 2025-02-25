@@ -100,6 +100,9 @@ public class PartitionMetadataFile {
     public PartitionMetadata read() {
         synchronized (lock) {
             try {
+                if (file == null) {
+                    return new PartitionMetadata(CURRENT_VERSION, dirtyTopicIdOpt.get());
+                }
                 try (BufferedReader reader = Files.newBufferedReader(path(), StandardCharsets.UTF_8)) {
                     PartitionMetadataReadBuffer partitionBuffer = new PartitionMetadataReadBuffer(file.getAbsolutePath(), reader);
                     return partitionBuffer.read();
@@ -113,7 +116,7 @@ public class PartitionMetadataFile {
     }
 
     public boolean exists() {
-        return file.exists();
+        return file != null ? file.exists() : false;
     }
 
     public void delete() throws IOException {

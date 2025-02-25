@@ -449,12 +449,17 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   }
 
   private def initializePartitionMetadata(): Unit = lock synchronized {
-    val partitionMetadata = PartitionMetadataFile.newFile(dir)
-    partitionMetadataFile = Some(new PartitionMetadataFile(partitionMetadata, logDirFailureChannel))
+    if (!config.logUseAny) {
+      val partitionMetadata = PartitionMetadataFile.newFile(dir)
+      partitionMetadataFile = Some(new PartitionMetadataFile(partitionMetadata, logDirFailureChannel))
+    } else {
+      partitionMetadataFile = Some(new PartitionMetadataFile(null, logDirFailureChannel))
+    }
   }
 
   private def maybeFlushMetadataFile(): Unit = {
-    partitionMetadataFile.foreach(_.maybeFlush())
+    if (!config.logUseAny)
+      partitionMetadataFile.foreach(_.maybeFlush())
   }
 
   /** Only used for ZK clusters when we update and start using topic IDs on existing topics */
@@ -1613,7 +1618,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
     val maxOffsetInMessages = appendInfo.lastOffset
 
     if (segment.shouldRoll(new RollParams(config.maxSegmentMs, config.segmentSize, appendInfo.maxTimestamp, appendInfo.lastOffset, messagesSize, now))) {
-      debug(s"Rolling new log segment (log_size = ${segment.size}/${config.segmentSize}}, " +
+      info(s"!!! Rolling new log segment (log_size = ${segment.size}/${config.segmentSize}}, " +
         s"offset_index_size = ${segment.offsetIndex.entries}/${segment.offsetIndex.maxEntries}, " +
         s"time_index_size = ${segment.timeIndex.entries}/${segment.timeIndex.maxEntries}, " +
         s"inactive_time_ms = ${segment.timeWaitedForRoll(now, maxTimestampInMessages)}/${config.segmentMs - segment.rollJitterMs}).")
@@ -1941,15 +1946,15 @@ object UnifiedLog extends Logging {
     // The created leaderEpochCache will be truncated by LogLoader if necessary
     // so it is guaranteed that the epoch entries will be correct even when on-disk
     // checkpoint was stale (due to async nature of LeaderEpochFileCache#truncateFromStart/End).
-    val leaderEpochCache = JUnifiedLog.createLeaderEpochCache(
-      dir,
+    val leaderEpochCache = UnifiedLog.maybeCreateLeaderEpochCache(
+      if (config.logUseAny) null else dir,
       topicPartition,
       logDirFailureChannel,
       Optional.empty,
       scheduler)
     val producerStateManager = new ProducerStateManager(topicPartition, dir,
-      maxTransactionTimeoutMs, producerStateManagerConfig, time)
-    val isRemoteLogEnabled = JUnifiedLog.isRemoteLogEnabled(remoteStorageSystemEnable, config, topicPartition.topic)
+      maxTransactionTimeoutMs, producerStateManagerConfig, time, config.logUseAny)
+    val isRemoteLogEnabled = UnifiedLog.isRemoteLogEnabled(remoteStorageSystemEnable, config, topicPartition.topic)
     val offsets = new LogLoader(
       dir,
       topicPartition,
