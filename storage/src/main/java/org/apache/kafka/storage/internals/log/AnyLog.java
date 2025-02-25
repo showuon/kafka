@@ -261,19 +261,19 @@ public class AnyLog extends LocalLog {
      * @param offset The offset to flush up to (non-inclusive)
      */
     public void flush(long offset) throws IOException {
-//        long currentRecoveryPoint = recoveryPoint;
-//        if (currentRecoveryPoint <= offset) {
-//            Collection<LogSegment> segmentsToFlush = segments.values(currentRecoveryPoint, offset);
-//            for (LogSegment logSegment : segmentsToFlush) {
-//                logSegment.flush();
-//            }
-//            // If there are any new segments, we need to flush the parent directory for crash consistency.
-//            if (segmentsToFlush.stream().anyMatch(s -> s.baseOffset() >= currentRecoveryPoint)) {
-//                // The directory might be renamed concurrently for topic deletion, which may cause NoSuchFileException here.
-//                // Since the directory is to be deleted anyways, we just swallow NoSuchFileException and let it go.
-//                Utils.flushDirIfExists(dir.toPath());
-//            }
-//        }
+        long currentRecoveryPoint = recoveryPoint;
+        if (currentRecoveryPoint <= offset) {
+            Collection<LogSegment> segmentsToFlush = segments.values(currentRecoveryPoint, offset);
+            for (LogSegment logSegment : segmentsToFlush) {
+                logSegment.flush();
+            }
+            // If there are any new segments, we need to flush the parent directory for crash consistency.
+            if (segmentsToFlush.stream().anyMatch(s -> s.baseOffset() >= currentRecoveryPoint)) {
+                // The directory might be renamed concurrently for topic deletion, which may cause NoSuchFileException here.
+                // Since the directory is to be deleted anyways, we just swallow NoSuchFileException and let it go.
+                Utils.flushDirIfExists(dir.toPath());
+            }
+        }
     }
 
     /**
@@ -479,14 +479,14 @@ public class AnyLog extends LocalLog {
                     Optional<LogSegment> segmentOpt = segments.floorSegment(startOffset);
 
                     if (!topicPartition.topic().equals("__cluster_metadata"))
-                        logger.info("!!! maxOffsetMetadata.messageOffset:" + maxOffsetMetadata.messageOffset + ";;" + startOffset);
+                        logger.info("!!! maxOffsetMetadata.messageOffset:" + maxOffsetMetadata + ";;" + startOffset + ";;" + segmentOpt);
                     // return error on attempt to read beyond the log end offset
                     if (startOffset > endOffset || segmentOpt.isEmpty()) {
                         throw new OffsetOutOfRangeException("Received request for offset " + startOffset + " for partition " + topicPartition + ", " +
                                 "but we only have log segments upto " + endOffset + ".");
                     }
-//                    if (startOffset == maxOffsetMetadata.messageOffset) return emptyFetchDataInfo(maxOffsetMetadata, includeAbortedTxns);
-//                    if (startOffset > maxOffsetMetadata.messageOffset) return emptyFetchDataInfo(convertToOffsetMetadataOrThrow(startOffset), includeAbortedTxns);
+                    if (startOffset == maxOffsetMetadata.messageOffset) return emptyFetchDataInfo(maxOffsetMetadata, includeAbortedTxns);
+                    if (startOffset > maxOffsetMetadata.messageOffset) return emptyFetchDataInfo(convertToOffsetMetadataOrThrow(startOffset), includeAbortedTxns);
 
                     // Do the read on the segment with a base offset less than the target offset
                     // but if that segment doesn't contain any messages with an offset greater than that

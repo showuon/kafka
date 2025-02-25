@@ -243,7 +243,7 @@ public class AnyLogSegment extends LogSegment implements Closeable {
                        MemoryRecords records) throws IOException {
         LOGGER.info("!!! AnyLogSegment append");
         if (records.sizeInBytes() > 0) {
-            LOGGER.trace("Inserting {} bytes at end offset {} at position {} with largest timestamp {} at offset {}",
+            LOGGER.info("Inserting {} bytes at end offset {} at position {} with largest timestamp {} at offset {}",
                 records.sizeInBytes(), largestOffset, log.sizeInBytes(), largestTimestampMs, shallowOffsetOfMaxTimestamp);
             int physicalPosition = log.sizeInBytes();
             if (physicalPosition == 0)
@@ -473,54 +473,55 @@ public class AnyLogSegment extends LogSegment implements Closeable {
      * @throws LogSegmentOffsetOverflowException if the log segment contains an offset that causes the index offset to overflow
      */
     public int recover(ProducerStateManager producerStateManager, Optional<LeaderEpochFileCache> leaderEpochCache) throws IOException {
-//        offsetIndex().reset();
-//        timeIndex().reset();
-//        txnIndex.reset();
-//        int validBytes = 0;
-//        int lastIndexEntry = 0;
-//        maxTimestampAndOffsetSoFar = TimestampOffset.UNKNOWN;
-//        try {
-//            for (RecordBatch batch : log.batches()) {
-//                batch.ensureValid();
-//                ensureOffsetInRange(batch.lastOffset());
-//
-//                // The max timestamp is exposed at the batch level, so no need to iterate the records
-//                if (batch.maxTimestamp() > maxTimestampSoFar()) {
-//                    maxTimestampAndOffsetSoFar = new TimestampOffset(batch.maxTimestamp(), batch.lastOffset());
-//                }
-//
-//                // Build offset index
-//                if (validBytes - lastIndexEntry > indexIntervalBytes) {
-//                    offsetIndex().append(batch.lastOffset(), validBytes);
-//                    timeIndex().maybeAppend(maxTimestampSoFar(), shallowOffsetOfMaxTimestampSoFar());
-//                    lastIndexEntry = validBytes;
-//                }
-//                validBytes += batch.sizeInBytes();
-//
-//                if (batch.magic() >= RecordBatch.MAGIC_VALUE_V2) {
-//                    leaderEpochCache.ifPresent(cache -> {
-//                        if (batch.partitionLeaderEpoch() >= 0 &&
-//                                (!cache.latestEpoch().isPresent() || batch.partitionLeaderEpoch() > cache.latestEpoch().getAsInt()))
-//                            cache.assign(batch.partitionLeaderEpoch(), batch.baseOffset());
-//                    });
-//                    updateProducerState(producerStateManager, batch);
-//                }
-//            }
-//        } catch (CorruptRecordException | InvalidRecordException e) {
-//            LOGGER.warn("Found invalid messages in log segment {} at byte offset {}.", log.file().getAbsolutePath(),
-//                validBytes, e);
-//        }
-//        int truncated = log.sizeInBytes() - validBytes;
-//        if (truncated > 0)
-//            LOGGER.debug("Truncated {} invalid bytes at the end of segment {} during recovery", truncated, log.file().getAbsolutePath());
-//
-//        log.truncateTo(validBytes);
-//        offsetIndex().trimToValidSize();
-//        // A normally closed segment always appends the biggest timestamp ever seen into log segment, we do this as well.
-//        timeIndex().maybeAppend(maxTimestampSoFar(), shallowOffsetOfMaxTimestampSoFar(), true);
-//        timeIndex().trimToValidSize();
-//        return truncated;
-        return 0;
+        offsetIndex().reset();
+        timeIndex().reset();
+        txnIndex.reset();
+        int validBytes = 0;
+        int lastIndexEntry = 0;
+        maxTimestampAndOffsetSoFar = TimestampOffset.UNKNOWN;
+        try {
+            for (RecordBatch batch : log.batches()) {
+                LOGGER.info("!!! batch:" + batch.baseOffset() + ";;" + batch.lastOffset());
+                batch.ensureValid();
+                ensureOffsetInRange(batch.lastOffset());
+
+                // The max timestamp is exposed at the batch level, so no need to iterate the records
+                if (batch.maxTimestamp() > maxTimestampSoFar()) {
+                    maxTimestampAndOffsetSoFar = new TimestampOffset(batch.maxTimestamp(), batch.lastOffset());
+                }
+
+                // Build offset index
+                if (validBytes - lastIndexEntry > indexIntervalBytes) {
+                    offsetIndex().append(batch.lastOffset(), validBytes);
+                    timeIndex().maybeAppend(maxTimestampSoFar(), shallowOffsetOfMaxTimestampSoFar());
+                    lastIndexEntry = validBytes;
+                }
+                validBytes += batch.sizeInBytes();
+
+                if (batch.magic() >= RecordBatch.MAGIC_VALUE_V2) {
+                    leaderEpochCache.ifPresent(cache -> {
+                        if (batch.partitionLeaderEpoch() >= 0 &&
+                                (!cache.latestEpoch().isPresent() || batch.partitionLeaderEpoch() > cache.latestEpoch().getAsInt()))
+                            cache.assign(batch.partitionLeaderEpoch(), batch.baseOffset());
+                    });
+                    updateProducerState(producerStateManager, batch);
+                }
+            }
+        } catch (CorruptRecordException | InvalidRecordException e) {
+            LOGGER.warn("Found invalid messages in log segment {} at byte offset {}.", log.file().getAbsolutePath(),
+                validBytes, e);
+        }
+        int truncated = log.sizeInBytes() - validBytes;
+        if (truncated > 0)
+            LOGGER.debug("Truncated {} invalid bytes at the end of segment {} during recovery", truncated, log.file().getAbsolutePath());
+
+        log.truncateTo(validBytes);
+        offsetIndex().trimToValidSize();
+        // A normally closed segment always appends the biggest timestamp ever seen into log segment, we do this as well.
+        timeIndex().maybeAppend(maxTimestampSoFar(), shallowOffsetOfMaxTimestampSoFar(), true);
+        timeIndex().trimToValidSize();
+        return truncated;
+//        return 0;
     }
 
     /**
@@ -607,14 +608,16 @@ public class AnyLogSegment extends LogSegment implements Closeable {
      * This method is thread-safe.
      */
     public long readNextOffset() throws IOException {
-//        FetchDataInfo fetchData = read(offsetIndex().lastOffset(), log.sizeInBytes());
-//        if (fetchData == null)
-//            return baseOffset;
-//        else
-//            return fetchData.records.lastBatch()
-//                .map(batch -> batch.nextOffset())
-//                .orElse(baseOffset);
-        return baseOffset;
+        FetchDataInfo fetchData = read(offsetIndex().lastOffset(), log.sizeInBytes());
+//        LOGGER.info("!!! fetchData:" + fetchData);
+        if (fetchData == null)
+            return baseOffset;
+        else {
+            return fetchData.records.lastBatch()
+                    .map(batch -> batch.nextOffset())
+                    .orElse(baseOffset);
+        }
+
     }
 
     /**

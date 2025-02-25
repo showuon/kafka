@@ -419,10 +419,12 @@ public class LogLoader {
             if (LogFileUtils.isIndexFile(file)) {
                 // if it is an index file, make sure it has a corresponding .log file
                 long offset = LogFileUtils.offsetFromFile(file);
-                File logFile = LogFileUtils.logFile(dir, offset);
-                if (!logFile.exists()) {
-                    logger.warn("Found an orphaned index file {}, with no corresponding log file.", file.getAbsolutePath());
-                    Files.deleteIfExists(file.toPath());
+                if (!config.logUseAny) {
+                    File logFile = LogFileUtils.logFile(dir, offset);
+                    if (!logFile.exists()) {
+                        logger.warn("Found an orphaned index file {}, with no corresponding log file.", file.getAbsolutePath());
+                        Files.deleteIfExists(file.toPath());
+                    }
                 }
             } else if (LogFileUtils.isLogFile(file)) {
                 // if it's a log file, load the corresponding log segment
@@ -510,6 +512,7 @@ public class LogLoader {
     private Optional<Long> deleteSegmentsIfLogStartGreaterThanLogEnd() throws IOException {
         if (segments.nonEmpty()) {
             long logEndOffset = segments.lastSegment().get().readNextOffset();
+            logger.info("!!! logEndOffset:" + logEndOffset + ";;" + logStartOffsetCheckpoint);
             if (logEndOffset >= logStartOffsetCheckpoint) {
                 return Optional.of(logEndOffset);
             } else {
@@ -606,8 +609,10 @@ public class LogLoader {
         // skip recovery for unflushed segments if the broker crashed after we checkpoint the recovery
         // point and before we flush the segment.
         if (hadCleanShutdown && logEndOffsetOptional.isPresent()) {
+            logger.info("!!! logEndOffsetOptional:" + logEndOffsetOptional);
             return new RecoveryOffsets(logEndOffsetOptional.get(), logEndOffsetOptional.get());
         } else {
+            logger.info("!!! next offset:");
             long logEndOffset = logEndOffsetOptional.orElse(segments.lastSegment().get().readNextOffset());
             return new RecoveryOffsets(Math.min(recoveryPointCheckpoint, logEndOffset), logEndOffset);
         }

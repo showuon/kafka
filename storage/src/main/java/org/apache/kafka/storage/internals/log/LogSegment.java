@@ -598,6 +598,7 @@ public class LogSegment implements Closeable {
      */
     public long readNextOffset() throws IOException {
         FetchDataInfo fetchData = read(offsetIndex().lastOffset(), log.sizeInBytes());
+//        LOGGER.info("!!! fetchData:" + fetchData);
         if (fetchData == null)
             return baseOffset;
         else {
