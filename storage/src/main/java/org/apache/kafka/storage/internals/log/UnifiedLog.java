@@ -273,10 +273,14 @@ public class UnifiedLog {
                                                                              LogDirFailureChannel logDirFailureChannel,
                                                                              Optional<LeaderEpochFileCache> currentCache,
                                                                              Scheduler scheduler) throws IOException {
-        File leaderEpochFile = LeaderEpochCheckpointFile.newFile(dir);
-        LeaderEpochCheckpointFile checkpointFile = new LeaderEpochCheckpointFile(leaderEpochFile, logDirFailureChannel);
-        return currentCache.map(cache -> cache.withCheckpoint(checkpointFile))
-                .orElse(new LeaderEpochFileCache(topicPartition, checkpointFile, scheduler));
+        if (dir != null) {
+            File leaderEpochFile = LeaderEpochCheckpointFile.newFile(dir);
+            LeaderEpochCheckpointFile checkpointFile = new LeaderEpochCheckpointFile(leaderEpochFile, logDirFailureChannel);
+            return currentCache.map(cache -> cache.withCheckpoint(checkpointFile))
+                    .orElse(new LeaderEpochFileCache(topicPartition, checkpointFile, scheduler));
+        }
+        return currentCache.map(cache -> cache.withCheckpoint(null))
+                .orElse(new LeaderEpochFileCache(topicPartition, null, scheduler));
 
     }
 
