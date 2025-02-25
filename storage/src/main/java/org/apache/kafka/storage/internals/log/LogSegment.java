@@ -872,7 +872,7 @@ public class LogSegment implements Closeable {
 
         FileRecords records = null;
         if (config.logUseAny) {
-            records = AnyRecords.open(LogFileUtils.logFile(dir, baseOffset, fileSuffix), fileAlreadyExists, initFileSize, preallocate, baseOffset, dir.toString(), fileSuffix);
+            records = FileRecords.open(null, fileAlreadyExists, initFileSize, preallocate);
             return new LogSegment(
                     records,
                     LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize, true),
