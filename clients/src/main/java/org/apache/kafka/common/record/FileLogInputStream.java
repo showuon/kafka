@@ -72,8 +72,7 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
         } else {
 
             System.out.println("!!! nextBatch from memory");
-            //logHeaderBuffer.put(logHeaderBuffer.position(), ((AnyRecords) fileRecords).recordBuffer(), position, logHeaderBuffer.remaining());
-            logHeaderBuffer.put(((AnyRecords) fileRecords).recordBuffer().array(), position, logHeaderBuffer.remaining());
+            logHeaderBuffer.put(fileRecords.recordBuffer().array(), position, logHeaderBuffer.remaining());
         }
 
 
@@ -198,7 +197,7 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
                 System.out.println("!!! writeTo from memory");
                 int limit = buffer.limit();
                 buffer.limit(buffer.position() + sizeInBytes());
-                buffer.put(((AnyRecords) fileRecords).recordBuffer().array(), position, buffer.remaining());
+                buffer.put(fileRecords.recordBuffer().array(), position, buffer.remaining());
                 buffer.limit(limit);
             }
         }
@@ -234,7 +233,7 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
                     Utils.readFullyOrFail(channel, buffer, position, description);
                 else {
                     System.out.println("!!! loadBatch from memory");
-                    buffer.put(((AnyRecords) fileRecords).recordBuffer().array(), position, buffer.remaining());
+                    buffer.put(fileRecords.recordBuffer().array(), position, buffer.remaining());
                 }
                 buffer.rewind();
                 return toMemoryRecordBatch(buffer);

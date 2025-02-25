@@ -49,9 +49,15 @@ public class FileRecords extends AbstractRecords implements Closeable {
     private  AtomicInteger size;
     private  FileChannel channel;
     private volatile File file;
+    private ByteBuffer recordBuffer;
 
-
-    FileRecords() {}
+    FileRecords(File file,
+                FileChannel channel,
+                int start,
+                int end,
+                boolean isSlice) throws IOException {
+        this(file, channel, start, end, isSlice, null);
+    }
     /**
      * The {@code FileRecords.open} methods should be used instead of this constructor whenever possible.
      * The constructor is visible for tests.
@@ -60,28 +66,32 @@ public class FileRecords extends AbstractRecords implements Closeable {
                 FileChannel channel,
                 int start,
                 int end,
-                boolean isSlice) throws IOException {
+                boolean isSlice,
+                ByteBuffer recordBuffer) throws IOException {
         this.file = file;
         this.channel = channel;
         this.start = start;
         this.end = end;
         this.isSlice = isSlice;
         this.size = new AtomicInteger();
+        this.recordBuffer = recordBuffer;
 
         if (isSlice) {
             // don't check the file size if this is just a slice view
             size.set(end - start);
         } else {
-            if (channel.size() > Integer.MAX_VALUE)
-                throw new KafkaException("The size of segment " + file + " (" + channel.size() +
-                        ") is larger than the maximum allowed segment size of " + Integer.MAX_VALUE);
+            if (channel != null) {
+                if (channel.size() > Integer.MAX_VALUE)
+                    throw new KafkaException("The size of segment " + file + " (" + channel.size() +
+                            ") is larger than the maximum allowed segment size of " + Integer.MAX_VALUE);
 
-            int limit = Math.min((int) channel.size(), end);
-            size.set(limit - start);
+                int limit = Math.min((int) channel.size(), end);
+                size.set(limit - start);
 
-            // if this is not a slice, update the file pointer to the end of the file
-            // set the file position to the last byte in the file
-            channel.position(limit);
+                // if this is not a slice, update the file pointer to the end of the file
+                // set the file position to the last byte in the file
+                channel.position(limit);
+            }
         }
 
         batches = batchesFrom(start);
@@ -89,6 +99,8 @@ public class FileRecords extends AbstractRecords implements Closeable {
 
     @Override
     public int sizeInBytes() {
+        if (file == null)
+            return recordBuffer == null ? 0 : recordBuffer.limit();
         return size.get();
     }
 
@@ -106,6 +118,10 @@ public class FileRecords extends AbstractRecords implements Closeable {
      */
     public FileChannel channel() {
         return channel;
+    }
+
+    public ByteBuffer recordBuffer() {
+        return recordBuffer;
     }
 
     /**
@@ -135,11 +151,9 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @return A sliced wrapper on this message set limited based on the given position and size
      */
     public FileRecords slice(int position, int size) throws IOException {
-
         int availableBytes = availableBytes(position, size);
-//        System.out.println("!!! slice:" + position + ";;" + size + ";;" + sizeInBytes() + ";;" + availableBytes);
         int startPosition = this.start + position;
-        return new FileRecords(file, channel, startPosition, startPosition + availableBytes, true);
+        return new FileRecords(file, channel, startPosition, startPosition + availableBytes, true, recordBuffer == null ? null : recordBuffer.duplicate());
     }
 
     /**
@@ -191,9 +205,14 @@ public class FileRecords extends AbstractRecords implements Closeable {
             throw new IllegalArgumentException("Append of size " + records.sizeInBytes() +
                     " bytes is too large for segment with current file position at " + size.get());
 
-        int written = records.writeFullyTo(channel);
-        size.getAndAdd(written);
-        return written;
+        if (file != null) {
+            int written = records.writeFullyTo(channel);
+            size.getAndAdd(written);
+            return written;
+        } else {
+            recordBuffer = records.writeFullyToMemory(recordBuffer);
+            return records.sizeInBytes();
+        }
     }
 
     /**
@@ -278,16 +297,20 @@ public class FileRecords extends AbstractRecords implements Closeable {
         if (targetSize > originalSize || targetSize < 0)
             throw new KafkaException("Attempt to truncate log segment " + file + " to " + targetSize + " bytes failed, " +
                     " size of this log segment is " + originalSize + " bytes.");
-        if (targetSize < (int) channel.size()) {
-            channel.truncate(targetSize);
-            size.set(targetSize);
+        if (channel != null) {
+            if (targetSize < (int) channel.size())
+                channel.truncate(targetSize);
+        } else {
+            if (targetSize < recordBuffer.limit())
+                recordBuffer.limit(targetSize);
         }
+        size.set(targetSize);
         return originalSize - targetSize;
     }
 
     @Override
     public int writeTo(TransferableChannel destChannel, int offset, int length) throws IOException {
-        long newSize = Math.min(channel.size(), end) - start;
+        long newSize = Math.min(channel != null ? channel.size() : recordBuffer.capacity(), end) - start;
         int oldSize = sizeInBytes();
         if (newSize < oldSize)
             throw new KafkaException(String.format(
@@ -297,7 +320,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
         long position = start + offset;
         int count = Math.min(length, oldSize - offset);
         // safe to cast to int since `count` is an int
-        return (int) destChannel.transferFrom(channel, position, count);
+        return (int) destChannel.transferFrom(channel, position, count, recordBuffer);
     }
 
     /**
@@ -426,7 +449,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
             int end = (!fileAlreadyExists && preallocate) ? 0 : Integer.MAX_VALUE;
             return new FileRecords(file, channel, 0, end, false);
         } else {
-            return new AnyRecords(null, null, 0, Integer.MAX_VALUE, false, null);
+            return new FileRecords(null, null, 0, Integer.MAX_VALUE, false);
         }
     }
 
