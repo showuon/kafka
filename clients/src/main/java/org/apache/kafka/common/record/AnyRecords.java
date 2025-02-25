@@ -258,7 +258,6 @@ public class AnyRecords extends FileRecords implements Closeable {
     }
 
 
-
     /**
      * Append a set of records to the file. This method is not thread-safe and must be
      * protected with a lock.
@@ -266,21 +265,12 @@ public class AnyRecords extends FileRecords implements Closeable {
      * @param records The records to append
      * @return the number of bytes written to the underlying file
      */
-    public int append(MemoryRecords records, long largestOffset) throws IOException {
+    public int append(MemoryRecords records) throws IOException {
         if (records.sizeInBytes() > Integer.MAX_VALUE - (size == null ? 0 : size.get()))
             throw new IllegalArgumentException("Append of size " + records.sizeInBytes() +
                     " bytes is too large for segment with current file position at " + size.get());
 
-        // luke
-
-
         recordBuffer = records.writeFullyToMemory(recordBuffer);
-//        if (size == null)
-//            size = new AtomicInteger(written);
-//        else {
-//            size.addAndGet(written);
-//        }
-//        changed = true;
         return records.sizeInBytes();
     }
 
@@ -528,7 +518,7 @@ public class AnyRecords extends FileRecords implements Closeable {
      * @param start The position to start record iteration from; must be a known position for start of a batch
      * @return An iterator over batches starting from {@code start}
      */
-    public Iterable<FileChannelRecordBatch> batchesFrom(final long start) {
+    public Iterable<FileChannelRecordBatch> batchesFrom(final int start) {
         return () -> batchIterator(start);
     }
 
@@ -538,17 +528,6 @@ public class AnyRecords extends FileRecords implements Closeable {
     }
 
     private AbstractIterator<FileChannelRecordBatch> batchIterator(long start) {
-//        try {
-//            if (!file2.containsKey(start)) {
-//                readS3(start);
-//            }
-//            if (file2.isEmpty()) {
-//                return new RecordBatchIterator<>(null);
-//            }
-//        } catch (Exception e) {
-//            throw new RuntimeException(e);
-//        }
-//        return new AnyRecordBatchIterator<>(start, path, suffix);
         final int end;
         if (isSlice)
             end = this.end;

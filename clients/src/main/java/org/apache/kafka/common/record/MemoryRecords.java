@@ -125,37 +125,6 @@ public class MemoryRecords extends AbstractRecords {
         return temp;
     }
 
-    public int writeFullyTo(long offset, String path, String suffix) {
-        String accessKey = "minioadmin";
-        String secretKey = "minioadmin";
-        AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
-        S3Client s3 = null;
-        try {
-            s3 = S3Client.builder()
-                    .region(Region.US_EAST_1)
-                    .endpointOverride(new URI("http://localhost:9000"))
-                    .credentialsProvider(StaticCredentialsProvider.create(credentials))
-                    .forcePathStyle(true)
-                    .build();
-        } catch (URISyntaxException e) {
-            throw new RuntimeException(e);
-        }
-
-        PutObjectRequest objectRequest = PutObjectRequest.builder()
-                .bucket("test")
-                .key(path + "/" + offset + ".log" + suffix)
-                .build();
-
-        int size = buffer.position();
-
-        buffer.mark();
-
-        PutObjectResponse response = s3.putObject(objectRequest, RequestBody.fromByteBuffer(buffer));
-
-        buffer.reset();
-        return this.sizeInBytes();
-    }
-
     /**
      * The total number of bytes in this message set not including any partial, trailing messages. This
      * may be smaller than what is returned by {@link #sizeInBytes()}.

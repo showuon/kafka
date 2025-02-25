@@ -178,9 +178,6 @@ public class FileRecords extends AbstractRecords implements Closeable {
     }
 
 
-    public int append(MemoryRecords records) throws IOException {
-        return append(records, 0);
-    }
     /**
      * Append a set of records to the file. This method is not thread-safe and must be
      * protected with a lock.
@@ -188,7 +185,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @param records The records to append
      * @return the number of bytes written to the underlying file
      */
-    public int append(MemoryRecords records, long largestOffset) throws IOException {
+    public int append(MemoryRecords records) throws IOException {
         if (records.sizeInBytes() > Integer.MAX_VALUE - size.get())
             throw new IllegalArgumentException("Append of size " + records.sizeInBytes() +
                     " bytes is too large for segment with current file position at " + size.get());
@@ -410,8 +407,8 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @param start The position to start record iteration from; must be a known position for start of a batch
      * @return An iterator over batches starting from {@code start}
      */
-    public Iterable<FileChannelRecordBatch> batchesFrom(final long start) {
-        return () -> batchIterator((int) start);
+    public Iterable<FileChannelRecordBatch> batchesFrom(final int start) {
+        return () -> batchIterator(start);
     }
 
     @Override
