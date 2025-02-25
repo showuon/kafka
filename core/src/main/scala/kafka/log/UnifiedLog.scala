@@ -348,8 +348,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
       logOffsetsListener.onHighWatermarkUpdated(newHighWatermark.messageOffset)
       maybeIncrementFirstUnstableOffset()
     }
-    if (!topicPartition.topic().equals("__cluster_metadata"))
-      info(s"Setting high watermark $newHighWatermark")
+    trace(s"Setting high watermark $newHighWatermark")
   }
 
   /**
