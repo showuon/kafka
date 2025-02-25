@@ -20,17 +20,12 @@ import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.network.TransferableChannel;
 import org.apache.kafka.common.record.FileLogInputStream.FileChannelRecordBatch;
 import org.apache.kafka.common.utils.AbstractIterator;
-import org.apache.kafka.common.utils.Utils;
 
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.file.Files;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -48,12 +43,6 @@ public class AnyRecords extends FileRecords implements Closeable {
     private AtomicInteger size;
     private  FileChannel channel;
     private volatile File file;
-    private volatile Map<Long, File> file2;
-    private long baseOffset = 0;
-    private String path;
-    private String suffix;
-    private long currentOffset;
-    private boolean changed = true;
     private ByteBuffer recordBuffer;
 
     /**
@@ -65,49 +54,16 @@ public class AnyRecords extends FileRecords implements Closeable {
                int start,
                int end,
                boolean isSlice,
-               long baseOffset,
-               String path,
-               String suffix,
-               Map<Long, File> file2,
-               long currentOffset,
-               AtomicInteger size,
                ByteBuffer recordBuffer) throws IOException {
         this.file = file;
         this.channel = channel;
         this.start = 0;
         this.end = end;
         this.isSlice = isSlice;
-        this.size =size;
-        this.baseOffset = baseOffset;
-        this.path = path;
-        this.suffix = suffix;
-        this.file2 = file2;
-        this.currentOffset = currentOffset;
+        this.size = new AtomicInteger();;
         batches = batchesFrom(start);
         this.recordBuffer = recordBuffer;
     }
-
-    AnyRecords(File file,
-               FileChannel channel,
-               int start,
-               int end,
-               boolean isSlice,
-               long baseOffset,
-               String path,
-               String suffix) throws IOException {
-        this(file, channel, start, end, isSlice, baseOffset, path, suffix, new HashMap<>(), -1, null, null);
-    }
-
-    AnyRecords(File file,
-               FileChannel channel,
-               int start,
-               int end,
-               boolean isSlice,
-               ByteBuffer byteBuffer) throws IOException {
-        this(file, channel, start, end, isSlice, 0, null, null, new HashMap<>(), -1, null, byteBuffer);
-    }
-
-
 
     @Override
     public int sizeInBytes() {
@@ -133,19 +89,6 @@ public class AnyRecords extends FileRecords implements Closeable {
         return recordBuffer;
     }
 
-    /**
-     * Read log batches into the given buffer until there are no bytes remaining in the buffer or the end of the file
-     * is reached.
-     *
-     * @param buffer The buffer to write the batches to
-     * @param position Position in the buffer to read from
-     * @throws IOException If an I/O error occurs, see {@link FileChannel#read(ByteBuffer, long)} for details on the
-     * possible exceptions
-     */
-    public void readInto(ByteBuffer buffer, int position) throws IOException {
-        Utils.readFully(channel, buffer, position + this.start);
-        buffer.flip();
-    }
 
     /**
      * Return a slice of records from this instance, which is a view into this set starting from the given position
@@ -166,40 +109,6 @@ public class AnyRecords extends FileRecords implements Closeable {
         return new AnyRecords(file, channel, startPosition, startPosition + availableBytes, true, recordBuffer.duplicate());
     }
 
-    /**
-     * Return a slice of records from this instance, the difference with {@link AnyRecords#slice(int, int)} is
-     * that the position is not necessarily on an offset boundary.
-     *
-     * This method is reserved for cases where offset alignment is not necessary, such as in the replication of raft
-     * snapshots.
-     *
-     * @param position The start position to begin the read from
-     * @param size The number of bytes after the start position to include
-     * @return A unaligned slice of records on this message set limited based on the given position and size
-     */
-    public UnalignedFileRecords sliceUnaligned(int position, int size) {
-        int availableBytes = availableBytes(position, size);
-        return new UnalignedFileRecords(channel, this.start + position, availableBytes);
-    }
-
-    private int availableBytes(int position, int size) {
-        // Cache current size in case concurrent write changes it
-        int currentSizeInBytes = sizeInBytes();
-
-        if (position < 0)
-            throw new IllegalArgumentException("Invalid position: " + position + " in read from " + this);
-        if (position > currentSizeInBytes - start)
-            throw new IllegalArgumentException("Slice from position " + position + " exceeds end position of " + this);
-        if (size < 0)
-            throw new IllegalArgumentException("Invalid size: " + size + " in read from " + this);
-
-        int end = this.start + position + size;
-        // Handle integer overflow or if end is beyond the end of the file
-        if (end < 0 || end > start + currentSizeInBytes)
-            end = this.start + currentSizeInBytes;
-        return end - (this.start + position);
-    }
-
 
     /**
      * Append a set of records to the file. This method is not thread-safe and must be
@@ -215,70 +124,6 @@ public class AnyRecords extends FileRecords implements Closeable {
 
         recordBuffer = records.writeFullyToMemory(recordBuffer);
         return records.sizeInBytes();
-    }
-
-    /**
-     * Commit all written data to the physical disk
-     */
-    public void flush() throws IOException {
-        //channel.force(true);
-    }
-
-    /**
-     * Close this record set
-     */
-    public void close() throws IOException {
-        //flush();
-        //trim();
-        if (channel != null)
-            channel.close();
-    }
-
-    /**
-     * Close file handlers used by the FileChannel but don't write to disk. This is used when the disk may have failed
-     */
-    public void closeHandlers() throws IOException {
-        if (channel != null)
-            channel.close();
-    }
-
-    /**
-     * Delete this message set from the filesystem
-     * @throws IOException if deletion fails due to an I/O error
-     * @return  {@code true} if the file was deleted by this method; {@code false} if the file could not be deleted
-     *          because it did not exist
-     */
-    public boolean deleteIfExists() throws IOException {
-        Utils.closeQuietly(channel, "FileChannel");
-        return Files.deleteIfExists(file.toPath());
-    }
-
-    /**
-     * Trim file when close or roll to next file
-     */
-    public void trim() throws IOException {
-        truncateTo(sizeInBytes());
-    }
-
-    /**
-     * Update the parent directory (to be used with caution since this does not reopen the file channel)
-     * @param parentDir The new parent directory
-     */
-    public void updateParentDir(File parentDir) {
-        if (file != null)
-            this.file = new File(parentDir, file.getName());
-    }
-
-    /**
-     * Rename the file that backs this message set
-     * @throws IOException if rename fails.
-     */
-    public void renameTo(File f) throws IOException {
-        try {
-            Utils.atomicMoveWithFallback(file.toPath(), f.toPath(), false);
-        } finally {
-            this.file = f;
-        }
     }
 
     /**
@@ -317,77 +162,6 @@ public class AnyRecords extends FileRecords implements Closeable {
         int count = Math.min(length, oldSize - offset);
 
         return (int) destChannel.transferFrom(null, position, count, recordBuffer);
-    }
-
-    /**
-     * Search forward for the file position of the message batch whose last offset that is greater
-     * than or equal to the target offset. If no such batch is found, return null.
-     *
-     * @param targetOffset     The offset to search for.
-     * @param startingPosition The starting position in the file to begin searching from.
-     * @return the batch's base offset, its physical position, and its size (including log overhead)
-     */
-    public FileRecords.LogOffsetPosition searchForOffsetWithSize(long targetOffset, int startingPosition) {
-        for (FileChannelRecordBatch batch : batchesFrom(startingPosition)) {
-            long offset = batch.lastOffset();
-            System.out.println("offset:" + offset + " batch:" + batch + " batch:" + sizeInBytes());
-            if (offset >= targetOffset)
-                return new FileRecords.LogOffsetPosition(batch.baseOffset(), batch.position(), sizeInBytes());
-        }
-        return new FileRecords.LogOffsetPosition(0, 0, 0);
-    }
-
-    /**
-     * Search forward for the first message that meets the following requirements:
-     * - Message's timestamp is greater than or equals to the targetTimestamp.
-     * - Message's position in the log file is greater than or equals to the startingPosition.
-     * - Message's offset is greater than or equals to the startingOffset.
-     *
-     * @param targetTimestamp The timestamp to search for.
-     * @param startingPosition The starting position to search.
-     * @param startingOffset The starting offset to search.
-     * @return The timestamp and offset of the message found. Null if no message is found.
-     */
-    public FileRecords.TimestampAndOffset searchForTimestamp(long targetTimestamp, int startingPosition, long startingOffset) {
-        for (RecordBatch batch : batchesFrom(startingPosition)) {
-            if (batch.maxTimestamp() >= targetTimestamp) {
-                // We found a message
-                for (Record record : batch) {
-                    long timestamp = record.timestamp();
-                    if (timestamp >= targetTimestamp && record.offset() >= startingOffset)
-                        return new FileRecords.TimestampAndOffset(timestamp, record.offset(),
-                                maybeLeaderEpoch(batch.partitionLeaderEpoch()));
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Return the largest timestamp of the messages after a given position in this file message set.
-     * @param startingPosition The starting position.
-     * @return The largest timestamp of the messages after the given position.
-     */
-    public FileRecords.TimestampAndOffset largestTimestampAfter(int startingPosition) {
-        long maxTimestamp = RecordBatch.NO_TIMESTAMP;
-        long shallowOffsetOfMaxTimestamp = -1L;
-        int leaderEpochOfMaxTimestamp = RecordBatch.NO_PARTITION_LEADER_EPOCH;
-
-        for (RecordBatch batch : batchesFrom(startingPosition)) {
-            long timestamp = batch.maxTimestamp();
-            if (timestamp > maxTimestamp) {
-                maxTimestamp = timestamp;
-                shallowOffsetOfMaxTimestamp = batch.lastOffset();
-                leaderEpochOfMaxTimestamp = batch.partitionLeaderEpoch();
-            }
-        }
-        return new FileRecords.TimestampAndOffset(maxTimestamp, shallowOffsetOfMaxTimestamp,
-                maybeLeaderEpoch(leaderEpochOfMaxTimestamp));
-    }
-
-    private Optional<Integer> maybeLeaderEpoch(int leaderEpoch) {
-        return leaderEpoch == RecordBatch.NO_PARTITION_LEADER_EPOCH ?
-                Optional.empty() : Optional.of(leaderEpoch);
     }
 
     /**
@@ -435,38 +209,4 @@ public class AnyRecords extends FileRecords implements Closeable {
         FileLogInputStream inputStream = new FileLogInputStream(this, (int)start, end);
         return new RecordBatchIterator<>(inputStream);
     }
-
-
-    public static AnyRecords open(File file,
-                                  boolean mutable,
-                                  boolean fileAlreadyExists,
-                                  int initFileSize,
-                                  boolean preallocate,
-                                  long baseOffset,
-                                  String path,
-                                  String suffix) throws IOException {
-//        FileChannel channel = openChannel(file, mutable, fileAlreadyExists, initFileSize, preallocate);
-        int end = Integer.MAX_VALUE;
-        return new AnyRecords(null, null, 0, end, false, baseOffset, path, suffix);
-    }
-
-    public static AnyRecords open(File file,
-                                  boolean fileAlreadyExists,
-                                  int initFileSize,
-                                  boolean preallocate,
-                                  long baseOffset,
-                                  String path,
-                                  String suffix) throws IOException {
-        return open(file, true, fileAlreadyExists, initFileSize, preallocate, baseOffset, path, suffix);
-    }
-
-    public static AnyRecords open(File file, boolean mutable) throws IOException {
-        return open(file, mutable, false, 0, false, 0, "", "");
-    }
-
-    public static AnyRecords open(File file) throws IOException {
-        return open(file, true);
-    }
-
-
 }

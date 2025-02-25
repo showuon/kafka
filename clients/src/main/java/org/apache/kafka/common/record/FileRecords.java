@@ -158,7 +158,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
         return new UnalignedFileRecords(channel, this.start + position, availableBytes);
     }
 
-    private int availableBytes(int position, int size) {
+    int availableBytes(int position, int size) {
         // Cache current size in case concurrent write changes it
         int currentSizeInBytes = sizeInBytes();
 
@@ -200,7 +200,8 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * Commit all written data to the physical disk
      */
     public void flush() throws IOException {
-        channel.force(true);
+        if (channel != null)
+            channel.force(true);
     }
 
     /**
@@ -209,14 +210,16 @@ public class FileRecords extends AbstractRecords implements Closeable {
     public void close() throws IOException {
         flush();
         trim();
-        channel.close();
+        if (channel != null)
+            channel.close();
     }
 
     /**
      * Close file handlers used by the FileChannel but don't write to disk. This is used when the disk may have failed
      */
     public void closeHandlers() throws IOException {
-        channel.close();
+        if (channel != null)
+            channel.close();
     }
 
     /**
@@ -242,7 +245,8 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @param parentDir The new parent directory
      */
     public void updateParentDir(File parentDir) {
-        this.file = new File(parentDir, file.getName());
+        if (file != null)
+            this.file = new File(parentDir, file.getName());
     }
 
     /**
@@ -250,10 +254,12 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @throws IOException if rename fails.
      */
     public void renameTo(File f) throws IOException {
-        try {
-            Utils.atomicMoveWithFallback(file.toPath(), f.toPath(), false);
-        } finally {
-            this.file = f;
+        if (file != null) {
+            try {
+                Utils.atomicMoveWithFallback(file.toPath(), f.toPath(), false);
+            } finally {
+                this.file = f;
+            }
         }
     }
 
@@ -415,9 +421,13 @@ public class FileRecords extends AbstractRecords implements Closeable {
                                    boolean fileAlreadyExists,
                                    int initFileSize,
                                    boolean preallocate) throws IOException {
-        FileChannel channel = openChannel(file, mutable, fileAlreadyExists, initFileSize, preallocate);
-        int end = (!fileAlreadyExists && preallocate) ? 0 : Integer.MAX_VALUE;
-        return new FileRecords(file, channel, 0, end, false);
+        if (file != null) {
+            FileChannel channel = openChannel(file, mutable, fileAlreadyExists, initFileSize, preallocate);
+            int end = (!fileAlreadyExists && preallocate) ? 0 : Integer.MAX_VALUE;
+            return new FileRecords(file, channel, 0, end, false);
+        } else {
+            return new AnyRecords(null, null, 0, Integer.MAX_VALUE, false, null);
+        }
     }
 
     public static FileRecords open(File file,
