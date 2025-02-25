@@ -1920,8 +1920,14 @@ object UnifiedLog extends Logging {
       numRemainingSegments,
       isRemoteLogEnabled,
     ).load()
-    val localLog = new LocalLog(dir, config, segments, offsets.recoveryPoint,
-      offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel)
+
+    val localLog = if (config.logUseAny)
+      new AnyLog(dir, config, segments, offsets.recoveryPoint,
+        offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel)
+    else {
+      new LocalLog(dir, config, segments, offsets.recoveryPoint,
+        offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel)
+    }
     new UnifiedLog(offsets.logStartOffset,
       localLog,
       brokerTopicStats,

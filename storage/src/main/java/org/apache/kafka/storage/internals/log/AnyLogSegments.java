@@ -35,20 +35,20 @@ import java.util.stream.Collectors;
  * This class encapsulates a thread-safe navigable map of LogSegment instances and provides the
  * required read and write behavior on the map.
  */
-public class LogSegments implements Closeable {
+public class AnyLogSegments implements Closeable {
 
     private  TopicPartition topicPartition;
     /* the segments of the log with key being LogSegment base offset and value being a LogSegment */
-    private final ConcurrentNavigableMap<Long, LogSegment> segments = new ConcurrentSkipListMap<>();
+    private final ConcurrentNavigableMap<Long, AnyLogSegment> segments = new ConcurrentSkipListMap<>();
 
-    public LogSegments() {}
+    public AnyLogSegments() {}
     /**
      * Create new instance.
      *
      * @param topicPartition the TopicPartition associated with the segments
      *                        (useful for logging purposes)
      */
-    public LogSegments(TopicPartition topicPartition) {
+    public AnyLogSegments(TopicPartition topicPartition) {
         this.topicPartition = topicPartition;
     }
 
@@ -77,7 +77,7 @@ public class LogSegments implements Closeable {
      *
      * @param segment the segment to add
      */
-    public LogSegment add(LogSegment segment) {
+    public LogSegment add(AnyLogSegment segment) {
         return this.segments.put(segment.baseOffset(), segment);
     }
 
@@ -106,7 +106,7 @@ public class LogSegments implements Closeable {
      */
     @Override
     public void close() throws IOException {
-        for (LogSegment s : values())
+        for (AnyLogSegment s : values())
             s.close();
     }
 
@@ -114,7 +114,7 @@ public class LogSegments implements Closeable {
      * Close the handlers for all segments.
      */
     public void closeHandlers() {
-        for (LogSegment s : values())
+        for (AnyLogSegment s : values())
             s.closeHandlers();
     }
 
@@ -124,7 +124,7 @@ public class LogSegments implements Closeable {
      * @param dir the renamed directory
      */
     public void updateParentDir(File dir) {
-        for (LogSegment s : values())
+        for (AnyLogSegment s : values())
             s.updateParentDir(dir);
     }
 
@@ -144,7 +144,7 @@ public class LogSegments implements Closeable {
      * @return the base offsets of all segments
      */
     public Collection<Long> baseOffsets() {
-        return values().stream().map(LogSegment::baseOffset).collect(Collectors.toList());
+        return values().stream().map(AnyLogSegment::baseOffset).collect(Collectors.toList());
     }
 
     /**
@@ -167,14 +167,14 @@ public class LogSegments implements Closeable {
      *
      * @return the segment if it exists, otherwise Empty.
      */
-    public Optional<LogSegment> get(long offset) {
+    public Optional<AnyLogSegment> get(long offset) {
         return Optional.ofNullable(segments.get(offset));
     }
 
     /**
      * @return an iterator to the log segments ordered from oldest to newest.
      */
-    public Collection<LogSegment> values() {
+    public Collection<AnyLogSegment> values() {
         return segments.values();
     }
 
@@ -182,7 +182,7 @@ public class LogSegments implements Closeable {
      * @return An iterator to all segments beginning with the segment that includes "from" and ending
      *         with the segment that includes up to "to-1" or the end of the log (if to > end of log).
      */
-    public Collection<LogSegment> values(long from, long to) {
+    public Collection<AnyLogSegment> values(long from, long to) {
         if (from == to) {
             // Handle non-segment-aligned empty sets
             return Collections.emptyList();
@@ -197,8 +197,8 @@ public class LogSegments implements Closeable {
         }
     }
 
-    public Collection<LogSegment> nonActiveLogSegmentsFrom(long from) {
-        LogSegment activeSegment = lastSegment().get();
+    public Collection<AnyLogSegment> nonActiveLogSegmentsFrom(long from) {
+        AnyLogSegment activeSegment = lastSegment().get();
         if (from > activeSegment.baseOffset())
             return Collections.emptyList();
         else
@@ -211,7 +211,7 @@ public class LogSegments implements Closeable {
      *
      * This method is thread-safe.
      */
-    private Optional<Map.Entry<Long, LogSegment>> floorEntry(long offset) {
+    private Optional<Map.Entry<Long, AnyLogSegment>> floorEntry(long offset) {
         return Optional.ofNullable(segments.floorEntry(offset));
     }
 
@@ -221,7 +221,7 @@ public class LogSegments implements Closeable {
      *
      * This method is thread-safe.
      */
-    public Optional<LogSegment> floorSegment(long offset) {
+    public Optional<AnyLogSegment> floorSegment(long offset) {
         return floorEntry(offset).map(Map.Entry::getValue);
     }
 
@@ -231,7 +231,7 @@ public class LogSegments implements Closeable {
      *
      * This method is thread-safe.
      */
-    private Optional<Map.Entry<Long, LogSegment>> lowerEntry(long offset) {
+    private Optional<Map.Entry<Long, AnyLogSegment>> lowerEntry(long offset) {
         return Optional.ofNullable(segments.lowerEntry(offset));
     }
 
@@ -241,7 +241,7 @@ public class LogSegments implements Closeable {
      *
      * This method is thread-safe.
      */
-    public Optional<LogSegment> lowerSegment(long offset) {
+    public Optional<AnyLogSegment> lowerSegment(long offset) {
         return lowerEntry(offset).map(Map.Entry::getValue);
     }
 
@@ -251,7 +251,7 @@ public class LogSegments implements Closeable {
      *
      * This method is thread-safe.
      */
-    public Optional<Map.Entry<Long, LogSegment>> higherEntry(long offset) {
+    public Optional<Map.Entry<Long, AnyLogSegment>> higherEntry(long offset) {
         return Optional.ofNullable(segments.higherEntry(offset));
     }
 
@@ -261,7 +261,7 @@ public class LogSegments implements Closeable {
      *
      * This method is thread-safe.
      */
-    public Optional<LogSegment> higherSegment(long offset) {
+    public Optional<AnyLogSegment> higherSegment(long offset) {
         return higherEntry(offset).map(Map.Entry::getValue);
     }
 
@@ -270,7 +270,7 @@ public class LogSegments implements Closeable {
      *
      * This method is thread-safe.
      */
-    public Optional<Map.Entry<Long, LogSegment>> firstEntry() {
+    public Optional<Map.Entry<Long, AnyLogSegment>> firstEntry() {
         return Optional.ofNullable(segments.firstEntry());
     }
 
@@ -279,7 +279,7 @@ public class LogSegments implements Closeable {
      *
      * This method is thread-safe.
      */
-    public Optional<LogSegment> firstSegment() {
+    public Optional<AnyLogSegment> firstSegment() {
         return firstEntry().map(Map.Entry::getValue);
     }
 
@@ -287,7 +287,7 @@ public class LogSegments implements Closeable {
      * @return the base offset of the log segment associated with the smallest offset, if it exists
      */
     public OptionalLong firstSegmentBaseOffset() {
-        return firstSegment().map(logSegment -> OptionalLong.of(logSegment.baseOffset()))
+        return firstSegment().map(AnylogSegment -> OptionalLong.of(AnylogSegment.baseOffset()))
                 .orElseGet(OptionalLong::empty);
     }
 
@@ -296,7 +296,7 @@ public class LogSegments implements Closeable {
      *
      * This method is thread-safe.
      */
-    public Optional<Map.Entry<Long, LogSegment>> lastEntry() {
+    public Optional<Map.Entry<Long, AnyLogSegment>> lastEntry() {
         return Optional.ofNullable(segments.lastEntry());
     }
 
@@ -305,7 +305,7 @@ public class LogSegments implements Closeable {
      *
      * This method is thread-safe.
      */
-    public Optional<LogSegment> lastSegment() {
+    public Optional<AnyLogSegment> lastSegment() {
         return lastEntry().map(Map.Entry::getValue);
     }
 
@@ -313,7 +313,7 @@ public class LogSegments implements Closeable {
      * @return an iterable with log segments ordered from lowest base offset to highest,
      *         each segment returned has a base offset strictly greater than the provided baseOffset.
      */
-    public Collection<LogSegment> higherSegments(long baseOffset) {
+    public Collection<AnyLogSegment> higherSegments(long baseOffset) {
         Long higherOffset = segments.higherKey(baseOffset);
         if (higherOffset != null)
             return segments.tailMap(higherOffset, true).values();
@@ -323,12 +323,12 @@ public class LogSegments implements Closeable {
     /**
      * The active segment that is currently taking appends
      */
-    public LogSegment activeSegment() {
+    public AnyLogSegment activeSegment() {
         return lastSegment().get();
     }
 
     public long sizeInBytes() {
-        return LogSegments.sizeInBytes(values());
+        return AnyLogSegments.sizeInBytes(values());
     }
 
     /**
@@ -336,7 +336,7 @@ public class LogSegments implements Closeable {
      *
      * @param predicate the predicate to be used for filtering segments.
      */
-    public Collection<LogSegment> filter(Predicate<LogSegment> predicate) {
+    public Collection<AnyLogSegment> filter(Predicate<AnyLogSegment> predicate) {
         return values().stream().filter(predicate).collect(Collectors.toList());
     }
 
@@ -346,7 +346,7 @@ public class LogSegments implements Closeable {
      * @param segments The log segments to calculate the size of
      * @return Sum of the log segments' sizes (in bytes)
      */
-    public static long sizeInBytes(Collection<LogSegment> segments) {
-        return segments.stream().mapToLong(LogSegment::size).sum();
+    public static long sizeInBytes(Collection<AnyLogSegment> segments) {
+        return segments.stream().mapToLong(AnyLogSegment::size).sum();
     }
 }

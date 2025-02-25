@@ -34,14 +34,28 @@ import org.apache.kafka.common.utils.Utils;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.async.AsyncRequestBody;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.endpoints.S3EndpointProvider;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
 import java.nio.channels.GatheringByteChannel;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * A {@link Records} implementation backed by a ByteBuffer. This is used only for reading or
@@ -91,6 +105,48 @@ public class MemoryRecords extends AbstractRecords {
             written += channel.write(buffer);
         buffer.reset();
         return written;
+    }
+
+    public int writeFullyTo() {
+        System.out.println("!!! writeFullyTo S3");
+        String accessKey = "minioadmin";
+        String secretKey = "minioadmin";
+        AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
+        S3Client s3 = null;
+        try {
+            s3 = S3Client.builder()
+                    .region(Region.US_EAST_1)
+                    .endpointOverride(new URI("http://localhost:9000"))
+                    .credentialsProvider(StaticCredentialsProvider.create(credentials))
+                    .forcePathStyle(true)
+                    .build();
+        } catch (URISyntaxException e) {
+            throw new RuntimeException(e);
+        }
+
+        PutObjectRequest objectRequest = PutObjectRequest.builder()
+                .bucket("test")
+                .key("key")
+                .build();
+
+        buffer.mark();
+//        int written = 0;
+
+
+//        while (written < sizeInBytes())
+//            written += channel.write(buffer);
+        System.out.println("!!! uploading:" + this.toString());
+        PutObjectResponse response = s3.putObject(objectRequest, RequestBody.fromByteBuffer(buffer));
+        System.out.println("!!! response:" + response);
+//        return response.whenComplete((resp, ex) -> {
+//            if (ex != null) {
+//                throw new RuntimeException("Failed to upload file", ex);
+//            }
+//        });
+
+
+        buffer.reset();
+        return response.size().intValue();
     }
 
     /**
