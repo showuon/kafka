@@ -89,7 +89,6 @@ public class FileRecords extends AbstractRecords implements Closeable {
 
     @Override
     public int sizeInBytes() {
-//        System.out.println("!!! FileRecord:" + size);
         return size.get();
     }
 

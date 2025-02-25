@@ -60,7 +60,6 @@ class AnyRecordBatchIterator<T extends RecordBatch> extends RecordBatchIterator<
 
 
     private List<String> listBucket() {
-//        System.out.println("!!! list S3:");
         String accessKey = "minioadmin";
         String secretKey = "minioadmin";
         AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
@@ -91,12 +90,6 @@ class AnyRecordBatchIterator<T extends RecordBatch> extends RecordBatchIterator<
     }
 
     private FileLogInputStream readS3(long start) {
-//        System.out.println("!!! batchFrom get S3:" + start);
-//        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-//        for (int i = 1; i < elements.length; i++) {
-//            final StackTraceElement s = elements[i];
-//            System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
-//        }
         String accessKey = "minioadmin";
         String secretKey = "minioadmin";
         AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
@@ -117,12 +110,6 @@ class AnyRecordBatchIterator<T extends RecordBatch> extends RecordBatchIterator<
                 .key(path + "/" + start + ".log" + suffix)
                 .build();
 
-//        ResponseBytes<GetObjectResponse> s3Object = s3.getObjectAsBytes(objectRequest);
-//
-//
-//        ByteBufferLogInputStream inputStream = new ByteBufferLogInputStream(s3Object.asByteBuffer(), Integer.MAX_VALUE);
-//        return new RecordBatchIterator<>(inputStream);
-//        System.out.println("!!! getting object:" + path + "/" + start + ".log" + suffix);
         Path path = null;
         try {
             path = Files.createTempFile(start + ".log" + suffix, null);
@@ -134,13 +121,10 @@ class AnyRecordBatchIterator<T extends RecordBatch> extends RecordBatchIterator<
             ResponseBytes<GetObjectResponse> objectBytes = s3.getObject(objectRequest, ResponseTransformer.toBytes());
             byte[] data = objectBytes.asByteArray();
 
-            // Write the data to a local file.
-//            file2.put(start, path.toFile());
 
             OutputStream os = new FileOutputStream(path.toFile());
             os.write(data);
             os.close();
-//            System.out.println("!!! file:" + path.toFile().length() +  ";;" + file2);
 
             return new FileLogInputStream(FileRecords.open(path.toFile()),0, (int) path.toFile().length());
         } catch (Exception e) {
@@ -154,13 +138,7 @@ class AnyRecordBatchIterator<T extends RecordBatch> extends RecordBatchIterator<
     protected T makeNext() {
         try {
 
-//            final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-//            for (int i = 1; i < elements.length; i++) {
-//                final StackTraceElement s = elements[i];
-//                System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
-//            }
             List<String> baseOffsets = listBucket().stream().filter(name -> name.contains(path)).sorted().collect(Collectors.toList());
-//            System.out.println("!!! baseOffsets:" + baseOffsets + path + suffix + ";;" + curOffset + ";;" + startOffset);
             for (String baseOffset : baseOffsets) {
 
                 long offset = Long.parseLong(baseOffset.substring(baseOffset.lastIndexOf('/') + 1, baseOffset.lastIndexOf('.')));
@@ -168,21 +146,13 @@ class AnyRecordBatchIterator<T extends RecordBatch> extends RecordBatchIterator<
                     continue;
                 }
                 curOffset = offset;
-//                System.out.println("!!! curOffset:" + curOffset);
 
                 T batch = (T) readS3(curOffset).nextBatch();
-//                System.out.println("!!! batch:" + batch);
                 if (batch == null)
                     return allDone();
                 return batch;
             }
-//            if (logInputStream == null) {
             return allDone();
-//            }
-//            T batch = logInputStream.nextBatch();
-//            if (batch == null)
-//                return allDone();
-//            return batch;
         } catch (EOFException e) {
             throw new CorruptRecordException("Unexpected EOF while attempting to read the next batch", e);
         } catch (IOException e) {

@@ -252,15 +252,6 @@ class UnifiedLog(@volatile var logStartOffset: Long,
    * @return the updated high watermark offset
    */
   def updateHighWatermark(highWatermarkMetadata: LogOffsetMetadata): Long = {
-//    if (!topicPartition.topic().equals("__cluster_metadata")) {
-//      logger.info("!!! updateHighWatermark:" + highWatermarkMetadata + ";;" + logStartOffset + ";;" + localLog.logEndOffsetMetadata)
-//      val elements = Thread.currentThread.getStackTrace
-//      for (i <- 1 until elements.length) {
-//        val s = elements(i)
-//        System.out.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
-//      }
-//    }
-
     val endOffsetMetadata = localLog.logEndOffsetMetadata
     val newHighWatermarkMetadata = if (highWatermarkMetadata.messageOffset < logStartOffset) {
       new LogOffsetMetadata(logStartOffset)
@@ -370,14 +361,6 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   private[log] def firstUnstableOffset: Option[Long] = firstUnstableOffsetMetadata.map(_.messageOffset)
 
   private def fetchLastStableOffsetMetadata: LogOffsetMetadata = {
-//    if (!topicPartition.topic().equals("__cluster_metadata")) {
-//      logger.info("!!! fetchLSO metadata:")
-//      val elements = Thread.currentThread.getStackTrace
-//      for (i <- 1 until elements.length) {
-//        val s = elements(i)
-//        System.out.println("\tat " + s.getClassName + "." + s.getMethodName + "(" + s.getFileName + ":" + s.getLineNumber + ")")
-//      }
-//    }
     localLog.checkIfMemoryMappedBufferClosed()
 
     // cache the current high watermark to avoid a concurrent update invalidating the range check
@@ -1269,14 +1252,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
       case FetchIsolation.TXN_COMMITTED => fetchLastStableOffsetMetadata
     }
 
-//    if (!topicPartition.topic().equals("__cluster_metadata"))
-//      info("!!! unified log read:" + isolation + ";;" + maxOffsetMetadata)
-
-//    if (config.logUseAny) {
-//      localLog.asInstanceOf[AnyLog].read(startOffset, maxLength, minOneMessage, maxOffsetMetadata, isolation == FetchIsolation.TXN_COMMITTED)
-//    } else {
-      localLog.read(startOffset, maxLength, minOneMessage, maxOffsetMetadata, isolation == FetchIsolation.TXN_COMMITTED)
-//    }
+    localLog.read(startOffset, maxLength, minOneMessage, maxOffsetMetadata, isolation == FetchIsolation.TXN_COMMITTED)
   }
 
   private[log] def collectAbortedTransactions(startOffset: Long, upperBoundOffset: Long): List[AbortedTxn] = {
@@ -1637,7 +1613,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
     val maxOffsetInMessages = appendInfo.lastOffset
 
     if (segment.shouldRoll(new RollParams(config.maxSegmentMs, config.segmentSize, appendInfo.maxTimestamp, appendInfo.lastOffset, messagesSize, now))) {
-      info(s"Rolling new log segment (log_size = ${segment.size}/${config.segmentSize}}, " +
+      debug(s"Rolling new log segment (log_size = ${segment.size}/${config.segmentSize}}, " +
         s"offset_index_size = ${segment.offsetIndex.entries}/${segment.offsetIndex.maxEntries}, " +
         s"time_index_size = ${segment.timeIndex.entries}/${segment.timeIndex.maxEntries}, " +
         s"inactive_time_ms = ${segment.timeWaitedForRoll(now, maxTimestampInMessages)}/${config.segmentMs - segment.rollJitterMs}).")
@@ -1991,13 +1967,8 @@ object UnifiedLog extends Logging {
       isRemoteLogEnabled,
     ).load()
 
-//    val localLog = if (config.logUseAny)
-//      new AnyLog(dir, config, segments, offsets.recoveryPoint,
-//        offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel)
-//    else {
-val localLog = new LocalLog(dir, config, segments, offsets.recoveryPoint,
-        offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel)
-//    }
+    val localLog = new LocalLog(dir, config, segments, offsets.recoveryPoint,
+      offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel)
     new UnifiedLog(offsets.logStartOffset,
       localLog,
       brokerTopicStats,

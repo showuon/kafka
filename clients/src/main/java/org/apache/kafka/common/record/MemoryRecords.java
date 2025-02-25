@@ -120,18 +120,7 @@ public class MemoryRecords extends AbstractRecords {
 
         buffer.mark();
 
-//        int written = 0;
-
-
-//        while (written < sizeInBytes())
-//            written += channel.write(buffer);
         PutObjectResponse response = s3.putObject(objectRequest, RequestBody.fromByteBuffer(buffer));
-//        return response.whenComplete((resp, ex) -> {
-//            if (ex != null) {
-//                throw new RuntimeException("Failed to upload file", ex);
-//            }
-//        });
-
 
         buffer.reset();
         return this.sizeInBytes();
