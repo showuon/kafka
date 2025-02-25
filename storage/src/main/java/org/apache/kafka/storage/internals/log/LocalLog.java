@@ -471,6 +471,7 @@ public class LocalLog {
                 () -> {
                     logger.trace("Reading maximum {} bytes at offset {} from log with total length {} bytes",
                             maxLength, startOffset, segments.sizeInBytes());
+
                     LogOffsetMetadata endOffsetMetadata = nextOffsetMetadata;
                     long endOffset = endOffsetMetadata.messageOffset;
                     Optional<LogSegment> segmentOpt = segments.floorSegment(startOffset);
