@@ -48,7 +48,6 @@ public abstract class RecordsSend<T extends BaseRecords> implements Send {
 
         if (remaining > 0) {
             written = writeTo(channel, maxBytesToWrite - remaining, remaining);
-//            System.out.println("!!! written " + written + " bytes of " + remaining + " bytes" + ";;" + maxBytesToWrite);
             if (written < 0)
                 throw new EOFException("Wrote negative bytes to channel. This shouldn't happen.");
             remaining -= written;

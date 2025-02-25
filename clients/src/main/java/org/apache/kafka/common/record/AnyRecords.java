@@ -114,25 +114,7 @@ public class AnyRecords extends FileRecords implements Closeable {
         this.suffix = suffix;
         this.file2 = file2;
         this.currentOffset = currentOffset;
-
-//        if (isSlice) {
-//            // don't check the file size if this is just a slice view
-//            size.set(end - start);
-//        } else {
-//            if (channel.size() > Integer.MAX_VALUE)
-//                throw new KafkaException("The size of segment " + file + " (" + channel.size() +
-//                        ") is larger than the maximum allowed segment size of " + Integer.MAX_VALUE);
-//
-//            int limit = Math.min((int) channel.size(), end);
-//            size.set(limit - start);
-//
-//            // if this is not a slice, update the file pointer to the end of the file
-//            // set the file position to the last byte in the file
-//            channel.position(limit);
-//        }
-//        size.set(71);
-
-        batches = batchesFrom((long) start);
+        batches = batchesFrom(start);
     }
 
     AnyRecords(File file,
@@ -147,7 +129,6 @@ public class AnyRecords extends FileRecords implements Closeable {
     }
 
     private List<String> listBucket() {
-//        System.out.println("!!! list S3:");
         String accessKey = "minioadmin";
         String secretKey = "minioadmin";
         AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
@@ -184,8 +165,6 @@ public class AnyRecords extends FileRecords implements Closeable {
         if (!changed) {
             return size == null ? 0 : size.get();
         }
-//        if (size == null) {
-            // luke
 
         List<String> baseOffsets = listBucket().stream().filter(name -> name.contains(path.substring(1))).sorted().collect(Collectors.toList());
         for (String baseOffset : baseOffsets) {
@@ -195,8 +174,6 @@ public class AnyRecords extends FileRecords implements Closeable {
             }
         }
 
-
-//        }
         int res = 0;
         for (File file : file2.values()) {
             res += file.length();
@@ -206,7 +183,6 @@ public class AnyRecords extends FileRecords implements Closeable {
         }
         size.set(res);
         changed = false;
-//        System.out.println("!!! size:" + res);
         return res;
     }
 
@@ -424,32 +400,20 @@ public class AnyRecords extends FileRecords implements Closeable {
     @Override
     public int writeTo(TransferableChannel destChannel, int offset, int length) throws IOException {
         // luke
-//        System.out.println("!!! write to:" + currentOffset);
-//        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-//        for (int i = 1; i < elements.length; i++) {
-//            final StackTraceElement s = elements[i];
-//            System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
-//        }
-        // luke
         List<Long> baseOffsets = listBucket().stream().filter(name -> name.contains(path.substring(1)))
                 .map(off -> Long.parseLong(off.substring(off.lastIndexOf('/') + 1, off.lastIndexOf('.')))).sorted().collect(Collectors.toList());
-//        System.out.println("!!! baseOffsets:" + baseOffsets);
         for (long offset2 : baseOffsets) {
-//            long offset2 = Long.parseLong(baseOffset.substring(baseOffset.lastIndexOf('/') + 1, baseOffset.lastIndexOf('.')));
             if (offset2 > currentOffset) {
                 currentOffset = offset2;
                 break;
             }
         }
 
-//        System.out.println("!!! new currentOffset:" + currentOffset);
         if (!file2.containsKey(currentOffset))
             readS3(currentOffset);
 
-//        System.out.println("!!! file2:" + file2 + ";;" + file2.get((long) offset) + ";;" + offset);
         channel = FileChannel.open(file2.get(currentOffset).toPath(), StandardOpenOption.CREATE, StandardOpenOption.READ,
                 StandardOpenOption.WRITE);
-//        System.out.println("!!! channel.size():" + channel.size() + ";;" + start + ";;" + end);
         long newSize = Math.min(channel.size(), end) - start;
         int oldSize = sizeInBytes();
 //        if (newSize < oldSize)
@@ -459,7 +423,6 @@ public class AnyRecords extends FileRecords implements Closeable {
 
         long position = start + offset;
         int count = Math.min(length, oldSize - offset);
-//        System.out.println("!!! position:" + position + ";;" + count);
         // safe to cast to int since `count` is an int
         return (int) destChannel.transferFrom(channel, 0, count);
     }
@@ -475,7 +438,6 @@ public class AnyRecords extends FileRecords implements Closeable {
     public FileRecords.LogOffsetPosition searchForOffsetWithSize(long targetOffset, int startingPosition) {
         for (FileChannelRecordBatch batch : batchesFrom(targetOffset)) {
             long offset = batch.lastOffset();
-//            System.out.println("!!! offset:" + offset + ";;" + targetOffset);
             if (offset >= targetOffset)
                 return new FileRecords.LogOffsetPosition(batch.baseOffset(), batch.position(), sizeInBytes());
         }
@@ -572,19 +534,6 @@ public class AnyRecords extends FileRecords implements Closeable {
     }
 
     private AbstractIterator<FileChannelRecordBatch> batchIterator(long start) {
-//        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-//        for (int i = 1; i < elements.length; i++) {
-//            final StackTraceElement s = elements[i];
-//            System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
-//        }
-        final int end;
-        if (isSlice)
-            end = this.sizeInBytes();
-        else
-            end = this.sizeInBytes();
-//        System.out.println("!!! isSlice:" + isSlice + ";;" + end + ";;" + sizeInBytes() + ";;" + start);
-
-        FileLogInputStream inputStream = null;
         try {
             if (!file2.containsKey(start)) {
                 readS3(start);
@@ -592,7 +541,6 @@ public class AnyRecords extends FileRecords implements Closeable {
             if (file2.isEmpty()) {
                 return new RecordBatchIterator<>(null);
             }
-//            inputStream = new FileLogInputStream(FileRecords.open(file2.get(start)),0, (int) file2.get(start).length());
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -600,15 +548,9 @@ public class AnyRecords extends FileRecords implements Closeable {
     }
 
     private void readS3(long start) {
-//        System.out.println("!!! get S3:" + start);
         if (file2.containsKey(start)) {
             return;
         }
-//        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
-//        for (int i = 1; i < elements.length; i++) {
-//            final StackTraceElement s = elements[i];
-//            System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
-//        }
         String accessKey = "minioadmin";
         String secretKey = "minioadmin";
         AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
@@ -629,12 +571,6 @@ public class AnyRecords extends FileRecords implements Closeable {
                 .key(path + "/" + start + ".log" + suffix)
                 .build();
 
-//        ResponseBytes<GetObjectResponse> s3Object = s3.getObjectAsBytes(objectRequest);
-//
-//
-//        ByteBufferLogInputStream inputStream = new ByteBufferLogInputStream(s3Object.asByteBuffer(), Integer.MAX_VALUE);
-//        return new RecordBatchIterator<>(inputStream);
-//        System.out.println("!!! getting object:" + path + "/" + start + ".log" + suffix);
         Path path = null;
         try {
             path = Files.createTempFile(start + ".log" + suffix, null);
@@ -652,12 +588,6 @@ public class AnyRecords extends FileRecords implements Closeable {
             OutputStream os = new FileOutputStream(path.toFile());
             os.write(data);
             os.close();
-//            if (size == null) {
-//                size = new AtomicInteger();
-//                size.addAndGet((int) path.toFile().length());
-//            }
-//            size.addAndGet((int) path.toFile().length());
-            //        System.out.println("!!! getting object:" + response);
 
         } catch (Exception e) {
             System.out.println("error while reading s3:" + e);

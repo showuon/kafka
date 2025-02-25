@@ -154,26 +154,14 @@ public class LogLoader {
                 continue;
             }
             long baseOffset = LogFileUtils.offsetFromFile(swapFile);
-            LogSegment segment = null;
-//            if (config.logUseAny) {
-//                segment = AnyLogSegment.open(swapFile.getParentFile(),
-//                        baseOffset,
-//                        config,
-//                        time,
-//                        false,
-//                        0,
-//                        false,
-//                        LogFileUtils.SWAP_FILE_SUFFIX);
-//            } else {
-                segment = LogSegment.open(swapFile.getParentFile(),
-                        baseOffset,
-                        config,
-                        time,
-                        false,
-                        0,
-                        false,
-                        LogFileUtils.SWAP_FILE_SUFFIX);
-//            }
+            LogSegment segment = LogSegment.open(swapFile.getParentFile(),
+                    baseOffset,
+                    config,
+                    time,
+                    false,
+                    0,
+                    false,
+                    LogFileUtils.SWAP_FILE_SUFFIX);
             logger.info("Found log file {} from interrupted swap operation, which is recoverable from {} files by renaming.", swapFile.getPath(), LogFileUtils.SWAP_FILE_SUFFIX);
             minSwapFileOffset = Math.min(segment.baseOffset(), minSwapFileOffset);
             maxSwapFileOffset = Math.max(segment.readNextOffset(), maxSwapFileOffset);
@@ -366,7 +354,6 @@ public class LogLoader {
     }
 
     private List<String> listBucket() {
-//        System.out.println("!!! list S3:");
         String accessKey = "minioadmin";
         String secretKey = "minioadmin";
         AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
@@ -433,10 +420,7 @@ public class LogLoader {
                 // if it's a log file, load the corresponding log segment
                 long baseOffset = LogFileUtils.offsetFromFile(file);
                 boolean timeIndexFileNewlyCreated = !LogFileUtils.timeIndexFile(dir, baseOffset).exists();
-
-                LogSegment segment = null;// LogSegment.open(dir, baseOffset, config, time, true, 0, false, "");
-
-                segment = LogSegment.open(dir, baseOffset, config, time, true, 0, false, "");
+                LogSegment segment = LogSegment.open(dir, baseOffset, config, time, true, 0, false, "");
                 try {
                     segment.sanityCheck(timeIndexFileNewlyCreated);
                 } catch (NoSuchFileException nsfe) {
@@ -454,7 +438,6 @@ public class LogLoader {
 
         if (config.logUseAny) {
             List<String> baseOffsets = listBucket().stream().filter(name -> name.contains(dir.getName())).sorted().toList();
-//            for (String baseOffsetStr : baseOffsets) {
             if (!baseOffsets.isEmpty()) {
                 String baseOffsetStr = baseOffsets.get(0);
                 long baseOffset = Long.parseLong(baseOffsetStr.substring(baseOffsetStr.lastIndexOf('/') + 1, baseOffsetStr.lastIndexOf('.')));
@@ -475,7 +458,6 @@ public class LogLoader {
 //                    logger.warn("Found a corrupted index file corresponding to log file {} due to {}, recovering segment and rebuilding index files...", segment.log(), cie.getMessage());
 //                    recoverSegment(segment);
 //                }
-                logger.info("!!! adding:" + segment.toString());
                 segments.add(segment);
             }
         }
@@ -517,7 +499,6 @@ public class LogLoader {
     private Optional<Long> deleteSegmentsIfLogStartGreaterThanLogEnd() throws IOException {
         if (segments.nonEmpty()) {
             long logEndOffset = segments.lastSegment().get().readNextOffset();
-            logger.info("!!! logEndOffset:" + logEndOffset + ";;" + logStartOffsetCheckpoint);
             if (logEndOffset >= logStartOffsetCheckpoint) {
                 return Optional.of(logEndOffset);
             } else {
@@ -597,12 +578,7 @@ public class LogLoader {
         Optional<Long> logEndOffsetOptional = deleteSegmentsIfLogStartGreaterThanLogEnd();
         if (segments.isEmpty()) {
             // no existing segments, create a new mutable segment beginning at logStartOffset
-            LogSegment segment = null;
-//            if (config.logUseAny) {
-//                segment = AnyLogSegment.open(dir, logStartOffsetCheckpoint, config, time, config.initFileSize(), config.preallocate);
-//            } else {
-                segment = LogSegment.open(dir, logStartOffsetCheckpoint, config, time, config.initFileSize(), config.preallocate);
-//            }
+            LogSegment segment = LogSegment.open(dir, logStartOffsetCheckpoint, config, time, config.initFileSize(), config.preallocate);
             segments.add(segment);
 
         }
@@ -614,10 +590,8 @@ public class LogLoader {
         // skip recovery for unflushed segments if the broker crashed after we checkpoint the recovery
         // point and before we flush the segment.
         if (hadCleanShutdown && logEndOffsetOptional.isPresent()) {
-            logger.info("!!! logEndOffsetOptional:" + logEndOffsetOptional);
             return new RecoveryOffsets(logEndOffsetOptional.get(), logEndOffsetOptional.get());
         } else {
-            logger.info("!!! next offset:");
             long logEndOffset = logEndOffsetOptional.orElse(segments.lastSegment().get().readNextOffset());
             return new RecoveryOffsets(Math.min(recoveryPointCheckpoint, logEndOffset), logEndOffset);
         }
