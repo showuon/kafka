@@ -43,7 +43,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
     private  int start;
     private  int end;
 
-    private  Iterable<FileLogInputStream.FileChannelRecordBatch> batches;
+    Iterable<FileLogInputStream.FileChannelRecordBatch> batches;
 
     // mutable state
     private  AtomicInteger size;
@@ -406,7 +406,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
         return batchIterator(start);
     }
 
-    private AbstractIterator<FileChannelRecordBatch> batchIterator(int start) {
+    AbstractIterator<FileChannelRecordBatch> batchIterator(int start) {
         final int end;
         if (isSlice)
             end = this.end;

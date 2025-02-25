@@ -37,7 +37,7 @@ public class AnyRecords extends FileRecords implements Closeable {
     private final int start;
     private final int end;
 
-    private final Iterable<FileChannelRecordBatch> batches;
+//    private final Iterable<FileChannelRecordBatch> batches;
 
     // mutable state
     private AtomicInteger size;
@@ -70,25 +70,9 @@ public class AnyRecords extends FileRecords implements Closeable {
         return recordBuffer == null ? 0 : recordBuffer.limit();
     }
 
-    /**
-     * Get the underlying file.
-     * @return The file
-     */
-    public File file() {
-        return file;
-    }
-
-    /**
-     * Get the underlying file channel.
-     * @return The file channel
-     */
-    public FileChannel channel() {
-        return channel;
-    }
     public ByteBuffer recordBuffer() {
         return recordBuffer;
     }
-
 
     /**
      * Return a slice of records from this instance, which is a view into this set starting from the given position
@@ -104,7 +88,6 @@ public class AnyRecords extends FileRecords implements Closeable {
      */
     public AnyRecords slice(int position, int size) throws IOException {
         int availableBytes = availableBytes(position, size);
-        System.out.println("!!! slice:" + position + ";;" + size + ";;" + sizeInBytes() + ";;" + availableBytes);
         int startPosition = this.start + position;
         return new AnyRecords(file, channel, startPosition, startPosition + availableBytes, true, recordBuffer.duplicate());
     }
@@ -142,7 +125,6 @@ public class AnyRecords extends FileRecords implements Closeable {
             throw new KafkaException("Attempt to truncate log segment " + file + " to " + targetSize + " bytes failed, " +
                     " size of this log segment is " + originalSize + " bytes.");
         if (targetSize < recordBuffer.limit()) {
-            //channel.truncate(targetSize);
             size.set(targetSize);
             recordBuffer.limit(targetSize);
         }
@@ -162,51 +144,5 @@ public class AnyRecords extends FileRecords implements Closeable {
         int count = Math.min(length, oldSize - offset);
 
         return (int) destChannel.transferFrom(null, position, count, recordBuffer);
-    }
-
-    /**
-     * Get an iterator over the record batches in the file. Note that the batches are
-     * backed by the open file channel. When the channel is closed (i.e. when this instance
-     * is closed), the batches will generally no longer be readable.
-     * @return An iterator over the batches
-     */
-    @Override
-    public Iterable<FileChannelRecordBatch> batches() {
-        return batches;
-    }
-
-    @Override
-    public String toString() {
-        return "FileRecords(size=" + sizeInBytes() +
-                ", file=" + file +
-                ", start=" + start +
-                ", end=" + end +
-                ")";
-    }
-
-    /**
-     * Get an iterator over the record batches in the file, starting at a specific position. This is similar to
-     * {@link #batches()} except that callers specify a particular position to start reading the batches from. This
-     * method must be used with caution: the start position passed in must be a known start of a batch.
-     * @param start The position to start record iteration from; must be a known position for start of a batch
-     * @return An iterator over batches starting from {@code start}
-     */
-    public Iterable<FileChannelRecordBatch> batchesFrom(final int start) {
-        return () -> batchIterator(start);
-    }
-
-
-    public AbstractIterator<FileChannelRecordBatch> batchIterator() {
-        return batchIterator(start);
-    }
-
-    private AbstractIterator<FileChannelRecordBatch> batchIterator(long start) {
-        final int end;
-        if (isSlice)
-            end = this.end;
-        else
-            end = this.sizeInBytes();
-        FileLogInputStream inputStream = new FileLogInputStream(this, (int)start, end);
-        return new RecordBatchIterator<>(inputStream);
     }
 }
