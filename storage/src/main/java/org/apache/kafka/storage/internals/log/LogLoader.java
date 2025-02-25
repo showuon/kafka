@@ -503,9 +503,7 @@ public class LogLoader {
         Optional<Long> logEndOffsetOptional = deleteSegmentsIfLogStartGreaterThanLogEnd();
         if (segments.isEmpty()) {
             // no existing segments, create a new mutable segment beginning at logStartOffset
-            LogSegment segment = LogSegment.open(dir, logStartOffsetCheckpoint, config, time, config.initFileSize(), config.preallocate);
-            segments.add(segment);
-
+            segments.add(LogSegment.open(dir, logStartOffsetCheckpoint, config, time, config.initFileSize(), config.preallocate));
         }
 
         // Update the recovery point if there was a clean shutdown and did not perform any changes to
