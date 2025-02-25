@@ -98,6 +98,7 @@ public class LogSegment implements Closeable {
 
     /* the number of bytes since we last added an entry in the offset index */
     private int bytesSinceLastIndexEntry = 0;
+    private boolean useAnyLog = false;
 
     public LogSegment() {}
     /**
@@ -119,7 +120,8 @@ public class LogSegment implements Closeable {
                       long baseOffset,
                       int indexIntervalBytes,
                       long rollJitterMs,
-                      Time time) {
+                      Time time,
+                      boolean useAnyLog) {
         this.log = log;
         this.lazyOffsetIndex = lazyOffsetIndex;
         this.lazyTimeIndex = lazyTimeIndex;
@@ -129,6 +131,18 @@ public class LogSegment implements Closeable {
         this.rollJitterMs = rollJitterMs;
         this.time = time;
         this.created = time.milliseconds();
+        this.useAnyLog = useAnyLog;
+    }
+
+    public LogSegment(FileRecords log,
+                      LazyIndex<OffsetIndex> lazyOffsetIndex,
+                      LazyIndex<TimeIndex> lazyTimeIndex,
+                      TransactionIndex txnIndex,
+                      long baseOffset,
+                      int indexIntervalBytes,
+                      long rollJitterMs,
+                      Time time) {
+        this(log, lazyOffsetIndex, lazyTimeIndex, txnIndex, baseOffset, indexIntervalBytes, rollJitterMs, time, false);
     }
 
     public OffsetIndex offsetIndex() throws IOException {
@@ -166,6 +180,8 @@ public class LogSegment implements Closeable {
     public boolean shouldRoll(RollParams rollParams) throws IOException {
         boolean reachedRollMs = timeWaitedForRoll(rollParams.now, rollParams.maxTimestampInMessages) > rollParams.maxSegmentMs - rollJitterMs;
         int size = size();
+        if (rollParams.maxSegmentBytes != 1073741824)
+            LOGGER.info("!!! shouldRoll:" + size + ";;" + rollParams.maxSegmentBytes + ";;" + rollParams.messagesSize);
         return size > rollParams.maxSegmentBytes - rollParams.messagesSize ||
             (size > 0 && reachedRollMs) ||
             offsetIndex().isFull() || timeIndex().isFull() || !canConvertToRelativeOffset(rollParams.maxOffsetInMessages);
@@ -247,7 +263,7 @@ public class LogSegment implements Closeable {
             ensureOffsetInRange(largestOffset);
 
             // append the messages
-            long appendedBytes = log.append(records);
+            long appendedBytes = log.append(records, largestOffset);
             LOGGER.trace("Appended {} to {} at end offset {}", appendedBytes, log.file(), largestOffset);
 
             for (RecordBatch batch : records.batches()) {
@@ -498,12 +514,12 @@ public class LogSegment implements Closeable {
                 }
             }
         } catch (CorruptRecordException | InvalidRecordException e) {
-            LOGGER.warn("Found invalid messages in log segment {} at byte offset {}.", log.file().getAbsolutePath(),
+            LOGGER.warn("Found invalid messages in log segment {} at byte offset {}.", "log.file().getAbsolutePath()",
                 validBytes, e);
         }
         int truncated = log.sizeInBytes() - validBytes;
         if (truncated > 0)
-            LOGGER.debug("Truncated {} invalid bytes at the end of segment {} during recovery", truncated, log.file().getAbsolutePath());
+            LOGGER.debug("Truncated {} invalid bytes at the end of segment {} during recovery", truncated, "log.file().getAbsolutePath()");
 
         log.truncateTo(validBytes);
         offsetIndex().trimToValidSize();
@@ -530,7 +546,7 @@ public class LogSegment implements Closeable {
         // We don't call `largestRecordTimestamp` below to avoid materializing the time index when `toString` is invoked
         return "LogSegment(baseOffset=" + baseOffset +
             ", size=" + size() +
-            ", lastModifiedTime=" + lastModified() +
+           // ", lastModifiedTime=" + lastModified() +
             ", largestRecordTimestamp=" + maxTimestampAndOffsetSoFar.timestamp +
             ")";
     }
@@ -837,7 +853,7 @@ public class LogSegment implements Closeable {
      * The last modified time of this log segment as a unix time stamp
      */
     public long lastModified() {
-        return log.file().lastModified();
+        return log.file() == null ? 0 : log.file().lastModified();
     }
 
     /**
@@ -877,8 +893,14 @@ public class LogSegment implements Closeable {
     public static LogSegment open(File dir, long baseOffset, LogConfig config, Time time, boolean fileAlreadyExists,
                                   int initFileSize, boolean preallocate, String fileSuffix) throws IOException {
         int maxIndexSize = config.maxIndexSize;
+
+        FileRecords records = null;
+        if (config.logUseAny)
+            records = AnyRecords.open(LogFileUtils.logFile(dir, baseOffset, fileSuffix), fileAlreadyExists, initFileSize, preallocate, baseOffset, dir.toString(), fileSuffix);
+        else
+            records = FileRecords.open(LogFileUtils.logFile(dir, baseOffset, fileSuffix), fileAlreadyExists, initFileSize, preallocate);
         return new LogSegment(
-            FileRecords.open(LogFileUtils.logFile(dir, baseOffset, fileSuffix), fileAlreadyExists, initFileSize, preallocate),
+            records,
             LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize),
             LazyIndex.forTime(LogFileUtils.timeIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize),
             new TransactionIndex(baseOffset, LogFileUtils.transactionIndexFile(dir, baseOffset, fileSuffix)),

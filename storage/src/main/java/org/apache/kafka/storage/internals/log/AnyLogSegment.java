@@ -451,7 +451,7 @@ public class AnyLogSegment extends LogSegment implements Closeable {
         // calculate the length of the message set to read based on whether or not they gave us a maxOffset
         int fetchSize = Math.min((int) (maxPositionOpt.get() - startPosition), adjustedMaxSize);
 
-        return new FetchDataInfo(offsetMetadata, log.slice(startOffset, fetchSize),
+        return new FetchDataInfo(offsetMetadata, log.slice((int) startOffset, fetchSize),
             adjustedMaxSize < startOffsetAndSize.size, Optional.empty());
     }
 
