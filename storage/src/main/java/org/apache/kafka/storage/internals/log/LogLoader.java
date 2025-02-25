@@ -353,40 +353,6 @@ public class LogLoader {
         }
     }
 
-    private List<String> listBucket() {
-        String accessKey = "minioadmin";
-        String secretKey = "minioadmin";
-        AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
-        S3Client s3 = null;
-        try {
-            s3 = S3Client.builder()
-                    .region(Region.US_EAST_1)
-                    .endpointOverride(new URI("http://localhost:9000"))
-                    .credentialsProvider(StaticCredentialsProvider.create(credentials))
-                    .forcePathStyle(true)
-                    .build();
-        } catch (URISyntaxException e) {
-            throw new RuntimeException(e);
-        }
-
-        ListObjectsV2Request initialRequest = ListObjectsV2Request.builder()
-                .bucket("test")
-                .maxKeys(100)
-                .build();
-
-
-        List<String> objs = new LinkedList<>();
-        try {
-            ListObjectsV2Iterable objectBytes = s3.listObjectsV2Paginator(initialRequest);
-            objectBytes.stream().forEach(response -> response.contents().forEach(s3Object -> {
-                objs.add(s3Object.key());
-            }));
-        } catch (Exception e) {
-            logger.info("error while listing bucket");
-        }
-        return objs;
-    }
-
     /**
      * Loads segments from disk.
      * <br/>
@@ -435,35 +401,6 @@ public class LogLoader {
                 segments.add(segment);
             }
         }
-
-        if (config.logUseAny) {
-            List<String> baseOffsets = listBucket().stream().filter(name -> name.contains(dir.getName())).sorted().toList();
-            if (!baseOffsets.isEmpty()) {
-                String baseOffsetStr = baseOffsets.get(0);
-                long baseOffset = Long.parseLong(baseOffsetStr.substring(baseOffsetStr.lastIndexOf('/') + 1, baseOffsetStr.lastIndexOf('.')));
-                System.out.println("!!! baseOffsetStr:" + baseOffsetStr + ";;" + baseOffset);
-                boolean timeIndexFileNewlyCreated = !LogFileUtils.timeIndexFile(dir, baseOffset).exists();
-
-                LogSegment segment = null;// LogSegment.open(dir, baseOffset, config, time, true, 0, false, "");
-
-                segment = LogSegment.open(dir, baseOffset, config, time, true, 0, false, "");
-//                try {
-//                    segment.sanityCheck(timeIndexFileNewlyCreated);
-//                } catch (NoSuchFileException nsfe) {
-//                    if (hadCleanShutdown || segment.baseOffset() < recoveryPointCheckpoint) {
-//                        logger.error("Could not find offset index file corresponding to log file {}, recovering segment and rebuilding index files...", segment.log());
-//                    }
-//                    recoverSegment(segment);
-//                } catch (CorruptIndexException cie) {
-//                    logger.warn("Found a corrupted index file corresponding to log file {} due to {}, recovering segment and rebuilding index files...", segment.log(), cie.getMessage());
-//                    recoverSegment(segment);
-//                }
-                segments.add(segment);
-            }
-        }
-
-
-
     }
 
     /**
