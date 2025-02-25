@@ -144,27 +144,6 @@ public class AnyRecords extends FileRecords implements Closeable {
 
     @Override
     public int sizeInBytes() {
-//        if (!changed) {
-//            return size == null ? 0 : size.get();
-//        }
-//
-//        List<String> baseOffsets = listBucket().stream().filter(name -> name.contains(path.substring(1))).sorted().collect(Collectors.toList());
-//        for (String baseOffset : baseOffsets) {
-//            long offset = Long.parseLong(baseOffset.substring(baseOffset.lastIndexOf('/') + 1, baseOffset.lastIndexOf('.')));
-//            if (offset >= this.baseOffset) {
-//                readS3(offset);
-//            }
-//        }
-//
-//        int res = 0;
-//        for (File file : file2.values()) {
-//            res += file.length();
-//        }
-//        if (size == null) {
-//            size = new AtomicInteger(0);
-//        }
-//        size.set(res);
-//        changed = false;
         return recordBuffer == null ? 0 : recordBuffer.limit();
     }
 
@@ -214,9 +193,6 @@ public class AnyRecords extends FileRecords implements Closeable {
      * @return A sliced wrapper on this message set limited based on the given position and size
      */
     public AnyRecords slice(int position, int size) throws IOException {
-//        int availableBytes = availableBytes(offset, size);
-//        int startPosition = this.start + position;
-//        return new AnyRecords(file, channel,  offset, end, true, offset, path, suffix, file2, currentOffset, this.size);
         int availableBytes = availableBytes(position, size);
         System.out.println("!!! slice:" + position + ";;" + size + ";;" + sizeInBytes() + ";;" + availableBytes);
         int startPosition = this.start + position;
@@ -350,62 +326,19 @@ public class AnyRecords extends FileRecords implements Closeable {
      */
     public int truncateTo(int targetSize) throws IOException {
         int originalSize = sizeInBytes();
-//        if (targetSize > originalSize || targetSize < 0)
-//            throw new KafkaException("Attempt to truncate log segment " + file + " to " + targetSize + " bytes failed, " +
-//                    " size of this log segment is " + originalSize + " bytes.");
-//        if (targetSize < (int) channel.size()) {
-//            //channel.truncate(targetSize);
-//            size.set(targetSize);
-//        }
+        if (targetSize > originalSize || targetSize < 0)
+            throw new KafkaException("Attempt to truncate log segment " + file + " to " + targetSize + " bytes failed, " +
+                    " size of this log segment is " + originalSize + " bytes.");
+        if (targetSize < recordBuffer.limit()) {
+            //channel.truncate(targetSize);
+            size.set(targetSize);
+            recordBuffer.limit(targetSize);
+        }
         return originalSize - targetSize;
     }
 
     @Override
-    public ConvertedRecords<? extends Records> downConvert(byte toMagic, long firstOffset, Time time) {
-        ConvertedRecords<MemoryRecords> convertedRecords = RecordsUtil.downConvert(batches, toMagic, firstOffset, time);
-        if (convertedRecords.recordConversionStats().numRecordsConverted() == 0) {
-            // This indicates that the message is too large, which means that the buffer is not large
-            // enough to hold a full record batch. We just return all the bytes in this instance.
-            // Even though the record batch does not have the right format version, we expect old clients
-            // to raise an error to the user after reading the record batch size and seeing that there
-            // are not enough available bytes in the response to read it fully. Note that this is
-            // only possible prior to KIP-74, after which the broker was changed to always return at least
-            // one full record batch, even if it requires exceeding the max fetch size requested by the client.
-            return new ConvertedRecords<>(this, RecordValidationStats.EMPTY);
-        } else {
-            return convertedRecords;
-        }
-    }
-
-    @Override
     public int writeTo(TransferableChannel destChannel, int offset, int length) throws IOException {
-        System.out.println("!!! writeTo");
-        // luke
-//        List<Long> baseOffsets = listBucket().stream().filter(name -> name.contains(path.substring(1)))
-//                .map(off -> Long.parseLong(off.substring(off.lastIndexOf('/') + 1, off.lastIndexOf('.')))).sorted().collect(Collectors.toList());
-//        for (long offset2 : baseOffsets) {
-//            if (offset2 > currentOffset) {
-//                currentOffset = offset2;
-//                break;
-//            }
-//        }
-//
-//        if (!file2.containsKey(currentOffset))
-//            readS3(currentOffset);
-
-//        channel = FileChannel.open(file2.get(currentOffset).toPath(), StandardOpenOption.CREATE, StandardOpenOption.READ,
-//                StandardOpenOption.WRITE);
-//        long newSize = Math.min(channel.size(), end) - start;
-//        int oldSize = sizeInBytes();
-////        if (newSize < oldSize)
-////            throw new KafkaException(String.format(
-////                    "Size of FileRecords %s has been truncated during write: old size %d, new size %d",
-////                    path, oldSize, newSize));
-//
-//        long position = start + offset;
-//        int count = Math.min(length, oldSize - offset);
-        // safe to cast to int since `count` is an int
-
         long newSize = Math.min(recordBuffer.capacity(), end) - start;
         int oldSize = sizeInBytes();
         if (newSize < oldSize)
@@ -428,8 +361,7 @@ public class AnyRecords extends FileRecords implements Closeable {
      * @return the batch's base offset, its physical position, and its size (including log overhead)
      */
     public FileRecords.LogOffsetPosition searchForOffsetWithSize(long targetOffset, int startingPosition) {
-        System.out.println("!!! searchForOffsetWithSize:" + targetOffset + " startingPosition:" + startingPosition);
-        for (FileChannelRecordBatch batch : batchesFrom(targetOffset)) {
+        for (FileChannelRecordBatch batch : batchesFrom(startingPosition)) {
             long offset = batch.lastOffset();
             System.out.println("offset:" + offset + " batch:" + batch + " batch:" + sizeInBytes());
             if (offset >= targetOffset)
@@ -537,52 +469,6 @@ public class AnyRecords extends FileRecords implements Closeable {
         return new RecordBatchIterator<>(inputStream);
     }
 
-    private void readS3(long start) {
-        if (file2.containsKey(start)) {
-            return;
-        }
-        String accessKey = "minioadmin";
-        String secretKey = "minioadmin";
-        AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
-        S3Client s3 = null;
-        try {
-            s3 = S3Client.builder()
-                    .region(Region.US_EAST_1)
-                    .endpointOverride(new URI("http://localhost:9000"))
-                    .credentialsProvider(StaticCredentialsProvider.create(credentials))
-                    .forcePathStyle(true)
-                    .build();
-        } catch (URISyntaxException e) {
-            throw new RuntimeException(e);
-        }
-
-        GetObjectRequest objectRequest = GetObjectRequest.builder()
-                .bucket("test")
-                .key(path + "/" + start + ".log" + suffix)
-                .build();
-
-        Path path = null;
-        try {
-            path = Files.createTempFile(start + ".log" + suffix, null);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-//        GetObjectResponse response = s3.getObject(objectRequest, path);
-        try {
-            ResponseBytes<GetObjectResponse> objectBytes = s3.getObject(objectRequest, ResponseTransformer.toBytes());
-            byte[] data = objectBytes.asByteArray();
-
-            // Write the data to a local file.
-            file2.put(start, path.toFile());
-
-            OutputStream os = new FileOutputStream(path.toFile());
-            os.write(data);
-            os.close();
-
-        } catch (Exception e) {
-            System.out.println("error while reading s3:" + e);
-        }
-    }
 
     public static AnyRecords open(File file,
                                   boolean mutable,
@@ -615,112 +501,5 @@ public class AnyRecords extends FileRecords implements Closeable {
         return open(file, true);
     }
 
-    /**
-     * Open a channel for the given file
-     * For windows NTFS and some old LINUX file system, set preallocate to true and initFileSize
-     * with one value (for example 512 * 1025 *1024 ) can improve the kafka produce performance.
-     * @param file File path
-     * @param mutable mutable
-     * @param fileAlreadyExists File already exists or not
-     * @param initFileSize The size used for pre allocate file, for example 512 * 1025 *1024
-     * @param preallocate Pre-allocate file or not, gotten from configuration.
-     */
-    private static FileChannel openChannel(File file,
-                                           boolean mutable,
-                                           boolean fileAlreadyExists,
-                                           int initFileSize,
-                                           boolean preallocate) throws IOException {
-        if (mutable) {
-            if (fileAlreadyExists || !preallocate) {
-                return FileChannel.open(file.toPath(), StandardOpenOption.CREATE, StandardOpenOption.READ,
-                        StandardOpenOption.WRITE);
-            } else {
-                RandomAccessFile randomAccessFile = new RandomAccessFile(file, "rw");
-                randomAccessFile.setLength(initFileSize);
-                return randomAccessFile.getChannel();
-            }
-        } else {
-            return FileChannel.open(file.toPath());
-        }
-    }
 
-    public static class LogOffsetPosition {
-        public final long offset;
-        public final int position;
-        public final int size;
-
-        public LogOffsetPosition(long offset, int position, int size) {
-            this.offset = offset;
-            this.position = position;
-            this.size = size;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o)
-                return true;
-            if (o == null || getClass() != o.getClass())
-                return false;
-
-            LogOffsetPosition that = (LogOffsetPosition) o;
-
-            return offset == that.offset &&
-                    position == that.position &&
-                    size == that.size;
-
-        }
-
-        @Override
-        public int hashCode() {
-            int result = Long.hashCode(offset);
-            result = 31 * result + position;
-            result = 31 * result + size;
-            return result;
-        }
-
-        @Override
-        public String toString() {
-            return "LogOffsetPosition(" +
-                    "offset=" + offset +
-                    ", position=" + position +
-                    ", size=" + size +
-                    ')';
-        }
-    }
-
-    public static class TimestampAndOffset {
-        public final long timestamp;
-        public final long offset;
-        public final Optional<Integer> leaderEpoch;
-
-        public TimestampAndOffset(long timestamp, long offset, Optional<Integer> leaderEpoch) {
-            this.timestamp = timestamp;
-            this.offset = offset;
-            this.leaderEpoch = leaderEpoch;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            TimestampAndOffset that = (TimestampAndOffset) o;
-            return timestamp == that.timestamp &&
-                    offset == that.offset &&
-                    Objects.equals(leaderEpoch, that.leaderEpoch);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(timestamp, offset, leaderEpoch);
-        }
-
-        @Override
-        public String toString() {
-            return "TimestampAndOffset(" +
-                    "timestamp=" + timestamp +
-                    ", offset=" + offset +
-                    ", leaderEpoch=" + leaderEpoch +
-                    ')';
-        }
-    }
 }
