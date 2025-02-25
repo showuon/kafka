@@ -106,8 +106,9 @@ public class ProducerStateManager {
     private ConcurrentSkipListMap<Long, SnapshotFile> snapshots;
     private long lastMapOffset = 0L;
     private long lastSnapOffset = 0L;
+    private final boolean useAnyLog;
 
-    public ProducerStateManager(TopicPartition topicPartition, File logDir, int maxTransactionTimeoutMs, ProducerStateManagerConfig producerStateManagerConfig, Time time) throws IOException {
+    public ProducerStateManager(TopicPartition topicPartition, File logDir, int maxTransactionTimeoutMs, ProducerStateManagerConfig producerStateManagerConfig, Time time, boolean useAnyLog) throws IOException {
         this.topicPartition = topicPartition;
         this.logDir = logDir;
         this.maxTransactionTimeoutMs = maxTransactionTimeoutMs;
@@ -115,6 +116,11 @@ public class ProducerStateManager {
         this.time = time;
         log = new LogContext("[ProducerStateManager partition=" + topicPartition + "] ").logger(ProducerStateManager.class);
         snapshots = loadSnapshots();
+        this.useAnyLog = useAnyLog;
+    }
+
+    public ProducerStateManager(TopicPartition topicPartition, File logDir, int maxTransactionTimeoutMs, ProducerStateManagerConfig producerStateManagerConfig, Time time) throws IOException {
+        this(topicPartition, logDir, maxTransactionTimeoutMs, producerStateManagerConfig, time, false);
     }
 
     public int maxTransactionTimeoutMs() {
@@ -438,7 +444,8 @@ public class ProducerStateManager {
         if (lastMapOffset > lastSnapOffset) {
             SnapshotFile snapshotFile = new SnapshotFile(LogFileUtils.producerSnapshotFile(logDir, lastMapOffset));
             long start = time.hiResClockMs();
-            writeSnapshot(snapshotFile.file(), producers, sync);
+            if (!useAnyLog)
+                writeSnapshot(snapshotFile.file(), producers, sync);
             log.info("Wrote producer snapshot at offset {} with {} producer ids in {} ms.", lastMapOffset,
                     producers.size(), time.hiResClockMs() - start);
 
