@@ -2201,7 +2201,6 @@ project(':storage') {
     implementation libs.slf4jApi
     implementation libs.jacksonDatabind
     implementation libs.metrics
-    implementation libs.aws
 
     testImplementation project(':clients')
     testImplementation project(':clients').sourceSets.test.output
