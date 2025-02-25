@@ -78,7 +78,8 @@ public class TransactionIndex implements Closeable {
     }
 
     public void updateParentDir(File parentDir) {
-        this.file = new File(parentDir, file.getName());
+        if (file != null)
+            this.file = new File(parentDir, file.getName());
     }
 
     public void append(AbortedTxn abortedTxn) throws IOException {
