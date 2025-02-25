@@ -37,11 +37,10 @@ import java.util.stream.Collectors;
  */
 public class LogSegments implements Closeable {
 
-    private  TopicPartition topicPartition;
+    private final TopicPartition topicPartition;
     /* the segments of the log with key being LogSegment base offset and value being a LogSegment */
     private final ConcurrentNavigableMap<Long, LogSegment> segments = new ConcurrentSkipListMap<>();
 
-    public LogSegments() {}
     /**
      * Create new instance.
      *

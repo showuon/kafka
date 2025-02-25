@@ -1590,7 +1590,6 @@ class ReplicaManager(val config: KafkaConfig,
 
     // check if this fetch request can be satisfied right away
     val logReadResults = readFromLog(params, fetchInfos, quota, readFromPurgatory = false)
-//    println("!!! logReadResults:" + logReadResults)
     var bytesReadable: Long = 0
     var errorReadingData = false
 
@@ -1624,7 +1623,6 @@ class ReplicaManager(val config: KafkaConfig,
     //                        4) some error happens while reading data
     //                        5) we found a diverging epoch
     //                        6) has a preferred read replica
-//    println("!!! fetchInfos:" + fetchInfos + ";;" + bytesReadable + ";;" + params.minBytes + ";;" + errorReadingData + hasDivergingEpoch)
     if (!remoteFetchInfo.isPresent && (params.maxWaitMs <= 0 || fetchInfos.isEmpty || bytesReadable >= params.minBytes || errorReadingData ||
       hasDivergingEpoch || hasPreferredReadReplica)) {
       val fetchPartitionData = logReadResults.map { case (tp, result) =>

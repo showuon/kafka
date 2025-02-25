@@ -77,14 +77,14 @@ public class LocalLog {
     public static final long UNKNOWN_OFFSET = -1L;
 
     // Last time the log was flushed
-    private  AtomicLong lastFlushedTime;
-    private  String logIdent;
-    private  LogSegments segments;
-    private  Scheduler scheduler;
-    private  Time time;
-    private  TopicPartition topicPartition;
-    private  LogDirFailureChannel logDirFailureChannel;
-    private  Logger logger;
+    private final AtomicLong lastFlushedTime;
+    private final String logIdent;
+    private final LogSegments segments;
+    private final Scheduler scheduler;
+    private final Time time;
+    private final TopicPartition topicPartition;
+    private final LogDirFailureChannel logDirFailureChannel;
+    private final Logger logger;
 
     private volatile LogOffsetMetadata nextOffsetMetadata;
     // The memory mapped buffer for index files of this log will be closed with either delete() or closeHandlers()
@@ -95,8 +95,6 @@ public class LocalLog {
     private volatile LogConfig config;
     private volatile long recoveryPoint;
     private File dir;
-
-    public LocalLog() {}
 
     /**
      * @param dir The directory in which log segments are created.
@@ -473,7 +471,6 @@ public class LocalLog {
                 () -> {
                     logger.trace("Reading maximum {} bytes at offset {} from log with total length {} bytes",
                             maxLength, startOffset, segments.sizeInBytes());
-
                     LogOffsetMetadata endOffsetMetadata = nextOffsetMetadata;
                     long endOffset = endOffsetMetadata.messageOffset;
                     Optional<LogSegment> segmentOpt = segments.floorSegment(startOffset);
