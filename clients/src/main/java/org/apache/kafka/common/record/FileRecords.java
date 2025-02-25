@@ -39,15 +39,15 @@ import java.util.concurrent.atomic.AtomicInteger;
  * instance to enable slicing a range of the log records.
  */
 public class FileRecords extends AbstractRecords implements Closeable {
-    private  boolean isSlice;
-    private  int start;
-    private  int end;
+    private final boolean isSlice;
+    private final int start;
+    private final int end;
 
-    Iterable<FileLogInputStream.FileChannelRecordBatch> batches;
+    private final Iterable<FileLogInputStream.FileChannelRecordBatch> batches;
 
     // mutable state
-    private  AtomicInteger size;
-    private  FileChannel channel;
+    private final AtomicInteger size;
+    private final FileChannel channel;
     private volatile File file;
     private ByteBuffer recordBuffer;
 
@@ -172,7 +172,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
         return new UnalignedFileRecords(channel, this.start + position, availableBytes);
     }
 
-    int availableBytes(int position, int size) {
+    private int availableBytes(int position, int size) {
         // Cache current size in case concurrent write changes it
         int currentSizeInBytes = sizeInBytes();
 
@@ -191,7 +191,6 @@ public class FileRecords extends AbstractRecords implements Closeable {
             end = this.start + currentSizeInBytes;
         return end - (this.start + position);
     }
-
 
     /**
      * Append a set of records to the file. This method is not thread-safe and must be
@@ -298,13 +297,16 @@ public class FileRecords extends AbstractRecords implements Closeable {
             throw new KafkaException("Attempt to truncate log segment " + file + " to " + targetSize + " bytes failed, " +
                     " size of this log segment is " + originalSize + " bytes.");
         if (channel != null) {
-            if (targetSize < (int) channel.size())
+            if (targetSize < (int) channel.size()) {
                 channel.truncate(targetSize);
+                size.set(targetSize);
+            }
         } else {
-            if (targetSize < recordBuffer.limit())
+            if (targetSize < recordBuffer.limit()) {
                 recordBuffer.limit(targetSize);
+                size.set(targetSize);
+            }
         }
-        size.set(targetSize);
         return originalSize - targetSize;
     }
 
@@ -429,7 +431,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
         return batchIterator(start);
     }
 
-    AbstractIterator<FileChannelRecordBatch> batchIterator(int start) {
+    private AbstractIterator<FileChannelRecordBatch> batchIterator(int start) {
         final int end;
         if (isSlice)
             end = this.end;
