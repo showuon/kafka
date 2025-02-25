@@ -89,7 +89,8 @@ public class TransactionIndex implements Closeable {
                     + file.getAbsolutePath());
         });
         lastOffset = OptionalLong.of(abortedTxn.lastOffset());
-        Utils.writeFully(channel(), abortedTxn.buffer.duplicate());
+        if (channel() != null)
+            Utils.writeFully(channel(), abortedTxn.buffer.duplicate());
     }
 
     public void flush() throws IOException {
@@ -124,12 +125,15 @@ public class TransactionIndex implements Closeable {
      */
     public boolean deleteIfExists() throws IOException {
         close();
-        return Files.deleteIfExists(file.toPath());
+        if (file != null)
+            return Files.deleteIfExists(file.toPath());
+        else
+            return false;
     }
 
     public void renameTo(File f) throws IOException {
         try {
-            if (file.exists())
+            if (file != null && file.exists())
                 Utils.atomicMoveWithFallback(file.toPath(), f.toPath(), false);
         } finally {
             this.file = f;
