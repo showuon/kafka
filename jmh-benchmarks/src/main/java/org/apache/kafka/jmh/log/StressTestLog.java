@@ -80,7 +80,8 @@ public class StressTestLog {
             Option.empty(),
             new ConcurrentHashMap<>(),
             false,
-            LogOffsetsListener.NO_OP_OFFSETS_LISTENER
+            LogOffsetsListener.NO_OP_OFFSETS_LISTENER,
+                null
         );
 
         WriterThread writer = new WriterThread(log);

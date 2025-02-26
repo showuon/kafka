@@ -19,6 +19,7 @@ package org.apache.kafka.common.record;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.network.TransferableChannel;
 import org.apache.kafka.common.record.FileLogInputStream.FileChannelRecordBatch;
+import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.common.utils.AbstractIterator;
 import org.apache.kafka.common.utils.Utils;
 
@@ -445,14 +446,32 @@ public class FileRecords extends AbstractRecords implements Closeable {
                                    boolean mutable,
                                    boolean fileAlreadyExists,
                                    int initFileSize,
-                                   boolean preallocate) throws IOException {
+                                   boolean preallocate,
+                                   StorageManager sm) throws IOException {
         if (file != null) {
+            sm.initRecords(file, mutable, fileAlreadyExists, initFileSize, preallocate);
             FileChannel channel = openChannel(file, mutable, fileAlreadyExists, initFileSize, preallocate);
             int end = (!fileAlreadyExists && preallocate) ? 0 : Integer.MAX_VALUE;
             return new FileRecords(file, channel, 0, end, false);
         } else {
             return new FileRecords(null, null, 0, Integer.MAX_VALUE, false);
         }
+    }
+
+    public static FileRecords open(File file,
+                                   boolean fileAlreadyExists,
+                                   int initFileSize,
+                                   boolean preallocate,
+                                   StorageManager storageManager) throws IOException {
+        return open(file, true, fileAlreadyExists, initFileSize, preallocate, storageManager);
+    }
+
+    public static FileRecords open(File file,
+                                   boolean mutable,
+                                   boolean fileAlreadyExists,
+                                   int initFileSize,
+                                   boolean preallocate) throws IOException {
+        return open(file, true, fileAlreadyExists, initFileSize, preallocate, null);
     }
 
     public static FileRecords open(File file,

@@ -23,6 +23,7 @@ import org.apache.kafka.common.record.FileRecords;
 import org.apache.kafka.common.record.FileRecords.LogOffsetPosition;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.RecordBatch;
+import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.common.utils.BufferSupplier;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
@@ -861,17 +862,21 @@ public class LogSegment implements Closeable {
         Files.setLastModifiedTime(timeIndexFile().toPath(), fileTime);
     }
 
+    public static LogSegment open(File dir, long baseOffset, LogConfig config, Time time, int initFileSize, boolean preallocate, StorageManager storageManager) throws IOException {
+        return open(dir, baseOffset, config, time, false, initFileSize, preallocate, "", storageManager);
+    }
+
     public static LogSegment open(File dir, long baseOffset, LogConfig config, Time time, int initFileSize, boolean preallocate) throws IOException {
-        return open(dir, baseOffset, config, time, false, initFileSize, preallocate, "");
+        return open(dir, baseOffset, config, time, false, initFileSize, preallocate, "", null);
     }
 
     public static LogSegment open(File dir, long baseOffset, LogConfig config, Time time, boolean fileAlreadyExists,
-                                  int initFileSize, boolean preallocate, String fileSuffix) throws IOException {
+                                  int initFileSize, boolean preallocate, String fileSuffix, StorageManager storageManager) throws IOException {
         int maxIndexSize = config.maxIndexSize;
 
         FileRecords records = null;
         if (config.logUseAny) {
-            records = FileRecords.open(null, fileAlreadyExists, initFileSize, preallocate);
+            records = FileRecords.open(null, fileAlreadyExists, initFileSize, preallocate, storageManager);
             return new LogSegment(
                     records,
                     LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize, true),
@@ -883,7 +888,7 @@ public class LogSegment implements Closeable {
                     time);
         }
         else {
-            records = FileRecords.open(LogFileUtils.logFile(dir, baseOffset, fileSuffix), fileAlreadyExists, initFileSize, preallocate);
+            records = FileRecords.open(LogFileUtils.logFile(dir, baseOffset, fileSuffix), fileAlreadyExists, initFileSize, preallocate, storageManager);
             return new LogSegment(
                     records,
                     LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize),

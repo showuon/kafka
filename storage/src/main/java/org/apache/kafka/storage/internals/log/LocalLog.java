@@ -24,6 +24,7 @@ import org.apache.kafka.common.message.FetchResponseData;
 import org.apache.kafka.common.record.FileLogInputStream;
 import org.apache.kafka.common.record.FileRecords;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
@@ -95,7 +96,19 @@ public class LocalLog {
     private volatile LogConfig config;
     private volatile long recoveryPoint;
     private File dir;
+    private final StorageManager storageManager;
 
+    public LocalLog(File dir,
+                    LogConfig config,
+                    LogSegments segments,
+                    long recoveryPoint,
+                    LogOffsetMetadata nextOffsetMetadata,
+                    Scheduler scheduler,
+                    Time time,
+                    TopicPartition topicPartition,
+                    LogDirFailureChannel logDirFailureChannel) {
+        this(dir, config, segments, recoveryPoint, nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel, null);
+    }
     /**
      * @param dir The directory in which log segments are created.
      * @param config The log configuration settings
@@ -115,7 +128,8 @@ public class LocalLog {
                     Scheduler scheduler,
                     Time time,
                     TopicPartition topicPartition,
-                    LogDirFailureChannel logDirFailureChannel) {
+                    LogDirFailureChannel logDirFailureChannel,
+                    StorageManager storageManager) {
         this.dir = dir;
         this.config = config;
         this.segments = segments;
@@ -130,6 +144,7 @@ public class LocalLog {
         // Last time the log was flushed
         this.lastFlushedTime = new AtomicLong(time.milliseconds());
         this.parentDir = dir.getParent();
+        this.storageManager = storageManager;
     }
 
     public File dir() {
@@ -142,6 +157,10 @@ public class LocalLog {
 
     public LogConfig config() {
         return config;
+    }
+
+    public StorageManager storageManager() {
+        return storageManager;
     }
 
     public LogSegments segments() {
@@ -430,7 +449,8 @@ public class LocalLog {
                 config,
                 time,
                 config.initFileSize(),
-                config.preallocate);
+                config.preallocate,
+                storageManager);
         segments.add(newSegment);
 
         reason.logReason(singletonList(segmentToDelete));
@@ -874,9 +894,9 @@ public class LocalLog {
         }
     }
 
-    public static LogSegment createNewCleanedSegment(File dir, LogConfig logConfig, long baseOffset) throws IOException {
+    public static LogSegment createNewCleanedSegment(File dir, LogConfig logConfig, long baseOffset, StorageManager storageManager) throws IOException {
         LogSegment.deleteIfExists(dir, baseOffset, CLEANED_FILE_SUFFIX);
-        return LogSegment.open(dir, baseOffset, logConfig, Time.SYSTEM, false, logConfig.initFileSize(), logConfig.preallocate, CLEANED_FILE_SUFFIX);
+        return LogSegment.open(dir, baseOffset, logConfig, Time.SYSTEM, false, logConfig.initFileSize(), logConfig.preallocate, CLEANED_FILE_SUFFIX, storageManager);
     }
 
     /**
@@ -909,7 +929,8 @@ public class LocalLog {
                                                      LogConfig config,
                                                      Scheduler scheduler,
                                                      LogDirFailureChannel logDirFailureChannel,
-                                                     String logPrefix) throws IOException {
+                                                     String logPrefix,
+                                                            StorageManager storageManager) throws IOException {
         require(isLogFile(segment.log().file()), "Cannot split file " + segment.log().file().getAbsoluteFile());
         require(segment.hasOverflow(), "Split operation is only permitted for segments with overflow, and the problem path is " + segment.log().file().getAbsoluteFile());
 
@@ -921,7 +942,7 @@ public class LocalLog {
             FileRecords sourceRecords = segment.log();
             while (position < sourceRecords.sizeInBytes()) {
                 FileLogInputStream.FileChannelRecordBatch firstBatch = sourceRecords.batchesFrom(position).iterator().next();
-                LogSegment newSegment = createNewCleanedSegment(dir, config, firstBatch.baseOffset());
+                LogSegment newSegment = createNewCleanedSegment(dir, config, firstBatch.baseOffset(), storageManager);
                 newSegments.add(newSegment);
                 int bytesAppended = newSegment.appendFromFile(sourceRecords, position);
                 if (bytesAppended == 0) {

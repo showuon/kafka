@@ -316,7 +316,8 @@ public class TestLinearWriteSpeed {
                 Option.empty(),
                 new CopyOnWriteMap<>(),
                 false,
-                LogOffsetsListener.NO_OP_OFFSETS_LISTENER
+                LogOffsetsListener.NO_OP_OFFSETS_LISTENER,
+                    null
             );
         }
 
