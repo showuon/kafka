@@ -258,7 +258,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
     public void updateParentDir(File parentDir) {
 //        if (file != null)
 //            this.file = new File(parentDir, file.getName());
-        storageManager.updateParentDir(file().getAbsolutePath(), parentDir);
+        this.file = storageManager.updateParentDir(file().getAbsolutePath(), parentDir);
     }
 
     /**
@@ -273,7 +273,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
 //                this.file = f;
 //            }
 //        }
-        storageManager.renameTo(file().getAbsolutePath(), f);
+        this.file = storageManager.renameTo(file().getAbsolutePath(), f);
     }
 
     /**
