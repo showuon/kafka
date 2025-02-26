@@ -654,7 +654,8 @@ public class LocalLog {
                         config,
                         time,
                         config.initFileSize(),
-                        config.preallocate);
+                        config.preallocate,
+                        storageManager);
                 segments.add(newSegment);
 
                 // We need to update the segment base offset and append position data of the metadata when log rolls.

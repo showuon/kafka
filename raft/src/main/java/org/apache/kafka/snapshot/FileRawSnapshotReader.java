@@ -19,6 +19,7 @@ package org.apache.kafka.snapshot;
 import org.apache.kafka.common.record.FileRecords;
 import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.record.UnalignedRecords;
+import org.apache.kafka.common.storage.FileStorageManager;
 import org.apache.kafka.raft.OffsetAndEpoch;
 
 import java.io.IOException;
@@ -81,7 +82,8 @@ public final class FileRawSnapshotReader implements RawSnapshotReader, AutoClose
                 false, // mutable
                 true, // fileAlreadyExists
                 0, // initFileSize
-                false // preallocate
+                false, // preallocate,
+                    new FileStorageManager()
             );
         } catch (IOException e) {
             throw new UncheckedIOException(

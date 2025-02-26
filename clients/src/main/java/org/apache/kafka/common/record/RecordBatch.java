@@ -19,6 +19,7 @@ package org.apache.kafka.common.record;
 import org.apache.kafka.common.utils.BufferSupplier;
 import org.apache.kafka.common.utils.CloseableIterator;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Iterator;
 import java.util.Optional;
@@ -205,7 +206,7 @@ public interface RecordBatch extends Iterable<Record> {
      * Write this record batch into a buffer.
      * @param buffer The buffer to write the batch to
      */
-    void writeTo(ByteBuffer buffer);
+    void writeTo(ByteBuffer buffer) throws IOException;
 
     /**
      * Whether or not this record batch is part of a transaction.

@@ -26,6 +26,7 @@ import org.apache.kafka.common.message.VotersRecord;
 import org.apache.kafka.common.network.TransferableChannel;
 import org.apache.kafka.common.record.MemoryRecords.RecordFilter.BatchRetention;
 import org.apache.kafka.common.record.MemoryRecords.RecordFilter.BatchRetentionResult;
+import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.common.utils.AbstractIterator;
 import org.apache.kafka.common.utils.BufferSupplier;
 import org.apache.kafka.common.utils.ByteBufferOutputStream;
@@ -89,6 +90,17 @@ public class MemoryRecords extends AbstractRecords {
         int written = 0;
         while (written < sizeInBytes())
             written += channel.write(buffer);
+        buffer.reset();
+        return written;
+    }
+
+    public int writeFullyToStorageManager(String path, StorageManager storageManager) throws IOException {
+        buffer.mark();
+        int written = 0;
+        while (written < sizeInBytes())
+            written += storageManager.appendRecords(path, buffer);
+//            written += channel.write(buffer);
+
         buffer.reset();
         return written;
     }

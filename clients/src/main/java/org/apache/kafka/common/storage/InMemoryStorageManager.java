@@ -16,16 +16,43 @@ package org.apache.kafka.common.storage;/*
  */
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.SocketChannel;
 
 /**
  * Base interface for accessing records which could be contained in the log, or an in-memory materialization of log records.
  */
 public class InMemoryStorageManager implements StorageManager {
-    public void initRecords(File file,
+    public int initRecords(File file,
                      boolean mutable,
                      boolean fileAlreadyExists,
                      int initFileSize,
-                     boolean preallocate) {}
-    public void readRecords() {}
-    public void appendRecords() {}
+                     boolean preallocate,
+                     boolean isSlice,
+                           int start,
+                           int end) {
+        return 0;
+    }
+    public void readRecords(String path, ByteBuffer buffer, int position) {}
+    public int appendRecords(String path, ByteBuffer buffer) {
+        return 0;
+    }
+
+    public long recordsSize(String path) throws IOException {
+        return 0;
+    }
+
+    public long writeRecordsToSocket(String path, SocketChannel socketChannel, long position, long count) {
+        return 0;
+    }
+    public void flushRecords(String path) {}
+    public void closeRecords(String path) {}
+
+    public boolean deleteIfExists(String path) {
+        return false;
+    }
+    public void truncate(String path, int targetSize) {
+
+    }
 }
