@@ -34,7 +34,6 @@ import java.util.Map;
  */
 public class FileStorageManager implements StorageManager {
     private Map<String, FileChannel> channelMap = new HashMap<>();
-    private File file;
 
     public int initRecords(File file,
                      boolean mutable,
@@ -44,7 +43,6 @@ public class FileStorageManager implements StorageManager {
                      boolean isSlice,
                      int start,
                      int end) throws IOException {
-        this.file = file;
         FileChannel channel = openChannel(file, mutable, fileAlreadyExists, initFileSize, preallocate);
 
         this.channelMap.put(file.getAbsolutePath(), channel);
@@ -121,21 +119,23 @@ public class FileStorageManager implements StorageManager {
 
     public boolean deleteIfExists(String path) throws IOException {
         Utils.closeQuietly(channelMap.get(path), "FileChannel");
+        File file = new File(path);
         return Files.deleteIfExists(file.toPath());
     }
 
-    public void updateParentDir(String path, File parentDir) {
-        if (file != null)
-            this.file = new File(parentDir, file.getName());
+    public File updateParentDir(String path, File parentDir) {
+        FileChannel channel = channelMap.get(path);
+        channelMap.remove(path);
+        File tempFile = new File(path);
+        File returnFile = new File(parentDir, tempFile.getName());
+        channelMap.put(returnFile.getAbsolutePath(), channel);
+        return returnFile;
     }
-    public void renameTo(String path, File f) throws IOException {
-        if (file != null) {
-            try {
-                Utils.atomicMoveWithFallback(file.toPath(), f.toPath(), false);
-            } finally {
-                this.file = f;
-            }
-        }
+    public File renameTo(String path, File f) throws IOException {
+        FileChannel channel = channelMap.get(path);
+        channelMap.remove(path);
+        channelMap.put(f.getAbsolutePath(), channel);
+        return f;
     }
 
     public void truncate(String path, int targetSize) throws IOException {
