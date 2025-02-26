@@ -749,6 +749,7 @@ class LocalLogTest {
                 MOCK_TIME.scheduler,
                 MOCK_TIME,
                 topicPartition,
-                logDirFailureChannel);
+                logDirFailureChannel,
+                null);
     }
 }
