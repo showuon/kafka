@@ -25,6 +25,7 @@ import org.apache.kafka.common.record.ControlRecordType;
 import org.apache.kafka.common.record.FileLogInputStream.FileChannelRecordBatch;
 import org.apache.kafka.common.record.FileRecords;
 import org.apache.kafka.common.record.Record;
+import org.apache.kafka.common.storage.FileStorageManager;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.metadata.MetadataRecordSerde;
 import org.apache.kafka.raft.Batch;
@@ -59,7 +60,8 @@ public final class BatchFileReader implements Iterator<BatchFileReader.BatchAndT
             if (path == null) {
                 throw new RuntimeException("You must specify a path.");
             }
-            FileRecords fileRecords = FileRecords.open(new File(path), false);
+            FileRecords fileRecords = FileRecords.open(new File(path), false, false, 0, false, new FileStorageManager());
+            // open(file, mutable, false, 0, false);
             try {
                 return new BatchFileReader(fileRecords);
             } catch (Throwable e) {

@@ -22,6 +22,7 @@ import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.storage.internals.log.LogConfig;
 import org.apache.kafka.storage.internals.log.VerificationGuard;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -110,6 +111,8 @@ public class InMemoryPartitionWriter implements PartitionWriter {
             state.endOffset += StreamSupport.stream(batch.records().spliterator(), false).count();
             if (autoCommit) commit(tp, state.endOffset);
             return state.endOffset;
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         } finally {
             state.lock.unlock();
         }

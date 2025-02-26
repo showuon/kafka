@@ -3237,7 +3237,11 @@ public class RemoteLogManagerTest {
 
             EnrichedRecordBatch findFirstBatch(RemoteLogInputStream remoteLogInputStream, long offset) {
                 when(firstBatch.sizeInBytes()).thenReturn(recordBatchSizeInBytes);
-                doNothing().when(firstBatch).writeTo(capture.capture());
+                try {
+                    doNothing().when(firstBatch).writeTo(capture.capture());
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
                 return new EnrichedRecordBatch(firstBatch, 0);
             }
         }) {

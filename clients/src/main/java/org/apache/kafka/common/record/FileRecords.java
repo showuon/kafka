@@ -26,11 +26,9 @@ import org.apache.kafka.common.utils.Utils;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
-import java.nio.file.StandardOpenOption;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -48,60 +46,42 @@ public class FileRecords extends AbstractRecords implements Closeable {
 
     // mutable state
     private final AtomicInteger size;
-    private final FileChannel channel;
+//    private final FileChannel channel;
     private volatile File file;
-    private ByteBuffer recordBuffer;
+//    private ByteBuffer recordBuffer;
+    private final StorageManager storageManager;
 
     FileRecords(File file,
                 FileChannel channel,
                 int start,
                 int end,
                 boolean isSlice) throws IOException {
-        this(file, channel, start, end, isSlice, null);
+        this(file, start, end, isSlice, null, 0);
     }
     /**
      * The {@code FileRecords.open} methods should be used instead of this constructor whenever possible.
      * The constructor is visible for tests.
      */
     FileRecords(File file,
-                FileChannel channel,
                 int start,
                 int end,
                 boolean isSlice,
-                ByteBuffer recordBuffer) throws IOException {
-        this.file = file;
-        this.channel = channel;
+                StorageManager storageManager,
+                int size) {
         this.start = start;
         this.end = end;
         this.isSlice = isSlice;
-        this.size = new AtomicInteger();
-        this.recordBuffer = recordBuffer;
-
-        if (isSlice) {
-            // don't check the file size if this is just a slice view
-            size.set(end - start);
-        } else {
-            if (channel != null) {
-                if (channel.size() > Integer.MAX_VALUE)
-                    throw new KafkaException("The size of segment " + file + " (" + channel.size() +
-                            ") is larger than the maximum allowed segment size of " + Integer.MAX_VALUE);
-
-                int limit = Math.min((int) channel.size(), end);
-                size.set(limit - start);
-
-                // if this is not a slice, update the file pointer to the end of the file
-                // set the file position to the last byte in the file
-                channel.position(limit);
-            }
-        }
+        this.size = new AtomicInteger(size);
+        this.storageManager = storageManager;
+        this.file = file;
 
         batches = batchesFrom(start);
     }
 
     @Override
     public int sizeInBytes() {
-        if (file == null)
-            return recordBuffer == null ? 0 : recordBuffer.limit();
+//        if (file == null)
+//            return recordBuffer == null ? 0 : recordBuffer.limit();
         return size.get();
     }
 
@@ -118,11 +98,15 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @return The file channel
      */
     public FileChannel channel() {
-        return channel;
+        return null;
     }
 
     public ByteBuffer recordBuffer() {
-        return recordBuffer;
+        return null;
+    }
+
+    public StorageManager storageManager() {
+        return storageManager;
     }
 
     /**
@@ -135,7 +119,8 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * possible exceptions
      */
     public void readInto(ByteBuffer buffer, int position) throws IOException {
-        Utils.readFully(channel, buffer, position + this.start);
+        storageManager.readRecords(file().getAbsolutePath(), buffer, position + this.start);
+//        Utils.readFully(channel, buffer, position + this.start);
         buffer.flip();
     }
 
@@ -154,7 +139,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
     public FileRecords slice(int position, int size) throws IOException {
         int availableBytes = availableBytes(position, size);
         int startPosition = this.start + position;
-        return new FileRecords(file, channel, startPosition, startPosition + availableBytes, true, recordBuffer == null ? null : recordBuffer.duplicate());
+        return new FileRecords(file, startPosition, startPosition + availableBytes, true, storageManager, size);
     }
 
     /**
@@ -170,7 +155,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
      */
     public UnalignedFileRecords sliceUnaligned(int position, int size) {
         int availableBytes = availableBytes(position, size);
-        return new UnalignedFileRecords(channel, this.start + position, availableBytes);
+        return new UnalignedFileRecords(storageManager, this.start + position, availableBytes, file().getAbsolutePath());
     }
 
     private int availableBytes(int position, int size) {
@@ -205,22 +190,26 @@ public class FileRecords extends AbstractRecords implements Closeable {
             throw new IllegalArgumentException("Append of size " + records.sizeInBytes() +
                     " bytes is too large for segment with current file position at " + size.get());
 
-        if (file != null) {
-            int written = records.writeFullyTo(channel);
-            size.getAndAdd(written);
-            return written;
-        } else {
-            recordBuffer = records.writeFullyToMemory(recordBuffer);
-            return records.sizeInBytes();
-        }
+        int written = records.writeFullyToStorageManager(file().getAbsolutePath(), storageManager);
+        size.getAndAdd(written);
+        return written;
+//        if (file != null) {
+//            int written = records.writeFullyTo(channel);
+//            size.getAndAdd(written);
+//            return written;
+//        } else {
+//            recordBuffer = records.writeFullyToMemory(recordBuffer);
+//            return records.sizeInBytes();
+//        }
+//    }
     }
-
     /**
      * Commit all written data to the physical disk
      */
     public void flush() throws IOException {
-        if (channel != null)
-            channel.force(true);
+        storageManager.flushRecords(file().getAbsolutePath());
+//        if (channel != null)
+//            channel.force(true);
     }
 
     /**
@@ -229,16 +218,18 @@ public class FileRecords extends AbstractRecords implements Closeable {
     public void close() throws IOException {
         flush();
         trim();
-        if (channel != null)
-            channel.close();
+        storageManager.closeRecords(file().getAbsolutePath());
+//        if (channel != null)
+//            channel.close();
     }
 
     /**
      * Close file handlers used by the FileChannel but don't write to disk. This is used when the disk may have failed
      */
     public void closeHandlers() throws IOException {
-        if (channel != null)
-            channel.close();
+//        if (channel != null)
+//            channel.close();
+        storageManager.closeRecords(file().getAbsolutePath());
     }
 
     /**
@@ -248,8 +239,9 @@ public class FileRecords extends AbstractRecords implements Closeable {
      *          because it did not exist
      */
     public boolean deleteIfExists() throws IOException {
-        Utils.closeQuietly(channel, "FileChannel");
-        return Files.deleteIfExists(file.toPath());
+//        Utils.closeQuietly(channel, "FileChannel");
+//        return Files.deleteIfExists(file.toPath());
+        return storageManager.deleteIfExists(file().getAbsolutePath());
     }
 
     /**
@@ -264,8 +256,9 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @param parentDir The new parent directory
      */
     public void updateParentDir(File parentDir) {
-        if (file != null)
-            this.file = new File(parentDir, file.getName());
+//        if (file != null)
+//            this.file = new File(parentDir, file.getName());
+        storageManager.updateParentDir(file().getAbsolutePath(), parentDir);
     }
 
     /**
@@ -273,13 +266,14 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @throws IOException if rename fails.
      */
     public void renameTo(File f) throws IOException {
-        if (file != null) {
-            try {
-                Utils.atomicMoveWithFallback(file.toPath(), f.toPath(), false);
-            } finally {
-                this.file = f;
-            }
-        }
+//        if (file != null) {
+//            try {
+//                Utils.atomicMoveWithFallback(file.toPath(), f.toPath(), false);
+//            } finally {
+//                this.file = f;
+//            }
+//        }
+        storageManager.renameTo(file().getAbsolutePath(), f);
     }
 
     /**
@@ -295,35 +289,35 @@ public class FileRecords extends AbstractRecords implements Closeable {
     public int truncateTo(int targetSize) throws IOException {
         int originalSize = sizeInBytes();
         if (targetSize > originalSize || targetSize < 0)
-            throw new KafkaException("Attempt to truncate log segment " + file + " to " + targetSize + " bytes failed, " +
+            throw new KafkaException("Attempt to truncate log segment " + "file" + " to " + targetSize + " bytes failed, " +
                     " size of this log segment is " + originalSize + " bytes.");
-        if (channel != null) {
-            if (targetSize < (int) channel.size()) {
-                channel.truncate(targetSize);
-                size.set(targetSize);
-            }
-        } else {
-            if (targetSize < recordBuffer.limit()) {
-                recordBuffer.limit(targetSize);
-                size.set(targetSize);
-            }
+        if (targetSize < (int) storageManager.recordsSize(file().getAbsolutePath())) {
+            storageManager.truncate(file().getAbsolutePath(), targetSize);
+            size.set(targetSize);
         }
+//        } else {
+//            if (targetSize < recordBuffer.limit()) {
+//                recordBuffer.limit(targetSize);
+//                size.set(targetSize);
+//            }
+//        }
         return originalSize - targetSize;
     }
 
     @Override
     public int writeTo(TransferableChannel destChannel, int offset, int length) throws IOException {
-        long newSize = Math.min(channel != null ? channel.size() : recordBuffer.capacity(), end) - start;
+        long newSize = Math.min(storageManager.recordsSize(file().getAbsolutePath()), end) - start;
+//        long newSize = Math.min(channel != null ? channel.size() : recordBuffer.capacity(), end) - start;
         int oldSize = sizeInBytes();
         if (newSize < oldSize)
             throw new KafkaException(String.format(
                     "Size of FileRecords %s has been truncated during write: old size %d, new size %d",
-                    file.getAbsolutePath(), oldSize, newSize));
+                    "file.getAbsolutePath()", oldSize, newSize));
 
         long position = start + offset;
         int count = Math.min(length, oldSize - offset);
         // safe to cast to int since `count` is an int
-        return (int) destChannel.transferFrom(channel, position, count, recordBuffer);
+        return (int) destChannel.transferFrom(position, count, storageManager, file().getAbsolutePath());
     }
 
     /**
@@ -410,7 +404,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
     @Override
     public String toString() {
         return "FileRecords(size=" + sizeInBytes() +
-                ", file=" + file +
+                ", file=" + "file" +
                 ", start=" + start +
                 ", end=" + end +
                 ")";
@@ -447,15 +441,13 @@ public class FileRecords extends AbstractRecords implements Closeable {
                                    boolean fileAlreadyExists,
                                    int initFileSize,
                                    boolean preallocate,
-                                   StorageManager sm) throws IOException {
-        if (file != null) {
-            sm.initRecords(file, mutable, fileAlreadyExists, initFileSize, preallocate);
-            FileChannel channel = openChannel(file, mutable, fileAlreadyExists, initFileSize, preallocate);
-            int end = (!fileAlreadyExists && preallocate) ? 0 : Integer.MAX_VALUE;
-            return new FileRecords(file, channel, 0, end, false);
-        } else {
-            return new FileRecords(null, null, 0, Integer.MAX_VALUE, false);
-        }
+                                   StorageManager storageManager) throws IOException {
+        int end = (!fileAlreadyExists && preallocate) ? 0 : Integer.MAX_VALUE;
+        int size = storageManager.initRecords(file, mutable, fileAlreadyExists, initFileSize, preallocate, false, 0, end);
+        return new FileRecords(file, 0, end, false, storageManager, size);
+//        } else {
+//            return new FileRecords(null, null, 0, Integer.MAX_VALUE, false);
+//        }
     }
 
     public static FileRecords open(File file,
@@ -471,7 +463,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
                                    boolean fileAlreadyExists,
                                    int initFileSize,
                                    boolean preallocate) throws IOException {
-        return open(file, true, fileAlreadyExists, initFileSize, preallocate, null);
+        return open(file, mutable, fileAlreadyExists, initFileSize, preallocate, null);
     }
 
     public static FileRecords open(File file,
@@ -489,34 +481,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
         return open(file, true);
     }
 
-    /**
-     * Open a channel for the given file
-     * For windows NTFS and some old LINUX file system, set preallocate to true and initFileSize
-     * with one value (for example 512 * 1025 *1024 ) can improve the kafka produce performance.
-     * @param file File path
-     * @param mutable mutable
-     * @param fileAlreadyExists File already exists or not
-     * @param initFileSize The size used for pre allocate file, for example 512 * 1025 *1024
-     * @param preallocate Pre-allocate file or not, gotten from configuration.
-     */
-    private static FileChannel openChannel(File file,
-                                           boolean mutable,
-                                           boolean fileAlreadyExists,
-                                           int initFileSize,
-                                           boolean preallocate) throws IOException {
-        if (mutable) {
-            if (fileAlreadyExists || !preallocate) {
-                return FileChannel.open(file.toPath(), StandardOpenOption.CREATE, StandardOpenOption.READ,
-                        StandardOpenOption.WRITE);
-            } else {
-                RandomAccessFile randomAccessFile = new RandomAccessFile(file, "rw");
-                randomAccessFile.setLength(initFileSize);
-                return randomAccessFile.getChannel();
-            }
-        } else {
-            return FileChannel.open(file.toPath());
-        }
-    }
+
 
     public static class LogOffsetPosition {
         public final long offset;
