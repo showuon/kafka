@@ -17,16 +17,32 @@
 package org.apache.kafka.common.storage;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.SocketChannel;
 
 /**
  * Base interface for accessing records which could be contained in the log, or an in-memory materialization of log records.
  */
 public interface StorageManager {
-    void initRecords(File file,
+    int initRecords(File file,
                      boolean mutable,
                      boolean fileAlreadyExists,
                      int initFileSize,
-                     boolean preallocate);
-    void readRecords();
-    void appendRecords();
+                     boolean preallocate,
+                     boolean isSlice,
+                    int start,
+                    int end) throws IOException;
+    void readRecords(String path, ByteBuffer buffer, int position) throws IOException;
+    int appendRecords(String path, ByteBuffer buffer) throws IOException;
+    long recordsSize(String path) throws IOException;
+    long writeRecordsToSocket(String path, SocketChannel socketChannel, long position, long count) throws IOException;
+    default void flushRecords(String path) throws IOException {};
+    default void closeRecords(String path) throws IOException {};
+    default boolean deleteIfExists(String path) throws IOException {
+        return false;
+    };
+    default void updateParentDir(String path, File parentDir) {}
+    default void renameTo(String path, File f) throws IOException {}
+    void truncate(String path, int targetSize) throws IOException;
 }

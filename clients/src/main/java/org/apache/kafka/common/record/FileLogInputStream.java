@@ -66,14 +66,16 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
 
 
         logHeaderBuffer.rewind();
-        if (fileRecords.file() != null) {
-            FileChannel channel = fileRecords.channel();
-            Utils.readFullyOrFail(channel, logHeaderBuffer, position, "log header");
-        } else {
 
-            System.out.println("!!! nextBatch from memory");
-            logHeaderBuffer.put(fileRecords.recordBuffer().array(), position, logHeaderBuffer.remaining());
-        }
+        fileRecords.storageManager().readRecords(fileRecords.file().getAbsolutePath(), logHeaderBuffer, position);
+//        if (fileRecords.file() != null) {
+//            FileChannel channel = fileRecords.channel();
+//            Utils.readFullyOrFail(channel, logHeaderBuffer, position, "log header");
+//        } else {
+//
+//            System.out.println("!!! nextBatch from memory");
+//            logHeaderBuffer.put(fileRecords.recordBuffer().array(), position, logHeaderBuffer.remaining());
+//        }
 
 
         logHeaderBuffer.rewind();
@@ -183,23 +185,32 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
 
         @Override
         public void writeTo(ByteBuffer buffer) {
-            FileChannel channel = fileRecords.channel();
-            if (channel != null) {
-                try {
-                    int limit = buffer.limit();
-                    buffer.limit(buffer.position() + sizeInBytes());
-                    Utils.readFully(channel, buffer, position);
-                    buffer.limit(limit);
-                } catch (IOException e) {
-                    throw new KafkaException("Failed to read record batch at position " + position + " from " + fileRecords, e);
-                }
-            } else {
-                System.out.println("!!! writeTo from memory");
+            try {
                 int limit = buffer.limit();
                 buffer.limit(buffer.position() + sizeInBytes());
-                buffer.put(fileRecords.recordBuffer().array(), position, buffer.remaining());
+                fileRecords.storageManager().readRecords(fileRecords.file().getAbsolutePath(), buffer, position);
                 buffer.limit(limit);
+            } catch (IOException e) {
+                throw new KafkaException("Failed to read record batch at position " + position + " from " + fileRecords, e);
             }
+//            FileChannel channel = fileRecords.channel();
+//
+//            if (channel != null) {
+//                try {
+//                    int limit = buffer.limit();
+//                    buffer.limit(buffer.position() + sizeInBytes());
+//                    Utils.readFully(channel, buffer, position);
+//                    buffer.limit(limit);
+//                } catch (IOException e) {
+//                    throw new KafkaException("Failed to read record batch at position " + position + " from " + fileRecords, e);
+//                }
+//            } else {
+//                System.out.println("!!! writeTo from memory");
+//                int limit = buffer.limit();
+//                buffer.limit(buffer.position() + sizeInBytes());
+//                buffer.put(fileRecords.recordBuffer().array(), position, buffer.remaining());
+//                buffer.limit(limit);
+//            }
         }
 
         protected abstract RecordBatch toMemoryRecordBatch(ByteBuffer buffer);
@@ -226,15 +237,17 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
 
         private RecordBatch loadBatchWithSize(int size, String description) {
 
-            FileChannel channel = fileRecords.channel();
+
+//            FileChannel channel = fileRecords.channel();
             try {
                 ByteBuffer buffer = ByteBuffer.allocate(size);
-                if (channel != null)
-                    Utils.readFullyOrFail(channel, buffer, position, description);
-                else {
-                    System.out.println("!!! loadBatch from memory");
-                    buffer.put(fileRecords.recordBuffer().array(), position, buffer.remaining());
-                }
+                fileRecords.storageManager().readRecords(fileRecords.file().getAbsolutePath(), buffer, position);
+//                if (channel != null)
+//                    Utils.readFullyOrFail(channel, buffer, position, description);
+//                else {
+//                    System.out.println("!!! loadBatch from memory");
+//                    buffer.put(fileRecords.recordBuffer().array(), position, buffer.remaining());
+//                }
                 buffer.rewind();
                 return toMemoryRecordBatch(buffer);
             } catch (IOException e) {
@@ -251,21 +264,21 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
 
             FileChannelRecordBatch that = (FileChannelRecordBatch) o;
 
-            FileChannel channel = fileRecords == null ? null : fileRecords.channel();
-            FileChannel thatChannel = that.fileRecords == null ? null : that.fileRecords.channel();
+//            FileChannel channel = fileRecords == null ? null : fileRecords.channel();
+//            FileChannel thatChannel = that.fileRecords == null ? null : that.fileRecords.channel();
 
             return offset == that.offset &&
                     position == that.position &&
-                    batchSize == that.batchSize &&
-                    Objects.equals(channel, thatChannel);
+                    batchSize == that.batchSize;
+//                    Objects.equals(channel, thatChannel);
         }
 
         @Override
         public int hashCode() {
-            FileChannel channel = fileRecords == null ? null : fileRecords.channel();
+//            FileChannel channel = fileRecords == null ? null : fileRecords.channel();
 
             int result = Long.hashCode(offset);
-            result = 31 * result + (channel != null ? channel.hashCode() : 0);
+//            result = 31 * result + (channel != null ? channel.hashCode() : 0);
             result = 31 * result + position;
             result = 31 * result + batchSize;
             return result;
