@@ -19,6 +19,7 @@ package org.apache.kafka.storage.internals.log;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidOffsetException;
 import org.apache.kafka.common.errors.KafkaStorageException;
+import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
@@ -62,7 +63,27 @@ public class LogLoader {
     private final boolean isRemoteLogEnabled;
     private final Logger logger;
     private final String logPrefix;
+    private final StorageManager storageManager;
 
+
+    public LogLoader(
+            File dir,
+            TopicPartition topicPartition,
+            LogConfig config,
+            Scheduler scheduler,
+            Time time,
+            LogDirFailureChannel logDirFailureChannel,
+            boolean hadCleanShutdown,
+            LogSegments segments,
+            long logStartOffsetCheckpoint,
+            long recoveryPointCheckpoint,
+            LeaderEpochFileCache leaderEpochCache,
+            ProducerStateManager producerStateManager,
+            ConcurrentMap<String, Integer> numRemainingSegments,
+            boolean isRemoteLogEnabled) {
+        this(dir, topicPartition, config, scheduler, time, logDirFailureChannel, hadCleanShutdown, segments, logStartOffsetCheckpoint, recoveryPointCheckpoint, leaderEpochCache,
+                producerStateManager, numRemainingSegments, isRemoteLogEnabled, null);
+    }
     /**
      * @param dir The directory from which log segments need to be loaded
      * @param topicPartition The topic partition associated with the log being loaded
@@ -93,7 +114,8 @@ public class LogLoader {
             LeaderEpochFileCache leaderEpochCache,
             ProducerStateManager producerStateManager,
             ConcurrentMap<String, Integer> numRemainingSegments,
-            boolean isRemoteLogEnabled) {
+            boolean isRemoteLogEnabled,
+            StorageManager storageManager) {
         this.dir = dir;
         this.topicPartition = topicPartition;
         this.config = config;
@@ -110,6 +132,7 @@ public class LogLoader {
         this.isRemoteLogEnabled = isRemoteLogEnabled;
         this.logPrefix = "[LogLoader partition=" + topicPartition + ", dir=" + dir.getParent() + "] ";
         this.logger = new LogContext(logPrefix).logger(LogLoader.class);
+        this.storageManager = storageManager;
     }
 
     /**
@@ -149,7 +172,8 @@ public class LogLoader {
                     false,
                     0,
                     false,
-                    LogFileUtils.SWAP_FILE_SUFFIX);
+                    LogFileUtils.SWAP_FILE_SUFFIX,
+                    storageManager);
             logger.info("Found log file {} from interrupted swap operation, which is recoverable from {} files by renaming.", swapFile.getPath(), LogFileUtils.SWAP_FILE_SUFFIX);
             minSwapFileOffset = Math.min(segment.baseOffset(), minSwapFileOffset);
             maxSwapFileOffset = Math.max(segment.readNextOffset(), maxSwapFileOffset);
@@ -210,7 +234,7 @@ public class LogLoader {
             segments.lastSegment().get().resizeIndexes(config.maxIndexSize);
         } else {
             if (segments.isEmpty()) {
-                segments.add(LogSegment.open(dir, 0, config, time, config.initFileSize(), false));
+                segments.add(LogSegment.open(dir, 0, config, time, config.initFileSize(), false, storageManager));
             }
             recoveryOffsets = new RecoveryOffsets(0L, 0L);
         }
@@ -335,7 +359,8 @@ public class LogLoader {
                         config,
                         scheduler,
                         logDirFailureChannel,
-                        logPrefix);
+                        logPrefix,
+                        storageManager);
                 deleteProducerSnapshotsAsync(result.deletedSegments);
             }
         }
@@ -374,7 +399,7 @@ public class LogLoader {
                 // if it's a log file, load the corresponding log segment
                 long baseOffset = LogFileUtils.offsetFromFile(file);
                 boolean timeIndexFileNewlyCreated = !LogFileUtils.timeIndexFile(dir, baseOffset).exists();
-                LogSegment segment = LogSegment.open(dir, baseOffset, config, time, true, 0, false, "");
+                LogSegment segment = LogSegment.open(dir, baseOffset, config, time, true, 0, false, "", storageManager);
                 try {
                     segment.sanityCheck(timeIndexFileNewlyCreated);
                 } catch (NoSuchFileException nsfe) {
@@ -503,7 +528,7 @@ public class LogLoader {
         Optional<Long> logEndOffsetOptional = deleteSegmentsIfLogStartGreaterThanLogEnd();
         if (segments.isEmpty()) {
             // no existing segments, create a new mutable segment beginning at logStartOffset
-            segments.add(LogSegment.open(dir, logStartOffsetCheckpoint, config, time, config.initFileSize(), config.preallocate));
+            segments.add(LogSegment.open(dir, logStartOffsetCheckpoint, config, time, config.initFileSize(), config.preallocate, storageManager));
         }
 
         // Update the recovery point if there was a clean shutdown and did not perform any changes to

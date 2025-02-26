@@ -17,7 +17,7 @@
 
 package kafka.log
 
-import kafka.utils.{threadsafe, Logging}
+import kafka.utils.{Logging, threadsafe}
 import org.apache.kafka.common.errors._
 import org.apache.kafka.common.message.DescribeProducersResponseData
 import org.apache.kafka.common.record.FileRecords.TimestampAndOffset
@@ -25,6 +25,7 @@ import org.apache.kafka.common.record._
 import org.apache.kafka.common.requests.ListOffsetsRequest
 import org.apache.kafka.common.requests.OffsetsForLeaderEpochResponse.UNDEFINED_EPOCH_OFFSET
 import org.apache.kafka.common.requests.ProduceResponse.RecordError
+import org.apache.kafka.common.storage.{FileStorageManager, StorageManager}
 import org.apache.kafka.common.utils.{PrimitiveRef, Time, Utils}
 import org.apache.kafka.common.{InvalidRecordException, KafkaException, TopicPartition, Uuid}
 import org.apache.kafka.server.common.{OffsetAndEpoch, RequestLocal}
@@ -220,6 +221,8 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   def scheduler: Scheduler = localLog.scheduler
 
   def config: LogConfig = localLog.config
+
+  def storageManager: StorageManager = localLog.storageManager
 
   def logDirFailureChannel: LogDirFailureChannel = localLog.logDirFailureChannel
 
@@ -1910,7 +1913,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   }
 
   private[log] def splitOverflowedSegment(segment: LogSegment): List[LogSegment] = lock synchronized {
-    val result = LocalLog.splitOverflowedSegment(segment, localLog.segments, dir, topicPartition, config, scheduler, logDirFailureChannel, logIdent)
+    val result = LocalLog.splitOverflowedSegment(segment, localLog.segments, dir, topicPartition, config, scheduler, logDirFailureChannel, logIdent, storageManager)
     deleteProducerSnapshots(result.deletedSegments, asyncDelete = true)
     result.newSegments.asScala.toList
   }
@@ -1937,7 +1940,8 @@ object UnifiedLog extends Logging {
             topicId: Option[Uuid],
             numRemainingSegments: ConcurrentMap[String, Integer] = new ConcurrentHashMap[String, Integer],
             remoteStorageSystemEnable: Boolean = false,
-            logOffsetsListener: LogOffsetsListener = LogOffsetsListener.NO_OP_OFFSETS_LISTENER): UnifiedLog = {
+            logOffsetsListener: LogOffsetsListener = LogOffsetsListener.NO_OP_OFFSETS_LISTENER,
+            storageManager: StorageManager = new FileStorageManager): UnifiedLog = {
     // create the log directory if it doesn't exist
     Files.createDirectories(dir.toPath)
     val topicPartition = JUnifiedLog.parseTopicPartitionName(dir)
@@ -1969,10 +1973,11 @@ object UnifiedLog extends Logging {
       producerStateManager,
       numRemainingSegments,
       isRemoteLogEnabled,
+      storageManager
     ).load()
 
     val localLog = new LocalLog(dir, config, segments, offsets.recoveryPoint,
-      offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel)
+      offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel, storageManager)
     new UnifiedLog(offsets.logStartOffset,
       localLog,
       brokerTopicStats,

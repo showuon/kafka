@@ -29,6 +29,7 @@ import kafka.utils.{CoreUtils, Logging, Pool}
 import org.apache.kafka.common.{DirectoryId, KafkaException, TopicPartition, Uuid}
 import org.apache.kafka.common.utils.{Exit, KafkaThread, Time, Utils}
 import org.apache.kafka.common.errors.{InconsistentTopicIdException, KafkaStorageException, LogDirNotFoundException}
+import org.apache.kafka.common.storage.{FileStorageManager, InMemoryStorageManager}
 
 import scala.jdk.CollectionConverters._
 import scala.collection._
@@ -41,7 +42,7 @@ import org.apache.kafka.metadata.properties.{MetaProperties, MetaPropertiesEnsem
 import java.util.{Collections, OptionalLong, Properties}
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
 import org.apache.kafka.server.util.{FileLock, Scheduler}
-import org.apache.kafka.storage.internals.log.{CleanerConfig, LogConfig, LogDirFailureChannel, ProducerStateManagerConfig, UnifiedLog => JUnifiedLog, RemoteIndexCache}
+import org.apache.kafka.storage.internals.log.{CleanerConfig, LogConfig, LogDirFailureChannel, ProducerStateManagerConfig, RemoteIndexCache, UnifiedLog => JUnifiedLog}
 import org.apache.kafka.storage.internals.checkpoint.{CleanShutdownFileHandler, OffsetCheckpointFile}
 import org.apache.kafka.storage.log.metrics.BrokerTopicStats
 
@@ -80,6 +81,8 @@ class LogManager(logDirs: Seq[File],
 
   import LogManager._
 
+  private val fileStorageManager = new FileStorageManager
+  private val inMemoryStorageManager = new InMemoryStorageManager
   private val metricsGroup = new KafkaMetricsGroup(this.getClass)
 
   private val logCreationOrDeletionLock = new Object
@@ -328,6 +331,7 @@ class LogManager(logDirs: Seq[File],
     val logRecoveryPoint = recoveryPoints.getOrDefault(topicPartition, 0L)
     val logStartOffset = logStartOffsets.getOrDefault(topicPartition, 0L)
 
+    // luke
     val log = UnifiedLog(
       dir = logDir,
       config = config,
@@ -343,7 +347,8 @@ class LogManager(logDirs: Seq[File],
       lastShutdownClean = hadCleanShutdown,
       topicId = None,
       numRemainingSegments = numRemainingSegments,
-      remoteStorageSystemEnable = remoteStorageSystemEnable)
+      remoteStorageSystemEnable = remoteStorageSystemEnable,
+      storageManager = if (config.logUseAny) inMemoryStorageManager else fileStorageManager)
 
     if (logDir.getName.endsWith(JUnifiedLog.DELETE_DIR_SUFFIX)) {
       addLogToBeDeleted(log)
@@ -1050,6 +1055,8 @@ class LogManager(logDirs: Seq[File],
           .get // If Failure, will throw
 
         val config = fetchLogConfig(topicPartition.topic)
+        // luke
+
         val log = UnifiedLog(
           dir = logDir,
           config = config,
@@ -1063,7 +1070,8 @@ class LogManager(logDirs: Seq[File],
           brokerTopicStats = brokerTopicStats,
           logDirFailureChannel = logDirFailureChannel,
           topicId = topicId,
-          remoteStorageSystemEnable = remoteStorageSystemEnable)
+          remoteStorageSystemEnable = remoteStorageSystemEnable,
+          storageManager = if (config.logUseAny) inMemoryStorageManager else fileStorageManager)
 
         if (isFuture)
           futureLogs.put(topicPartition, log)
