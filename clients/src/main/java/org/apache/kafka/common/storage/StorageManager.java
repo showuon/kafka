@@ -42,7 +42,11 @@ public interface StorageManager {
     default boolean deleteIfExists(String path) throws IOException {
         return false;
     };
-    default void updateParentDir(String path, File parentDir) {}
-    default void renameTo(String path, File f) throws IOException {}
+    default File updateParentDir(String path, File parentDir) {
+        return null;
+    }
+    default File renameTo(String path, File f) throws IOException {
+        return null;
+    }
     void truncate(String path, int targetSize) throws IOException;
 }
