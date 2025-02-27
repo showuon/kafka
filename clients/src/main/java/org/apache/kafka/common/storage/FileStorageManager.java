@@ -34,15 +34,12 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.ReentrantLock;
 
-/**
- * Base interface for accessing records which could be contained in the log, or an in-memory materialization of log records.
- */
 public class FileStorageManager implements StorageManager {
-    private Map<String, FileChannel> channelMap = new ConcurrentHashMap<>();
-    private Map<String, MappedByteBuffer> indexBufferMap = new ConcurrentHashMap<>();
+    private final Map<String, FileChannel> channelMap = new ConcurrentHashMap<>();
+    private final Map<String, MappedByteBuffer> indexBufferMap = new ConcurrentHashMap<>();
 
+    // ----- log file ---------
     public int initRecords(File file,
                      boolean mutable,
                      boolean fileAlreadyExists,
@@ -147,6 +144,15 @@ public class FileStorageManager implements StorageManager {
         channelMap.get(path).truncate(targetSize);
     }
 
+
+
+
+
+
+
+
+
+    // ----- index file ---------
     public long initIndex(File file, int maxIndexSize, boolean writable, int entrySize) throws IOException {
         boolean newlyCreated = file.createNewFile();
         RandomAccessFile raf;

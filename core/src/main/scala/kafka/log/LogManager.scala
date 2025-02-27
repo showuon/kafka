@@ -331,7 +331,6 @@ class LogManager(logDirs: Seq[File],
     val logRecoveryPoint = recoveryPoints.getOrDefault(topicPartition, 0L)
     val logStartOffset = logStartOffsets.getOrDefault(topicPartition, 0L)
 
-    // luke
     val log = UnifiedLog(
       dir = logDir,
       config = config,
@@ -360,7 +359,6 @@ class LogManager(logDirs: Seq[File],
       // Broker with an offline directory may be unable to detect it still holds a to-be-deleted replica,
       // and can create a conflicting topic partition for a new incarnation of the topic in one of the remaining online directories.
       // So upon a restart in which the offline directory is back online we need to clean up the old replica directory.
-      info("!!! reading :" + log.topicPartition)
       log.renameDir(JUnifiedLog.logStrayDirName(log.topicPartition), shouldReinitialize = false)
       addStrayLog(log.topicPartition, log)
       warn(s"Log in ${logDir.getAbsolutePath} marked stray and renamed to ${log.dir.getAbsolutePath}")
@@ -1056,8 +1054,6 @@ class LogManager(logDirs: Seq[File],
           .get // If Failure, will throw
 
         val config = fetchLogConfig(topicPartition.topic)
-        // luke
-
         val log = UnifiedLog(
           dir = logDir,
           config = config,
