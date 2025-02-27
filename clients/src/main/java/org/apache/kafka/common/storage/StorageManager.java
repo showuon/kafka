@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Base interface for accessing records which could be contained in the log, or an in-memory materialization of log records.
+ * The interface for accessing partition logs, indexes, metadata files....
  */
 public interface StorageManager {
     // ---- log files ----

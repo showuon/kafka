@@ -1251,14 +1251,12 @@ class UnifiedLog(@volatile var logStartOffset: Long,
            maxLength: Int,
            isolation: FetchIsolation,
            minOneMessage: Boolean): FetchDataInfo = {
-
     checkLogStartOffset(startOffset)
     val maxOffsetMetadata = isolation match {
       case FetchIsolation.LOG_END => localLog.logEndOffsetMetadata
       case FetchIsolation.HIGH_WATERMARK => fetchHighWatermarkMetadata
       case FetchIsolation.TXN_COMMITTED => fetchLastStableOffsetMetadata
     }
-
     localLog.read(startOffset, maxLength, minOneMessage, maxOffsetMetadata, isolation == FetchIsolation.TXN_COMMITTED)
   }
 
