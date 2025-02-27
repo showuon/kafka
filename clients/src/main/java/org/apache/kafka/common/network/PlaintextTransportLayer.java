@@ -218,13 +218,5 @@ public class PlaintextTransportLayer implements TransportLayer {
     @Override
     public long transferFrom(long position, long count, StorageManager storageManager, String path) throws IOException {
         return storageManager.writeRecordsToSocket(path, socketChannel, position, count);
-//        if (fileChannel == null) {
-//            buffer.position((int) position);
-//            System.out.println("!!! write buffer:" + buffer);
-//            buffer.slice();
-//            return socketChannel.write(buffer);
-//        } else {
-//            return fileChannel.transferTo(position, count, socketChannel);
-//        }
     }
 }

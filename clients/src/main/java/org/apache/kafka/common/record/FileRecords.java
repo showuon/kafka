@@ -21,14 +21,12 @@ import org.apache.kafka.common.network.TransferableChannel;
 import org.apache.kafka.common.record.FileLogInputStream.FileChannelRecordBatch;
 import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.common.utils.AbstractIterator;
-import org.apache.kafka.common.utils.Utils;
 
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.file.Files;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -46,9 +44,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
 
     // mutable state
     private final AtomicInteger size;
-//    private final FileChannel channel;
     private volatile File file;
-//    private ByteBuffer recordBuffer;
     private final StorageManager storageManager;
 
     FileRecords(File file,
@@ -80,8 +76,6 @@ public class FileRecords extends AbstractRecords implements Closeable {
 
     @Override
     public int sizeInBytes() {
-//        if (file == null)
-//            return recordBuffer == null ? 0 : recordBuffer.limit();
         return size.get();
     }
 
@@ -101,10 +95,6 @@ public class FileRecords extends AbstractRecords implements Closeable {
         return null;
     }
 
-    public ByteBuffer recordBuffer() {
-        return null;
-    }
-
     public StorageManager storageManager() {
         return storageManager;
     }
@@ -120,7 +110,6 @@ public class FileRecords extends AbstractRecords implements Closeable {
      */
     public void readInto(ByteBuffer buffer, int position) throws IOException {
         storageManager.readRecords(file().getAbsolutePath(), buffer, position + this.start);
-//        Utils.readFully(channel, buffer, position + this.start);
         buffer.flip();
     }
 
@@ -193,23 +182,12 @@ public class FileRecords extends AbstractRecords implements Closeable {
         int written = records.writeFullyToStorageManager(file().getAbsolutePath(), storageManager);
         size.getAndAdd(written);
         return written;
-//        if (file != null) {
-//            int written = records.writeFullyTo(channel);
-//            size.getAndAdd(written);
-//            return written;
-//        } else {
-//            recordBuffer = records.writeFullyToMemory(recordBuffer);
-//            return records.sizeInBytes();
-//        }
-//    }
     }
     /**
      * Commit all written data to the physical disk
      */
     public void flush() throws IOException {
         storageManager.flushRecords(file().getAbsolutePath());
-//        if (channel != null)
-//            channel.force(true);
     }
 
     /**
@@ -219,16 +197,12 @@ public class FileRecords extends AbstractRecords implements Closeable {
         flush();
         trim();
         storageManager.closeRecords(file().getAbsolutePath());
-//        if (channel != null)
-//            channel.close();
     }
 
     /**
      * Close file handlers used by the FileChannel but don't write to disk. This is used when the disk may have failed
      */
     public void closeHandlers() throws IOException {
-//        if (channel != null)
-//            channel.close();
         storageManager.closeRecords(file().getAbsolutePath());
     }
 
@@ -239,8 +213,6 @@ public class FileRecords extends AbstractRecords implements Closeable {
      *          because it did not exist
      */
     public boolean deleteIfExists() throws IOException {
-//        Utils.closeQuietly(channel, "FileChannel");
-//        return Files.deleteIfExists(file.toPath());
         return storageManager.deleteRecordsIfExists(file().getAbsolutePath());
     }
 
@@ -256,9 +228,8 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @param parentDir The new parent directory
      */
     public void updateParentDir(File parentDir) {
-//        if (file != null)
-//            this.file = new File(parentDir, file.getName());
-        this.file = storageManager.updateRecordsParentDir(file().getAbsolutePath(), parentDir);
+        storageManager.updateRecordsParentDir(file().getAbsolutePath(), parentDir);
+        this.file = new File(parentDir, file().getName());
     }
 
     /**
@@ -266,14 +237,8 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @throws IOException if rename fails.
      */
     public void renameTo(File f) throws IOException {
-//        if (file != null) {
-//            try {
-//                Utils.atomicMoveWithFallback(file.toPath(), f.toPath(), false);
-//            } finally {
-//                this.file = f;
-//            }
-//        }
-        this.file = storageManager.renameRecordsTo(file().getAbsolutePath(), f);
+        storageManager.renameRecordsTo(file().getAbsolutePath(), f);
+        this.file = f;
     }
 
     /**
@@ -295,19 +260,12 @@ public class FileRecords extends AbstractRecords implements Closeable {
             storageManager.truncateRecords(file().getAbsolutePath(), targetSize);
             size.set(targetSize);
         }
-//        } else {
-//            if (targetSize < recordBuffer.limit()) {
-//                recordBuffer.limit(targetSize);
-//                size.set(targetSize);
-//            }
-//        }
         return originalSize - targetSize;
     }
 
     @Override
     public int writeTo(TransferableChannel destChannel, int offset, int length) throws IOException {
         long newSize = Math.min(storageManager.recordsSize(file().getAbsolutePath()), end) - start;
-//        long newSize = Math.min(channel != null ? channel.size() : recordBuffer.capacity(), end) - start;
         int oldSize = sizeInBytes();
         if (newSize < oldSize)
             throw new KafkaException(String.format(
@@ -445,9 +403,6 @@ public class FileRecords extends AbstractRecords implements Closeable {
         int end = (!fileAlreadyExists && preallocate) ? 0 : Integer.MAX_VALUE;
         int size = storageManager.initRecords(file, mutable, fileAlreadyExists, initFileSize, preallocate, false, 0, end);
         return new FileRecords(file, 0, end, false, storageManager, size);
-//        } else {
-//            return new FileRecords(null, null, 0, Integer.MAX_VALUE, false);
-//        }
     }
 
     public static FileRecords open(File file,
