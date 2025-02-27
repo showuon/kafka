@@ -270,7 +270,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
         if (newSize < oldSize)
             throw new KafkaException(String.format(
                     "Size of FileRecords %s has been truncated during write: old size %d, new size %d",
-                    "file.getAbsolutePath()", oldSize, newSize));
+                    file.getAbsolutePath(), oldSize, newSize));
 
         long position = start + offset;
         int count = Math.min(length, oldSize - offset);
@@ -362,7 +362,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
     @Override
     public String toString() {
         return "FileRecords(size=" + sizeInBytes() +
-                ", file=" + "file" +
+                ", file=" + file +
                 ", start=" + start +
                 ", end=" + end +
                 ")";

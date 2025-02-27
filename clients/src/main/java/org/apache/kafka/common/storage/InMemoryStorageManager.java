@@ -16,26 +16,21 @@ package org.apache.kafka.common.storage;/*
  */
 
 import org.apache.kafka.common.KafkaException;
-import org.apache.kafka.common.utils.Utils;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.MappedByteBuffer;
 import java.nio.channels.SocketChannel;
-import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-/**
- * Base interface for accessing records which could be contained in the log, or an in-memory materialization of log records.
- */
 public class InMemoryStorageManager implements StorageManager {
     private Map<String, ByteBuffer> recordBufferMap = new ConcurrentHashMap<>();
     private Map<String, ByteBuffer> indexBufferMap = new ConcurrentHashMap<>();
 
+    // ----- index file ---------
     public int initRecords(File file,
                      boolean mutable,
                      boolean fileAlreadyExists,
@@ -125,6 +120,12 @@ public class InMemoryStorageManager implements StorageManager {
         recordBufferMap.get(path).limit(targetSize);
     }
 
+
+
+
+
+
+    // ----- index file ---------
     public long initIndex(File file, int maxIndexSize, boolean writable, int entrySize) throws IOException {
         int length = roundDownToExactMultiple(maxIndexSize, entrySize);
         indexBufferMap.putIfAbsent(file.getAbsolutePath(), ByteBuffer.allocate(length));

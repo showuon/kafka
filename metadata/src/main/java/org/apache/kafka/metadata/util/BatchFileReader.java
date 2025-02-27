@@ -61,7 +61,6 @@ public final class BatchFileReader implements Iterator<BatchFileReader.BatchAndT
                 throw new RuntimeException("You must specify a path.");
             }
             FileRecords fileRecords = FileRecords.open(new File(path), false, false, 0, false, new FileStorageManager());
-            // open(file, mutable, false, 0, false);
             try {
                 return new BatchFileReader(fileRecords);
             } catch (Throwable e) {

@@ -99,25 +99,9 @@ public class MemoryRecords extends AbstractRecords {
         int written = 0;
         while (written < sizeInBytes())
             written += storageManager.appendRecords(path, buffer);
-//            written += channel.write(buffer);
 
         buffer.reset();
         return written;
-    }
-
-    public ByteBuffer writeFullyToMemory(ByteBuffer recordBuffer) throws IOException {
-        buffer.mark();
-        if (recordBuffer == null) {
-            ByteBuffer temp = ByteBuffer.allocate(sizeInBytes());
-            temp.put(buffer);
-            return temp;
-        }
-        int cap = recordBuffer.capacity();
-        ByteBuffer temp = ByteBuffer.allocate(cap + sizeInBytes());
-        temp.put(recordBuffer.array(), 0, cap);
-        temp.put(buffer);
-        buffer.reset();
-        return temp;
     }
 
     /**
