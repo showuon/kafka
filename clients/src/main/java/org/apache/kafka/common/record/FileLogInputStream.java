@@ -20,6 +20,7 @@ import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.record.AbstractLegacyRecordBatch.LegacyFileChannelRecordBatch;
 import org.apache.kafka.common.record.DefaultRecordBatch.DefaultFileChannelRecordBatch;
+import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.common.utils.BufferSupplier;
 import org.apache.kafka.common.utils.CloseableIterator;
 
@@ -65,7 +66,7 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
 
         logHeaderBuffer.rewind();
 
-        fileRecords.storageManager().readRecords(fileRecords.file().getAbsolutePath(), logHeaderBuffer, position);
+        fileRecords.storageManager().read(fileRecords.file().getAbsolutePath(), logHeaderBuffer, position, StorageManager.StorageType.LOG);
 
         logHeaderBuffer.rewind();
         long offset = logHeaderBuffer.getLong(OFFSET_OFFSET);
@@ -177,7 +178,7 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
             try {
                 int limit = buffer.limit();
                 buffer.limit(buffer.position() + sizeInBytes());
-                fileRecords.storageManager().readRecords(fileRecords.file().getAbsolutePath(), buffer, position);
+                fileRecords.storageManager().read(fileRecords.file().getAbsolutePath(), buffer, position, StorageManager.StorageType.LOG);
                 buffer.limit(limit);
             } catch (IOException e) {
                 throw new KafkaException("Failed to read record batch at position " + position + " from " + fileRecords, e);
@@ -209,7 +210,7 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
         private RecordBatch loadBatchWithSize(int size, String description) {
             try {
                 ByteBuffer buffer = ByteBuffer.allocate(size);
-                fileRecords.storageManager().readRecords(fileRecords.file().getAbsolutePath(), buffer, position);
+                fileRecords.storageManager().read(fileRecords.file().getAbsolutePath(), buffer, position, StorageManager.StorageType.LOG);
                 buffer.rewind();
                 return toMemoryRecordBatch(buffer);
             } catch (IOException e) {

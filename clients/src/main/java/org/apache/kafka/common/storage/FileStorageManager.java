@@ -28,7 +28,6 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.SocketChannel;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -38,6 +37,150 @@ import java.util.concurrent.atomic.AtomicLong;
 public class FileStorageManager implements StorageManager {
     private final Map<String, FileChannel> channelMap = new ConcurrentHashMap<>();
     private final Map<String, MappedByteBuffer> indexBufferMap = new ConcurrentHashMap<>();
+    private final Map<String, FileChannel> txnChannelMap = new ConcurrentHashMap<>();
+
+
+    // ----- common -------
+    public boolean deleteIfExists(String path, StorageType storageType) throws IOException {
+        switch (storageType) {
+            case LOG:
+                FileChannel fileChannel = channelMap.remove(path);
+                Utils.closeQuietly(fileChannel, "FileChannel");
+                break;
+            case INDEX:
+                indexBufferMap.remove(path);
+                break;
+            case TXN:
+                txnChannelMap.remove(path);
+                break;
+        }
+
+        File file = new File(path);
+        return Files.deleteIfExists(file.toPath());
+
+    }
+
+    public void updateParentDir(String path, File parentDir, StorageType storageType) {
+        File existingFile = new File(path);
+        File updatedFile = new File(parentDir, existingFile.getName());
+        switch (storageType) {
+            case LOG:
+                channelMap.put(updatedFile.getAbsolutePath(), channelMap.remove(path));
+                break;
+            case INDEX:
+                indexBufferMap.put(updatedFile.getAbsolutePath(), indexBufferMap.remove(path));
+                break;
+            case TXN:
+                txnChannelMap.put(updatedFile.getAbsolutePath(), txnChannelMap.remove(path));
+                break;
+        }
+    }
+
+    public void renameTo(String path, File f, StorageType storageType) throws IOException {
+        Utils.atomicMoveWithFallback(new File(path).toPath(), f.toPath(), false);
+        switch (storageType) {
+            case LOG:
+                channelMap.put(f.getAbsolutePath(), channelMap.remove(path));
+                break;
+            case INDEX:
+                indexBufferMap.put(f.getAbsolutePath(), indexBufferMap.remove(path));
+                break;
+            case TXN:
+                txnChannelMap.put(f.getAbsolutePath(), txnChannelMap.remove(path));
+                break;
+        }
+    }
+
+    public int append(String path, ByteBuffer buffer, StorageType storageType) throws IOException {
+        int sizeToAppend = buffer.remaining();
+        switch (storageType) {
+            case LOG:
+                return channelMap.get(path).write(buffer);
+            case TXN:
+                Utils.writeFully(txnChannelMap.get(path), buffer);
+        }
+        return sizeToAppend;
+    }
+
+    public void read(String path, ByteBuffer buffer, int position, StorageType storageType) throws IOException {
+        switch (storageType) {
+            case LOG:
+                Utils.readFullyOrFail(channelMap.get(path), buffer, position, "log header");
+                break;
+            case TXN:
+                Utils.readFully(txnChannelMap.get(path), buffer, position);
+                break;
+        }
+    }
+
+    public void flush(String path, StorageType storageType) throws IOException {
+        switch (storageType) {
+            case LOG:
+                channelMap.get(path).force(true);
+                break;
+            case INDEX:
+                MappedByteBuffer mmap = indexBufferMap.get(path);
+                if (mmap != null)
+                    mmap.force();
+                break;
+            case TXN:
+                txnChannelMap.get(path).force(true);
+                break;
+        }
+    }
+
+    public void close(String path, StorageType storageType) throws IOException {
+        switch (storageType) {
+            case LOG:
+                FileChannel fileChannel = channelMap.remove(path);
+                fileChannel.close();
+                break;
+            case INDEX:
+                MappedByteBuffer mmap = indexBufferMap.get(path);
+                safeForceUnmap(path, mmap);
+                break;
+            case TXN:
+                fileChannel = txnChannelMap.remove(path);
+                fileChannel.close();
+                break;
+        }
+    }
+
+    public long position(String path, StorageType storageType) throws IOException {
+        switch (storageType) {
+            case INDEX:
+                return indexBufferMap.get(path).position();
+            case TXN:
+                return txnChannelMap.get(path).position();
+        }
+        return 0;
+    }
+
+    public boolean isEmpty(String path, StorageType storageType) {
+        switch (storageType) {
+            case TXN:
+                return txnChannelMap.containsKey(path);
+        }
+        return true;
+    }
+
+    public void truncate(String path, int newPos, StorageType storageType) throws IOException {
+        switch (storageType) {
+            case LOG:
+                channelMap.get(path).truncate(newPos);
+                break;
+            case INDEX:
+                indexBufferMap.get(path).position(newPos);
+                break;
+            case TXN:
+                txnChannelMap.get(path).position(newPos);
+                break;
+        }
+    }
+
+
+
+
 
     // ----- log file ---------
     public int initRecords(File file,
@@ -101,47 +244,12 @@ public class FileStorageManager implements StorageManager {
         }
     }
 
-    public void readRecords(String path, ByteBuffer buffer, int position) throws IOException {
-        Utils.readFullyOrFail(channelMap.get(path), buffer, position, "log header");
-    }
-    public int appendRecords(String path, ByteBuffer buffer) throws IOException {
-        return channelMap.get(path).write(buffer);
-    }
     public long recordsSize(String path) throws IOException {
         return channelMap.get(path).size();
     }
 
     public long writeRecordsToSocket(String path, SocketChannel socketChannel, long position, long count) throws IOException {
         return channelMap.get(path).transferTo(position, count, socketChannel);
-    }
-
-    public void flushRecords(String path) throws IOException {
-        channelMap.get(path).force(true);
-    }
-    public void closeRecords(String path) throws IOException {
-        channelMap.get(path).close();
-    }
-
-    public boolean deleteRecordsIfExists(String path) throws IOException {
-        FileChannel fileChannel = channelMap.remove(path);
-        Utils.closeQuietly(fileChannel, "FileChannel");
-        File file = new File(path);
-        return Files.deleteIfExists(file.toPath());
-    }
-
-    public void updateRecordsParentDir(String path, File parentDir) {
-        FileChannel channel = channelMap.remove(path);
-        File tempFile = new File(path);
-        File updatedFile = new File(parentDir, tempFile.getName());
-        channelMap.put(updatedFile.getAbsolutePath(), channel);
-    }
-    public void renameRecordsTo(String path, File f) throws IOException {
-        FileChannel channel = channelMap.remove(path);
-        channelMap.put(f.getAbsolutePath(), channel);
-    }
-
-    public void truncateRecords(String path, int targetSize) throws IOException {
-        channelMap.get(path).truncate(targetSize);
     }
 
 
@@ -245,31 +353,16 @@ public class FileStorageManager implements StorageManager {
         }
     }
 
-    public void renameIndex(String path, File f) throws IOException {
-        Utils.atomicMoveWithFallback(Path.of(path), f.toPath(), false);
-        MappedByteBuffer buffer = indexBufferMap.remove(path);
-        indexBufferMap.put(f.getAbsolutePath(), buffer);
+
+
+
+
+    // ----- transaction index -------
+    public void initTransIndex(File file) throws IOException {
+        FileChannel channel = FileChannel.open(file.toPath(), StandardOpenOption.CREATE,
+                StandardOpenOption.READ, StandardOpenOption.WRITE);
+        channel.position(channel.size());
+        txnChannelMap.put(file.getAbsolutePath(), channel);
     }
 
-    public void flushIndex(String path) {
-        MappedByteBuffer mmap = indexBufferMap.get(path);
-        if (mmap != null)
-            mmap.force();
-    }
-
-    public void closeIndex(String path) throws IOException {
-        MappedByteBuffer mmap = indexBufferMap.get(path);
-        safeForceUnmap(path, mmap);
-    }
-
-    public void truncateIndexEntries(String path, int newPos) {
-        indexBufferMap.get(path).position(newPos);
-    }
-
-    public void updateIndexParentDir(String path, File parentDir) {
-        File tempFile = new File(path);
-        File returnFile = new File(parentDir, tempFile.getName());
-        MappedByteBuffer buffer = indexBufferMap.remove(path);
-        indexBufferMap.put(returnFile.getAbsolutePath(), buffer);
-    }
 }

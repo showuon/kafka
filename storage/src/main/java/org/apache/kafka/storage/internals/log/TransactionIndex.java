@@ -17,6 +17,8 @@
 package org.apache.kafka.storage.internals.log;
 
 import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.storage.FileStorageManager;
+import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.common.utils.PrimitiveRef;
 import org.apache.kafka.common.utils.Utils;
 
@@ -64,13 +66,18 @@ public class TransactionIndex implements Closeable {
     // note that the file is not created until we need it
     private Optional<FileChannel> maybeChannel = Optional.empty();
     private OptionalLong lastOffset = OptionalLong.empty();
+    private final StorageManager storageManager;
 
     public TransactionIndex(long startOffset, File file) throws IOException {
+        this(startOffset, file, new FileStorageManager());
+    }
+
+    public TransactionIndex(long startOffset, File file, StorageManager storageManager) throws IOException {
         this.startOffset = startOffset;
         this.file = file;
+        this.storageManager = storageManager;
 
-        if (file != null && file.exists())
-            openChannel();
+        storageManager.initTransIndex(file);
     }
 
     public File file() {
@@ -78,8 +85,7 @@ public class TransactionIndex implements Closeable {
     }
 
     public void updateParentDir(File parentDir) {
-        if (file != null)
-            this.file = new File(parentDir, file.getName());
+        storageManager.updateParentDir(file().getAbsolutePath(), parentDir, StorageManager.StorageType.TXN);
     }
 
     public void append(AbortedTxn abortedTxn) throws IOException {
@@ -90,8 +96,8 @@ public class TransactionIndex implements Closeable {
                     + file.getAbsolutePath());
         });
         lastOffset = OptionalLong.of(abortedTxn.lastOffset());
-        if (channel() != null)
-            Utils.writeFully(channel(), abortedTxn.buffer.duplicate());
+
+        storageManager.append(file().getAbsolutePath(), abortedTxn.buffer.duplicate(), StorageManager.StorageType.TXN);
     }
 
     public void flush() throws IOException {
@@ -104,17 +110,12 @@ public class TransactionIndex implements Closeable {
      * Remove all the entries from the index. Unlike `AbstractIndex`, this index is not resized ahead of time.
      */
     public void reset() throws IOException {
-        FileChannel channel = channelOrNull();
-        if (channel != null)
-            channel.truncate(0);
+        storageManager.truncate(file().getAbsolutePath(), 0, StorageManager.StorageType.TXN);
         lastOffset = OptionalLong.empty();
     }
 
     public void close() throws IOException {
-        FileChannel channel = channelOrNull();
-        if (channel != null)
-            channel.close();
-        maybeChannel = Optional.empty();
+       storageManager.close(file().getAbsolutePath(), StorageManager.StorageType.TXN);
     }
 
     /**
@@ -126,16 +127,12 @@ public class TransactionIndex implements Closeable {
      */
     public boolean deleteIfExists() throws IOException {
         close();
-        if (file != null)
-            return Files.deleteIfExists(file.toPath());
-        else
-            return false;
+        return storageManager.deleteIfExists(file.getAbsolutePath(), StorageManager.StorageType.TXN);
     }
 
     public void renameTo(File f) throws IOException {
         try {
-            if (file != null && file.exists())
-                Utils.atomicMoveWithFallback(file.toPath(), f.toPath(), false);
+            storageManager.renameTo(file().getAbsolutePath(), f, StorageManager.StorageType.TXN);
         } finally {
             this.file = f;
         }
@@ -146,9 +143,9 @@ public class TransactionIndex implements Closeable {
         OptionalLong newLastOffset = OptionalLong.empty();
         for (AbortedTxnWithPosition txnWithPosition : iterable(() -> buffer)) {
             AbortedTxn abortedTxn = txnWithPosition.txn;
-            long position = txnWithPosition.position;
+            int position = txnWithPosition.position;
             if (abortedTxn.lastOffset() >= offset) {
-                channel().truncate(position);
+                storageManager.truncate(file().getAbsolutePath(), position, StorageManager.StorageType.TXN);
                 lastOffset = newLastOffset;
                 return;
             }
@@ -232,8 +229,7 @@ public class TransactionIndex implements Closeable {
     }
 
     private Iterable<AbortedTxnWithPosition> iterable(Supplier<ByteBuffer> allocate) {
-        FileChannel channel = channelOrNull();
-        if (channel == null)
+        if (storageManager.isEmpty(file().getAbsolutePath(), StorageManager.StorageType.TXN))
             return Collections.emptyList();
 
         PrimitiveRef.IntRef position = PrimitiveRef.ofInt(0);
@@ -243,7 +239,7 @@ public class TransactionIndex implements Closeable {
             @Override
             public boolean hasNext() {
                 try {
-                    return channel.position() - position.value >= AbortedTxn.TOTAL_SIZE;
+                    return storageManager.position(file().getAbsolutePath(), StorageManager.StorageType.TXN) - position.value >= AbortedTxn.TOTAL_SIZE;
                 } catch (IOException e) {
                     throw new KafkaException("Failed read position from the transaction index " + file.getAbsolutePath(), e);
                 }
@@ -253,7 +249,7 @@ public class TransactionIndex implements Closeable {
             public AbortedTxnWithPosition next() {
                 try {
                     ByteBuffer buffer = allocate.get();
-                    Utils.readFully(channel, buffer, position.value);
+                    storageManager.read(file.getAbsolutePath(), buffer, position.value, StorageManager.StorageType.TXN);
                     buffer.flip();
 
                     AbortedTxn abortedTxn = new AbortedTxn(buffer);
