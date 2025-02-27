@@ -16,19 +16,27 @@ package org.apache.kafka.common.storage;/*
  */
 
 import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.utils.Utils;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.MappedByteBuffer;
 import java.nio.channels.SocketChannel;
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Base interface for accessing records which could be contained in the log, or an in-memory materialization of log records.
  */
 public class InMemoryStorageManager implements StorageManager {
     private Map<String, ByteBuffer> recordBufferMap = new ConcurrentHashMap<>();
+    private Map<String, ByteBuffer> indexBufferMap = new ConcurrentHashMap<>();
+    private Map<String, Long> indexLengthMap = new ConcurrentHashMap<>();
+
     public int initRecords(File file,
                      boolean mutable,
                      boolean fileAlreadyExists,
@@ -92,10 +100,48 @@ public class InMemoryStorageManager implements StorageManager {
     public void flushRecords(String path) {}
     public void closeRecords(String path) {}
 
-    public boolean deleteIfExists(String path) {
-        return false;
-    }
-    public void truncate(String path, int targetSize) {
+    public void truncateRecords(String path, int targetSize) {
         recordBufferMap.get(path).limit(targetSize);
+    }
+
+    public long initIndex(File file, int maxIndexSize, boolean writable, int entrySize) throws IOException {
+        int length = roundDownToExactMultiple(maxIndexSize, entrySize);
+        indexBufferMap.putIfAbsent(file.getAbsolutePath(), ByteBuffer.allocate(length));
+        return length;
+    }
+
+    public ByteBuffer indexBuffer(String path) {
+        return indexBufferMap.get(path);
+    }
+
+    public boolean resizeIndex(String path, int newSize, AtomicLong length, AtomicInteger maxEntries, int entrySize) throws IOException {
+        ByteBuffer buffer = indexBufferMap.get(path);
+        int position = buffer.position();
+        length.set(newSize);
+        buffer.limit(newSize);
+        maxEntries.set(buffer.limit() / entrySize);
+        buffer.position(position);
+        return true;
+    }
+
+    /**
+     * Round a number to the greatest exact multiple of the given factor less than the given number.
+     * E.g. roundDownToExactMultiple(67, 8) == 64
+     */
+    private static int roundDownToExactMultiple(int number, int factor) {
+        return factor * (number / factor);
+    }
+
+    public void renameIndex(String path, File f) throws IOException {
+        ByteBuffer buffer = indexBufferMap.remove(path);
+        indexBufferMap.put(f.getAbsolutePath(), buffer);
+    }
+
+    public void closeIndex(String path) throws IOException {
+        indexBufferMap.remove(path);
+    }
+
+    public void truncateIndexEntries(String path, int newPos) {
+        indexBufferMap.get(path).position(newPos);
     }
 }

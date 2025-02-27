@@ -18,6 +18,8 @@ package org.apache.kafka.storage.internals.log;
 
 import org.apache.kafka.common.errors.InvalidOffsetException;
 
+import org.apache.kafka.common.storage.FileStorageManager;
+import org.apache.kafka.common.storage.StorageManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,6 +56,7 @@ import java.util.Optional;
 public final class OffsetIndex extends AbstractIndex {
     private static final Logger log = LoggerFactory.getLogger(OffsetIndex.class);
     private static final int ENTRY_SIZE = 8;
+    private final StorageManager storageManager;
 
     /* the last offset in the index */
     private long lastOffset;
@@ -67,12 +70,12 @@ public final class OffsetIndex extends AbstractIndex {
     }
 
     public OffsetIndex(File file, long baseOffset, int maxIndexSize, boolean writable) throws IOException {
-        this(file, baseOffset, maxIndexSize, writable, false);
+        this(file, baseOffset, maxIndexSize, writable, new FileStorageManager());
     }
 
-    public OffsetIndex(File file, long baseOffset, int maxIndexSize, boolean writable, boolean anyLog) throws IOException {
-        super(file, baseOffset, maxIndexSize, writable, anyLog);
-
+    public OffsetIndex(File file, long baseOffset, int maxIndexSize, boolean writable, StorageManager storageManager) throws IOException {
+        super(file, baseOffset, maxIndexSize, writable, storageManager);
+        this.storageManager = storageManager;
         lastOffset = lastEntry().offset;
 
         log.debug("Loaded index file {} with maxEntries = {}, maxIndexSize = {}, entries = {}, lastOffset = {}, file position = {}",
@@ -100,12 +103,7 @@ public final class OffsetIndex extends AbstractIndex {
      */
     public OffsetPosition lookup(long targetOffset) {
         return maybeLock(lock, () -> {
-            ByteBuffer idx = null;
-            if (mmap() != null) {
-                idx = mmap().duplicate();
-            } else {
-                idx = buffer().duplicate();
-            }
+            ByteBuffer idx = storageManager.indexBuffer(file().getAbsolutePath()).duplicate();
             int slot = largestLowerBoundSlotFor(idx, targetOffset, IndexSearchType.KEY);
             if (slot == -1)
                 return new OffsetPosition(baseOffset(), 0);
@@ -124,7 +122,7 @@ public final class OffsetIndex extends AbstractIndex {
             if (n >= entries())
                 throw new IllegalArgumentException("Attempt to fetch the " + n + "th entry from index " +
                     file().getAbsolutePath() + ", which has size " + entries());
-            return parseEntry(mmap() != null ? mmap() : buffer(), n);
+            return parseEntry(storageManager.indexBuffer(file().getAbsolutePath()), n);
         });
     }
 
@@ -135,12 +133,7 @@ public final class OffsetIndex extends AbstractIndex {
      */
     public Optional<OffsetPosition> fetchUpperBoundOffset(OffsetPosition fetchOffset, int fetchSize) {
         return maybeLock(lock, () -> {
-            ByteBuffer idx = null;
-            if (mmap() != null) {
-                idx = mmap().duplicate();
-            } else {
-                idx = buffer().duplicate();
-            }
+            ByteBuffer idx = storageManager.indexBuffer(file().getAbsolutePath()).duplicate();
             int slot = smallestUpperBoundSlotFor(idx, fetchOffset.position + fetchSize, IndexSearchType.VALUE);
             if (slot == -1)
                 return Optional.empty();
@@ -162,17 +155,13 @@ public final class OffsetIndex extends AbstractIndex {
 
             if (entries() == 0 || offset > lastOffset) {
                 log.trace("Adding index entry {} => {} to {}", offset, position, file().getAbsolutePath());
-                if (mmap() != null) {
-                    mmap().putInt(relativeOffset(offset));
-                    mmap().putInt(position);
-                } else {
-                    buffer().putInt(relativeOffset(offset));
-                    buffer().putInt(position);
-                }
+                ByteBuffer buffer = storageManager.indexBuffer(file().getAbsolutePath());
+                buffer.putInt(relativeOffset(offset));
+                buffer.putInt(position);
 
                 incrementEntries();
                 lastOffset = offset;
-                int pos = mmap() != null ? mmap().position() : buffer().position();
+                int pos = storageManager.indexBuffer(file().getAbsolutePath()).position();
                 if (entries() * ENTRY_SIZE != pos)
                     throw new IllegalStateException(entries() + " entries but file position in index is " + pos);
             } else
@@ -187,12 +176,7 @@ public final class OffsetIndex extends AbstractIndex {
     public void truncateTo(long offset) {
         lock.lock();
         try {
-            ByteBuffer idx = null;
-            if (mmap() != null) {
-                idx = mmap().duplicate();
-            } else {
-                idx = buffer().duplicate();
-            }
+            ByteBuffer idx = storageManager.indexBuffer(file().getAbsolutePath()).duplicate();
             int slot = largestLowerBoundSlotFor(idx, offset, IndexSearchType.KEY);
 
             /* There are 3 cases for choosing the new size
@@ -265,7 +249,7 @@ public final class OffsetIndex extends AbstractIndex {
             if (entries == 0)
                 return new OffsetPosition(baseOffset(), 0);
             else
-                return parseEntry(mmap() != null ? mmap() : buffer(), entries - 1);
+                return parseEntry(storageManager.indexBuffer(file().getAbsolutePath()), entries - 1);
         } finally {
             lock.unlock();
         }
