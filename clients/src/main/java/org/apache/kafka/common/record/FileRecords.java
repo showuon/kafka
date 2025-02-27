@@ -241,7 +241,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
     public boolean deleteIfExists() throws IOException {
 //        Utils.closeQuietly(channel, "FileChannel");
 //        return Files.deleteIfExists(file.toPath());
-        return storageManager.deleteIfExists(file().getAbsolutePath());
+        return storageManager.deleteRecordsIfExists(file().getAbsolutePath());
     }
 
     /**
@@ -258,7 +258,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
     public void updateParentDir(File parentDir) {
 //        if (file != null)
 //            this.file = new File(parentDir, file.getName());
-        this.file = storageManager.updateParentDir(file().getAbsolutePath(), parentDir);
+        this.file = storageManager.updateRecordsParentDir(file().getAbsolutePath(), parentDir);
     }
 
     /**
@@ -273,7 +273,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
 //                this.file = f;
 //            }
 //        }
-        this.file = storageManager.renameTo(file().getAbsolutePath(), f);
+        this.file = storageManager.renameRecordsTo(file().getAbsolutePath(), f);
     }
 
     /**
@@ -292,7 +292,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
             throw new KafkaException("Attempt to truncate log segment " + "file" + " to " + targetSize + " bytes failed, " +
                     " size of this log segment is " + originalSize + " bytes.");
         if (targetSize < (int) storageManager.recordsSize(file().getAbsolutePath())) {
-            storageManager.truncate(file().getAbsolutePath(), targetSize);
+            storageManager.truncateRecords(file().getAbsolutePath(), targetSize);
             size.set(targetSize);
         }
 //        } else {

@@ -20,11 +20,14 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Base interface for accessing records which could be contained in the log, or an in-memory materialization of log records.
  */
 public interface StorageManager {
+    // ---- log files ----
     int initRecords(File file,
                      boolean mutable,
                      boolean fileAlreadyExists,
@@ -39,14 +42,24 @@ public interface StorageManager {
     long writeRecordsToSocket(String path, SocketChannel socketChannel, long position, long count) throws IOException;
     default void flushRecords(String path) throws IOException {};
     default void closeRecords(String path) throws IOException {};
-    default boolean deleteIfExists(String path) throws IOException {
+    default boolean deleteRecordsIfExists(String path) throws IOException {
         return false;
     };
-    default File updateParentDir(String path, File parentDir) {
+    default File updateRecordsParentDir(String path, File parentDir) {
         return null;
     }
-    default File renameTo(String path, File f) throws IOException {
+    default File renameRecordsTo(String path, File f) throws IOException {
         return null;
     }
-    void truncate(String path, int targetSize) throws IOException;
+    void truncateRecords(String path, int targetSize) throws IOException;
+
+
+    // ---- index files ----
+    long initIndex(File file, int maxIndexSize, boolean writable, int entrySize) throws IOException;
+    ByteBuffer indexBuffer(String path);
+    boolean resizeIndex(String path, int newSize, AtomicLong length, AtomicInteger maxEntries, int entrySize) throws IOException;
+    void renameIndex(String path, File f) throws IOException;
+    default void flushIndex(String path) {}
+    void closeIndex(String path) throws IOException;
+    void truncateIndexEntries(String path, int newPos);
 }

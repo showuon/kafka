@@ -16,6 +16,8 @@
  */
 package org.apache.kafka.storage.internals.log;
 
+import org.apache.kafka.common.storage.FileStorageManager;
+import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.common.utils.Utils;
 
 import java.io.Closeable;
@@ -143,32 +145,32 @@ public class LazyIndex<T extends AbstractIndex> implements Closeable {
     private final long baseOffset;
     private final int maxIndexSize;
     private final IndexType indexType;
-    private final boolean anyLog;
+    private final StorageManager storageManager;
 
     private volatile IndexWrapper indexWrapper;
 
-    private LazyIndex(IndexWrapper indexWrapper, long baseOffset, int maxIndexSize, IndexType indexType, boolean anyLog) {
+    private LazyIndex(IndexWrapper indexWrapper, long baseOffset, int maxIndexSize, IndexType indexType, StorageManager storageManager) {
         this.indexWrapper = indexWrapper;
         this.baseOffset = baseOffset;
         this.maxIndexSize = maxIndexSize;
         this.indexType = indexType;
-        this.anyLog = anyLog;
+        this.storageManager = storageManager;
     }
 
     public static LazyIndex<OffsetIndex> forOffset(File file, long baseOffset, int maxIndexSize) {
-        return new LazyIndex<>(new IndexFile(file), baseOffset, maxIndexSize, IndexType.OFFSET, false);
+        return new LazyIndex<>(new IndexFile(file), baseOffset, maxIndexSize, IndexType.OFFSET, new FileStorageManager());
     }
 
-    public static LazyIndex<OffsetIndex> forOffset(File file, long baseOffset, int maxIndexSize, boolean anyLog) {
-        return new LazyIndex<>(new IndexFile(file), baseOffset, maxIndexSize, IndexType.OFFSET, anyLog);
+    public static LazyIndex<OffsetIndex> forOffset(File file, long baseOffset, int maxIndexSize, StorageManager storageManager) {
+        return new LazyIndex<>(new IndexFile(file), baseOffset, maxIndexSize, IndexType.OFFSET, storageManager);
     }
 
     public static LazyIndex<TimeIndex> forTime(File file, long baseOffset, int maxIndexSize) {
-        return new LazyIndex<>(new IndexFile(file), baseOffset, maxIndexSize, IndexType.TIME, false);
+        return new LazyIndex<>(new IndexFile(file), baseOffset, maxIndexSize, IndexType.TIME, new FileStorageManager());
     }
 
-    public static LazyIndex<TimeIndex> forTime(File file, long baseOffset, int maxIndexSize, boolean anyLog) {
-        return new LazyIndex<>(new IndexFile(file), baseOffset, maxIndexSize, IndexType.TIME, anyLog);
+    public static LazyIndex<TimeIndex> forTime(File file, long baseOffset, int maxIndexSize, StorageManager storageManager) {
+        return new LazyIndex<>(new IndexFile(file), baseOffset, maxIndexSize, IndexType.TIME, storageManager);
     }
 
     public File file() {
@@ -247,9 +249,9 @@ public class LazyIndex<T extends AbstractIndex> implements Closeable {
     private T loadIndex(File file) throws IOException {
         switch (indexType) {
             case OFFSET:
-                return (T) new OffsetIndex(file, baseOffset, maxIndexSize, true, anyLog);
+                return (T) new OffsetIndex(file, baseOffset, maxIndexSize, true, storageManager);
             case TIME:
-                return (T) new TimeIndex(file, baseOffset, maxIndexSize, true, anyLog);
+                return (T) new TimeIndex(file, baseOffset, maxIndexSize, true, storageManager);
             default:
                 throw new IllegalStateException("Unexpected indexType " + indexType);
         }
