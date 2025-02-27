@@ -874,9 +874,8 @@ public class LogSegment implements Closeable {
                                   int initFileSize, boolean preallocate, String fileSuffix, StorageManager storageManager) throws IOException {
         int maxIndexSize = config.maxIndexSize;
 
-        FileRecords records = null;
+        FileRecords records = FileRecords.open(LogFileUtils.logFile(dir, baseOffset, fileSuffix), fileAlreadyExists, initFileSize, preallocate, storageManager);
         if (config.logUseAny) {
-            records = FileRecords.open(null, fileAlreadyExists, initFileSize, preallocate, storageManager);
             return new LogSegment(
                     records,
                     LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize, true),
@@ -888,7 +887,6 @@ public class LogSegment implements Closeable {
                     time);
         }
         else {
-            records = FileRecords.open(LogFileUtils.logFile(dir, baseOffset, fileSuffix), fileAlreadyExists, initFileSize, preallocate, storageManager);
             return new LogSegment(
                     records,
                     LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize),
