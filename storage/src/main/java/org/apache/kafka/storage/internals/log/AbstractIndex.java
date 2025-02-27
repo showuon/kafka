@@ -17,9 +17,7 @@
 package org.apache.kafka.storage.internals.log;
 
 import org.apache.kafka.common.storage.StorageManager;
-import org.apache.kafka.common.utils.ByteBufferUnmapper;
 import org.apache.kafka.common.utils.OperatingSystem;
-import org.apache.kafka.common.utils.Utils;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,11 +25,8 @@ import org.slf4j.LoggerFactory;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.file.Files;
 import java.util.Objects;
 import java.util.OptionalInt;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -154,7 +149,7 @@ public abstract class AbstractIndex implements Closeable {
     }
 
     public void updateParentDir(File parentDir) {
-        storageManager.updateIndexParentDir(file.getAbsolutePath(), parentDir);
+        storageManager.updateParentDir(file.getAbsolutePath(), parentDir, StorageManager.StorageType.INDEX);
         this.file = new File(parentDir, file.getName());
     }
 
@@ -194,7 +189,7 @@ public abstract class AbstractIndex implements Closeable {
      */
     public void renameTo(File f) throws IOException {
         try {
-            storageManager.renameIndex(file().getAbsolutePath(), f);
+            storageManager.renameTo(file().getAbsolutePath(), f, StorageManager.StorageType.INDEX);
         } finally {
             this.file = f;
         }
@@ -206,7 +201,9 @@ public abstract class AbstractIndex implements Closeable {
     public void flush() {
         lock.lock();
         try {
-            storageManager.flushIndex(file().getAbsolutePath());
+            storageManager.flush(file().getAbsolutePath(), StorageManager.StorageType.INDEX);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         } finally {
             lock.unlock();
         }
@@ -221,7 +218,7 @@ public abstract class AbstractIndex implements Closeable {
      */
     public boolean deleteIfExists() throws IOException {
         closeHandler();
-        return Files.deleteIfExists(file.toPath());
+        return storageManager.deleteIfExists(file.getAbsolutePath(), StorageManager.StorageType.INDEX);
     }
 
     /**
@@ -256,7 +253,7 @@ public abstract class AbstractIndex implements Closeable {
         // See https://issues.apache.org/jira/browse/KAFKA-4614 for the details.
         lock.lock();
         try {
-            storageManager.closeIndex(file.getAbsolutePath());
+            storageManager.close(file.getAbsolutePath(), StorageManager.StorageType.INDEX);
         } catch (IOException e) {
             log.error("Error closing index {}", file, e);
         } finally {
@@ -363,7 +360,11 @@ public abstract class AbstractIndex implements Closeable {
 
     protected void truncateToEntries0(int entries) {
         this.entries = entries;
-        storageManager.truncateIndexEntries(file.getAbsolutePath(), entries * entrySize());
+        try {
+            storageManager.truncate(file.getAbsolutePath(), entries * entrySize(), StorageManager.StorageType.INDEX);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /**

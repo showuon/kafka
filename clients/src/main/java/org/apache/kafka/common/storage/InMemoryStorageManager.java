@@ -21,6 +21,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
+import java.nio.file.Files;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -29,6 +30,130 @@ import java.util.concurrent.atomic.AtomicLong;
 public class InMemoryStorageManager implements StorageManager {
     private Map<String, ByteBuffer> recordBufferMap = new ConcurrentHashMap<>();
     private Map<String, ByteBuffer> indexBufferMap = new ConcurrentHashMap<>();
+    private Map<String, ByteBuffer> txnBufferMap = new ConcurrentHashMap<>();
+
+    // ----- common -------
+    public boolean deleteIfExists(String path, StorageType storageType) throws IOException {
+        switch (storageType) {
+            case LOG:
+                recordBufferMap.remove(path);
+                break;
+            case INDEX:
+                indexBufferMap.remove(path);
+                break;
+            case TXN:
+                txnBufferMap.remove(path);
+                break;
+        }
+
+        File file = new File(path);
+        return Files.deleteIfExists(file.toPath());
+
+    }
+
+    public void updateParentDir(String path, File parentDir, StorageType storageType) {
+        File existingFile = new File(path);
+        File updatedFile = new File(parentDir, existingFile.getName());
+        switch (storageType) {
+            case LOG:
+                recordBufferMap.put(updatedFile.getAbsolutePath(), recordBufferMap.remove(path));
+                break;
+            case INDEX:
+                indexBufferMap.put(updatedFile.getAbsolutePath(), indexBufferMap.remove(path));
+                break;
+            case TXN:
+                txnBufferMap.put(updatedFile.getAbsolutePath(), txnBufferMap.remove(path));
+                break;
+        }
+    }
+
+    public void renameTo(String path, File f, StorageType storageType) throws IOException {
+        switch (storageType) {
+            case LOG:
+                recordBufferMap.put(f.getAbsolutePath(), recordBufferMap.remove(path));
+                break;
+            case INDEX:
+                indexBufferMap.put(f.getAbsolutePath(), indexBufferMap.remove(path));
+                break;
+            case TXN:
+                txnBufferMap.put(f.getAbsolutePath(), txnBufferMap.remove(path));
+                break;
+        }
+    }
+
+    public int append(String path, ByteBuffer buffer, StorageType storageType) throws IOException {
+        switch (storageType) {
+            case LOG:
+                appendToBuffer(path, recordBufferMap, buffer);
+                break;
+            case TXN:
+                appendToBuffer(path, txnBufferMap, buffer);
+                break;
+        }
+        return buffer.remaining();
+    }
+
+    public void read(String path, ByteBuffer buffer, int position, StorageType storageType) throws IOException {
+        switch (storageType) {
+            case LOG:
+                buffer.put(recordBufferMap.get(path).array(), position, buffer.remaining());
+                break;
+            case TXN:
+                buffer.put(txnBufferMap.get(path).array(), position, buffer.remaining());
+                break;
+        }
+    }
+
+    private void appendToBuffer(String path, Map<String, ByteBuffer> bufferMap, ByteBuffer buffer) throws IOException {
+        int sizeToAppend = buffer.remaining();
+        if (!bufferMap.containsKey(path)) {
+            ByteBuffer temp = ByteBuffer.allocate(sizeToAppend);
+            temp.put(buffer);
+            bufferMap.put(path, temp);
+        } else {
+            ByteBuffer existingBuffer = bufferMap.get(path);
+            int limit = existingBuffer.limit();
+            ByteBuffer temp = ByteBuffer.allocate(limit + sizeToAppend);
+            temp.put(existingBuffer.array(), 0, limit);
+            temp.put(buffer);
+            bufferMap.put(path, temp);
+        }
+    }
+
+    public long position(String path, StorageType storageType) throws IOException {
+        switch (storageType) {
+            case INDEX:
+                return indexBufferMap.get(path).position();
+            case TXN:
+                return txnBufferMap.get(path).position();
+        }
+        return 0;
+    }
+
+    public boolean isEmpty(String path, StorageType storageType) {
+        switch (storageType) {
+            case TXN:
+                return txnBufferMap.containsKey(path);
+        }
+        return true;
+    }
+
+    public void truncate(String path, int newPos, StorageType storageType) throws IOException {
+        switch (storageType) {
+            case LOG:
+                recordBufferMap.get(path).limit(newPos);
+                break;
+            case INDEX:
+                indexBufferMap.get(path).limit(newPos);
+                break;
+            case TXN:
+                txnBufferMap.get(path).limit(newPos);
+                break;
+        }
+    }
+
+
+
 
     // ----- index file ---------
     public int initRecords(File file,
@@ -61,25 +186,6 @@ public class InMemoryStorageManager implements StorageManager {
         }
         return size;
     }
-    public void readRecords(String path, ByteBuffer buffer, int position) {
-        buffer.put(recordBufferMap.get(path).array(), position, buffer.remaining());
-    }
-    public int appendRecords(String path, ByteBuffer buffer) {
-        int remaining = buffer.remaining();
-        if (!recordBufferMap.containsKey(path)) {
-            ByteBuffer temp = ByteBuffer.allocate(remaining);
-            temp.put(buffer);
-            recordBufferMap.put(path, temp);
-        } else {
-            ByteBuffer existingBuffer = recordBufferMap.get(path);
-            int limit = existingBuffer.limit();
-            ByteBuffer temp = ByteBuffer.allocate(limit + remaining);
-            temp.put(existingBuffer.array(), 0, limit);
-            temp.put(buffer);
-            recordBufferMap.put(path, temp);
-        }
-        return remaining;
-    }
 
     public long recordsSize(String path) throws IOException {
         return recordBufferMap.get(path).limit();
@@ -91,33 +197,19 @@ public class InMemoryStorageManager implements StorageManager {
         buffer.slice();
         return socketChannel.write(buffer);
     }
-    public void flushRecords(String path) {}
-    public void closeRecords(String path) {}
 
-    @Override
-    public boolean deleteRecordsIfExists(String path) {
-        recordBufferMap.remove(path);
-        return true;
-    }
-
-    @Override
-    public void updateRecordsParentDir(String path, File parentDir) {
-        ByteBuffer buffer = recordBufferMap.get(path);
-        if (buffer == null)
-            return;
-        File tempFile = new File(path);
-        File updatedFile = new File(parentDir, tempFile.getName());
-        recordBufferMap.put(updatedFile.getAbsolutePath(), buffer);
-    }
-
-    @Override
-    public void renameRecordsTo(String path, File f) {
-        ByteBuffer buffer = indexBufferMap.remove(path);
-        indexBufferMap.put(f.getAbsolutePath(), buffer);
-    }
-
-    public void truncateRecords(String path, int targetSize) {
-        recordBufferMap.get(path).limit(targetSize);
+    public void close(String path, StorageType storageType) throws IOException {
+        switch (storageType) {
+            case LOG:
+                recordBufferMap.remove(path);
+                break;
+            case INDEX:
+                indexBufferMap.remove(path);
+                break;
+            case TXN:
+                txnBufferMap.remove(path);
+                break;
+        }
     }
 
 
@@ -154,21 +246,5 @@ public class InMemoryStorageManager implements StorageManager {
         return factor * (number / factor);
     }
 
-    public void renameIndex(String path, File f) throws IOException {
-        ByteBuffer buffer = indexBufferMap.remove(path);
-        indexBufferMap.put(f.getAbsolutePath(), buffer);
-    }
-
-    public void closeIndex(String path) throws IOException {
-        indexBufferMap.remove(path);
-    }
-
-    public void truncateIndexEntries(String path, int newPos) {
-        indexBufferMap.get(path).position(newPos);
-    }
-
-    @Override
-    public void updateIndexParentDir(String path, File parentDir) {
-
-    }
+    // ----- transaction index file --------
 }

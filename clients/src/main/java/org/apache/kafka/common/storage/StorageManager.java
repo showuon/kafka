@@ -27,6 +27,25 @@ import java.util.concurrent.atomic.AtomicLong;
  * The interface for accessing partition logs, indexes, metadata files....
  */
 public interface StorageManager {
+    enum StorageType {
+        LOG,
+        INDEX,
+        TXN
+    }
+
+    // ----- common -------
+    boolean deleteIfExists(String path, StorageType storageType) throws IOException;
+    void updateParentDir(String path, File parentDir, StorageType storageType);
+    void renameTo(String path, File f, StorageType storageType) throws IOException;
+    void truncate(String path, int newPos, StorageType storageType) throws IOException;
+    int append(String path, ByteBuffer buffer, StorageType storageType) throws IOException;
+    void read(String path, ByteBuffer buffer, int position, StorageType storageType) throws IOException;
+    default void flush(String path, StorageType storageType) throws IOException {}
+    default void close(String path, StorageType storageType) throws IOException {}
+    long position(String path, StorageType storageType) throws IOException;
+    boolean isEmpty(String path, StorageType storageType);
+
+
     // ---- log files ----
     int initRecords(File file,
                      boolean mutable,
@@ -36,25 +55,16 @@ public interface StorageManager {
                      boolean isSlice,
                     int start,
                     int end) throws IOException;
-    void readRecords(String path, ByteBuffer buffer, int position) throws IOException;
-    int appendRecords(String path, ByteBuffer buffer) throws IOException;
+
     long recordsSize(String path) throws IOException;
     long writeRecordsToSocket(String path, SocketChannel socketChannel, long position, long count) throws IOException;
-    default void flushRecords(String path) throws IOException {}
-    default void closeRecords(String path) throws IOException {}
-    boolean deleteRecordsIfExists(String path) throws IOException;
-    void updateRecordsParentDir(String path, File parentDir);
-    void renameRecordsTo(String path, File f) throws IOException;
-    void truncateRecords(String path, int targetSize) throws IOException;
 
 
     // ---- index files ----
     long initIndex(File file, int maxIndexSize, boolean writable, int entrySize) throws IOException;
     ByteBuffer indexBuffer(String path);
     boolean resizeIndex(String path, int newSize, AtomicLong length, AtomicInteger maxEntries, int entrySize) throws IOException;
-    void renameIndex(String path, File f) throws IOException;
-    default void flushIndex(String path) {}
-    void closeIndex(String path) throws IOException;
-    void truncateIndexEntries(String path, int newPos);
-    void updateIndexParentDir(String path, File parentDir);
+
+    // ----- transaction index file --------
+    default void initTransIndex(File file) throws IOException {}
 }
