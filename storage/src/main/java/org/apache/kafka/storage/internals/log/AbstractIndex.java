@@ -62,9 +62,6 @@ public abstract class AbstractIndex implements Closeable {
     // Length of the index file
     private AtomicLong length;
 
-    private volatile MappedByteBuffer mmap;
-    private volatile ByteBuffer buffer;
-
     /**
      * The maximum number of entries this index can hold
      */
@@ -88,19 +85,10 @@ public abstract class AbstractIndex implements Closeable {
         this.maxIndexSize = maxIndexSize;
         this.writable = writable;
         this.storageManager = storageManager;
-
-
         this.length = new AtomicLong(storageManager.initIndex(file, maxIndexSize, writable, entrySize()));
-
-//        if (!anyLog) {
-//            createAndAssignMmap();
         ByteBuffer buffer = storageManager.indexBuffer(file().getAbsolutePath());
         this.maxEntries = new AtomicInteger(buffer.limit() / entrySize());
         this.entries = buffer.position() / entrySize();
-//        } else {
-//            buffer = ByteBuffer.allocate(maxIndexSize);
-//            this.maxEntries = buffer.limit() / entrySize();
-//        }
     }
 
 
@@ -166,6 +154,7 @@ public abstract class AbstractIndex implements Closeable {
     }
 
     public void updateParentDir(File parentDir) {
+        storageManager.updateIndexParentDir(file.getAbsolutePath(), parentDir);
         this.file = new File(parentDir, file.getName());
     }
 
@@ -205,7 +194,6 @@ public abstract class AbstractIndex implements Closeable {
      */
     public void renameTo(File f) throws IOException {
         try {
-            //Utils.atomicMoveWithFallback(file.toPath(), f.toPath(), false);
             storageManager.renameIndex(file().getAbsolutePath(), f);
         } finally {
             this.file = f;
@@ -268,7 +256,6 @@ public abstract class AbstractIndex implements Closeable {
         // See https://issues.apache.org/jira/browse/KAFKA-4614 for the details.
         lock.lock();
         try {
-//            safeForceUnmap();
             storageManager.closeIndex(file.getAbsolutePath());
         } catch (IOException e) {
             log.error("Error closing index {}", file, e);
@@ -305,11 +292,7 @@ public abstract class AbstractIndex implements Closeable {
     }
 
     protected final MappedByteBuffer mmap() {
-        return mmap;
-    }
-
-    protected final ByteBuffer buffer() {
-        return buffer;
+        return null;
     }
 
     /*
@@ -373,28 +356,6 @@ public abstract class AbstractIndex implements Closeable {
         return 8192 / entrySize();
     }
 
-    protected void safeForceUnmap() {
-        if (mmap != null) {
-            try {
-                forceUnmap();
-            } catch (Throwable t) {
-                log.error("Error unmapping index {}", file, t);
-            }
-        }
-    }
-
-    /**
-     * Forcefully free the buffer's mmap.
-     */
-    // Visible for testing
-    protected void forceUnmap() throws IOException {
-        try {
-            ByteBufferUnmapper.unmap(file.getAbsolutePath(), mmap);
-        } finally {
-            mmap = null;
-        }
-    }
-
     // The caller is expected to hold `lock` when calling this method
     protected void incrementEntries() {
         ++entries;
@@ -402,10 +363,6 @@ public abstract class AbstractIndex implements Closeable {
 
     protected void truncateToEntries0(int entries) {
         this.entries = entries;
-//        if (mmap != null)
-//            mmap.position(entries * entrySize());
-//        else
-//            buffer.position(entries * entrySize());
         storageManager.truncateIndexEntries(file.getAbsolutePath(), entries * entrySize());
     }
 
@@ -450,24 +407,6 @@ public abstract class AbstractIndex implements Closeable {
      */
     private static int roundDownToExactMultiple(int number, int factor) {
         return factor * (number / factor);
-    }
-
-    private static MappedByteBuffer createMappedBuffer(RandomAccessFile raf, boolean newlyCreated, long length,
-                                                       boolean writable, int entrySize) throws IOException {
-        MappedByteBuffer idx;
-        if (writable)
-            idx = raf.getChannel().map(FileChannel.MapMode.READ_WRITE, 0, length);
-        else
-            idx = raf.getChannel().map(FileChannel.MapMode.READ_ONLY, 0, length);
-
-        /* set the position in the index for the next entry */
-        if (newlyCreated)
-            idx.position(0);
-        else
-            // if this is a pre-existing index, assume it is valid and set position to last entry
-            idx.position(roundDownToExactMultiple(idx.limit(), entrySize));
-
-        return idx;
     }
 
     /**

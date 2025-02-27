@@ -41,10 +41,7 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public class FileStorageManager implements StorageManager {
     private Map<String, FileChannel> channelMap = new ConcurrentHashMap<>();
-
     private Map<String, MappedByteBuffer> indexBufferMap = new ConcurrentHashMap<>();
-    private Map<String, Long> indexLengthMap = new ConcurrentHashMap<>();
-    private Map<String, Integer> indexEntrySizeMap = new ConcurrentHashMap<>();
 
     public int initRecords(File file,
                      boolean mutable,
@@ -129,24 +126,21 @@ public class FileStorageManager implements StorageManager {
     }
 
     public boolean deleteRecordsIfExists(String path) throws IOException {
-        Utils.closeQuietly(channelMap.get(path), "FileChannel");
+        FileChannel fileChannel = channelMap.remove(path);
+        Utils.closeQuietly(fileChannel, "FileChannel");
         File file = new File(path);
         return Files.deleteIfExists(file.toPath());
     }
 
-    public File updateRecordsParentDir(String path, File parentDir) {
-        FileChannel channel = channelMap.get(path);
-        channelMap.remove(path);
+    public void updateRecordsParentDir(String path, File parentDir) {
+        FileChannel channel = channelMap.remove(path);
         File tempFile = new File(path);
-        File returnFile = new File(parentDir, tempFile.getName());
-        channelMap.put(returnFile.getAbsolutePath(), channel);
-        return returnFile;
+        File updatedFile = new File(parentDir, tempFile.getName());
+        channelMap.put(updatedFile.getAbsolutePath(), channel);
     }
-    public File renameRecordsTo(String path, File f) throws IOException {
-        FileChannel channel = channelMap.get(path);
-        channelMap.remove(path);
+    public void renameRecordsTo(String path, File f) throws IOException {
+        FileChannel channel = channelMap.remove(path);
         channelMap.put(f.getAbsolutePath(), channel);
-        return f;
     }
 
     public void truncateRecords(String path, int targetSize) throws IOException {
@@ -225,7 +219,6 @@ public class FileStorageManager implements StorageManager {
         } finally {
             Utils.closeQuietly(raf, "index file " + path);
         }
-
     }
 
     protected void safeForceUnmap(String path, MappedByteBuffer buffer) throws IOException {
@@ -265,5 +258,12 @@ public class FileStorageManager implements StorageManager {
 
     public void truncateIndexEntries(String path, int newPos) {
         indexBufferMap.get(path).position(newPos);
+    }
+
+    public void updateIndexParentDir(String path, File parentDir) {
+        File tempFile = new File(path);
+        File returnFile = new File(parentDir, tempFile.getName());
+        MappedByteBuffer buffer = indexBufferMap.remove(path);
+        indexBufferMap.put(returnFile.getAbsolutePath(), buffer);
     }
 }
