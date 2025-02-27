@@ -22,13 +22,11 @@ import org.apache.kafka.common.record.AbstractLegacyRecordBatch.LegacyFileChanne
 import org.apache.kafka.common.record.DefaultRecordBatch.DefaultFileChannelRecordBatch;
 import org.apache.kafka.common.utils.BufferSupplier;
 import org.apache.kafka.common.utils.CloseableIterator;
-import org.apache.kafka.common.utils.Utils;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.Iterator;
-import java.util.Objects;
 
 import static org.apache.kafka.common.record.Records.HEADER_SIZE_UP_TO_MAGIC;
 import static org.apache.kafka.common.record.Records.LOG_OVERHEAD;
@@ -68,15 +66,6 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
         logHeaderBuffer.rewind();
 
         fileRecords.storageManager().readRecords(fileRecords.file().getAbsolutePath(), logHeaderBuffer, position);
-//        if (fileRecords.file() != null) {
-//            FileChannel channel = fileRecords.channel();
-//            Utils.readFullyOrFail(channel, logHeaderBuffer, position, "log header");
-//        } else {
-//
-//            System.out.println("!!! nextBatch from memory");
-//            logHeaderBuffer.put(fileRecords.recordBuffer().array(), position, logHeaderBuffer.remaining());
-//        }
-
 
         logHeaderBuffer.rewind();
         long offset = logHeaderBuffer.getLong(OFFSET_OFFSET);
@@ -193,24 +182,6 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
             } catch (IOException e) {
                 throw new KafkaException("Failed to read record batch at position " + position + " from " + fileRecords, e);
             }
-//            FileChannel channel = fileRecords.channel();
-//
-//            if (channel != null) {
-//                try {
-//                    int limit = buffer.limit();
-//                    buffer.limit(buffer.position() + sizeInBytes());
-//                    Utils.readFully(channel, buffer, position);
-//                    buffer.limit(limit);
-//                } catch (IOException e) {
-//                    throw new KafkaException("Failed to read record batch at position " + position + " from " + fileRecords, e);
-//                }
-//            } else {
-//                System.out.println("!!! writeTo from memory");
-//                int limit = buffer.limit();
-//                buffer.limit(buffer.position() + sizeInBytes());
-//                buffer.put(fileRecords.recordBuffer().array(), position, buffer.remaining());
-//                buffer.limit(limit);
-//            }
         }
 
         protected abstract RecordBatch toMemoryRecordBatch(ByteBuffer buffer);
@@ -236,18 +207,9 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
         }
 
         private RecordBatch loadBatchWithSize(int size, String description) {
-
-
-//            FileChannel channel = fileRecords.channel();
             try {
                 ByteBuffer buffer = ByteBuffer.allocate(size);
                 fileRecords.storageManager().readRecords(fileRecords.file().getAbsolutePath(), buffer, position);
-//                if (channel != null)
-//                    Utils.readFullyOrFail(channel, buffer, position, description);
-//                else {
-//                    System.out.println("!!! loadBatch from memory");
-//                    buffer.put(fileRecords.recordBuffer().array(), position, buffer.remaining());
-//                }
                 buffer.rewind();
                 return toMemoryRecordBatch(buffer);
             } catch (IOException e) {
@@ -264,21 +226,14 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
 
             FileChannelRecordBatch that = (FileChannelRecordBatch) o;
 
-//            FileChannel channel = fileRecords == null ? null : fileRecords.channel();
-//            FileChannel thatChannel = that.fileRecords == null ? null : that.fileRecords.channel();
-
             return offset == that.offset &&
                     position == that.position &&
                     batchSize == that.batchSize;
-//                    Objects.equals(channel, thatChannel);
         }
 
         @Override
         public int hashCode() {
-//            FileChannel channel = fileRecords == null ? null : fileRecords.channel();
-
             int result = Long.hashCode(offset);
-//            result = 31 * result + (channel != null ? channel.hashCode() : 0);
             result = 31 * result + position;
             result = 31 * result + batchSize;
             return result;

@@ -35,7 +35,6 @@ import java.util.concurrent.atomic.AtomicLong;
 public class InMemoryStorageManager implements StorageManager {
     private Map<String, ByteBuffer> recordBufferMap = new ConcurrentHashMap<>();
     private Map<String, ByteBuffer> indexBufferMap = new ConcurrentHashMap<>();
-    private Map<String, Long> indexLengthMap = new ConcurrentHashMap<>();
 
     public int initRecords(File file,
                      boolean mutable,
@@ -100,6 +99,28 @@ public class InMemoryStorageManager implements StorageManager {
     public void flushRecords(String path) {}
     public void closeRecords(String path) {}
 
+    @Override
+    public boolean deleteRecordsIfExists(String path) {
+        recordBufferMap.remove(path);
+        return true;
+    }
+
+    @Override
+    public void updateRecordsParentDir(String path, File parentDir) {
+        ByteBuffer buffer = recordBufferMap.get(path);
+        if (buffer == null)
+            return;
+        File tempFile = new File(path);
+        File updatedFile = new File(parentDir, tempFile.getName());
+        recordBufferMap.put(updatedFile.getAbsolutePath(), buffer);
+    }
+
+    @Override
+    public void renameRecordsTo(String path, File f) {
+        ByteBuffer buffer = indexBufferMap.remove(path);
+        indexBufferMap.put(f.getAbsolutePath(), buffer);
+    }
+
     public void truncateRecords(String path, int targetSize) {
         recordBufferMap.get(path).limit(targetSize);
     }
@@ -143,5 +164,10 @@ public class InMemoryStorageManager implements StorageManager {
 
     public void truncateIndexEntries(String path, int newPos) {
         indexBufferMap.get(path).position(newPos);
+    }
+
+    @Override
+    public void updateIndexParentDir(String path, File parentDir) {
+
     }
 }

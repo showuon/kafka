@@ -40,17 +40,11 @@ public interface StorageManager {
     int appendRecords(String path, ByteBuffer buffer) throws IOException;
     long recordsSize(String path) throws IOException;
     long writeRecordsToSocket(String path, SocketChannel socketChannel, long position, long count) throws IOException;
-    default void flushRecords(String path) throws IOException {};
-    default void closeRecords(String path) throws IOException {};
-    default boolean deleteRecordsIfExists(String path) throws IOException {
-        return false;
-    };
-    default File updateRecordsParentDir(String path, File parentDir) {
-        return null;
-    }
-    default File renameRecordsTo(String path, File f) throws IOException {
-        return null;
-    }
+    default void flushRecords(String path) throws IOException {}
+    default void closeRecords(String path) throws IOException {}
+    boolean deleteRecordsIfExists(String path) throws IOException;
+    void updateRecordsParentDir(String path, File parentDir);
+    void renameRecordsTo(String path, File f) throws IOException;
     void truncateRecords(String path, int targetSize) throws IOException;
 
 
@@ -62,4 +56,5 @@ public interface StorageManager {
     default void flushIndex(String path) {}
     void closeIndex(String path) throws IOException;
     void truncateIndexEntries(String path, int newPos);
+    void updateIndexParentDir(String path, File parentDir);
 }
