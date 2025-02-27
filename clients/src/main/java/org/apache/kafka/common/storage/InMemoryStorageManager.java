@@ -15,15 +15,20 @@ package org.apache.kafka.common.storage;/*
  * limitations under the License.
  */
 
+import org.apache.kafka.common.KafkaException;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Base interface for accessing records which could be contained in the log, or an in-memory materialization of log records.
  */
 public class InMemoryStorageManager implements StorageManager {
+    private Map<String, ByteBuffer> recordBufferMap = new ConcurrentHashMap<>();
     public int initRecords(File file,
                      boolean mutable,
                      boolean fileAlreadyExists,
@@ -32,19 +37,57 @@ public class InMemoryStorageManager implements StorageManager {
                      boolean isSlice,
                            int start,
                            int end) {
-        return 0;
+        int size = 0;
+        if (isSlice) {
+            // don't check the file size if this is just a slice view
+            size = end - start;
+        } else {
+            if (recordBufferMap.containsKey(file.getAbsolutePath())) {
+                ByteBuffer buffer = recordBufferMap.get(file.getAbsolutePath());
+                if (buffer.limit() > Integer.MAX_VALUE) {
+                    throw new KafkaException("The size of segment " + file + " (" + buffer.limit() +
+                            ") is larger than the maximum allowed segment size of " + Integer.MAX_VALUE);
+                }
+
+                int limit = Math.min(buffer.limit(), end);
+                size = limit - start;
+
+                // if this is not a slice, update the file pointer to the end of the file
+                // set the file position to the last byte in the file
+                buffer.position(limit);
+            }
+        }
+        return size;
     }
-    public void readRecords(String path, ByteBuffer buffer, int position) {}
+    public void readRecords(String path, ByteBuffer buffer, int position) {
+        buffer.put(recordBufferMap.get(path).array(), position, buffer.remaining());
+    }
     public int appendRecords(String path, ByteBuffer buffer) {
-        return 0;
+        int remaining = buffer.remaining();
+        if (!recordBufferMap.containsKey(path)) {
+            ByteBuffer temp = ByteBuffer.allocate(remaining);
+            temp.put(buffer);
+            recordBufferMap.put(path, temp);
+        } else {
+            ByteBuffer existingBuffer = recordBufferMap.get(path);
+            int limit = existingBuffer.limit();
+            ByteBuffer temp = ByteBuffer.allocate(limit + remaining);
+            temp.put(existingBuffer.array(), 0, limit);
+            temp.put(buffer);
+            recordBufferMap.put(path, temp);
+        }
+        return remaining;
     }
 
     public long recordsSize(String path) throws IOException {
-        return 0;
+        return recordBufferMap.get(path).limit();
     }
 
-    public long writeRecordsToSocket(String path, SocketChannel socketChannel, long position, long count) {
-        return 0;
+    public long writeRecordsToSocket(String path, SocketChannel socketChannel, long position, long count) throws IOException {
+        ByteBuffer buffer = recordBufferMap.get(path);
+        buffer.position((int) position);
+        buffer.slice();
+        return socketChannel.write(buffer);
     }
     public void flushRecords(String path) {}
     public void closeRecords(String path) {}
@@ -53,6 +96,6 @@ public class InMemoryStorageManager implements StorageManager {
         return false;
     }
     public void truncate(String path, int targetSize) {
-
+        recordBufferMap.get(path).limit(targetSize);
     }
 }
