@@ -26,14 +26,14 @@ import java.nio.channels.FileChannel;
 import java.nio.channels.SocketChannel;
 import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Base interface for accessing records which could be contained in the log, or an in-memory materialization of log records.
  */
 public class FileStorageManager implements StorageManager {
-    private Map<String, FileChannel> channelMap = new HashMap<>();
+    private Map<String, FileChannel> channelMap = new ConcurrentHashMap<>();
 
     public int initRecords(File file,
                      boolean mutable,
