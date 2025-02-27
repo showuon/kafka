@@ -19,6 +19,8 @@ package org.apache.kafka.storage.internals.log;
 import org.apache.kafka.common.errors.InvalidOffsetException;
 import org.apache.kafka.common.record.RecordBatch;
 
+import org.apache.kafka.common.storage.FileStorageManager;
+import org.apache.kafka.common.storage.StorageManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,6 +57,7 @@ public class TimeIndex extends AbstractIndex {
     private static final Logger log = LoggerFactory.getLogger(TimeIndex.class);
     private static final int ENTRY_SIZE = 12;
 
+    private final StorageManager storageManager;
     private volatile TimestampOffset lastEntry;
 
     public TimeIndex(File file, long baseOffset, int maxIndexSize) throws IOException {
@@ -62,13 +65,13 @@ public class TimeIndex extends AbstractIndex {
     }
 
     public TimeIndex(File file, long baseOffset, int maxIndexSize, boolean writable) throws IOException {
-        this(file, baseOffset, maxIndexSize, true, false);
+        this(file, baseOffset, maxIndexSize, writable, new FileStorageManager());
     }
 
     @SuppressWarnings("this-escape")
-    public TimeIndex(File file, long baseOffset, int maxIndexSize, boolean writable, boolean anyLog) throws IOException {
-        super(file, baseOffset, maxIndexSize, writable, anyLog);
-
+    public TimeIndex(File file, long baseOffset, int maxIndexSize, boolean writable, StorageManager storageManager) throws IOException {
+        super(file, baseOffset, maxIndexSize, writable, storageManager);
+        this.storageManager = storageManager;
         this.lastEntry = lastEntryFromIndexFile();
 
         log.debug("Loaded index file {} with maxEntries = {}, maxIndexSize = {}, entries = {}, lastOffset = {}, file position = {}",
@@ -80,7 +83,7 @@ public class TimeIndex extends AbstractIndex {
         TimestampOffset entry = lastEntry();
         long lastTimestamp = entry.timestamp;
         long lastOffset = entry.offset;
-        if (entries() != 0 && lastTimestamp < timestamp(mmap() == null ? buffer() : mmap(), 0))
+        if (entries() != 0 && lastTimestamp < timestamp(storageManager.indexBuffer(file().getAbsolutePath()), 0))
             throw new CorruptIndexException("Corrupt time index found, time index file (" + file().getAbsolutePath() + ") has "
                 + "non-zero size but the last timestamp is " + lastTimestamp + " which is less than the first timestamp "
                 + "timestamp(mmap(), 0)");
@@ -100,12 +103,7 @@ public class TimeIndex extends AbstractIndex {
     public void truncateTo(long offset) {
         lock.lock();
         try {
-            ByteBuffer idx = null;
-            if (mmap() != null) {
-                idx = mmap().duplicate();
-            } else {
-                idx = buffer().duplicate();
-            }
+            ByteBuffer idx = storageManager.indexBuffer(file().getAbsolutePath());
             int slot = largestLowerBoundSlotFor(idx, offset, IndexSearchType.VALUE);
 
             /* There are 3 cases for choosing the new size
@@ -147,7 +145,7 @@ public class TimeIndex extends AbstractIndex {
             if (n >= entries())
                 throw new IllegalArgumentException("Attempt to fetch the " + n + "th entry from time index "
                     + file().getAbsolutePath() + " which has size " + entries());
-            return parseEntry(mmap() == null ? buffer() : mmap(), n);
+            return parseEntry(storageManager.indexBuffer(file().getAbsolutePath()), n);
         });
     }
 
@@ -161,12 +159,7 @@ public class TimeIndex extends AbstractIndex {
      */
     public TimestampOffset lookup(long targetTimestamp) {
         return maybeLock(lock, () -> {
-            ByteBuffer idx = null;
-            if (mmap() != null) {
-                idx = mmap().duplicate();
-            } else {
-                idx = buffer().duplicate();
-            }
+            ByteBuffer idx = storageManager.indexBuffer(file().getAbsolutePath());
             int slot = largestLowerBoundSlotFor(idx, targetTimestamp, IndexSearchType.KEY);
             if (slot == -1)
                 return new TimestampOffset(RecordBatch.NO_TIMESTAMP, baseOffset());
@@ -218,17 +211,13 @@ public class TimeIndex extends AbstractIndex {
             // index will be empty.
             if (timestamp > lastEntry.timestamp) {
                 log.trace("Adding index entry {} => {} to {}.", timestamp, offset, file().getAbsolutePath());
-                MappedByteBuffer mmap = mmap();
-                if (mmap != null) {
-                    mmap.putLong(timestamp);
-                    mmap.putInt(relativeOffset(offset));
-                } else {
-                  buffer().putLong(timestamp);
-                  buffer().putInt(relativeOffset(offset));
-                }
+                ByteBuffer buffer = storageManager.indexBuffer(file().getAbsolutePath());
+
+                buffer.putLong(timestamp);
+                buffer.putInt(relativeOffset(offset));
                 incrementEntries();
                 this.lastEntry = new TimestampOffset(timestamp, offset);
-                int pos = mmap != null ? mmap.position() : buffer().position();
+                int pos = storageManager.indexBuffer(file().getAbsolutePath()).position();
                 if (entries() * ENTRY_SIZE != pos)
                     throw new IllegalStateException(entries() + " entries but file position in index is " + pos);
             }
@@ -285,7 +274,7 @@ public class TimeIndex extends AbstractIndex {
             if (entries == 0)
                 return new TimestampOffset(RecordBatch.NO_TIMESTAMP, baseOffset());
             else
-                return parseEntry(mmap() == null ? buffer() : mmap(), entries - 1);
+                return parseEntry(storageManager.indexBuffer(file().getAbsolutePath()), entries - 1);
         } finally {
             lock.unlock();
         }

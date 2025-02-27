@@ -878,8 +878,8 @@ public class LogSegment implements Closeable {
         if (config.logUseAny) {
             return new LogSegment(
                     records,
-                    LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize, true),
-                    LazyIndex.forTime(LogFileUtils.timeIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize, true),
+                    LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize, storageManager),
+                    LazyIndex.forTime(LogFileUtils.timeIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize, storageManager),
                     new TransactionIndex(baseOffset, null),
                     baseOffset,
                     config.indexInterval,
@@ -889,8 +889,8 @@ public class LogSegment implements Closeable {
         else {
             return new LogSegment(
                     records,
-                    LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize),
-                    LazyIndex.forTime(LogFileUtils.timeIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize),
+                    LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize, storageManager),
+                    LazyIndex.forTime(LogFileUtils.timeIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize, storageManager),
                     new TransactionIndex(baseOffset, LogFileUtils.transactionIndexFile(dir, baseOffset, fileSuffix)),
                     baseOffset,
                     config.indexInterval,
