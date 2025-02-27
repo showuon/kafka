@@ -109,7 +109,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * possible exceptions
      */
     public void readInto(ByteBuffer buffer, int position) throws IOException {
-        storageManager.readRecords(file().getAbsolutePath(), buffer, position + this.start);
+        storageManager.read(file().getAbsolutePath(), buffer, position + this.start, StorageManager.StorageType.LOG);
         buffer.flip();
     }
 
@@ -187,7 +187,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * Commit all written data to the physical disk
      */
     public void flush() throws IOException {
-        storageManager.flushRecords(file().getAbsolutePath());
+        storageManager.flush(file().getAbsolutePath(), StorageManager.StorageType.LOG);
     }
 
     /**
@@ -196,14 +196,14 @@ public class FileRecords extends AbstractRecords implements Closeable {
     public void close() throws IOException {
         flush();
         trim();
-        storageManager.closeRecords(file().getAbsolutePath());
+        storageManager.close(file().getAbsolutePath(), StorageManager.StorageType.LOG);
     }
 
     /**
      * Close file handlers used by the FileChannel but don't write to disk. This is used when the disk may have failed
      */
     public void closeHandlers() throws IOException {
-        storageManager.closeRecords(file().getAbsolutePath());
+        storageManager.close(file().getAbsolutePath(), StorageManager.StorageType.LOG);
     }
 
     /**
@@ -213,7 +213,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
      *          because it did not exist
      */
     public boolean deleteIfExists() throws IOException {
-        return storageManager.deleteRecordsIfExists(file().getAbsolutePath());
+        return storageManager.deleteIfExists(file().getAbsolutePath(), StorageManager.StorageType.LOG);
     }
 
     /**
@@ -228,7 +228,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @param parentDir The new parent directory
      */
     public void updateParentDir(File parentDir) {
-        storageManager.updateRecordsParentDir(file().getAbsolutePath(), parentDir);
+        storageManager.updateParentDir(file().getAbsolutePath(), parentDir, StorageManager.StorageType.LOG);
         this.file = new File(parentDir, file().getName());
     }
 
@@ -237,7 +237,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @throws IOException if rename fails.
      */
     public void renameTo(File f) throws IOException {
-        storageManager.renameRecordsTo(file().getAbsolutePath(), f);
+        storageManager.renameTo(file().getAbsolutePath(), f, StorageManager.StorageType.LOG);
         this.file = f;
     }
 
@@ -257,7 +257,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
             throw new KafkaException("Attempt to truncate log segment " + "file" + " to " + targetSize + " bytes failed, " +
                     " size of this log segment is " + originalSize + " bytes.");
         if (targetSize < (int) storageManager.recordsSize(file().getAbsolutePath())) {
-            storageManager.truncateRecords(file().getAbsolutePath(), targetSize);
+            storageManager.truncate(file().getAbsolutePath(), targetSize, StorageManager.StorageType.LOG);
             size.set(targetSize);
         }
         return originalSize - targetSize;
