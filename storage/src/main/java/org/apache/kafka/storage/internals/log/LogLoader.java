@@ -429,7 +429,8 @@ public class LogLoader {
                 dir,
                 this.producerStateManager.maxTransactionTimeoutMs(),
                 this.producerStateManager.producerStateManagerConfig(),
-                time);
+                time,
+                storageManager);
         UnifiedLog.rebuildProducerState(
                 producerStateManager,
                 segments,

@@ -16,6 +16,8 @@
  */
 package org.apache.kafka.storage.internals.log;
 
+import org.apache.kafka.common.storage.FileStorageManager;
+import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.common.utils.Utils;
 
 import org.slf4j.Logger;
@@ -32,18 +34,24 @@ public class SnapshotFile {
 
     public final long offset;
     private volatile File file;
+    private final StorageManager storageManager;
 
     public SnapshotFile(File file) {
-        this(file, offsetFromFileName(file.getName()));
+        this(file, offsetFromFileName(file.getName()), new FileStorageManager());
     }
 
-    public SnapshotFile(File file, long offset) {
+    public SnapshotFile(File file, StorageManager storageManager) {
+        this(file, offsetFromFileName(file.getName()), storageManager);
+    }
+
+    public SnapshotFile(File file, long offset, StorageManager storageManager) {
         this.file = file;
         this.offset = offset;
+        this.storageManager = storageManager;
     }
 
     public boolean deleteIfExists() throws IOException {
-        boolean deleted = Files.deleteIfExists(file.toPath());
+        boolean deleted = storageManager.deleteIfExists(file.getAbsolutePath(), StorageManager.StorageType.SNAPSHOT);
         if (deleted) {
             log.info("Deleted producer state snapshot {}", file.getAbsolutePath());
         } else {
@@ -54,7 +62,9 @@ public class SnapshotFile {
 
     public void updateParentDir(File parentDir) {
         String name = file.getName();
+        String path = file.getAbsolutePath() + File.separator + name;
         file = new File(parentDir, name);
+        storageManager.updateParentDir(path, parentDir, StorageManager.StorageType.SNAPSHOT);
     }
 
     public File file() {
@@ -64,7 +74,7 @@ public class SnapshotFile {
     public void renameToDelete() throws IOException {
         File renamed = new File(Utils.replaceSuffix(file.getPath(), "", LogFileUtils.DELETED_FILE_SUFFIX));
         try {
-            Utils.atomicMoveWithFallback(file.toPath(), renamed.toPath(), false);
+            storageManager.renameTo(file.getAbsolutePath(), renamed, StorageManager.StorageType.SNAPSHOT);
         } finally {
             file = renamed;
         }

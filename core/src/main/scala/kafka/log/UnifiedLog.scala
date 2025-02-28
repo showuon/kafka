@@ -25,8 +25,9 @@ import org.apache.kafka.common.record._
 import org.apache.kafka.common.requests.ListOffsetsRequest
 import org.apache.kafka.common.requests.OffsetsForLeaderEpochResponse.UNDEFINED_EPOCH_OFFSET
 import org.apache.kafka.common.requests.ProduceResponse.RecordError
+import org.apache.kafka.common.storage.StorageManager.StorageType
 import org.apache.kafka.common.storage.{FileStorageManager, StorageManager}
-import org.apache.kafka.common.utils.{PrimitiveRef, Time, Utils}
+import org.apache.kafka.common.utils.{PrimitiveRef, Time}
 import org.apache.kafka.common.{InvalidRecordException, KafkaException, TopicPartition, Uuid}
 import org.apache.kafka.server.common.{OffsetAndEpoch, RequestLocal}
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
@@ -40,7 +41,7 @@ import org.apache.kafka.storage.log.metrics.BrokerTopicStats
 
 import java.io.{File, IOException}
 import java.lang.{Long => JLong}
-import java.nio.file.{Files, Path}
+import java.nio.file.{Files, NoSuchFileException, Path}
 import java.util
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap, ScheduledFuture}
 import java.util.stream.Collectors
@@ -1716,7 +1717,12 @@ class UnifiedLog(@volatile var logStartOffset: Long,
 
   private[log] def flushProducerStateSnapshot(snapshot: Path): Unit = {
     maybeHandleIOException(s"Error while deleting producer state snapshot $snapshot for $topicPartition in dir ${dir.getParent}") {
-      Utils.flushFileIfExists(snapshot)
+      try {
+        storageManager.flush(snapshot.toFile.getAbsolutePath, StorageType.SNAPSHOT)
+      } catch {
+        case e: NoSuchFileException =>
+          logger.warn("Failed to flush file {}", snapshot, e)
+      }
     }
   }
 
@@ -1911,7 +1917,7 @@ object UnifiedLog extends Logging {
       Optional.empty,
       scheduler)
     val producerStateManager = new ProducerStateManager(topicPartition, dir,
-      maxTransactionTimeoutMs, producerStateManagerConfig, time, config.logUseAny)
+      maxTransactionTimeoutMs, producerStateManagerConfig, time, storageManager)
     val isRemoteLogEnabled = JUnifiedLog.isRemoteLogEnabled(remoteStorageSystemEnable, config, topicPartition.topic)
     val offsets = new LogLoader(
       dir,
