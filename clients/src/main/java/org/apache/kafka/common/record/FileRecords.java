@@ -128,7 +128,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
     public FileRecords slice(int position, int size) throws IOException {
         int availableBytes = availableBytes(position, size);
         int startPosition = this.start + position;
-        return new FileRecords(file, startPosition, startPosition + availableBytes, true, storageManager, size);
+        return new FileRecords(file, startPosition, startPosition + availableBytes, true, storageManager, availableBytes);
     }
 
     /**
