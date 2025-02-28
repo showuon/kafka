@@ -211,16 +211,20 @@ public class TimeIndex extends AbstractIndex {
             // index will be empty.
             if (timestamp > lastEntry.timestamp) {
                 log.trace("Adding index entry {} => {} to {}.", timestamp, offset, file().getAbsolutePath());
-                ByteBuffer buffer = storageManager.indexBuffer(file().getAbsolutePath());
-
+                ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES + Integer.BYTES);
                 buffer.putLong(timestamp);
                 buffer.putInt(relativeOffset(offset));
+                buffer.flip();
+                storageManager.append(file().getAbsolutePath(), buffer, StorageManager.StorageType.INDEX);
+
                 incrementEntries();
                 this.lastEntry = new TimestampOffset(timestamp, offset);
                 int pos = storageManager.indexBuffer(file().getAbsolutePath()).position();
                 if (entries() * ENTRY_SIZE != pos)
                     throw new IllegalStateException(entries() + " entries but file position in index is " + pos);
             }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         } finally {
             lock.unlock();
         }

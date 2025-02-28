@@ -103,7 +103,7 @@ public final class OffsetIndex extends AbstractIndex {
      */
     public OffsetPosition lookup(long targetOffset) {
         return maybeLock(lock, () -> {
-            ByteBuffer idx = storageManager.indexBuffer(file().getAbsolutePath()).duplicate();
+            ByteBuffer idx = storageManager.indexBuffer(file().getAbsolutePath());
             int slot = largestLowerBoundSlotFor(idx, targetOffset, IndexSearchType.KEY);
             if (slot == -1)
                 return new OffsetPosition(baseOffset(), 0);
@@ -133,7 +133,7 @@ public final class OffsetIndex extends AbstractIndex {
      */
     public Optional<OffsetPosition> fetchUpperBoundOffset(OffsetPosition fetchOffset, int fetchSize) {
         return maybeLock(lock, () -> {
-            ByteBuffer idx = storageManager.indexBuffer(file().getAbsolutePath()).duplicate();
+            ByteBuffer idx = storageManager.indexBuffer(file().getAbsolutePath());
             int slot = smallestUpperBoundSlotFor(idx, fetchOffset.position + fetchSize, IndexSearchType.VALUE);
             if (slot == -1)
                 return Optional.empty();
@@ -155,9 +155,11 @@ public final class OffsetIndex extends AbstractIndex {
 
             if (entries() == 0 || offset > lastOffset) {
                 log.trace("Adding index entry {} => {} to {}", offset, position, file().getAbsolutePath());
-                ByteBuffer buffer = storageManager.indexBuffer(file().getAbsolutePath());
+                ByteBuffer buffer = ByteBuffer.allocate(Integer.BYTES * 2);
                 buffer.putInt(relativeOffset(offset));
                 buffer.putInt(position);
+                buffer.flip();
+                storageManager.append(file().getAbsolutePath(), buffer, StorageManager.StorageType.INDEX);
 
                 incrementEntries();
                 lastOffset = offset;
@@ -167,6 +169,8 @@ public final class OffsetIndex extends AbstractIndex {
             } else
                 throw new InvalidOffsetException("Attempt to append an offset " + offset + " to position " + entries() +
                     " no larger than the last offset appended (" + lastOffset + ") to " + file().getAbsolutePath());
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         } finally {
             lock.unlock();
         }
