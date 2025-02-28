@@ -28,11 +28,17 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.SocketChannel;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class FileStorageManager implements StorageManager {
     private final Map<String, FileChannel> channelMap = new ConcurrentHashMap<>();
@@ -102,6 +108,10 @@ public class FileStorageManager implements StorageManager {
             case INDEX:
                 indexBufferMap.get(path).put(buffer);
                 break;
+            case SNAPSHOT:
+                try (FileChannel fileChannel = FileChannel.open(new File(path).toPath(), StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
+                    Utils.writeFully(fileChannel, buffer);
+                }
         }
         return sizeToAppend;
     }
@@ -114,6 +124,10 @@ public class FileStorageManager implements StorageManager {
             case TXN:
                 Utils.readFully(txnChannelMap.get(path), buffer, position);
                 break;
+            case SNAPSHOT:
+                try (FileChannel fileChannel = FileChannel.open(new File(path).toPath(), StandardOpenOption.READ)) {
+                    Utils.readFully(fileChannel, buffer, position);
+                }
         }
     }
 
@@ -129,6 +143,11 @@ public class FileStorageManager implements StorageManager {
                 break;
             case TXN:
                 txnChannelMap.get(path).force(true);
+                break;
+            case SNAPSHOT:
+                try (FileChannel fileChannel = FileChannel.open(new File(path).toPath(), StandardOpenOption.READ)) {
+                    fileChannel.force(true);
+                }
                 break;
         }
     }
@@ -153,9 +172,13 @@ public class FileStorageManager implements StorageManager {
     public long position(String path, StorageType storageType) throws IOException {
         switch (storageType) {
             case INDEX:
-                return indexBufferMap.get(path).position();
+                return indexBufferMap.get(path).limit();
             case TXN:
                 return txnChannelMap.get(path).position();
+            case SNAPSHOT:
+                try (FileChannel fileChannel = FileChannel.open(new File(path).toPath(), StandardOpenOption.READ)) {
+                    return fileChannel.position();
+                }
         }
         return 0;
     }
@@ -180,6 +203,25 @@ public class FileStorageManager implements StorageManager {
                 txnChannelMap.get(path).position(newPos);
                 break;
         }
+    }
+
+    public List<File> listFiles(File dir, StorageType storageType) throws IOException {
+        if (dir.exists() && dir.isDirectory()) {
+            switch (storageType) {
+                case SNAPSHOT:
+                    try (Stream<Path> paths = Files.list(dir.toPath())) {
+                        return paths.filter(this::isSnapshotFile)
+                                .map(Path::toFile).collect(Collectors.toList());
+                    }
+
+            }
+        }
+        return Collections.emptyList();
+    }
+
+    private boolean isSnapshotFile(Path path) {
+        String PRODUCER_SNAPSHOT_FILE_SUFFIX = ".snapshot";
+        return Files.isRegularFile(path) && path.getFileName().toString().endsWith(PRODUCER_SNAPSHOT_FILE_SUFFIX);
     }
 
 
