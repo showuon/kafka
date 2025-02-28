@@ -98,6 +98,10 @@ public class FileStorageManager implements StorageManager {
                 return channelMap.get(path).write(buffer);
             case TXN:
                 Utils.writeFully(txnChannelMap.get(path), buffer);
+                break;
+            case INDEX:
+                indexBufferMap.get(path).put(buffer);
+                break;
         }
         return sizeToAppend;
     }
@@ -191,6 +195,7 @@ public class FileStorageManager implements StorageManager {
                      boolean isSlice,
                      int start,
                      int end) throws IOException {
+
         FileChannel channel = openChannel(file, mutable, fileAlreadyExists, initFileSize, preallocate);
 
         this.channelMap.put(file.getAbsolutePath(), channel);
@@ -311,7 +316,7 @@ public class FileStorageManager implements StorageManager {
     }
 
     public ByteBuffer indexBuffer(String path) {
-        return indexBufferMap.get(path);
+        return indexBufferMap.get(path).duplicate();
     }
 
     public boolean resizeIndex(String path, int newSize, AtomicLong length, AtomicInteger maxEntries, int entrySize) throws IOException {

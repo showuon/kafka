@@ -56,13 +56,19 @@ public class InMemoryStorageManager implements StorageManager {
         File updatedFile = new File(parentDir, existingFile.getName());
         switch (storageType) {
             case LOG:
-                recordBufferMap.put(updatedFile.getAbsolutePath(), recordBufferMap.remove(path));
+                if (recordBufferMap.containsKey(path)) {
+                    recordBufferMap.put(updatedFile.getAbsolutePath(), recordBufferMap.remove(path));
+                }
                 break;
             case INDEX:
-                indexBufferMap.put(updatedFile.getAbsolutePath(), indexBufferMap.remove(path));
+                if (indexBufferMap.containsKey(path)) {
+                    indexBufferMap.put(updatedFile.getAbsolutePath(), indexBufferMap.remove(path));
+                }
                 break;
             case TXN:
-                txnBufferMap.put(updatedFile.getAbsolutePath(), txnBufferMap.remove(path));
+                if (txnBufferMap.containsKey(path)) {
+                    txnBufferMap.put(updatedFile.getAbsolutePath(), txnBufferMap.remove(path));
+                }
                 break;
         }
     }
@@ -84,13 +90,15 @@ public class InMemoryStorageManager implements StorageManager {
     public int append(String path, ByteBuffer buffer, StorageType storageType) throws IOException {
         switch (storageType) {
             case LOG:
-                appendToBuffer(path, recordBufferMap, buffer);
-                break;
+                return appendToBuffer(path, recordBufferMap, buffer);
             case TXN:
-                appendToBuffer(path, txnBufferMap, buffer);
-                break;
+                return appendToBuffer(path, txnBufferMap, buffer);
+            case INDEX:
+                int sizeToAppend = buffer.remaining();
+                indexBufferMap.get(path).put(buffer);
+                return sizeToAppend;
         }
-        return buffer.remaining();
+        return 0;
     }
 
     public void read(String path, ByteBuffer buffer, int position, StorageType storageType) throws IOException {
@@ -104,7 +112,7 @@ public class InMemoryStorageManager implements StorageManager {
         }
     }
 
-    private void appendToBuffer(String path, Map<String, ByteBuffer> bufferMap, ByteBuffer buffer) throws IOException {
+    private int appendToBuffer(String path, Map<String, ByteBuffer> bufferMap, ByteBuffer buffer) throws IOException {
         int sizeToAppend = buffer.remaining();
         if (!bufferMap.containsKey(path)) {
             ByteBuffer temp = ByteBuffer.allocate(sizeToAppend);
@@ -118,6 +126,7 @@ public class InMemoryStorageManager implements StorageManager {
             temp.put(buffer);
             bufferMap.put(path, temp);
         }
+        return sizeToAppend;
     }
 
     public long position(String path, StorageType storageType) throws IOException {
@@ -225,7 +234,7 @@ public class InMemoryStorageManager implements StorageManager {
     }
 
     public ByteBuffer indexBuffer(String path) {
-        return indexBufferMap.get(path);
+        return indexBufferMap.get(path).duplicate();
     }
 
     public boolean resizeIndex(String path, int newSize, AtomicLong length, AtomicInteger maxEntries, int entrySize) throws IOException {
