@@ -20,6 +20,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -30,7 +31,9 @@ public interface StorageManager {
     enum StorageType {
         LOG,
         INDEX,
-        TXN
+        TXN,
+        SNAPSHOT,
+        CHECKPOINT
     }
 
     // ----- common -------
@@ -44,6 +47,7 @@ public interface StorageManager {
     default void close(String path, StorageType storageType) throws IOException {}
     long position(String path, StorageType storageType) throws IOException;
     boolean isEmpty(String path, StorageType storageType);
+    List<File> listFiles(File dir, StorageType storageType) throws IOException;
 
 
     // ---- log files ----

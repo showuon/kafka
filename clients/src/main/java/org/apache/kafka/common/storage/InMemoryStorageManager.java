@@ -22,15 +22,21 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class InMemoryStorageManager implements StorageManager {
     private Map<String, ByteBuffer> recordBufferMap = new ConcurrentHashMap<>();
     private Map<String, ByteBuffer> indexBufferMap = new ConcurrentHashMap<>();
     private Map<String, ByteBuffer> txnBufferMap = new ConcurrentHashMap<>();
+    private Map<String, ByteBuffer> snapshotBufferMap = new ConcurrentHashMap<>();
 
     // ----- common -------
     public boolean deleteIfExists(String path, StorageType storageType) throws IOException {
@@ -44,6 +50,8 @@ public class InMemoryStorageManager implements StorageManager {
             case TXN:
                 txnBufferMap.remove(path);
                 break;
+            case SNAPSHOT:
+                snapshotBufferMap.remove(path);
         }
 
         File file = new File(path);
@@ -70,6 +78,11 @@ public class InMemoryStorageManager implements StorageManager {
                     txnBufferMap.put(updatedFile.getAbsolutePath(), txnBufferMap.remove(path));
                 }
                 break;
+            case SNAPSHOT:
+                if (snapshotBufferMap.containsKey(path)) {
+                    snapshotBufferMap.put(updatedFile.getAbsolutePath(), snapshotBufferMap.remove(path));
+                }
+                break;
         }
     }
 
@@ -84,6 +97,9 @@ public class InMemoryStorageManager implements StorageManager {
             case TXN:
                 txnBufferMap.put(f.getAbsolutePath(), txnBufferMap.remove(path));
                 break;
+            case SNAPSHOT:
+                snapshotBufferMap.put(f.getAbsolutePath(), snapshotBufferMap.remove(path));
+                break;
         }
     }
 
@@ -97,6 +113,8 @@ public class InMemoryStorageManager implements StorageManager {
                 int sizeToAppend = buffer.remaining();
                 indexBufferMap.get(path).put(buffer);
                 return sizeToAppend;
+            case SNAPSHOT:
+                return appendToBuffer(path, snapshotBufferMap, buffer);
         }
         return 0;
     }
@@ -109,6 +127,8 @@ public class InMemoryStorageManager implements StorageManager {
             case TXN:
                 buffer.put(txnBufferMap.get(path).array(), position, buffer.remaining());
                 break;
+            case SNAPSHOT:
+                buffer.put(snapshotBufferMap.get(path).array(), position, buffer.remaining());
         }
     }
 
@@ -132,9 +152,11 @@ public class InMemoryStorageManager implements StorageManager {
     public long position(String path, StorageType storageType) throws IOException {
         switch (storageType) {
             case INDEX:
-                return indexBufferMap.get(path).position();
+                return indexBufferMap.get(path).limit();
             case TXN:
-                return txnBufferMap.get(path).position();
+                return txnBufferMap.get(path).limit();
+            case SNAPSHOT:
+                return snapshotBufferMap.get(path).limit();
         }
         return 0;
     }
@@ -160,6 +182,19 @@ public class InMemoryStorageManager implements StorageManager {
                 break;
         }
     }
+
+    public List<File> listFiles(File dir, StorageType storageType) throws IOException {
+        String PRODUCER_SNAPSHOT_FILE_SUFFIX = ".snapshot";
+        switch (storageType) {
+            case SNAPSHOT:
+                return snapshotBufferMap.keySet().stream().filter(path -> path.endsWith(PRODUCER_SNAPSHOT_FILE_SUFFIX))
+                        .map(path -> new File(path)).collect(Collectors.toList());
+        }
+        return Collections.emptyList();
+    }
+
+
+
 
 
 

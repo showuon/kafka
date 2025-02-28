@@ -20,6 +20,8 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.protocol.MessageUtil;
 import org.apache.kafka.common.record.RecordBatch;
+import org.apache.kafka.common.storage.FileStorageManager;
+import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.common.utils.ByteUtils;
 import org.apache.kafka.common.utils.Crc32C;
 import org.apache.kafka.common.utils.LogContext;
@@ -106,21 +108,22 @@ public class ProducerStateManager {
     private ConcurrentSkipListMap<Long, SnapshotFile> snapshots;
     private long lastMapOffset = 0L;
     private long lastSnapOffset = 0L;
-    private final boolean useAnyLog;
+    private final StorageManager storageManager;
 
-    public ProducerStateManager(TopicPartition topicPartition, File logDir, int maxTransactionTimeoutMs, ProducerStateManagerConfig producerStateManagerConfig, Time time, boolean useAnyLog) throws IOException {
+    public ProducerStateManager(TopicPartition topicPartition, File logDir, int maxTransactionTimeoutMs, ProducerStateManagerConfig producerStateManagerConfig, Time time, StorageManager storageManager) throws IOException {
         this.topicPartition = topicPartition;
         this.logDir = logDir;
         this.maxTransactionTimeoutMs = maxTransactionTimeoutMs;
         this.producerStateManagerConfig = producerStateManagerConfig;
         this.time = time;
         log = new LogContext("[ProducerStateManager partition=" + topicPartition + "] ").logger(ProducerStateManager.class);
+        this.storageManager = storageManager;
         snapshots = loadSnapshots();
-        this.useAnyLog = useAnyLog;
+
     }
 
     public ProducerStateManager(TopicPartition topicPartition, File logDir, int maxTransactionTimeoutMs, ProducerStateManagerConfig producerStateManagerConfig, Time time) throws IOException {
-        this(topicPartition, logDir, maxTransactionTimeoutMs, producerStateManagerConfig, time, false);
+        this(topicPartition, logDir, maxTransactionTimeoutMs, producerStateManagerConfig, time, new FileStorageManager());
     }
 
     public int maxTransactionTimeoutMs() {
@@ -190,7 +193,7 @@ public class ProducerStateManager {
      */
     private ConcurrentSkipListMap<Long, SnapshotFile> loadSnapshots() throws IOException {
         ConcurrentSkipListMap<Long, SnapshotFile> offsetToSnapshots = new ConcurrentSkipListMap<>();
-        List<SnapshotFile> snapshotFiles = listSnapshotFiles(logDir);
+        List<SnapshotFile> snapshotFiles = listSnapshotFiles(logDir, storageManager);
         for (SnapshotFile snapshotFile : snapshotFiles) {
             offsetToSnapshots.put(snapshotFile.offset, snapshotFile);
         }
@@ -307,7 +310,7 @@ public class ProducerStateManager {
                 SnapshotFile snapshot = latestSnapshotFileOptional.get();
                 try {
                     log.info("Loading producer state from snapshot file '{}'", snapshot);
-                    Stream<ProducerStateEntry> loadedProducers = readSnapshot(snapshot.file()).stream().filter(producerEntry -> !isProducerExpired(currentTime, producerEntry));
+                    Stream<ProducerStateEntry> loadedProducers = readSnapshot(snapshot.file(), storageManager).stream().filter(producerEntry -> !isProducerExpired(currentTime, producerEntry));
                     loadedProducers.forEach(this::loadProducerEntry);
                     lastSnapOffset = snapshot.offset;
                     lastMapOffset = lastSnapOffset;
@@ -442,10 +445,9 @@ public class ProducerStateManager {
     public Optional<File> takeSnapshot(boolean sync) throws IOException {
         // If not a new offset, then it is not worth taking another snapshot
         if (lastMapOffset > lastSnapOffset) {
-            SnapshotFile snapshotFile = new SnapshotFile(LogFileUtils.producerSnapshotFile(logDir, lastMapOffset));
+            SnapshotFile snapshotFile = new SnapshotFile(LogFileUtils.producerSnapshotFile(logDir, lastMapOffset), storageManager);
             long start = time.hiResClockMs();
-            if (!useAnyLog)
-                writeSnapshot(snapshotFile.file(), producers, sync);
+            writeSnapshot(snapshotFile.file(), producers, sync, storageManager);
             log.info("Wrote producer snapshot at offset {} with {} producer ids in {} ms.", lastMapOffset,
                     producers.size(), time.hiResClockMs() - start);
 
@@ -464,7 +466,9 @@ public class ProducerStateManager {
      */
     public void updateParentDir(File parentDir) {
         logDir = parentDir;
-        snapshots.forEach((k, v) -> v.updateParentDir(parentDir));
+        snapshots.forEach((k, v) -> {
+            v.updateParentDir(parentDir);
+        });
     }
 
     /**
@@ -623,10 +627,14 @@ public class ProducerStateManager {
         return Optional.empty();
     }
 
-    public static List<ProducerStateEntry> readSnapshot(File file) throws IOException {
-        byte[] buffer = Files.readAllBytes(file.toPath());
+    public static List<ProducerStateEntry> readSnapshot(File file, StorageManager storageManager) throws IOException {
+        long size = storageManager.position(file.getAbsolutePath(), StorageManager.StorageType.SNAPSHOT);
+        if (size > Integer.MAX_VALUE) {
+            throw new CorruptSnapshotException("Snapshot size is too large: " + size);
+        }
+        ByteBuffer byteBuffer = ByteBuffer.allocate((int) size);
+        storageManager.read(file.getAbsolutePath(), byteBuffer, 0, StorageManager.StorageType.SNAPSHOT);
 
-        ByteBuffer byteBuffer = ByteBuffer.wrap(buffer);
         short version;
         ProducerSnapshot producerSnapshot;
         try {
@@ -639,7 +647,7 @@ public class ProducerStateManager {
         }
 
         long crc = producerSnapshot.crc();
-        long computedCrc = Crc32C.compute(buffer, PRODUCER_ENTRIES_OFFSET, buffer.length - PRODUCER_ENTRIES_OFFSET);
+        long computedCrc = Crc32C.compute(byteBuffer.array(), PRODUCER_ENTRIES_OFFSET, byteBuffer.limit() - PRODUCER_ENTRIES_OFFSET);
         if (crc != computedCrc)
             throw new CorruptSnapshotException("Snapshot is corrupt (CRC is no longer valid). Stored crc: " + crc
                     + ". Computed crc: " + computedCrc);
@@ -666,7 +674,7 @@ public class ProducerStateManager {
     }
 
     // visible for testing
-    public static void writeSnapshot(File file, Map<Long, ProducerStateEntry> entries, boolean sync) throws IOException {
+    public static void writeSnapshot(File file, Map<Long, ProducerStateEntry> entries, boolean sync, StorageManager storageManager) throws IOException {
         ProducerSnapshot producerSnapshot = new ProducerSnapshot();
         List<ProducerSnapshot.ProducerEntry> producerEntries = new ArrayList<>(entries.size());
         for (Map.Entry<Long, ProducerStateEntry> producerIdEntry : entries.entrySet()) {
@@ -691,28 +699,31 @@ public class ProducerStateManager {
         long crc = Crc32C.compute(buffer, PRODUCER_ENTRIES_OFFSET, buffer.limit() - PRODUCER_ENTRIES_OFFSET);
         ByteUtils.writeUnsignedInt(buffer, CRC_OFFSET, crc);
 
-        try (FileChannel fileChannel = FileChannel.open(file.toPath(), StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
-            Utils.writeFully(fileChannel, buffer);
-            if (sync) {
-                fileChannel.force(true);
-            }
-        }
+        storageManager.append(file.getAbsolutePath(), buffer, StorageManager.StorageType.SNAPSHOT);
+        if (sync)
+            storageManager.flush(file.getAbsolutePath(), StorageManager.StorageType.SNAPSHOT);
+
     }
 
-    private static boolean isSnapshotFile(Path path) {
-        return Files.isRegularFile(path) && path.getFileName().toString().endsWith(LogFileUtils.PRODUCER_SNAPSHOT_FILE_SUFFIX);
-    }
+//    private static boolean isSnapshotFile(Path path) {
+//        return Files.isRegularFile(path) && path.getFileName().toString().endsWith(LogFileUtils.PRODUCER_SNAPSHOT_FILE_SUFFIX);
+//    }
 
     // visible for testing
     public static List<SnapshotFile> listSnapshotFiles(File dir) throws IOException {
-        if (dir.exists() && dir.isDirectory()) {
-            try (Stream<Path> paths = Files.list(dir.toPath())) {
-                return paths.filter(ProducerStateManager::isSnapshotFile)
-                        .map(path -> new SnapshotFile(path.toFile())).collect(Collectors.toList());
-            }
-        } else {
-            return Collections.emptyList();
-        }
+        return listSnapshotFiles(dir, new FileStorageManager());
+    }
+    public static List<SnapshotFile> listSnapshotFiles(File dir, StorageManager storageManager) throws IOException {
+        return storageManager.listFiles(dir, StorageManager.StorageType.SNAPSHOT).stream()
+                .map(file -> new SnapshotFile(file, storageManager)).collect(Collectors.toList());
+//        if (dir.exists() && dir.isDirectory()) {
+//            try (Stream<Path> paths = Files.list(dir.toPath())) {
+//                return paths.filter(ProducerStateManager::isSnapshotFile)
+//                        .map(path -> new SnapshotFile(path.toFile(), storageManager)).collect(Collectors.toList());
+//            }
+//        } else {
+//            return Collections.emptyList();
+//        }
     }
 
 }
