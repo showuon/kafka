@@ -705,10 +705,6 @@ public class ProducerStateManager {
 
     }
 
-//    private static boolean isSnapshotFile(Path path) {
-//        return Files.isRegularFile(path) && path.getFileName().toString().endsWith(LogFileUtils.PRODUCER_SNAPSHOT_FILE_SUFFIX);
-//    }
-
     // visible for testing
     public static List<SnapshotFile> listSnapshotFiles(File dir) throws IOException {
         return listSnapshotFiles(dir, new FileStorageManager());
@@ -716,14 +712,6 @@ public class ProducerStateManager {
     public static List<SnapshotFile> listSnapshotFiles(File dir, StorageManager storageManager) throws IOException {
         return storageManager.listFiles(dir, StorageManager.StorageType.SNAPSHOT).stream()
                 .map(file -> new SnapshotFile(file, storageManager)).collect(Collectors.toList());
-//        if (dir.exists() && dir.isDirectory()) {
-//            try (Stream<Path> paths = Files.list(dir.toPath())) {
-//                return paths.filter(ProducerStateManager::isSnapshotFile)
-//                        .map(path -> new SnapshotFile(path.toFile(), storageManager)).collect(Collectors.toList());
-//            }
-//        } else {
-//            return Collections.emptyList();
-//        }
     }
 
 }
