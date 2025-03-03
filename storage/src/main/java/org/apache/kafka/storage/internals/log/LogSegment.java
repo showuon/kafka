@@ -874,16 +874,15 @@ public class LogSegment implements Closeable {
                                   int initFileSize, boolean preallocate, String fileSuffix, StorageManager storageManager) throws IOException {
         int maxIndexSize = config.maxIndexSize;
 
-        FileRecords records = FileRecords.open(LogFileUtils.logFile(dir, baseOffset, fileSuffix), fileAlreadyExists, initFileSize, preallocate, storageManager);
         return new LogSegment(
-                records,
-                LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize, storageManager),
-                LazyIndex.forTime(LogFileUtils.timeIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize, storageManager),
-                new TransactionIndex(baseOffset, LogFileUtils.transactionIndexFile(dir, baseOffset, fileSuffix), storageManager),
-                baseOffset,
-                config.indexInterval,
-                config.randomSegmentJitter(),
-                time);
+            FileRecords.open(LogFileUtils.logFile(dir, baseOffset, fileSuffix), fileAlreadyExists, initFileSize, preallocate, storageManager),
+            LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize, storageManager),
+            LazyIndex.forTime(LogFileUtils.timeIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize, storageManager),
+            new TransactionIndex(baseOffset, LogFileUtils.transactionIndexFile(dir, baseOffset, fileSuffix), storageManager),
+            baseOffset,
+            config.indexInterval,
+            config.randomSegmentJitter(),
+            time);
     }
 
     public static void deleteIfExists(File dir, long baseOffset, String fileSuffix) throws IOException {
