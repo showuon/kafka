@@ -931,7 +931,7 @@ public class LocalLog {
                                                      Scheduler scheduler,
                                                      LogDirFailureChannel logDirFailureChannel,
                                                      String logPrefix,
-                                                            StorageManager storageManager) throws IOException {
+                                                     StorageManager storageManager) throws IOException {
         require(isLogFile(segment.log().file()), "Cannot split file " + segment.log().file().getAbsoluteFile());
         require(segment.hasOverflow(), "Split operation is only permitted for segments with overflow, and the problem path is " + segment.log().file().getAbsoluteFile());
 

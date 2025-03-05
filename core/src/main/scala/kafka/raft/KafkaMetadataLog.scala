@@ -23,8 +23,7 @@ import kafka.raft.KafkaMetadataLog.SnapshotDeletionReason
 import kafka.raft.KafkaMetadataLog.UnknownReason
 import kafka.utils.Logging
 import org.apache.kafka.common.config.TopicConfig
-import org.apache.kafka.common.errors.InvalidConfigurationException
-import org.apache.kafka.common.errors.CorruptRecordException
+import org.apache.kafka.common.errors.{CorruptRecordException, InvalidConfigurationException}
 import org.apache.kafka.common.record.{MemoryRecords, Records}
 import org.apache.kafka.common.utils.{Time, Utils}
 import org.apache.kafka.common.{KafkaException, TopicPartition, Uuid}

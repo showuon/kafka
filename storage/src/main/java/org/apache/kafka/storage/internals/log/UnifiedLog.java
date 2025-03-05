@@ -39,6 +39,7 @@ import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.RecordValidationStats;
 import org.apache.kafka.common.record.RecordVersion;
 import org.apache.kafka.common.record.Records;
+import org.apache.kafka.common.storage.FileStorageManager;
 import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.requests.ListOffsetsRequest;
@@ -132,6 +133,7 @@ public class UnifiedLog implements AutoCloseable {
     private final String logIdent;
     private final Logger logger;
     private final LogValidator.MetricsRecorder validatorMetricsRecorder;
+    private final StorageManager storageManager;
 
     /* The earliest offset which is part of an incomplete transaction. This is used to compute the
      * last stable offset (LSO) in ReplicaManager. Note that it is possible that the "true" first unstable offset
@@ -161,6 +163,18 @@ public class UnifiedLog implements AutoCloseable {
     private volatile Optional<Uuid> topicId;
     private volatile LogOffsetsListener logOffsetsListener;
 
+
+    public UnifiedLog(long logStartOffset,
+                      LocalLog localLog,
+                      BrokerTopicStats brokerTopicStats,
+                      int producerIdExpirationCheckIntervalMs,
+                      LeaderEpochFileCache leaderEpochCache,
+                      ProducerStateManager producerStateManager,
+                      Optional<Uuid> topicId,
+                      boolean remoteStorageSystemEnable,
+                      LogOffsetsListener logOffsetsListener) throws IOException {
+        this(logStartOffset, localLog, brokerTopicStats, producerIdExpirationCheckIntervalMs, leaderEpochCache, producerStateManager, topicId, remoteStorageSystemEnable, logOffsetsListener, new FileStorageManager());
+    }
     /**
      * A log which presents a unified view of local and tiered log segments.
      *
@@ -205,7 +219,8 @@ public class UnifiedLog implements AutoCloseable {
                       ProducerStateManager producerStateManager,
                       Optional<Uuid> topicId,
                       boolean remoteStorageSystemEnable,
-                      LogOffsetsListener logOffsetsListener) throws IOException {
+                      LogOffsetsListener logOffsetsListener,
+                      StorageManager storageManager) throws IOException {
         this.logStartOffset = logStartOffset;
         this.localLog = localLog;
         this.brokerTopicStats = brokerTopicStats;
@@ -223,6 +238,7 @@ public class UnifiedLog implements AutoCloseable {
         this.producerExpireCheck = localLog.scheduler().schedule("PeriodicProducerExpirationCheck", () -> removeExpiredProducers(localLog.time().milliseconds()),
                 producerIdExpirationCheckIntervalMs, producerIdExpirationCheckIntervalMs);
         this.validatorMetricsRecorder = UnifiedLog.newValidatorMetricsRecorder(brokerTopicStats.allTopicsStats());
+        this.storageManager = storageManager;
 
         initializePartitionMetadata();
         updateLogStartOffset(logStartOffset);
@@ -281,7 +297,8 @@ public class UnifiedLog implements AutoCloseable {
                 topicId,
                 new ConcurrentHashMap<>(),
                 false,
-                LogOffsetsListener.NO_OP_OFFSETS_LISTENER);
+                LogOffsetsListener.NO_OP_OFFSETS_LISTENER,
+                new FileStorageManager());
     }
 
     /**
@@ -319,7 +336,8 @@ public class UnifiedLog implements AutoCloseable {
                                     Optional<Uuid> topicId,
                                     ConcurrentMap<String, Integer> numRemainingSegments,
                                     boolean remoteStorageSystemEnable,
-                                    LogOffsetsListener logOffsetsListener) throws IOException {
+                                    LogOffsetsListener logOffsetsListener,
+                                    StorageManager storageManager) throws IOException {
         // create the log directory if it doesn't exist
         Files.createDirectories(dir.toPath());
         TopicPartition topicPartition = UnifiedLog.parseTopicPartitionName(dir);
@@ -338,7 +356,8 @@ public class UnifiedLog implements AutoCloseable {
                 dir,
                 maxTransactionTimeoutMs,
                 producerStateManagerConfig,
-                time);
+                time,
+                storageManager);
         boolean isRemoteLogEnabled = UnifiedLog.isRemoteLogEnabled(remoteStorageSystemEnable, config, topicPartition.topic());
         LoadedLogOffsets offsets = new LogLoader(
                 dir,
@@ -354,7 +373,8 @@ public class UnifiedLog implements AutoCloseable {
                 leaderEpochCache,
                 producerStateManager,
                 numRemainingSegments,
-                isRemoteLogEnabled
+                isRemoteLogEnabled,
+                storageManager
                 ).load();
         LocalLog localLog = new LocalLog(
                 dir,
@@ -365,7 +385,8 @@ public class UnifiedLog implements AutoCloseable {
                 scheduler,
                 time,
                 topicPartition,
-                logDirFailureChannel);
+                logDirFailureChannel,
+                storageManager);
         return new UnifiedLog(offsets.logStartOffset,
                 localLog,
                 brokerTopicStats,
@@ -2344,7 +2365,7 @@ public class UnifiedLog implements AutoCloseable {
 
     public List<LogSegment> splitOverflowedSegment(LogSegment segment) throws IOException {
         synchronized (lock) {
-            LocalLog.SplitSegmentResult result = LocalLog.splitOverflowedSegment(segment, localLog.segments(), dir(), topicPartition(), config(), scheduler(), logDirFailureChannel(), logIdent);
+            LocalLog.SplitSegmentResult result = LocalLog.splitOverflowedSegment(segment, localLog.segments(), dir(), topicPartition(), config(), scheduler(), logDirFailureChannel(), logIdent, storageManager);
             deleteProducerSnapshots(result.deletedSegments, true);
             return result.newSegments;
         }
