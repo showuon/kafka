@@ -19,6 +19,7 @@ package org.apache.kafka.storage.internals.checkpoint;
 
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.errors.InconsistentTopicIdException;
+import org.apache.kafka.common.storage.FileStorageManager;
 import org.apache.kafka.storage.internals.log.LogDirFailureChannel;
 import org.apache.kafka.test.TestUtils;
 
@@ -40,7 +41,7 @@ class PartitionMetadataFileTest  {
 
     @Test
     public void testSetRecordWithDifferentTopicId() {
-        PartitionMetadataFile partitionMetadataFile = new PartitionMetadataFile(file, null);
+        PartitionMetadataFile partitionMetadataFile = new PartitionMetadataFile(file, null, new FileStorageManager());
         Uuid topicId = Uuid.randomUuid();
         partitionMetadataFile.record(topicId);
         Uuid differentTopicId = Uuid.randomUuid();
@@ -49,7 +50,7 @@ class PartitionMetadataFileTest  {
 
     @Test
     public void testSetRecordWithSameTopicId() {
-        PartitionMetadataFile partitionMetadataFile = new PartitionMetadataFile(file, null);
+        PartitionMetadataFile partitionMetadataFile = new PartitionMetadataFile(file, null, new FileStorageManager());
         Uuid topicId = Uuid.randomUuid();
         partitionMetadataFile.record(topicId);
         assertDoesNotThrow(() -> partitionMetadataFile.record(topicId));
@@ -61,7 +62,7 @@ class PartitionMetadataFileTest  {
 
     @Test
     public void testMaybeFlushWithTopicIdPresent() throws IOException {
-        PartitionMetadataFile partitionMetadataFile = new PartitionMetadataFile(file, null);
+        PartitionMetadataFile partitionMetadataFile = new PartitionMetadataFile(file, null, new FileStorageManager());
 
         Uuid topicId = Uuid.randomUuid();
         partitionMetadataFile.record(topicId);
@@ -76,7 +77,7 @@ class PartitionMetadataFileTest  {
 
     @Test
     public void testMaybeFlushWithNoTopicIdPresent() {
-        PartitionMetadataFile partitionMetadataFile = new PartitionMetadataFile(file, null);
+        PartitionMetadataFile partitionMetadataFile = new PartitionMetadataFile(file, null, new FileStorageManager());
         partitionMetadataFile.maybeFlush();
 
         assertEquals(0, file.length());
@@ -85,7 +86,7 @@ class PartitionMetadataFileTest  {
     @Test
     public void testRead() {
         LogDirFailureChannel channel = Mockito.mock(LogDirFailureChannel.class);
-        PartitionMetadataFile partitionMetadataFile = new PartitionMetadataFile(file, channel);
+        PartitionMetadataFile partitionMetadataFile = new PartitionMetadataFile(file, channel, new FileStorageManager());
 
         Uuid topicId = Uuid.randomUuid();
         partitionMetadataFile.record(topicId);

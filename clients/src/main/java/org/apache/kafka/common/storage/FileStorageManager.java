@@ -20,6 +20,7 @@ import org.apache.kafka.common.utils.ByteBufferUnmapper;
 import org.apache.kafka.common.utils.OperatingSystem;
 import org.apache.kafka.common.utils.Utils;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -27,6 +28,7 @@ import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.SocketChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -109,9 +111,11 @@ public class FileStorageManager implements StorageManager {
                 indexBufferMap.get(path).put(buffer);
                 break;
             case SNAPSHOT:
+            case METADATA:
                 try (FileChannel fileChannel = FileChannel.open(new File(path).toPath(), StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
                     Utils.writeFully(fileChannel, buffer);
                 }
+                break;
         }
         return sizeToAppend;
     }
@@ -125,9 +129,11 @@ public class FileStorageManager implements StorageManager {
                 Utils.readFully(txnChannelMap.get(path), buffer, position);
                 break;
             case SNAPSHOT:
+            case METADATA:
                 try (FileChannel fileChannel = FileChannel.open(new File(path).toPath(), StandardOpenOption.READ)) {
                     Utils.readFully(fileChannel, buffer, position);
                 }
+                break;
         }
     }
 
@@ -172,21 +178,31 @@ public class FileStorageManager implements StorageManager {
     public long position(String path, StorageType storageType) throws IOException {
         switch (storageType) {
             case INDEX:
-                return indexBufferMap.get(path).limit();
+                return indexBufferMap.get(path).position();
             case TXN:
                 return txnChannelMap.get(path).position();
+        }
+        return 0;
+    }
+
+    public long size(String path, StorageType storageType) throws IOException {
+        switch (storageType) {
             case SNAPSHOT:
+            case METADATA:
                 try (FileChannel fileChannel = FileChannel.open(new File(path).toPath(), StandardOpenOption.READ)) {
-                    return fileChannel.position();
+                    return fileChannel.size();
                 }
         }
         return 0;
     }
 
-    public boolean isEmpty(String path, StorageType storageType) {
+    public boolean exist(String path, StorageType storageType) {
         switch (storageType) {
             case TXN:
                 return txnChannelMap.containsKey(path);
+            case METADATA:
+                File file = new File(path);
+                return file.exists();
         }
         return true;
     }

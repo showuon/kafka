@@ -628,12 +628,13 @@ public class ProducerStateManager {
     }
 
     public static List<ProducerStateEntry> readSnapshot(File file, StorageManager storageManager) throws IOException {
-        long size = storageManager.position(file.getAbsolutePath(), StorageManager.StorageType.SNAPSHOT);
+        long size = storageManager.size(file.getAbsolutePath(), StorageManager.StorageType.SNAPSHOT);
         if (size > Integer.MAX_VALUE) {
             throw new CorruptSnapshotException("Snapshot size is too large: " + size);
         }
         ByteBuffer byteBuffer = ByteBuffer.allocate((int) size);
         storageManager.read(file.getAbsolutePath(), byteBuffer, 0, StorageManager.StorageType.SNAPSHOT);
+        byteBuffer.flip();
 
         short version;
         ProducerSnapshot producerSnapshot;

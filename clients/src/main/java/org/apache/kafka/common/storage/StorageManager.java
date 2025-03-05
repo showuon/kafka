@@ -33,7 +33,8 @@ public interface StorageManager {
         INDEX,
         TXN,
         SNAPSHOT,
-        CHECKPOINT
+        CHECKPOINT,
+        METADATA
     }
 
     // ----- common -------
@@ -46,7 +47,8 @@ public interface StorageManager {
     default void flush(String path, StorageType storageType) throws IOException {}
     default void close(String path, StorageType storageType) throws IOException {}
     long position(String path, StorageType storageType) throws IOException;
-    boolean isEmpty(String path, StorageType storageType);
+    long size(String path, StorageType storageType) throws IOException;
+    boolean exist(String path, StorageType storageType);
     List<File> listFiles(File dir, StorageType storageType) throws IOException;
 
 

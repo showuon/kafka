@@ -20,9 +20,11 @@ import org.apache.kafka.common.KafkaException;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.channels.SocketChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +39,7 @@ public class InMemoryStorageManager implements StorageManager {
     private Map<String, ByteBuffer> indexBufferMap = new ConcurrentHashMap<>();
     private Map<String, ByteBuffer> txnBufferMap = new ConcurrentHashMap<>();
     private Map<String, ByteBuffer> snapshotBufferMap = new ConcurrentHashMap<>();
+    private Map<String, ByteBuffer> partitionMetadataBufferMap = new ConcurrentHashMap<>();
 
     // ----- common -------
     public boolean deleteIfExists(String path, StorageType storageType) throws IOException {
@@ -52,6 +55,10 @@ public class InMemoryStorageManager implements StorageManager {
                 break;
             case SNAPSHOT:
                 snapshotBufferMap.remove(path);
+                break;
+            case METADATA:
+                partitionMetadataBufferMap.remove(path);
+                break;
         }
 
         File file = new File(path);
@@ -115,6 +122,8 @@ public class InMemoryStorageManager implements StorageManager {
                 return sizeToAppend;
             case SNAPSHOT:
                 return appendToBuffer(path, snapshotBufferMap, buffer);
+            case METADATA:
+                return appendToBuffer(path, partitionMetadataBufferMap, buffer);
         }
         return 0;
     }
@@ -129,6 +138,10 @@ public class InMemoryStorageManager implements StorageManager {
                 break;
             case SNAPSHOT:
                 buffer.put(snapshotBufferMap.get(path).array(), position, buffer.remaining());
+                break;
+            case METADATA:
+                buffer.put(partitionMetadataBufferMap.get(path).array(), position, buffer.remaining());
+                break;
         }
     }
 
@@ -152,19 +165,34 @@ public class InMemoryStorageManager implements StorageManager {
     public long position(String path, StorageType storageType) throws IOException {
         switch (storageType) {
             case INDEX:
-                return indexBufferMap.get(path).limit();
+                return indexBufferMap.get(path).position();
             case TXN:
-                return txnBufferMap.get(path).limit();
+                return txnBufferMap.get(path).position();
             case SNAPSHOT:
-                return snapshotBufferMap.get(path).limit();
+                return snapshotBufferMap.get(path).position();
+            case METADATA:
+                return partitionMetadataBufferMap.get(path).position();
         }
         return 0;
     }
 
-    public boolean isEmpty(String path, StorageType storageType) {
+    public long size(String path, StorageType storageType) throws IOException {
+        switch (storageType) {
+            case SNAPSHOT:
+            case METADATA:
+                try (FileChannel fileChannel = FileChannel.open(new File(path).toPath(), StandardOpenOption.READ)) {
+                    return fileChannel.size();
+                }
+        }
+        return 0;
+    }
+
+    public boolean exist(String path, StorageType storageType) {
         switch (storageType) {
             case TXN:
                 return txnBufferMap.containsKey(path);
+            case METADATA:
+                return partitionMetadataBufferMap.containsKey(path);
         }
         return true;
     }
