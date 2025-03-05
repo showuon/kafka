@@ -756,7 +756,7 @@ public class UnifiedLog implements AutoCloseable {
     private void initializePartitionMetadata() {
         synchronized (lock) {
             File partitionMetadata = PartitionMetadataFile.newFile(dir());
-            partitionMetadataFile = Optional.of(new PartitionMetadataFile(partitionMetadata, logDirFailureChannel()));
+            partitionMetadataFile = Optional.of(new PartitionMetadataFile(partitionMetadata, logDirFailureChannel(), storageManager));
         }
     }
 
