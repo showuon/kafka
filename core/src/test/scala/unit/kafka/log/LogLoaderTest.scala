@@ -24,6 +24,7 @@ import org.apache.kafka.common.compress.Compression
 import org.apache.kafka.common.config.TopicConfig
 import org.apache.kafka.common.errors.KafkaStorageException
 import org.apache.kafka.common.record.{ControlRecordType, DefaultRecordBatch, MemoryRecords, RecordBatch, SimpleRecord, TimestampType}
+import org.apache.kafka.common.storage.FileStorageManager
 import org.apache.kafka.common.utils.{Time, Utils}
 import org.apache.kafka.coordinator.transaction.TransactionLogConfig
 import org.apache.kafka.metadata.MockConfigRepository
@@ -1564,7 +1565,7 @@ class LogLoaderTest {
       "After appending %d messages to an empty log, the log end offset should be %d".format(numMessages, numMessages))
     log.roll()
     log.flush(false)
-    assertThrows(classOf[NoSuchFileException], () => log.activeSegment.sanityCheck(true))
+    assertThrows(classOf[NoSuchFileException], () => log.activeSegment.sanityCheck(true, new FileStorageManager))
     var lastOffset = log.logEndOffset
     log.closeHandlers()
 
@@ -1572,22 +1573,22 @@ class LogLoaderTest {
     assertEquals(lastOffset, log.recoveryPoint, s"Unexpected recovery point")
     assertEquals(numMessages, log.logEndOffset, s"Should have $numMessages messages when log is reopened w/o recovery")
     assertEquals(0, log.activeSegment.timeIndex.entries, "Should have same number of time index entries as before.")
-    log.activeSegment.sanityCheck(true) // this should not throw because the LogLoader created the empty active log index file during recovery
+    log.activeSegment.sanityCheck(true, new FileStorageManager) // this should not throw because the LogLoader created the empty active log index file during recovery
 
     for (i <- 0 until numMessages)
       log.appendAsLeader(TestUtils.singletonRecords(value = TestUtils.randomBytes(messageSize),
         timestamp = mockTime.milliseconds + i * 10), leaderEpoch = 0)
     log.roll()
-    assertThrows(classOf[NoSuchFileException], () => log.activeSegment.sanityCheck(true))
+    assertThrows(classOf[NoSuchFileException], () => log.activeSegment.sanityCheck(true, new FileStorageManager))
     log.flush(true)
-    log.activeSegment.sanityCheck(true) // this should not throw because we flushed the active segment which created the empty log index file
+    log.activeSegment.sanityCheck(true, new FileStorageManager) // this should not throw because we flushed the active segment which created the empty log index file
     lastOffset = log.logEndOffset
 
     log = createLog(logDir, logConfig, recoveryPoint = lastOffset, lastShutdownClean = false)
     assertEquals(lastOffset, log.recoveryPoint, s"Unexpected recovery point")
     assertEquals(2 * numMessages, log.logEndOffset, s"Should have $numMessages messages when log is reopened w/o recovery")
     assertEquals(0, log.activeSegment.timeIndex.entries, "Should have same number of time index entries as before.")
-    log.activeSegment.sanityCheck(true) // this should not throw
+    log.activeSegment.sanityCheck(true, new FileStorageManager) // this should not throw
 
     log.close()
   }

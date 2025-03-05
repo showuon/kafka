@@ -25,6 +25,7 @@ import java.nio.channels.SocketChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -224,7 +225,16 @@ public class InMemoryStorageManager implements StorageManager {
         switch (storageType) {
             case SNAPSHOT:
                 return snapshotBufferMap.keySet().stream().filter(path -> path.endsWith(PRODUCER_SNAPSHOT_FILE_SUFFIX))
-                        .map(path -> new File(path)).collect(Collectors.toList());
+                        .map(File::new).collect(Collectors.toList());
+            case ALL:
+                List<File> files = new ArrayList<>();
+                files.addAll(recordBufferMap.keySet().stream().map(File::new).collect(Collectors.toList()));
+                files.addAll(indexBufferMap.keySet().stream().map(File::new).collect(Collectors.toList()));
+                files.addAll(txnBufferMap.keySet().stream().map(File::new).collect(Collectors.toList()));
+                files.addAll(snapshotBufferMap.keySet().stream().map(File::new).collect(Collectors.toList()));
+                files.addAll(partitionMetadataBufferMap.keySet().stream().map(File::new).collect(Collectors.toList()));
+                files.addAll(checkpointBufferMap.keySet().stream().map(File::new).collect(Collectors.toList()));
+                return files;
         }
         return Collections.emptyList();
     }

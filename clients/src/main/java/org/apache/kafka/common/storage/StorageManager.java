@@ -34,7 +34,8 @@ public interface StorageManager {
         TXN,
         SNAPSHOT,
         CHECKPOINT,
-        METADATA
+        METADATA,
+        ALL
     }
 
     // ----- common -------

@@ -182,18 +182,14 @@ public class LogLoader {
         // Second pass: delete segments that are between minSwapFileOffset and maxSwapFileOffset. As
         // discussed above, these segments were compacted or split but haven't been renamed to .delete
         // before shutting down the broker.
-        File[] files = dir.listFiles();
-        if (files == null) files = new File[0];
+        List<File> files = storageManager.listFiles(dir, StorageManager.StorageType.ALL);
         for (File file : files) {
-            if (!file.isFile()) {
-                continue;
-            }
             try {
                 if (!file.getName().endsWith(LogFileUtils.SWAP_FILE_SUFFIX)) {
                     long offset = LogFileUtils.offsetFromFile(file);
                     if (offset >= minSwapFileOffset && offset < maxSwapFileOffset) {
                         logger.info("Deleting segment files {} that is compacted but has not been deleted yet.", file.getName());
-                        boolean ignore = file.delete();
+                        deleteFile(file);
                     }
                 }
             } catch (StringIndexOutOfBoundsException | NumberFormatException e) {
@@ -202,15 +198,11 @@ public class LogLoader {
         }
 
         // Third pass: rename all swap files.
-        files = dir.listFiles();
-        if (files == null) files = new File[0];
+        files = storageManager.listFiles(dir, StorageManager.StorageType.ALL);
         for (File file : files) {
-            if (!file.isFile()) {
-                continue;
-            }
             if (file.getName().endsWith(LogFileUtils.SWAP_FILE_SUFFIX)) {
                 logger.info("Recovering file {} by renaming from {} files.", file.getName(), LogFileUtils.SWAP_FILE_SUFFIX);
-                boolean ignore = file.renameTo(new File(Utils.replaceSuffix(file.getPath(), LogFileUtils.SWAP_FILE_SUFFIX, "")));
+                renameTo(file, new File(Utils.replaceSuffix(file.getPath(), LogFileUtils.SWAP_FILE_SUFFIX, "")));
             }
         }
 
@@ -272,6 +264,40 @@ public class LogLoader {
                 new LogOffsetMetadata(recoveryOffsets.nextOffset, activeSegment.baseOffset(), activeSegment.size()));
     }
 
+    private Optional<StorageManager.StorageType> storageType(String fileName) {
+        if (fileName.contains(LogFileUtils.LOG_FILE_SUFFIX)) {
+            return Optional.of(StorageManager.StorageType.LOG);
+        } else if (fileName.contains(LogFileUtils.INDEX_FILE_SUFFIX) ||
+                fileName.endsWith(LogFileUtils.TIME_INDEX_FILE_SUFFIX)) {
+            return Optional.of(StorageManager.StorageType.INDEX);
+        } else if (fileName.endsWith(LogFileUtils.PRODUCER_SNAPSHOT_FILE_SUFFIX)) {
+            return Optional.of(StorageManager.StorageType.SNAPSHOT);
+        } else if (fileName.endsWith(LogFileUtils.TXN_INDEX_FILE_SUFFIX)) {
+            return Optional.of(StorageManager.StorageType.TXN);
+        }
+        return Optional.empty();
+    }
+
+    private void deleteFile(File file) {
+        storageType(file.getName()).ifPresent(type -> {
+            try {
+                storageManager.deleteIfExists(file.getAbsolutePath(), type);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+
+    private void renameTo(File file, File newFile) {
+        storageType(file.getName()).ifPresent(type -> {
+            try {
+                storageManager.renameTo(file.getAbsolutePath(), newFile, type);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+
     /**
      * Removes any temporary files found in log directory, and creates a list of all .swap files which could be swapped
      * in place of existing segment(s). For log splitting, we know that any .swap file whose base offset is higher than
@@ -285,22 +311,15 @@ public class LogLoader {
         Set<File> cleanedFiles = new HashSet<>();
         long minCleanedFileOffset = Long.MAX_VALUE;
 
-        File[] files = dir.listFiles();
-        if (files == null) files = new File[0];
+        List<File> files = storageManager.listFiles(dir, StorageManager.StorageType.ALL);
         for (File file : files) {
-            if (!file.isFile()) {
-                continue;
-            }
-            if (!file.canRead()) {
-                throw new IOException("Could not read file " + file);
-            }
             String filename = file.getName();
 
             // Delete stray files marked for deletion, but skip KRaft snapshots.
             // These are handled in the recovery logic in `KafkaMetadataLog`.
             if (filename.endsWith(LogFileUtils.DELETED_FILE_SUFFIX) && !filename.endsWith(SNAPSHOT_DELETE_SUFFIX)) {
                 logger.debug("Deleting stray temporary file {}", file.getAbsolutePath());
-                Files.deleteIfExists(file.toPath());
+                deleteFile(file);
             } else if (filename.endsWith(LogFileUtils.CLEANED_FILE_SUFFIX)) {
                 minCleanedFileOffset = Math.min(LogFileUtils.offsetFromFile(file), minCleanedFileOffset);
                 cleanedFiles.add(file);
@@ -323,13 +342,13 @@ public class LogLoader {
         }
         for (File file : invalidSwapFiles) {
             logger.debug("Deleting invalid swap file {} minCleanedFileOffset: {}", file.getAbsoluteFile(), minCleanedFileOffset);
-            Files.deleteIfExists(file.toPath());
+            deleteFile(file);
         }
 
         // Now that we have deleted all .swap files that constitute an incomplete split operation, let's delete all .clean files
         for (File file : cleanedFiles) {
             logger.debug("Deleting stray .clean file {}", file.getAbsolutePath());
-            Files.deleteIfExists(file.toPath());
+            deleteFile(file);
         }
 
         return validSwapFiles;
@@ -381,19 +400,15 @@ public class LogLoader {
         // load segments in ascending order because transactional data from one segment may depend on the
         // segments that come before it
 
-        File[] files = dir.listFiles();
-        if (files == null) files = new File[0];
-        List<File> sortedFiles = Arrays.stream(files).filter(File::isFile).sorted().toList();
+        List<File> sortedFiles = storageManager.listFiles(dir, StorageManager.StorageType.ALL).stream().sorted().toList();
         for (File file : sortedFiles) {
             if (LogFileUtils.isIndexFile(file)) {
                 // if it is an index file, make sure it has a corresponding .log file
                 long offset = LogFileUtils.offsetFromFile(file);
-                if (!config.logUseAny) {
-                    File logFile = LogFileUtils.logFile(dir, offset);
-                    if (!logFile.exists()) {
-                        logger.warn("Found an orphaned index file {}, with no corresponding log file.", file.getAbsolutePath());
-                        Files.deleteIfExists(file.toPath());
-                    }
+                File logFile = LogFileUtils.logFile(dir, offset);
+                if (!storageManager.exist(logFile.getAbsolutePath(), StorageManager.StorageType.INDEX)) {
+                    logger.warn("Found an orphaned index file {}, with no corresponding log file.", file.getAbsolutePath());
+                    storageManager.deleteIfExists(logFile.getAbsolutePath(), StorageManager.StorageType.INDEX);
                 }
             } else if (LogFileUtils.isLogFile(file)) {
                 // if it's a log file, load the corresponding log segment
@@ -401,7 +416,7 @@ public class LogLoader {
                 boolean timeIndexFileNewlyCreated = !LogFileUtils.timeIndexFile(dir, baseOffset).exists();
                 LogSegment segment = LogSegment.open(dir, baseOffset, config, time, true, 0, false, "", storageManager);
                 try {
-                    segment.sanityCheck(timeIndexFileNewlyCreated);
+                    segment.sanityCheck(timeIndexFileNewlyCreated, storageManager);
                 } catch (NoSuchFileException nsfe) {
                     if (hadCleanShutdown || segment.baseOffset() < recoveryPointCheckpoint) {
                         logger.error("Could not find offset index file corresponding to log file {}, recovering segment and rebuilding index files...", segment.log().file().getAbsolutePath());

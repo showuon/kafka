@@ -176,8 +176,8 @@ public class LogSegment implements Closeable {
         timeIndex().resize(size);
     }
 
-    public void sanityCheck(boolean timeIndexFileNewlyCreated) throws IOException {
-        if (offsetIndexFile().exists()) {
+    public void sanityCheck(boolean timeIndexFileNewlyCreated, StorageManager storageManager) throws IOException {
+        if (storageManager.exist(offsetIndexFile().getAbsolutePath(), StorageManager.StorageType.INDEX)) {
             // Resize the time index file to 0 if it is newly created.
             if (timeIndexFileNewlyCreated) 
                 timeIndex().resize(0);

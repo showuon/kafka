@@ -83,7 +83,7 @@ public abstract class AbstractIndex implements Closeable {
         this.length = new AtomicLong(storageManager.initIndex(file, maxIndexSize, writable, entrySize()));
         ByteBuffer buffer = storageManager.indexBuffer(file().getAbsolutePath());
         this.maxEntries = new AtomicInteger(buffer.limit() / entrySize());
-        this.entries = storageManager.position(file.getAbsolutePath(), StorageManager.StorageType.INDEX) / entrySize();
+        this.entries = (int) (storageManager.position(file.getAbsolutePath(), StorageManager.StorageType.INDEX) / entrySize());
     }
 
 
