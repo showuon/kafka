@@ -22,6 +22,7 @@ import kafka.utils._
 import org.apache.directory.api.util.FileUtils
 import org.apache.kafka.common.config.TopicConfig
 import org.apache.kafka.common.errors.OffsetOutOfRangeException
+import org.apache.kafka.common.storage.FileStorageManager
 import org.apache.kafka.common.utils.{Time, Utils}
 import org.apache.kafka.common.{DirectoryId, KafkaException, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.coordinator.transaction.TransactionLogConfig
@@ -973,7 +974,8 @@ class LogManagerTest {
         // pass mock map for verification later
         mockMap,
         false,
-        LogOffsetsListener.NO_OP_OFFSETS_LISTENER)
+        LogOffsetsListener.NO_OP_OFFSETS_LISTENER,
+        new FileStorageManager)
 
     }.when(spyLogManager).loadLog(any[File], any[Boolean], any[util.Map[TopicPartition, JLong]], any[util.Map[TopicPartition, JLong]],
       any[LogConfig], any[Map[String, LogConfig]], any[ConcurrentMap[String, Integer]], any[UnifiedLog => Boolean]())

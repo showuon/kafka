@@ -348,7 +348,7 @@ class LogManager(logDirs: Seq[File],
       numRemainingSegments,
       remoteStorageSystemEnable,
       LogOffsetsListener.NO_OP_OFFSETS_LISTENER,
-      storageManager = if (config.logUseAny) inMemoryStorageManager else fileStorageManager)
+      if (config.logUseAny) inMemoryStorageManager else fileStorageManager)
 
     if (logDir.getName.endsWith(UnifiedLog.DELETE_DIR_SUFFIX)) {
       addLogToBeDeleted(log)
@@ -1072,7 +1072,7 @@ class LogManager(logDirs: Seq[File],
           new ConcurrentHashMap[String, Integer](),
           remoteStorageSystemEnable,
           LogOffsetsListener.NO_OP_OFFSETS_LISTENER,
-          storageManager = if (config.logUseAny) inMemoryStorageManager else fileStorageManager)
+          if (config.logUseAny) inMemoryStorageManager else fileStorageManager)
 
         if (isFuture)
           futureLogs.put(topicPartition, log)

@@ -398,6 +398,10 @@ public class UnifiedLog implements AutoCloseable {
                 logOffsetsListener);
     }
 
+    public StorageManager storageManager() {
+        return storageManager;
+    }
+
     public long localLogStartOffset() {
         return localLogStartOffset;
     }
