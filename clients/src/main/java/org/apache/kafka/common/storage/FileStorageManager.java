@@ -33,6 +33,8 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -210,12 +212,17 @@ public class FileStorageManager implements StorageManager {
     }
 
     public boolean exist(String path, StorageType storageType) {
+        File file = new File(path);
+        if (!file.exists()) {
+            return false;
+        }
         switch (storageType) {
+            case INDEX:
+                return indexBufferMap.containsKey(path);
+            case LOG:
+                return channelMap.containsKey(path);
             case TXN:
                 return txnChannelMap.containsKey(path);
-            case METADATA:
-                File file = new File(path);
-                return file.exists();
         }
         return true;
     }
@@ -242,7 +249,8 @@ public class FileStorageManager implements StorageManager {
                         return paths.filter(this::isSnapshotFile)
                                 .map(Path::toFile).collect(Collectors.toList());
                     }
-
+                case ALL:
+                    return Arrays.stream(dir.listFiles()).filter(f -> f.isFile()).collect(Collectors.toList());
             }
         }
         return Collections.emptyList();
