@@ -21,6 +21,7 @@ import kafka.utils.TestUtils;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.metrics.Metrics;
+import org.apache.kafka.common.storage.FileStorageManager;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.server.log.remote.storage.RemoteLogManagerConfig;
 import org.apache.kafka.server.log.remote.storage.RemoteStorageException;
@@ -66,7 +67,7 @@ class RemoteLogOffsetReaderTest {
     @BeforeEach
     void setUp() throws IOException {
         logDir = Files.createTempDirectory("kafka-test");
-        LeaderEpochCheckpointFile checkpoint = new LeaderEpochCheckpointFile(TestUtils.tempFile(), new LogDirFailureChannel(1));
+        LeaderEpochCheckpointFile checkpoint = new LeaderEpochCheckpointFile(TestUtils.tempFile(), new LogDirFailureChannel(1), new FileStorageManager());
         cache = new LeaderEpochFileCache(topicPartition, checkpoint, time.scheduler);
         rlm = new MockRemoteLogManager(2, 1, logDir.toString());
     }

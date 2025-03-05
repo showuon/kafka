@@ -452,12 +452,8 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   }
 
   private def initializePartitionMetadata(): Unit = lock synchronized {
-    if (!config.logUseAny) {
-      val partitionMetadata = PartitionMetadataFile.newFile(dir)
-      partitionMetadataFile = Some(new PartitionMetadataFile(partitionMetadata, logDirFailureChannel))
-    } else {
-      partitionMetadataFile = Some(new PartitionMetadataFile(null, logDirFailureChannel))
-    }
+    val partitionMetadata = PartitionMetadataFile.newFile(dir)
+    partitionMetadataFile = Some(new PartitionMetadataFile(partitionMetadata, logDirFailureChannel, storageManager))
   }
 
   private def maybeFlushMetadataFile(): Unit = {
@@ -490,7 +486,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
 
   private def reinitializeLeaderEpochCache(): Unit = lock synchronized {
     leaderEpochCache = JUnifiedLog.createLeaderEpochCache(
-      dir, topicPartition, logDirFailureChannel, Optional.of(leaderEpochCache), scheduler)
+      dir, topicPartition, logDirFailureChannel, Optional.of(leaderEpochCache), scheduler, storageManager)
   }
 
   private def updateHighWatermarkWithLogEndOffset(): Unit = {
@@ -1911,11 +1907,12 @@ object UnifiedLog extends Logging {
     // so it is guaranteed that the epoch entries will be correct even when on-disk
     // checkpoint was stale (due to async nature of LeaderEpochFileCache#truncateFromStart/End).
     val leaderEpochCache = JUnifiedLog.createLeaderEpochCache(
-      if (config.logUseAny) null else dir,
+      dir,
       topicPartition,
       logDirFailureChannel,
       Optional.empty,
-      scheduler)
+      scheduler,
+      storageManager)
     val producerStateManager = new ProducerStateManager(topicPartition, dir,
       maxTransactionTimeoutMs, producerStateManagerConfig, time, storageManager)
     val isRemoteLogEnabled = JUnifiedLog.isRemoteLogEnabled(remoteStorageSystemEnable, config, topicPartition.topic)
