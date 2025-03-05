@@ -16,6 +16,8 @@
  */
 package org.apache.kafka.server.common;
 
+import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.common.utils.Utils;
 
 import java.io.BufferedReader;
@@ -24,6 +26,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
@@ -55,119 +58,108 @@ public class CheckpointFile<T> {
     private final EntryFormatter<T> formatter;
     private final Object lock = new Object();
     private final Path absolutePath;
-    private final Path tempPath;
+    private final StorageManager storageManager;
 
     public CheckpointFile(File file,
                           int version,
-                          EntryFormatter<T> formatter) throws IOException {
+                          EntryFormatter<T> formatter,
+                          StorageManager storageManager) throws IOException {
         this.version = version;
         this.formatter = formatter;
-        try {
-            // Create the file if it does not exist.
-            Files.createFile(file.toPath());
-        } catch (FileAlreadyExistsException ex) {
-            // Ignore if file already exists.
-        }
+        this.storageManager = storageManager;
         absolutePath = file.toPath().toAbsolutePath();
-        tempPath = Paths.get(absolutePath + ".tmp");
     }
 
     public void write(Collection<T> entries) throws IOException {
         synchronized (lock) {
-            // write to temp file and then swap with the existing file
-            try (FileOutputStream fileOutputStream = new FileOutputStream(tempPath.toFile());
-                 BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(fileOutputStream, StandardCharsets.UTF_8))) {
-                CheckpointWriteBuffer<T> checkpointWriteBuffer = new CheckpointWriteBuffer<>(writer, version, formatter);
-                checkpointWriteBuffer.write(entries);
-                writer.flush();
-                fileOutputStream.getFD().sync();
-            }
-
-            Utils.atomicMoveWithFallback(tempPath, absolutePath);
+            CheckpointWriteBuffer<T> checkpointWriteBuffer = new CheckpointWriteBuffer<>(version, formatter);
+            ByteBuffer buffer = ByteBuffer.wrap(checkpointWriteBuffer.write(entries).getBytes());
+            storageManager.append(absolutePath.toString(), buffer, StorageManager.StorageType.CHECKPOINT);
         }
     }
 
     public List<T> read() throws IOException {
         synchronized (lock) {
-            try (BufferedReader reader = Files.newBufferedReader(absolutePath, StandardCharsets.UTF_8)) {
-                CheckpointReadBuffer<T> checkpointBuffer = new CheckpointReadBuffer<>(absolutePath.toString(), reader, version, formatter);
-                return checkpointBuffer.read();
-            }
+//            try (BufferedReader reader = Files.newBufferedReader(absolutePath, StandardCharsets.UTF_8)) {
+            ByteBuffer buffer = ByteBuffer.allocate((int) storageManager.size(absolutePath.toString(), StorageManager.StorageType.CHECKPOINT));
+            storageManager.read(absolutePath.toString(), buffer, 0, StorageManager.StorageType.CHECKPOINT);
+            buffer.flip();
+
+            CheckpointReadBuffer<T> checkpointBuffer = new CheckpointReadBuffer<>(absolutePath.toString(), version, formatter);
+            return checkpointBuffer.read(buffer);
         }
     }
 
     public static class CheckpointWriteBuffer<T> {
-        private final BufferedWriter writer;
         private final int version;
         private final EntryFormatter<T> formatter;
 
-        public CheckpointWriteBuffer(BufferedWriter writer,
-                                     int version,
+        public CheckpointWriteBuffer(int version,
                                      EntryFormatter<T> formatter) {
-            this.writer = writer;
             this.version = version;
             this.formatter = formatter;
         }
 
-        public void write(Collection<T> entries) throws IOException {
+        public String write(Collection<T> entries) throws IOException {
+            StringBuilder stringBuilder = new StringBuilder();
             // Write the version
-            writer.write(Integer.toString(version));
-            writer.newLine();
+            stringBuilder.append(version);
+            stringBuilder.append(System.lineSeparator());
 
             // Write the entries count
-            writer.write(Integer.toString(entries.size()));
-            writer.newLine();
+            stringBuilder.append(entries.size());
+            stringBuilder.append(System.lineSeparator());
 
             // Write each entry on a new line.
             for (T entry : entries) {
-                writer.write(formatter.toString(entry));
-                writer.newLine();
+                stringBuilder.append(formatter.toString(entry));
+                stringBuilder.append(System.lineSeparator());
             }
+            return stringBuilder.toString();
         }
     }
 
     public static class CheckpointReadBuffer<T> {
 
         private final String location;
-        private final BufferedReader reader;
         private final int version;
         private final EntryFormatter<T> formatter;
 
         public CheckpointReadBuffer(String location,
-                             BufferedReader reader,
                              int version,
                              EntryFormatter<T> formatter) {
             this.location = location;
-            this.reader = reader;
             this.version = version;
             this.formatter = formatter;
         }
 
-        public List<T> read() throws IOException {
-            String line = reader.readLine();
-            if (line == null)
+        public List<T> read(ByteBuffer buffer) throws IOException {
+            String content = StandardCharsets.UTF_8.decode(buffer).toString();
+            List<String> lines = content.lines().toList();
+            if (lines.isEmpty()) {
                 return Collections.emptyList();
-
+            }
+            String line = lines.get(0);
             int readVersion = toInt(line);
             if (readVersion != version) {
                 throw new IOException("Unrecognised version:" + readVersion + ", expected version: " + version
                                               + " in checkpoint file at: " + location);
             }
 
-            line = reader.readLine();
-            if (line == null) {
+            if (lines.size() == 1) {
                 return Collections.emptyList();
             }
+            line = lines.get(1);
             int expectedSize = toInt(line);
             List<T> entries = new ArrayList<>(expectedSize);
-            line = reader.readLine();
-            while (line != null) {
+
+            for (int i = 2; i < lines.size(); i++) {
+                line = lines.get(i);
                 Optional<T> maybeEntry = formatter.fromString(line);
                 if (maybeEntry.isEmpty()) {
                     throw buildMalformedLineException(line);
                 }
                 entries.add(maybeEntry.get());
-                line = reader.readLine();
             }
 
             if (entries.size() != expectedSize) {

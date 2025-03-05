@@ -350,7 +350,8 @@ public class UnifiedLog implements AutoCloseable {
                 topicPartition,
                 logDirFailureChannel,
                 Optional.empty(),
-                scheduler);
+                scheduler,
+                storageManager);
         ProducerStateManager producerStateManager = new ProducerStateManager(
                 topicPartition,
                 dir,
@@ -789,7 +790,7 @@ public class UnifiedLog implements AutoCloseable {
     private void reinitializeLeaderEpochCache() throws IOException {
         synchronized (lock) {
             leaderEpochCache = UnifiedLog.createLeaderEpochCache(
-                    dir(), topicPartition(), logDirFailureChannel(), Optional.of(leaderEpochCache), scheduler());
+                    dir(), topicPartition(), logDirFailureChannel(), Optional.of(leaderEpochCache), scheduler(), storageManager);
         }
     }
 
@@ -2601,13 +2602,23 @@ public class UnifiedLog implements AutoCloseable {
      * @param scheduler            The scheduler for executing asynchronous tasks
      * @return The new LeaderEpochFileCache instance
      */
+
     public static LeaderEpochFileCache createLeaderEpochCache(File dir,
                                                               TopicPartition topicPartition,
                                                               LogDirFailureChannel logDirFailureChannel,
                                                               Optional<LeaderEpochFileCache> currentCache,
                                                               Scheduler scheduler) throws IOException {
+        return createLeaderEpochCache(dir, topicPartition, logDirFailureChannel, currentCache, scheduler, new FileStorageManager());
+    }
+
+    public static LeaderEpochFileCache createLeaderEpochCache(File dir,
+                                                              TopicPartition topicPartition,
+                                                              LogDirFailureChannel logDirFailureChannel,
+                                                              Optional<LeaderEpochFileCache> currentCache,
+                                                              Scheduler scheduler,
+                                                              StorageManager storageManager) throws IOException {
         File leaderEpochFile = LeaderEpochCheckpointFile.newFile(dir);
-        LeaderEpochCheckpointFile checkpointFile = new LeaderEpochCheckpointFile(leaderEpochFile, logDirFailureChannel);
+        LeaderEpochCheckpointFile checkpointFile = new LeaderEpochCheckpointFile(leaderEpochFile, logDirFailureChannel, storageManager);
         return currentCache.map(cache -> cache.withCheckpoint(checkpointFile))
                 .orElse(new LeaderEpochFileCache(topicPartition, checkpointFile, scheduler));
 

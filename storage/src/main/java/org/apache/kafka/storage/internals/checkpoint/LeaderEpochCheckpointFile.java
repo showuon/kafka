@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.storage.internals.checkpoint;
 
+import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.server.common.CheckpointFile.EntryFormatter;
 import org.apache.kafka.storage.internals.log.EpochEntry;
 import org.apache.kafka.storage.internals.log.LogDirFailureChannel;
@@ -48,8 +49,8 @@ public class LeaderEpochCheckpointFile {
 
     private final CheckpointFileWithFailureHandler<EpochEntry> checkpoint;
 
-    public LeaderEpochCheckpointFile(File file, LogDirFailureChannel logDirFailureChannel) throws IOException {
-        checkpoint = new CheckpointFileWithFailureHandler<>(file, CURRENT_VERSION, FORMATTER, logDirFailureChannel, file.getParentFile().getParent());
+    public LeaderEpochCheckpointFile(File file, LogDirFailureChannel logDirFailureChannel, StorageManager storageManager) throws IOException {
+        checkpoint = new CheckpointFileWithFailureHandler<>(file, CURRENT_VERSION, FORMATTER, logDirFailureChannel, file.getParentFile().getParent(), storageManager);
     }
 
     public void write(Collection<EpochEntry> epochs) {

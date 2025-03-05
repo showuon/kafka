@@ -40,6 +40,7 @@ public class InMemoryStorageManager implements StorageManager {
     private Map<String, ByteBuffer> txnBufferMap = new ConcurrentHashMap<>();
     private Map<String, ByteBuffer> snapshotBufferMap = new ConcurrentHashMap<>();
     private Map<String, ByteBuffer> partitionMetadataBufferMap = new ConcurrentHashMap<>();
+    private Map<String, ByteBuffer> checkpointBufferMap = new ConcurrentHashMap<>();
 
     // ----- common -------
     public boolean deleteIfExists(String path, StorageType storageType) throws IOException {
@@ -60,10 +61,7 @@ public class InMemoryStorageManager implements StorageManager {
                 partitionMetadataBufferMap.remove(path);
                 break;
         }
-
-        File file = new File(path);
-        return Files.deleteIfExists(file.toPath());
-
+        return true;
     }
 
     public void updateParentDir(String path, File parentDir, StorageType storageType) {
@@ -124,6 +122,8 @@ public class InMemoryStorageManager implements StorageManager {
                 return appendToBuffer(path, snapshotBufferMap, buffer);
             case METADATA:
                 return appendToBuffer(path, partitionMetadataBufferMap, buffer);
+            case CHECKPOINT:
+                return appendToBuffer(path, checkpointBufferMap, buffer);
         }
         return 0;
     }
@@ -140,7 +140,14 @@ public class InMemoryStorageManager implements StorageManager {
                 buffer.put(snapshotBufferMap.get(path).array(), position, buffer.remaining());
                 break;
             case METADATA:
-                buffer.put(partitionMetadataBufferMap.get(path).array(), position, buffer.remaining());
+                if (partitionMetadataBufferMap.containsKey(path)) {
+                    buffer.put(partitionMetadataBufferMap.get(path).array(), position, buffer.remaining());
+                }
+                break;
+            case CHECKPOINT:
+                if (checkpointBufferMap.containsKey(path)) {
+                    buffer.put(checkpointBufferMap.get(path).array(), position, buffer.remaining());
+                }
                 break;
         }
     }

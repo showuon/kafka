@@ -2077,15 +2077,10 @@ public class RemoteLogManager implements Closeable, AsyncOffsetReader {
 
     //Visible for testing
     static ByteBuffer epochEntriesAsByteBuffer(List<EpochEntry> epochEntries) throws IOException {
-        ByteArrayOutputStream stream = new ByteArrayOutputStream();
-        try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(stream, StandardCharsets.UTF_8))) {
-            CheckpointFile.CheckpointWriteBuffer<EpochEntry> writeBuffer =
-                    new CheckpointFile.CheckpointWriteBuffer<>(writer, 0, LeaderEpochCheckpointFile.FORMATTER);
-            writeBuffer.write(epochEntries);
-            writer.flush();
-        }
+        CheckpointFile.CheckpointWriteBuffer<EpochEntry> writeBuffer =
+                new CheckpointFile.CheckpointWriteBuffer<>(0, LeaderEpochCheckpointFile.FORMATTER);
 
-        return ByteBuffer.wrap(stream.toByteArray());
+        return ByteBuffer.wrap(writeBuffer.write(epochEntries).getBytes());
     }
 
     private void removeRemoteTopicPartitionMetrics(TopicIdPartition topicIdPartition) {

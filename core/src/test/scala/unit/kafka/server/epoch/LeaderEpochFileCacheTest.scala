@@ -20,6 +20,7 @@ package kafka.server.epoch
 import kafka.utils.TestUtils
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.requests.OffsetsForLeaderEpochResponse.{UNDEFINED_EPOCH, UNDEFINED_EPOCH_OFFSET}
+import org.apache.kafka.common.storage.FileStorageManager
 import org.apache.kafka.server.util.MockTime
 import org.apache.kafka.storage.internals.checkpoint.LeaderEpochCheckpointFile
 import org.apache.kafka.storage.internals.epoch.LeaderEpochFileCache
@@ -37,7 +38,7 @@ import scala.jdk.CollectionConverters._
 class LeaderEpochFileCacheTest {
   val tp = new TopicPartition("TestTopic", 5)
   val mockTime = new MockTime()
-  private val checkpoint: LeaderEpochCheckpointFile = new LeaderEpochCheckpointFile(TestUtils.tempFile(), new LogDirFailureChannel(1))
+  private val checkpoint: LeaderEpochCheckpointFile = new LeaderEpochCheckpointFile(TestUtils.tempFile(), new LogDirFailureChannel(1), new FileStorageManager)
 
   private val cache = new LeaderEpochFileCache(tp, checkpoint, mockTime.scheduler)
 
@@ -239,14 +240,14 @@ class LeaderEpochFileCacheTest {
   @Test
   def shouldPersistEpochsBetweenInstances(): Unit = {
     val checkpointPath = TestUtils.tempFile().getAbsolutePath
-    val checkpoint = new LeaderEpochCheckpointFile(new File(checkpointPath), new LogDirFailureChannel(1))
+    val checkpoint = new LeaderEpochCheckpointFile(new File(checkpointPath), new LogDirFailureChannel(1), new FileStorageManager)
 
     //Given
     val cache = new LeaderEpochFileCache(tp, checkpoint, new MockTime().scheduler)
     cache.assign(2, 6)
 
     //When
-    val checkpoint2 = new LeaderEpochCheckpointFile(new File(checkpointPath), new LogDirFailureChannel(1))
+    val checkpoint2 = new LeaderEpochCheckpointFile(new File(checkpointPath), new LogDirFailureChannel(1), new FileStorageManager)
     val cache2 = new LeaderEpochFileCache(tp, checkpoint2, new MockTime().scheduler)
 
     //Then

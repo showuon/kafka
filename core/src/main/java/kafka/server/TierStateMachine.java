@@ -45,6 +45,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -151,11 +152,12 @@ public class TierStateMachine {
 
     private List<EpochEntry> readLeaderEpochCheckpoint(RemoteLogManager rlm,
                                                        RemoteLogSegmentMetadata remoteLogSegmentMetadata) throws IOException, RemoteStorageException {
-        InputStream inputStream = rlm.storageManager().fetchIndex(remoteLogSegmentMetadata, RemoteStorageManager.IndexType.LEADER_EPOCH);
-        try (BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
-            CheckpointFile.CheckpointReadBuffer<EpochEntry> readBuffer = new CheckpointFile.CheckpointReadBuffer<>("", bufferedReader, 0, LeaderEpochCheckpointFile.FORMATTER);
-            return readBuffer.read();
+        try (InputStream inputStream = rlm.storageManager().fetchIndex(remoteLogSegmentMetadata, RemoteStorageManager.IndexType.LEADER_EPOCH)) {
+//        try (BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+            CheckpointFile.CheckpointReadBuffer<EpochEntry> readBuffer = new CheckpointFile.CheckpointReadBuffer<>("", 0, LeaderEpochCheckpointFile.FORMATTER);
+            return readBuffer.read(ByteBuffer.wrap(inputStream.readAllBytes()));
         }
+//        }
     }
 
     private void buildProducerSnapshotFile(UnifiedLog unifiedLog,

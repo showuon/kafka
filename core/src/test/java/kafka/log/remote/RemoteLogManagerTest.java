@@ -35,6 +35,7 @@ import org.apache.kafka.common.record.RemoteLogInputStream;
 import org.apache.kafka.common.record.SimpleRecord;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
+import org.apache.kafka.common.storage.FileStorageManager;
 import org.apache.kafka.common.utils.MockTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.server.common.OffsetAndEpoch;
@@ -231,7 +232,7 @@ public class RemoteLogManagerTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        checkpoint = new LeaderEpochCheckpointFile(TestUtils.tempFile(), new LogDirFailureChannel(1));
+        checkpoint = new LeaderEpochCheckpointFile(TestUtils.tempFile(), new LogDirFailureChannel(1), new FileStorageManager());
         topicIds.put(leaderTopicIdPartition.topicPartition().topic(), leaderTopicIdPartition.topicId());
         topicIds.put(followerTopicIdPartition.topicPartition().topic(), followerTopicIdPartition.topicId());
         Properties props = brokerConfig;
@@ -3095,7 +3096,7 @@ public class RemoteLogManagerTest {
         LeaderEpochCheckpointFile myCheckpoint;
         try {
             myCheckpoint = new LeaderEpochCheckpointFile(
-                    TestUtils.tempFile(), new LogDirFailureChannel(1));
+                    TestUtils.tempFile(), new LogDirFailureChannel(1), new FileStorageManager());
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

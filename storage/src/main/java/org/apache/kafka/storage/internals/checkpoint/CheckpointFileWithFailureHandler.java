@@ -17,6 +17,7 @@
 package org.apache.kafka.storage.internals.checkpoint;
 
 import org.apache.kafka.common.errors.KafkaStorageException;
+import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.server.common.CheckpointFile;
 import org.apache.kafka.storage.internals.log.LogDirFailureChannel;
 
@@ -39,13 +40,15 @@ public class CheckpointFileWithFailureHandler<T> {
     private final String logDir;
 
     private final CheckpointFile<T> checkpointFile;
+    private final StorageManager storageManager;
 
     public CheckpointFileWithFailureHandler(File file, int version, CheckpointFile.EntryFormatter<T> formatter,
-                                            LogDirFailureChannel logDirFailureChannel, String logDir) throws IOException {
+                                            LogDirFailureChannel logDirFailureChannel, String logDir, StorageManager storageManager) throws IOException {
         this.file = file;
         this.logDirFailureChannel = logDirFailureChannel;
         this.logDir = logDir;
-        checkpointFile = new CheckpointFile<>(file, version, formatter);
+        this.storageManager = storageManager;
+        checkpointFile = new CheckpointFile<>(file, version, formatter, storageManager);
     }
 
     public void write(Collection<T> entries) {
