@@ -17,6 +17,8 @@
 package org.apache.kafka.storage.internals.checkpoint;
 
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.storage.FileStorageManager;
+import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.server.common.CheckpointFile;
 import org.apache.kafka.storage.internals.log.LogDirFailureChannel;
 
@@ -50,9 +52,13 @@ public class OffsetCheckpointFile {
      *  </pre>
      */
     public OffsetCheckpointFile(File file, LogDirFailureChannel logDirFailureChannel) throws IOException {
+        this(file, logDirFailureChannel, new FileStorageManager());
+    }
+
+    public OffsetCheckpointFile(File file, LogDirFailureChannel logDirFailureChannel, StorageManager storageManager) throws IOException {
         this.file = file;
         checkpoint = new CheckpointFileWithFailureHandler<>(file, OffsetCheckpointFile.CURRENT_VERSION,
-                new OffsetCheckpointFile.Formatter(), logDirFailureChannel, file.getParent());
+                new OffsetCheckpointFile.Formatter(), logDirFailureChannel, file.getParent(), storageManager);
     }
 
     public void write(Map<TopicPartition, Long> offsets) {

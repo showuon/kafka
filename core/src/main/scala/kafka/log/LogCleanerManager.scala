@@ -25,6 +25,7 @@ import kafka.utils.CoreUtils._
 import kafka.utils.{Logging, Pool}
 import org.apache.kafka.common.{KafkaException, TopicPartition}
 import org.apache.kafka.common.errors.KafkaStorageException
+import org.apache.kafka.common.storage.FileStorageManager
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.storage.internals.checkpoint.OffsetCheckpointFile
 import org.apache.kafka.storage.internals.log.{LogCleaningAbortedException, LogDirFailureChannel}
@@ -73,7 +74,7 @@ private[log] class LogCleanerManager(val logDirs: Seq[File],
 
   /* the offset checkpoints holding the last cleaned point for each log */
   @volatile private var checkpoints = logDirs.map(dir =>
-    (dir, new OffsetCheckpointFile(new File(dir, offsetCheckpointFile), logDirFailureChannel))).toMap
+    (dir, new OffsetCheckpointFile(new File(dir, offsetCheckpointFile), logDirFailureChannel, new FileStorageManager))).toMap
 
   /* the set of logs currently being cleaned */
   private val inProgress = mutable.HashMap[TopicPartition, LogCleaningState]()

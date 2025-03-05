@@ -44,6 +44,7 @@ import org.apache.kafka.common.network.ListenerName;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.apache.kafka.common.storage.FileStorageManager;
 import org.apache.kafka.common.test.api.ClusterConfig;
 import org.apache.kafka.common.test.api.ClusterTest;
 import org.apache.kafka.common.test.api.Type;
@@ -322,7 +323,7 @@ public interface ClusterInstance {
                         return liveLogDirs.stream().allMatch(logDir -> {
                             OffsetCheckpointFile checkpointFile;
                             try {
-                                checkpointFile = new OffsetCheckpointFile(new File(logDir, "cleaner-offset-checkpoint"), null);
+                                checkpointFile = new OffsetCheckpointFile(new File(logDir, "cleaner-offset-checkpoint"), null, new FileStorageManager());
                             } catch (IOException e) {
                                 throw new RuntimeException(e);
                             }

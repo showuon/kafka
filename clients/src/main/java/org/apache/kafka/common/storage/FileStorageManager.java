@@ -112,6 +112,7 @@ public class FileStorageManager implements StorageManager {
                 break;
             case SNAPSHOT:
             case METADATA:
+            case CHECKPOINT:
                 try (FileChannel fileChannel = FileChannel.open(new File(path).toPath(), StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
                     Utils.writeFully(fileChannel, buffer);
                 }
@@ -121,6 +122,10 @@ public class FileStorageManager implements StorageManager {
     }
 
     public void read(String path, ByteBuffer buffer, int position, StorageType storageType) throws IOException {
+        File file = new File(path);
+        if (!file.exists()) {
+            return;
+        }
         switch (storageType) {
             case LOG:
                 Utils.readFullyOrFail(channelMap.get(path), buffer, position, "log header");
@@ -130,6 +135,7 @@ public class FileStorageManager implements StorageManager {
                 break;
             case SNAPSHOT:
             case METADATA:
+            case CHECKPOINT:
                 try (FileChannel fileChannel = FileChannel.open(new File(path).toPath(), StandardOpenOption.READ)) {
                     Utils.readFully(fileChannel, buffer, position);
                 }
@@ -186,10 +192,15 @@ public class FileStorageManager implements StorageManager {
     }
 
     public long size(String path, StorageType storageType) throws IOException {
+        File file = new File(path);
+        if (!file.exists()) {
+            return 0;
+        }
         switch (storageType) {
             case SNAPSHOT:
             case METADATA:
-                try (FileChannel fileChannel = FileChannel.open(new File(path).toPath(), StandardOpenOption.READ)) {
+            case CHECKPOINT:
+                try (FileChannel fileChannel = FileChannel.open(file.toPath(), StandardOpenOption.READ)) {
                     return fileChannel.size();
                 }
         }

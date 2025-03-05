@@ -996,7 +996,7 @@ public final class Utils {
         try (FileChannel fileChannel = FileChannel.open(path, StandardOpenOption.READ)) {
             fileChannel.force(true);
         } catch (NoSuchFileException e) {
-            log.warn("Failed to flush file {}", path, e);
+            log.warn("Failed to flush file {} due to file not existed", path);
         }
     }
 
