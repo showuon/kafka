@@ -256,7 +256,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
         if (targetSize > originalSize || targetSize < 0)
             throw new KafkaException("Attempt to truncate log segment " + "file" + " to " + targetSize + " bytes failed, " +
                     " size of this log segment is " + originalSize + " bytes.");
-        if (targetSize < (int) storageManager.recordsSize(file().getAbsolutePath())) {
+        if (targetSize < (int) storageManager.size(file().getAbsolutePath(), StorageManager.StorageType.LOG)) {
             storageManager.truncate(file().getAbsolutePath(), targetSize, StorageManager.StorageType.LOG);
             size.set(targetSize);
         }
@@ -265,7 +265,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
 
     @Override
     public int writeTo(TransferableChannel destChannel, int offset, int length) throws IOException {
-        long newSize = Math.min(storageManager.recordsSize(file().getAbsolutePath()), end) - start;
+        long newSize = Math.min(storageManager.size(file().getAbsolutePath(), StorageManager.StorageType.LOG), end) - start;
         int oldSize = sizeInBytes();
         if (newSize < oldSize)
             throw new KafkaException(String.format(

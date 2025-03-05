@@ -119,7 +119,6 @@ public class ProducerStateManager {
         log = new LogContext("[ProducerStateManager partition=" + topicPartition + "] ").logger(ProducerStateManager.class);
         this.storageManager = storageManager;
         snapshots = loadSnapshots();
-
     }
 
     public ProducerStateManager(TopicPartition topicPartition, File logDir, int maxTransactionTimeoutMs, ProducerStateManagerConfig producerStateManagerConfig, Time time) throws IOException {

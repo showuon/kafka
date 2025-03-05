@@ -134,8 +134,6 @@ public class CheckpointFile<T> {
 
         public List<T> read(ByteBuffer buffer) throws IOException {
             String content = StandardCharsets.UTF_8.decode(buffer).toString();
-
-            System.out.println("!!! content:" + content + ";;" + location);
             List<String> lines = content.lines().toList();
             if (lines.isEmpty()) {
                 return Collections.emptyList();

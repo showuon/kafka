@@ -199,6 +199,8 @@ public class FileStorageManager implements StorageManager {
             return 0;
         }
         switch (storageType) {
+            case LOG:
+                return channelMap.get(path).size();
             case INDEX:
                 return indexBufferMap.get(path).limit();
             case SNAPSHOT:
@@ -213,18 +215,7 @@ public class FileStorageManager implements StorageManager {
 
     public boolean exist(String path, StorageType storageType) {
         File file = new File(path);
-        if (!file.exists()) {
-            return false;
-        }
-        switch (storageType) {
-            case INDEX:
-                return indexBufferMap.containsKey(path);
-            case LOG:
-                return channelMap.containsKey(path);
-            case TXN:
-                return txnChannelMap.containsKey(path);
-        }
-        return true;
+        return file.exists();
     }
 
     public void truncate(String path, int newPos, StorageType storageType) throws IOException {
@@ -326,10 +317,6 @@ public class FileStorageManager implements StorageManager {
         } else {
             return FileChannel.open(file.toPath());
         }
-    }
-
-    public long recordsSize(String path) throws IOException {
-        return channelMap.get(path).size();
     }
 
     public long writeRecordsToSocket(String path, SocketChannel socketChannel, long position, long count) throws IOException {
@@ -443,10 +430,12 @@ public class FileStorageManager implements StorageManager {
 
     // ----- transaction index -------
     public void initTransIndex(File file) throws IOException {
-        FileChannel channel = FileChannel.open(file.toPath(), StandardOpenOption.CREATE,
-                StandardOpenOption.READ, StandardOpenOption.WRITE);
-        channel.position(channel.size());
-        txnChannelMap.put(file.getAbsolutePath(), channel);
+        if (file.exists()) {
+            FileChannel channel = FileChannel.open(file.toPath(), StandardOpenOption.CREATE,
+                    StandardOpenOption.READ, StandardOpenOption.WRITE);
+            channel.position(channel.size());
+            txnChannelMap.put(file.getAbsolutePath(), channel);
+        }
     }
 
 }

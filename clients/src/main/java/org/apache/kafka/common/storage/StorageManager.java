@@ -60,10 +60,9 @@ public interface StorageManager {
                      int initFileSize,
                      boolean preallocate,
                      boolean isSlice,
-                    int start,
-                    int end) throws IOException;
+                     int start,
+                     int end) throws IOException;
 
-    long recordsSize(String path) throws IOException;
     long writeRecordsToSocket(String path, SocketChannel socketChannel, long position, long count) throws IOException;
 
 

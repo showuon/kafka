@@ -186,6 +186,8 @@ public class InMemoryStorageManager implements StorageManager {
 
     public long size(String path, StorageType storageType) throws IOException {
         switch (storageType) {
+            case LOG:
+                return recordBufferMap.get(path).limit();
             case INDEX:
                 return indexBufferMap.get(path).limit();
             case SNAPSHOT:
@@ -275,10 +277,6 @@ public class InMemoryStorageManager implements StorageManager {
             }
         }
         return size;
-    }
-
-    public long recordsSize(String path) throws IOException {
-        return recordBufferMap.get(path).limit();
     }
 
     public long writeRecordsToSocket(String path, SocketChannel socketChannel, long position, long count) throws IOException {
