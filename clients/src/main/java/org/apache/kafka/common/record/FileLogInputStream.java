@@ -59,6 +59,7 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
         this.end = end;
     }
 
+
     @Override
     public FileChannelRecordBatch nextBatch() throws IOException {
         FileChannel channel = fileRecords.channel();
