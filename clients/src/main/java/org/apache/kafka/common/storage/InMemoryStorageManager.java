@@ -185,11 +185,12 @@ public class InMemoryStorageManager implements StorageManager {
 
     public long size(String path, StorageType storageType) throws IOException {
         switch (storageType) {
+            case INDEX:
+                return indexBufferMap.get(path).limit();
             case SNAPSHOT:
+                return snapshotBufferMap.get(path).limit();
             case METADATA:
-                try (FileChannel fileChannel = FileChannel.open(new File(path).toPath(), StandardOpenOption.READ)) {
-                    return fileChannel.size();
-                }
+                return partitionMetadataBufferMap.get(path).limit();
         }
         return 0;
     }

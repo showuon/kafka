@@ -23,6 +23,7 @@ import org.apache.kafka.common.record.FileRecords;
 import org.apache.kafka.common.record.FileRecords.LogOffsetPosition;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.RecordBatch;
+import org.apache.kafka.common.storage.FileStorageManager;
 import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.common.utils.BufferSupplier;
 import org.apache.kafka.common.utils.Time;
@@ -497,12 +498,12 @@ public class LogSegment implements Closeable {
                 }
             }
         } catch (CorruptRecordException | InvalidRecordException e) {
-            LOGGER.warn("Found invalid messages in log segment {} at byte offset {}.", "log.file().getAbsolutePath()",
+            LOGGER.warn("Found invalid messages in log segment {} at byte offset {}.", log.file().getAbsolutePath(),
                 validBytes, e);
         }
         int truncated = log.sizeInBytes() - validBytes;
         if (truncated > 0)
-            LOGGER.debug("Truncated {} invalid bytes at the end of segment {} during recovery", truncated, "log.file().getAbsolutePath()");
+            LOGGER.debug("Truncated {} invalid bytes at the end of segment {} during recovery", truncated, log.file().getAbsolutePath());
 
         log.truncateTo(validBytes);
         offsetIndex().trimToValidSize();
@@ -529,7 +530,7 @@ public class LogSegment implements Closeable {
         // We don't call `largestRecordTimestamp` below to avoid materializing the time index when `toString` is invoked
         return "LogSegment(baseOffset=" + baseOffset +
             ", size=" + size() +
-           // ", lastModifiedTime=" + lastModified() +
+            ", lastModifiedTime=" + lastModified() +
             ", largestRecordTimestamp=" + maxTimestampAndOffsetSoFar.timestamp +
             ")";
     }
@@ -829,7 +830,7 @@ public class LogSegment implements Closeable {
      * The last modified time of this log segment as a unix time stamp
      */
     public long lastModified() {
-        return log.file() == null ? 0 : log.file().lastModified();
+        return log.file().exists() ? log.file().lastModified() : 0;
     }
 
     /**
@@ -867,7 +868,7 @@ public class LogSegment implements Closeable {
     }
 
     public static LogSegment open(File dir, long baseOffset, LogConfig config, Time time, int initFileSize, boolean preallocate) throws IOException {
-        return open(dir, baseOffset, config, time, false, initFileSize, preallocate, "", null);
+        return open(dir, baseOffset, config, time, false, initFileSize, preallocate, "", new FileStorageManager());
     }
 
     public static LogSegment open(File dir, long baseOffset, LogConfig config, Time time, boolean fileAlreadyExists,

@@ -79,7 +79,7 @@ public final class OffsetIndex extends AbstractIndex {
         lastOffset = lastEntry().offset;
 
         log.debug("Loaded index file {} with maxEntries = {}, maxIndexSize = {}, entries = {}, lastOffset = {}, file position = {}",
-            file.getAbsolutePath(), maxEntries(), maxIndexSize, entries(), lastOffset, 0);
+            file.getAbsolutePath(), maxEntries(), maxIndexSize, entries(), lastOffset, storageManager.position(file().getAbsolutePath(), StorageManager.StorageType.INDEX));
     }
 
     @Override
@@ -163,7 +163,7 @@ public final class OffsetIndex extends AbstractIndex {
 
                 incrementEntries();
                 lastOffset = offset;
-                int pos = storageManager.indexBuffer(file().getAbsolutePath()).position();
+                long pos = storageManager.position(file().getAbsolutePath(), StorageManager.StorageType.INDEX);
                 if (entries() * ENTRY_SIZE != pos)
                     throw new IllegalStateException(entries() + " entries but file position in index is " + pos);
             } else
@@ -180,7 +180,7 @@ public final class OffsetIndex extends AbstractIndex {
     public void truncateTo(long offset) {
         lock.lock();
         try {
-            ByteBuffer idx = storageManager.indexBuffer(file().getAbsolutePath()).duplicate();
+            ByteBuffer idx = storageManager.indexBuffer(file().getAbsolutePath());
             int slot = largestLowerBoundSlotFor(idx, offset, IndexSearchType.KEY);
 
             /* There are 3 cases for choosing the new size
@@ -236,8 +236,11 @@ public final class OffsetIndex extends AbstractIndex {
         try {
             super.truncateToEntries0(entries);
             this.lastOffset = lastEntry().offset;
+            long pos = storageManager.position(file().getAbsolutePath(), StorageManager.StorageType.INDEX);
             log.debug("Truncated index {} to {} entries; position is now {} and last offset is now {}",
-                    file().getAbsolutePath(), entries, 0, lastOffset);
+                    file().getAbsolutePath(), entries, pos, lastOffset);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         } finally {
             lock.unlock();
         }

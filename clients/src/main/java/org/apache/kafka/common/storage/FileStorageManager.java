@@ -197,6 +197,8 @@ public class FileStorageManager implements StorageManager {
             return 0;
         }
         switch (storageType) {
+            case INDEX:
+                return indexBufferMap.get(path).limit();
             case SNAPSHOT:
             case METADATA:
             case CHECKPOINT:

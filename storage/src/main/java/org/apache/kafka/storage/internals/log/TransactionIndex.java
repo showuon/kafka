@@ -229,7 +229,7 @@ public class TransactionIndex implements Closeable {
     }
 
     private Iterable<AbortedTxnWithPosition> iterable(Supplier<ByteBuffer> allocate) {
-        if (storageManager.exist(file().getAbsolutePath(), StorageManager.StorageType.TXN))
+        if (!storageManager.exist(file().getAbsolutePath(), StorageManager.StorageType.TXN))
             return Collections.emptyList();
 
         PrimitiveRef.IntRef position = PrimitiveRef.ofInt(0);

@@ -75,7 +75,7 @@ public class TimeIndex extends AbstractIndex {
         this.lastEntry = lastEntryFromIndexFile();
 
         log.debug("Loaded index file {} with maxEntries = {}, maxIndexSize = {}, entries = {}, lastOffset = {}, file position = {}",
-            file.getAbsolutePath(), maxEntries(), maxIndexSize, entries(), lastEntry.offset, 0);
+            file.getAbsolutePath(), maxEntries(), maxIndexSize, entries(), lastEntry.offset, storageManager.position(file.getAbsolutePath(), StorageManager.StorageType.INDEX));
     }
 
     @Override
@@ -86,7 +86,7 @@ public class TimeIndex extends AbstractIndex {
         if (entries() != 0 && lastTimestamp < timestamp(storageManager.indexBuffer(file().getAbsolutePath()), 0))
             throw new CorruptIndexException("Corrupt time index found, time index file (" + file().getAbsolutePath() + ") has "
                 + "non-zero size but the last timestamp is " + lastTimestamp + " which is less than the first timestamp "
-                + "timestamp(mmap(), 0)");
+                + timestamp(storageManager.indexBuffer(file().getAbsolutePath()), 0));
         if (entries() != 0 && lastOffset < baseOffset())
             throw new CorruptIndexException("Corrupt time index found, time index file (" + file().getAbsolutePath() + ") has "
                 + "non-zero size but the last offset is " + lastOffset + " which is less than the first offset " + baseOffset());
@@ -219,7 +219,7 @@ public class TimeIndex extends AbstractIndex {
 
                 incrementEntries();
                 this.lastEntry = new TimestampOffset(timestamp, offset);
-                int pos = storageManager.indexBuffer(file().getAbsolutePath()).position();
+                long pos = storageManager.position(file().getAbsolutePath(), StorageManager.StorageType.INDEX);
                 if (entries() * ENTRY_SIZE != pos)
                     throw new IllegalStateException(entries() + " entries but file position in index is " + pos);
             }
@@ -292,8 +292,11 @@ public class TimeIndex extends AbstractIndex {
         try {
             super.truncateToEntries0(entries);
             this.lastEntry = lastEntryFromIndexFile();
+            long pos = storageManager.position(file().getAbsolutePath(), StorageManager.StorageType.INDEX);
             log.debug("Truncated index {} to {} entries; position is now {} and last entry is now {}",
-                file().getAbsolutePath(), entries, "mmap().position()", lastEntry.offset);
+                file().getAbsolutePath(), entries, pos, lastEntry.offset);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         } finally {
             lock.unlock();
         }
