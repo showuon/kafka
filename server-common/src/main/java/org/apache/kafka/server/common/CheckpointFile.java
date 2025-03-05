@@ -80,7 +80,6 @@ public class CheckpointFile<T> {
 
     public List<T> read() throws IOException {
         synchronized (lock) {
-//            try (BufferedReader reader = Files.newBufferedReader(absolutePath, StandardCharsets.UTF_8)) {
             ByteBuffer buffer = ByteBuffer.allocate((int) storageManager.size(absolutePath.toString(), StorageManager.StorageType.CHECKPOINT));
             storageManager.read(absolutePath.toString(), buffer, 0, StorageManager.StorageType.CHECKPOINT);
             buffer.flip();

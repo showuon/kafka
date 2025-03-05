@@ -457,8 +457,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   }
 
   private def maybeFlushMetadataFile(): Unit = {
-    if (!config.logUseAny)
-      partitionMetadataFile.foreach(_.maybeFlush())
+    partitionMetadataFile.foreach(_.maybeFlush())
   }
 
   /** Only used for ZK clusters when we update and start using topic IDs on existing topics */
@@ -1572,7 +1571,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
     val maxOffsetInMessages = appendInfo.lastOffset
 
     if (segment.shouldRoll(new RollParams(config.maxSegmentMs, config.segmentSize, appendInfo.maxTimestamp, appendInfo.lastOffset, messagesSize, now))) {
-      info(s"!!! Rolling new log segment (log_size = ${segment.size}/${config.segmentSize}}, " +
+      debug(s"Rolling new log segment (log_size = ${segment.size}/${config.segmentSize}}, " +
         s"offset_index_size = ${segment.offsetIndex.entries}/${segment.offsetIndex.maxEntries}, " +
         s"time_index_size = ${segment.timeIndex.entries}/${segment.timeIndex.maxEntries}, " +
         s"inactive_time_ms = ${segment.timeWaitedForRoll(now, maxTimestampInMessages)}/${config.segmentMs - segment.rollJitterMs}).")

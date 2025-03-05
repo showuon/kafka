@@ -83,7 +83,7 @@ public abstract class AbstractIndex implements Closeable {
         this.length = new AtomicLong(storageManager.initIndex(file, maxIndexSize, writable, entrySize()));
         ByteBuffer buffer = storageManager.indexBuffer(file().getAbsolutePath());
         this.maxEntries = new AtomicInteger(buffer.limit() / entrySize());
-        this.entries = buffer.position() / entrySize();
+        this.entries = storageManager.position(file.getAbsolutePath(), StorageManager.StorageType.INDEX) / entrySize();
     }
 
 
@@ -172,9 +172,9 @@ public abstract class AbstractIndex implements Closeable {
                 return false;
             } else {
                 storageManager.resizeIndex(file.getAbsolutePath(), roundedNewSize, length, maxEntries, entrySize());
-                ByteBuffer buffer = storageManager.indexBuffer(file.getAbsolutePath());
                 log.debug("Resized {} to {}, position is {} and limit is {}", file.getAbsolutePath(), roundedNewSize,
-                        buffer.position(), buffer.limit());
+                        storageManager.position(file().getAbsolutePath(), StorageManager.StorageType.INDEX),
+                        storageManager.size(file().getAbsolutePath(), StorageManager.StorageType.INDEX));
                 return true;
             }
         } finally {

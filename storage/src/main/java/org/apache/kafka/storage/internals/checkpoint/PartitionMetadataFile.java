@@ -98,10 +98,6 @@ public class PartitionMetadataFile {
     public PartitionMetadata read() {
         synchronized (lock) {
             try {
-                if (file == null) {
-                    return new PartitionMetadata(CURRENT_VERSION, dirtyTopicIdOpt.get());
-                }
-
                 ByteBuffer buffer = ByteBuffer.allocate((int) storageManager.size(file.getAbsolutePath(), StorageManager.StorageType.METADATA));
                 storageManager.read(file.getAbsolutePath(), buffer, 0, StorageManager.StorageType.METADATA);
                 buffer.flip();

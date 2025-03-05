@@ -62,7 +62,7 @@ public class SnapshotFile {
 
     public void updateParentDir(File parentDir) {
         String name = file.getName();
-        String path = file.getAbsolutePath() + File.separator + name;
+        String path = file.getAbsolutePath();
         file = new File(parentDir, name);
         storageManager.updateParentDir(path, parentDir, StorageManager.StorageType.SNAPSHOT);
     }

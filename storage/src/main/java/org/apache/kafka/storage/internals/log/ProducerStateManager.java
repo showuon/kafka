@@ -466,9 +466,7 @@ public class ProducerStateManager {
      */
     public void updateParentDir(File parentDir) {
         logDir = parentDir;
-        snapshots.forEach((k, v) -> {
-            v.updateParentDir(parentDir);
-        });
+        snapshots.forEach((k, v) -> v.updateParentDir(parentDir));
     }
 
     /**
