@@ -72,8 +72,7 @@ public final class LeaderEpochFileCache {
         this.scheduler = scheduler;
         LogContext logContext = new LogContext("[LeaderEpochCache " + topicPartition + "] ");
         log = logContext.logger(LeaderEpochFileCache.class);
-        if (checkpoint != null)
-            checkpoint.read().forEach(this::assign);
+        checkpoint.read().forEach(this::assign);
     }
 
     /**
@@ -518,8 +517,7 @@ public final class LeaderEpochFileCache {
     private void writeToFile() {
         lock.readLock().lock();
         try {
-            if (checkpoint != null)
-                checkpoint.write(epochs.values());
+            checkpoint.write(epochs.values());
         } finally {
             lock.readLock().unlock();
         }
@@ -531,8 +529,7 @@ public final class LeaderEpochFileCache {
             // If we take a snapshot of the epoch entries here and flush them to disk outside the read lock,
             // by the time of flushing, the leader epoch file may already be updated with newer epoch entries.
             // Those newer entries will then be overridden with the old snapshot.
-            if (checkpoint != null)
-                checkpoint.writeIfDirExists(epochs.values());
+            checkpoint.writeIfDirExists(epochs.values());
         } finally {
             lock.readLock().unlock();
         }

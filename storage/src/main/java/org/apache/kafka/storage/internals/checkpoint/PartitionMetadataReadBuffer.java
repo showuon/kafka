@@ -30,27 +30,13 @@ import java.util.regex.Pattern;
 public class PartitionMetadataReadBuffer {
     private static final Pattern WHITE_SPACES_PATTERN = Pattern.compile(":\\s+");
 
-    private final String location;
-    private final StorageManager storageManager;
-
-    public PartitionMetadataReadBuffer(
-        String location,
-        StorageManager storageManager
-    ) {
-        this.location = location;
-        this.storageManager = storageManager;
-    }
-
-    PartitionMetadata read() throws IOException {
+    public static PartitionMetadata read(ByteBuffer buffer, String location) throws IOException {
         String line = null;
         Uuid metadataTopicId;
-        ByteBuffer buffer = ByteBuffer.allocate((int) storageManager.size(location, StorageManager.StorageType.METADATA));
-        storageManager.read(location, buffer, 0, StorageManager.StorageType.METADATA);
-        buffer.flip();
         String content = StandardCharsets.UTF_8.decode(buffer).toString();
         List<String> lines = content.lines().toList();
         if (lines.size() != 2) {
-            throw malformedLineException(content);
+            throw malformedLineException(content, location);
         }
 
         try {
@@ -73,25 +59,25 @@ public class PartitionMetadataReadBuffer {
 
                         return new PartitionMetadata(version, metadataTopicId);
                     } else {
-                        throw malformedLineException(line);
+                        throw malformedLineException(line, location);
                     }
                 } else {
                     throw new IOException("Unrecognized version of partition metadata file + (" + location + "): " + version);
                 }
             } else {
-                throw malformedLineException(line);
+                throw malformedLineException(line, location);
             }
 
         } catch (NumberFormatException e) {
-            throw malformedLineException(line, e);
+            throw malformedLineException(line, location, e);
         }
     }
 
-    private IOException malformedLineException(String line) {
+    private static IOException malformedLineException(String line, String location) {
         return new IOException(String.format("Malformed line in checkpoint file [%s]: %s", location, line));
     }
 
-    private IOException malformedLineException(String line, Exception e) {
+    private static IOException malformedLineException(String line, String location, Exception e) {
         return new IOException(String.format("Malformed line in checkpoint file [%s]: %s", location, line), e);
     }
 }

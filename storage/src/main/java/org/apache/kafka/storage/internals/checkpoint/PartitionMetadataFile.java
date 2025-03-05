@@ -101,8 +101,12 @@ public class PartitionMetadataFile {
                 if (file == null) {
                     return new PartitionMetadata(CURRENT_VERSION, dirtyTopicIdOpt.get());
                 }
-                PartitionMetadataReadBuffer partitionBuffer = new PartitionMetadataReadBuffer(file.getAbsolutePath(), storageManager);
-                return partitionBuffer.read();
+
+                ByteBuffer buffer = ByteBuffer.allocate((int) storageManager.size(file.getAbsolutePath(), StorageManager.StorageType.METADATA));
+                storageManager.read(file.getAbsolutePath(), buffer, 0, StorageManager.StorageType.METADATA);
+                buffer.flip();
+
+                return PartitionMetadataReadBuffer.read(buffer, file.getAbsolutePath());
             } catch (IOException e) {
                 String msg = "Error while reading partition metadata file " + file.getAbsolutePath();
                 logDirFailureChannel.maybeAddOfflineLogDir(logDir(), msg, e);
@@ -121,10 +125,6 @@ public class PartitionMetadataFile {
 
     private Path path() {
         return file.toPath().toAbsolutePath();
-    }
-
-    private Path tempPath() {
-        return Paths.get(path() + ".tmp");
     }
 
     private String logDir() {
