@@ -40,14 +40,12 @@ public class CheckpointFileWithFailureHandler<T> {
     private final String logDir;
 
     private final CheckpointFile<T> checkpointFile;
-    private final StorageManager storageManager;
 
     public CheckpointFileWithFailureHandler(File file, int version, CheckpointFile.EntryFormatter<T> formatter,
                                             LogDirFailureChannel logDirFailureChannel, String logDir, StorageManager storageManager) throws IOException {
         this.file = file;
         this.logDirFailureChannel = logDirFailureChannel;
         this.logDir = logDir;
-        this.storageManager = storageManager;
         checkpointFile = new CheckpointFile<>(file, version, formatter, storageManager);
     }
 

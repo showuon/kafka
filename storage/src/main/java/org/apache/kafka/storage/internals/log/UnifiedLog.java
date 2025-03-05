@@ -21,6 +21,7 @@ import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.record.FileRecords;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.Records;
+import org.apache.kafka.common.storage.FileStorageManager;
 import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
