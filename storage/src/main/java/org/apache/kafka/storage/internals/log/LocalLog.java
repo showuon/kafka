@@ -896,7 +896,7 @@ public class LocalLog {
     }
 
     public static LogSegment createNewCleanedSegment(File dir, LogConfig logConfig, long baseOffset, StorageManager storageManager) throws IOException {
-        LogSegment.deleteIfExists(dir, baseOffset, CLEANED_FILE_SUFFIX);
+        LogSegment.deleteIfExists(dir, baseOffset, CLEANED_FILE_SUFFIX, storageManager);
         return LogSegment.open(dir, baseOffset, logConfig, Time.SYSTEM, false, logConfig.initFileSize(), logConfig.preallocate, CLEANED_FILE_SUFFIX, storageManager);
     }
 

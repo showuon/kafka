@@ -33,6 +33,7 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -264,6 +265,10 @@ public class FileStorageManager implements StorageManager {
 
     public long lastModified(File file) {
         return file.lastModified();
+    }
+
+    public void setLastModified(File file, long lastModified) throws IOException {
+        Files.setLastModifiedTime(file.toPath(), FileTime.fromMillis(lastModified));
     }
 
 

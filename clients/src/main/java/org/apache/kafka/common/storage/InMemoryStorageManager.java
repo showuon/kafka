@@ -116,8 +116,7 @@ public class InMemoryStorageManager implements StorageManager {
     public int append(String path, ByteBuffer buffer, StorageType storageType) throws IOException {
         switch (storageType) {
             case LOG:
-                int res = appendToBuffer(path, recordBufferMap, buffer);
-                return res;
+                return appendToBuffer(path, recordBufferMap, buffer);
             case TXN:
                 return appendToBuffer(path, txnBufferMap, buffer);
             case INDEX:
@@ -254,7 +253,7 @@ public class InMemoryStorageManager implements StorageManager {
     }
 
     public long lastModified(File file) {
-        return System.currentTimeMillis() - 100000000;
+        return 0;
     }
 
 

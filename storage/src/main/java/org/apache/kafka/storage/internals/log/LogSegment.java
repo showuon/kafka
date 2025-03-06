@@ -857,10 +857,9 @@ public class LogSegment implements Closeable {
      * Change the last modified time for this log segment
      */
     public void setLastModified(long ms) throws IOException {
-        FileTime fileTime = FileTime.fromMillis(ms);
-        Files.setLastModifiedTime(log.file().toPath(), fileTime);
-        Files.setLastModifiedTime(offsetIndexFile().toPath(), fileTime);
-        Files.setLastModifiedTime(timeIndexFile().toPath(), fileTime);
+        log.storageManager().setLastModified(log.file(), ms);
+        log.storageManager().setLastModified(offsetIndexFile(), ms);
+        log.storageManager().setLastModified(timeIndexFile(), ms);
     }
 
     public static LogSegment open(File dir, long baseOffset, LogConfig config, Time time, int initFileSize, boolean preallocate, StorageManager storageManager) throws IOException {
@@ -886,15 +885,10 @@ public class LogSegment implements Closeable {
             time);
     }
 
-    public static void deleteIfExists(File dir, long baseOffset, String fileSuffix) throws IOException {
-        deleteFileIfExists(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix));
-        deleteFileIfExists(LogFileUtils.timeIndexFile(dir, baseOffset, fileSuffix));
-        deleteFileIfExists(LogFileUtils.transactionIndexFile(dir, baseOffset, fileSuffix));
-        deleteFileIfExists(LogFileUtils.logFile(dir, baseOffset, fileSuffix));
+    public static void deleteIfExists(File dir, long baseOffset, String fileSuffix, StorageManager storageManager) throws IOException {
+        storageManager.deleteIfExists(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix).getAbsolutePath(), StorageManager.StorageType.INDEX);
+        storageManager.deleteIfExists(LogFileUtils.timeIndexFile(dir, baseOffset, fileSuffix).getAbsolutePath(), StorageManager.StorageType.INDEX);
+        storageManager.deleteIfExists(LogFileUtils.transactionIndexFile(dir, baseOffset, fileSuffix).getAbsolutePath(), StorageManager.StorageType.TXN);
+        storageManager.deleteIfExists(LogFileUtils.logFile(dir, baseOffset, fileSuffix).getAbsolutePath(), StorageManager.StorageType.LOG);
     }
-
-    private static boolean deleteFileIfExists(File file) throws IOException {
-        return Files.deleteIfExists(file.toPath());
-    }
-
 }

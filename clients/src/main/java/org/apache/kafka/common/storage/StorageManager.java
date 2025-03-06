@@ -52,6 +52,7 @@ public interface StorageManager {
     boolean exist(String path, StorageType storageType);
     List<File> listFiles(File dir, StorageType storageType) throws IOException;
     long lastModified(File file);
+    default void setLastModified(File file, long lastModified) throws IOException {}
 
 
     // ---- log files ----
