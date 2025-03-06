@@ -133,7 +133,7 @@ public class FileStorageManager implements StorageManager {
         return sizeToAppend;
     }
 
-    public void read(String path, ByteBuffer buffer, int position, StorageType storageType) throws IOException {
+    public void read(String path, ByteBuffer buffer, long position, StorageType storageType) throws IOException {
         File file = new File(path);
         if (!file.exists()) {
             return;

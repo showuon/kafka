@@ -135,30 +135,31 @@ public class InMemoryStorageManager implements StorageManager {
         return 0;
     }
 
-    public void read(String path, ByteBuffer buffer, int position, StorageType storageType) throws IOException {
+    public void read(String path, ByteBuffer buffer, long position, StorageType storageType) throws IOException {
+        int pos = Math.toIntExact(position);
         switch (storageType) {
             case LOG:
                 ByteBuffer sourceBuffer = recordBufferMap.get(path);
-                buffer.put(sourceBuffer.array(), position, Math.min(buffer.remaining(), sourceBuffer.limit() - position));
+                buffer.put(sourceBuffer.array(), pos, Math.min(buffer.remaining(), sourceBuffer.limit() - pos));
                 break;
             case TXN:
                 sourceBuffer = txnBufferMap.get(path);
-                buffer.put(sourceBuffer.array(), position, Math.min(buffer.remaining(), sourceBuffer.limit() - position));
+                buffer.put(sourceBuffer.array(), pos, Math.min(buffer.remaining(), sourceBuffer.limit() - pos));
                 break;
             case SNAPSHOT:
                 sourceBuffer = snapshotBufferMap.get(path);
-                buffer.put(snapshotBufferMap.get(path).array(), position, Math.min(buffer.remaining(), sourceBuffer.limit() - position));
+                buffer.put(snapshotBufferMap.get(path).array(), pos, Math.min(buffer.remaining(), sourceBuffer.limit() - pos));
                 break;
             case METADATA:
                 sourceBuffer = partitionMetadataBufferMap.get(path);
                 if (partitionMetadataBufferMap.containsKey(path)) {
-                    buffer.put(partitionMetadataBufferMap.get(path).array(), position, Math.min(buffer.remaining(), sourceBuffer.limit() - position));
+                    buffer.put(partitionMetadataBufferMap.get(path).array(), pos, Math.min(buffer.remaining(), sourceBuffer.limit() - pos));
                 }
                 break;
             case CHECKPOINT:
                 sourceBuffer = checkpointBufferMap.get(path);
                 if (checkpointBufferMap.containsKey(path)) {
-                    buffer.put(checkpointBufferMap.get(path).array(), position, Math.min(buffer.remaining(), sourceBuffer.limit() - position));
+                    buffer.put(checkpointBufferMap.get(path).array(), pos, Math.min(buffer.remaining(), sourceBuffer.limit() - pos));
                 }
                 break;
         }

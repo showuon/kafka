@@ -44,7 +44,7 @@ public interface StorageManager {
     void renameTo(String path, File f, StorageType storageType) throws IOException;
     void truncate(String path, int newPos, StorageType storageType) throws IOException;
     int append(String path, ByteBuffer buffer, StorageType storageType) throws IOException;
-    void read(String path, ByteBuffer buffer, int position, StorageType storageType) throws IOException;
+    void read(String path, ByteBuffer buffer, long position, StorageType storageType) throws IOException;
     default void flush(String path, StorageType storageType) throws IOException {}
     default void close(String path, StorageType storageType) throws IOException {}
     long position(String path, StorageType storageType) throws IOException;

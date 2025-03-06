@@ -52,5 +52,5 @@ public interface TransferableChannel extends GatheringByteChannel {
      */
     long transferFrom(FileChannel fileChannel, long position, long count) throws IOException;
 
-    default long transferFrom(long position, long count, StorageManager storageManager, String path) throws IOException {return 0;};
+    default long transferFrom(long position, long count, StorageManager storageManager, String path) throws IOException {return 0;}
 }

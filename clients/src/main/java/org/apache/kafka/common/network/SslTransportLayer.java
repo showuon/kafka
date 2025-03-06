@@ -18,6 +18,7 @@ package org.apache.kafka.common.network;
 
 import org.apache.kafka.common.errors.SslAuthenticationException;
 import org.apache.kafka.common.security.auth.KafkaPrincipal;
+import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.common.utils.ByteBufferUnmapper;
 import org.apache.kafka.common.utils.ByteUtils;
 import org.apache.kafka.common.utils.LogContext;
@@ -1041,6 +1042,68 @@ public class SslTransportLayer implements TransportLayer {
                     int bytesRead = fileChannel.read(fileChannelBuffer, pos);
                     if (bytesRead <= 0)
                         break;
+                    fileChannelBuffer.flip();
+                }
+                int networkBytesWritten = write(fileChannelBuffer);
+                totalBytesWritten += networkBytesWritten;
+                // In the case of a partial write we only return the written bytes to the caller. As a result, the
+                // `position` passed in the next `transferFrom` call won't include the bytes remaining in
+                // `fileChannelBuffer`. By draining `fileChannelBuffer` first, we ensure we update `pos` before
+                // we invoke `fileChannel.read`.
+                if (fileChannelBuffer.hasRemaining())
+                    break;
+                pos += networkBytesWritten;
+            }
+            return totalBytesWritten;
+        } catch (IOException e) {
+            if (totalBytesWritten > 0)
+                return totalBytesWritten;
+            throw e;
+        }
+    }
+
+    public long transferFrom(long position, long count, StorageManager storageManager, String path) throws IOException {
+        if (state == State.CLOSING)
+            throw closingException();
+        if (state != State.READY)
+            return 0;
+
+        if (!flush(netWriteBuffer))
+            return 0;
+
+        long channelSize = storageManager.size(path, StorageManager.StorageType.LOG);
+        if (position > channelSize)
+            return 0;
+        int totalBytesToWrite = (int) Math.min(Math.min(count, channelSize - position), Integer.MAX_VALUE);
+
+        if (fileChannelBuffer == null) {
+            // Pick a size that allows for reasonably efficient disk reads, keeps the memory overhead per connection
+            // manageable and can typically be drained in a single `write` call. The `netWriteBuffer` is typically 16k
+            // and the socket send buffer is 100k by default, so 32k is a good number given the mentioned trade-offs.
+            int transferSize = 32768;
+            // Allocate a direct buffer to avoid one heap to heap buffer copy. SSLEngine copies the source
+            // buffer (fileChannelBuffer) to the destination buffer (netWriteBuffer) and then encrypts in-place.
+            // FileChannel.read() to a heap buffer requires a copy from a direct buffer to a heap buffer, which is not
+            // useful here.
+            fileChannelBuffer = ByteBuffer.allocateDirect(transferSize);
+            // The loop below drains any remaining bytes from the buffer before reading from disk, so we ensure there
+            // are no remaining bytes in the empty buffer
+            fileChannelBuffer.position(fileChannelBuffer.limit());
+        }
+
+        int totalBytesWritten = 0;
+        long pos = position;
+        try {
+            while (totalBytesWritten < totalBytesToWrite) {
+                if (!fileChannelBuffer.hasRemaining()) {
+                    fileChannelBuffer.clear();
+                    int bytesRemaining = totalBytesToWrite - totalBytesWritten;
+                    if (bytesRemaining < fileChannelBuffer.limit())
+                        fileChannelBuffer.limit(bytesRemaining);
+                    if (pos >= channelSize)
+                        break;
+                    storageManager.read(path, fileChannelBuffer, pos, StorageManager.StorageType.LOG);
+
                     fileChannelBuffer.flip();
                 }
                 int networkBytesWritten = write(fileChannelBuffer);
