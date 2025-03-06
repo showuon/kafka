@@ -701,8 +701,8 @@ private[log] class Cleaner(val id: Int,
       cleaned.flush()
 
       // update the modification date to retain the last modified date of the original files
-      val modified = segments.last.lastModified
-      cleaned.setLastModified(modified)
+//      val modified = segments.last.lastModified
+//      cleaned.setLastModified(modified)
 
       // swap in new segment
       info(s"Swapping in cleaned segment $cleaned for segment(s) $segments in log $log")
@@ -1086,6 +1086,7 @@ private[log] class Cleaner(val id: Int,
                                        maxLogMessageSize: Int,
                                        transactionMetadata: CleanedTransactionMetadata,
                                        stats: CleanerStats): Boolean = {
+
     var position = segment.offsetIndex.lookup(startOffset).position
     val maxDesiredMapSize = (map.slots * this.dupBufferLoadFactor).toInt
     while (position < segment.log.sizeInBytes) {

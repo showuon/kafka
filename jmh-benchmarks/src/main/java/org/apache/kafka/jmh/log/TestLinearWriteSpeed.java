@@ -27,6 +27,7 @@ import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.record.SimpleRecord;
+import org.apache.kafka.common.storage.FileStorageManager;
 import org.apache.kafka.common.utils.CopyOnWriteMap;
 import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.common.utils.Time;
@@ -317,7 +318,7 @@ public class TestLinearWriteSpeed {
                 new CopyOnWriteMap<>(),
                 false,
                 LogOffsetsListener.NO_OP_OFFSETS_LISTENER,
-                    null
+                new FileStorageManager()
             );
         }
 

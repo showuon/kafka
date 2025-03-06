@@ -95,16 +95,20 @@ public class InMemoryStorageManager implements StorageManager {
     public void renameTo(String path, File f, StorageType storageType) throws IOException {
         switch (storageType) {
             case LOG:
-                recordBufferMap.put(f.getAbsolutePath(), recordBufferMap.remove(path));
+                if (recordBufferMap.containsKey(path))
+                    recordBufferMap.put(f.getAbsolutePath(), recordBufferMap.remove(path));
                 break;
             case INDEX:
-                indexBufferMap.put(f.getAbsolutePath(), indexBufferMap.remove(path));
+                if (indexBufferMap.containsKey(path))
+                    indexBufferMap.put(f.getAbsolutePath(), indexBufferMap.remove(path));
                 break;
             case TXN:
-                txnBufferMap.put(f.getAbsolutePath(), txnBufferMap.remove(path));
+                if (txnBufferMap.containsKey(path))
+                    txnBufferMap.put(f.getAbsolutePath(), txnBufferMap.remove(path));
                 break;
             case SNAPSHOT:
-                snapshotBufferMap.put(f.getAbsolutePath(), snapshotBufferMap.remove(path));
+                if (snapshotBufferMap.containsKey(path))
+                    snapshotBufferMap.put(f.getAbsolutePath(), snapshotBufferMap.remove(path));
                 break;
         }
     }
@@ -112,7 +116,8 @@ public class InMemoryStorageManager implements StorageManager {
     public int append(String path, ByteBuffer buffer, StorageType storageType) throws IOException {
         switch (storageType) {
             case LOG:
-                return appendToBuffer(path, recordBufferMap, buffer);
+                int res = appendToBuffer(path, recordBufferMap, buffer);
+                return res;
             case TXN:
                 return appendToBuffer(path, txnBufferMap, buffer);
             case INDEX:
@@ -122,8 +127,10 @@ public class InMemoryStorageManager implements StorageManager {
             case SNAPSHOT:
                 return appendToBuffer(path, snapshotBufferMap, buffer);
             case METADATA:
+                partitionMetadataBufferMap.remove(path);
                 return appendToBuffer(path, partitionMetadataBufferMap, buffer);
             case CHECKPOINT:
+                checkpointBufferMap.remove(path);
                 return appendToBuffer(path, checkpointBufferMap, buffer);
         }
         return 0;
@@ -132,22 +139,27 @@ public class InMemoryStorageManager implements StorageManager {
     public void read(String path, ByteBuffer buffer, int position, StorageType storageType) throws IOException {
         switch (storageType) {
             case LOG:
-                buffer.put(recordBufferMap.get(path).array(), position, buffer.remaining());
+                ByteBuffer sourceBuffer = recordBufferMap.get(path);
+                buffer.put(sourceBuffer.array(), position, Math.min(buffer.remaining(), sourceBuffer.limit() - position));
                 break;
             case TXN:
-                buffer.put(txnBufferMap.get(path).array(), position, buffer.remaining());
+                sourceBuffer = txnBufferMap.get(path);
+                buffer.put(sourceBuffer.array(), position, Math.min(buffer.remaining(), sourceBuffer.limit() - position));
                 break;
             case SNAPSHOT:
-                buffer.put(snapshotBufferMap.get(path).array(), position, buffer.remaining());
+                sourceBuffer = snapshotBufferMap.get(path);
+                buffer.put(snapshotBufferMap.get(path).array(), position, Math.min(buffer.remaining(), sourceBuffer.limit() - position));
                 break;
             case METADATA:
+                sourceBuffer = partitionMetadataBufferMap.get(path);
                 if (partitionMetadataBufferMap.containsKey(path)) {
-                    buffer.put(partitionMetadataBufferMap.get(path).array(), position, buffer.remaining());
+                    buffer.put(partitionMetadataBufferMap.get(path).array(), position, Math.min(buffer.remaining(), sourceBuffer.limit() - position));
                 }
                 break;
             case CHECKPOINT:
+                sourceBuffer = checkpointBufferMap.get(path);
                 if (checkpointBufferMap.containsKey(path)) {
-                    buffer.put(checkpointBufferMap.get(path).array(), position, buffer.remaining());
+                    buffer.put(checkpointBufferMap.get(path).array(), position, Math.min(buffer.remaining(), sourceBuffer.limit() - position));
                 }
                 break;
         }
@@ -187,13 +199,13 @@ public class InMemoryStorageManager implements StorageManager {
     public long size(String path, StorageType storageType) throws IOException {
         switch (storageType) {
             case LOG:
-                return recordBufferMap.get(path).limit();
+                return recordBufferMap.containsKey(path) ? recordBufferMap.get(path).limit() : 0;
             case INDEX:
-                return indexBufferMap.get(path).limit();
+                return indexBufferMap.containsKey(path) ? indexBufferMap.get(path).limit() : 0;
             case SNAPSHOT:
-                return snapshotBufferMap.get(path).limit();
+                return snapshotBufferMap.containsKey(path) ? snapshotBufferMap.get(path).limit() : 0;
             case METADATA:
-                return partitionMetadataBufferMap.get(path).limit();
+                return partitionMetadataBufferMap.containsKey(path) ? partitionMetadataBufferMap.get(path).limit() : 0;
         }
         return 0;
     }
@@ -241,6 +253,9 @@ public class InMemoryStorageManager implements StorageManager {
         return Collections.emptyList();
     }
 
+    public long lastModified(File file) {
+        return System.currentTimeMillis() - 100000000;
+    }
 
 
 
@@ -254,8 +269,8 @@ public class InMemoryStorageManager implements StorageManager {
                      int initFileSize,
                      boolean preallocate,
                      boolean isSlice,
-                           int start,
-                           int end) {
+                     int start,
+                     int end) {
         int size = 0;
         if (isSlice) {
             // don't check the file size if this is just a slice view

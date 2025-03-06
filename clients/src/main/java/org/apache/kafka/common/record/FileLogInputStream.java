@@ -24,6 +24,7 @@ import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.common.utils.BufferSupplier;
 import org.apache.kafka.common.utils.CloseableIterator;
 
+import java.io.EOFException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
@@ -63,10 +64,14 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
         if (position >= end - HEADER_SIZE_UP_TO_MAGIC)
             return null;
 
-
         logHeaderBuffer.rewind();
 
         fileRecords.storageManager().read(fileRecords.file().getAbsolutePath(), logHeaderBuffer, position, StorageManager.StorageType.LOG);
+        if (logHeaderBuffer.hasRemaining()) {
+            throw new EOFException(String.format("Failed to read `%s` from file `%s`. Expected to read %d bytes, " +
+                            "but reached end of file after reading %d bytes. Started read from position %d.",
+                    "log header", fileRecords.file().getAbsolutePath(), HEADER_SIZE_UP_TO_MAGIC, HEADER_SIZE_UP_TO_MAGIC - logHeaderBuffer.remaining(), position));
+        }
 
         logHeaderBuffer.rewind();
         long offset = logHeaderBuffer.getLong(OFFSET_OFFSET);
@@ -179,6 +184,7 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
                 int limit = buffer.limit();
                 buffer.limit(buffer.position() + sizeInBytes());
                 fileRecords.storageManager().read(fileRecords.file().getAbsolutePath(), buffer, position, StorageManager.StorageType.LOG);
+
                 buffer.limit(limit);
             } catch (IOException e) {
                 throw new KafkaException("Failed to read record batch at position " + position + " from " + fileRecords, e);
@@ -211,6 +217,11 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
             try {
                 ByteBuffer buffer = ByteBuffer.allocate(size);
                 fileRecords.storageManager().read(fileRecords.file().getAbsolutePath(), buffer, position, StorageManager.StorageType.LOG);
+                if (buffer.hasRemaining()) {
+                    throw new EOFException(String.format("Failed to read `%s` from file `%s`. Expected to read %d bytes, " +
+                                    "but reached end of file after reading %d bytes. Started read from position %d.",
+                            description, fileRecords.file().getAbsolutePath(), size, size - buffer.remaining(), position));
+                }
                 buffer.rewind();
                 return toMemoryRecordBatch(buffer);
             } catch (IOException e) {

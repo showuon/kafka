@@ -110,12 +110,14 @@ public class TransactionIndex implements Closeable {
      * Remove all the entries from the index. Unlike `AbstractIndex`, this index is not resized ahead of time.
      */
     public void reset() throws IOException {
-        storageManager.truncate(file().getAbsolutePath(), 0, StorageManager.StorageType.TXN);
+        if (storageManager.exist(file().getAbsolutePath(), StorageManager.StorageType.TXN))
+            storageManager.truncate(file().getAbsolutePath(), 0, StorageManager.StorageType.TXN);
         lastOffset = OptionalLong.empty();
     }
 
     public void close() throws IOException {
-       storageManager.close(file().getAbsolutePath(), StorageManager.StorageType.TXN);
+        if (storageManager.exist(file().getAbsolutePath(), StorageManager.StorageType.TXN))
+            storageManager.close(file().getAbsolutePath(), StorageManager.StorageType.TXN);
     }
 
     /**
@@ -132,7 +134,8 @@ public class TransactionIndex implements Closeable {
 
     public void renameTo(File f) throws IOException {
         try {
-            storageManager.renameTo(file().getAbsolutePath(), f, StorageManager.StorageType.TXN);
+            if (storageManager.exist(file().getAbsolutePath(), StorageManager.StorageType.TXN))
+                storageManager.renameTo(file().getAbsolutePath(), f, StorageManager.StorageType.TXN);
         } finally {
             this.file = f;
         }

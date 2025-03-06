@@ -830,7 +830,7 @@ public class LogSegment implements Closeable {
      * The last modified time of this log segment as a unix time stamp
      */
     public long lastModified() {
-        return log.file().exists() ? log.file().lastModified() : 0;
+        return log.storageManager().lastModified(log.file());
     }
 
     /**

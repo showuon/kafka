@@ -27,6 +27,7 @@ import org.apache.kafka.common.record.FileRecords;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.Records;
+import org.apache.kafka.common.storage.FileStorageManager;
 import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.server.common.RequestLocal;
@@ -81,7 +82,7 @@ public class StressTestLog {
             new ConcurrentHashMap<>(),
             false,
             LogOffsetsListener.NO_OP_OFFSETS_LISTENER,
-                null
+            new FileStorageManager()
         );
 
         WriterThread writer = new WriterThread(log);

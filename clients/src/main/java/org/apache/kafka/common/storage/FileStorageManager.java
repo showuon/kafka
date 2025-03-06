@@ -107,17 +107,26 @@ public class FileStorageManager implements StorageManager {
             case LOG:
                 return channelMap.get(path).write(buffer);
             case TXN:
+                if (!txnChannelMap.containsKey(path)) {
+                    openTxnChannel(new File(path));
+                }
                 Utils.writeFully(txnChannelMap.get(path), buffer);
                 break;
             case INDEX:
                 indexBufferMap.get(path).put(buffer);
                 break;
             case SNAPSHOT:
-            case METADATA:
-            case CHECKPOINT:
                 try (FileChannel fileChannel = FileChannel.open(new File(path).toPath(), StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
                     Utils.writeFully(fileChannel, buffer);
                 }
+                break;
+            case METADATA:
+            case CHECKPOINT:
+                File tmpFile = new File(path + ".tmp");
+                try (FileChannel fileChannel = FileChannel.open(tmpFile.toPath(), StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
+                    Utils.writeFully(fileChannel, buffer);
+                }
+                Utils.atomicMoveWithFallback(tmpFile.toPath(), new File(path).toPath());
                 break;
         }
         return sizeToAppend;
@@ -130,7 +139,7 @@ public class FileStorageManager implements StorageManager {
         }
         switch (storageType) {
             case LOG:
-                Utils.readFullyOrFail(channelMap.get(path), buffer, position, "log header");
+                Utils.readFully(channelMap.get(path), buffer, position);
                 break;
             case TXN:
                 Utils.readFully(txnChannelMap.get(path), buffer, position);
@@ -178,7 +187,8 @@ public class FileStorageManager implements StorageManager {
                 break;
             case TXN:
                 fileChannel = txnChannelMap.remove(path);
-                fileChannel.close();
+                if (fileChannel != null)
+                    fileChannel.close();
                 break;
         }
     }
@@ -250,6 +260,10 @@ public class FileStorageManager implements StorageManager {
     private boolean isSnapshotFile(Path path) {
         String PRODUCER_SNAPSHOT_FILE_SUFFIX = ".snapshot";
         return Files.isRegularFile(path) && path.getFileName().toString().endsWith(PRODUCER_SNAPSHOT_FILE_SUFFIX);
+    }
+
+    public long lastModified(File file) {
+        return file.lastModified();
     }
 
 
@@ -431,11 +445,15 @@ public class FileStorageManager implements StorageManager {
     // ----- transaction index -------
     public void initTransIndex(File file) throws IOException {
         if (file.exists()) {
-            FileChannel channel = FileChannel.open(file.toPath(), StandardOpenOption.CREATE,
-                    StandardOpenOption.READ, StandardOpenOption.WRITE);
-            channel.position(channel.size());
-            txnChannelMap.put(file.getAbsolutePath(), channel);
+            openTxnChannel(file);
         }
+    }
+
+    private void openTxnChannel(File file) throws IOException {
+        FileChannel channel = FileChannel.open(file.toPath(), StandardOpenOption.CREATE,
+                StandardOpenOption.READ, StandardOpenOption.WRITE);
+        channel.position(channel.size());
+        txnChannelMap.put(file.getAbsolutePath(), channel);
     }
 
 }

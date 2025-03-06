@@ -83,7 +83,7 @@ public final class FileRawSnapshotReader implements RawSnapshotReader, AutoClose
                 true, // fileAlreadyExists
                 0, // initFileSize
                 false, // preallocate,
-                    new FileStorageManager()
+                new FileStorageManager()
             );
         } catch (IOException e) {
             throw new UncheckedIOException(

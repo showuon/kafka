@@ -152,11 +152,9 @@ public class TierStateMachine {
     private List<EpochEntry> readLeaderEpochCheckpoint(RemoteLogManager rlm,
                                                        RemoteLogSegmentMetadata remoteLogSegmentMetadata) throws IOException, RemoteStorageException {
         try (InputStream inputStream = rlm.storageManager().fetchIndex(remoteLogSegmentMetadata, RemoteStorageManager.IndexType.LEADER_EPOCH)) {
-//        try (BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
             CheckpointFile.CheckpointReadBuffer<EpochEntry> readBuffer = new CheckpointFile.CheckpointReadBuffer<>("", 0, LeaderEpochCheckpointFile.FORMATTER);
             return readBuffer.read(ByteBuffer.wrap(inputStream.readAllBytes()));
         }
-//        }
     }
 
     private void buildProducerSnapshotFile(UnifiedLog unifiedLog,
