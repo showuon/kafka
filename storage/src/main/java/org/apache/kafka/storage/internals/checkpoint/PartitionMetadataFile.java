@@ -83,7 +83,7 @@ public class PartitionMetadataFile {
             synchronized (lock) {
                 dirtyTopicIdOpt.ifPresent(topicId -> {
                     try {
-                        storageManager.append(file.getAbsolutePath(), ByteBuffer.wrap(new PartitionMetadata(CURRENT_VERSION, topicId).encode().getBytes()), StorageManager.StorageType.METADATA);
+                        storageManager.append(file.getAbsolutePath(), ByteBuffer.wrap(new PartitionMetadata(CURRENT_VERSION, topicId).encode().getBytes()), StorageManager.ObjectType.METADATA);
                     } catch (IOException e) {
                         String msg = "Error while writing partition metadata file " + file.getAbsolutePath();
                         logDirFailureChannel.maybeAddOfflineLogDir(logDir(), msg, e);
@@ -98,8 +98,8 @@ public class PartitionMetadataFile {
     public PartitionMetadata read() {
         synchronized (lock) {
             try {
-                ByteBuffer buffer = ByteBuffer.allocate((int) storageManager.size(file.getAbsolutePath(), StorageManager.StorageType.METADATA));
-                storageManager.read(file.getAbsolutePath(), buffer, 0, StorageManager.StorageType.METADATA);
+                ByteBuffer buffer = ByteBuffer.allocate((int) storageManager.size(file.getAbsolutePath(), StorageManager.ObjectType.METADATA));
+                storageManager.read(file.getAbsolutePath(), buffer, 0, StorageManager.ObjectType.METADATA);
                 buffer.flip();
 
                 return PartitionMetadataReadBuffer.read(buffer, file.getAbsolutePath());
@@ -112,11 +112,11 @@ public class PartitionMetadataFile {
     }
 
     public boolean exists() {
-        return storageManager.exist(file.getAbsolutePath(), StorageManager.StorageType.METADATA);
+        return storageManager.exist(file.getAbsolutePath(), StorageManager.ObjectType.METADATA);
     }
 
     public void delete() throws IOException {
-        storageManager.deleteIfExists(file.getAbsolutePath(), StorageManager.StorageType.METADATA);
+        storageManager.deleteIfExists(file.getAbsolutePath(), StorageManager.ObjectType.METADATA);
     }
 
     private Path path() {

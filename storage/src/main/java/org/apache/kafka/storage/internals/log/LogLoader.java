@@ -182,7 +182,7 @@ public class LogLoader {
         // Second pass: delete segments that are between minSwapFileOffset and maxSwapFileOffset. As
         // discussed above, these segments were compacted or split but haven't been renamed to .delete
         // before shutting down the broker.
-        List<File> files = storageManager.listFiles(dir, StorageManager.StorageType.ALL);
+        List<File> files = storageManager.listFiles(dir, StorageManager.ObjectType.ALL);
         for (File file : files) {
             try {
                 if (!file.getName().endsWith(LogFileUtils.SWAP_FILE_SUFFIX)) {
@@ -198,7 +198,7 @@ public class LogLoader {
         }
 
         // Third pass: rename all swap files.
-        files = storageManager.listFiles(dir, StorageManager.StorageType.ALL);
+        files = storageManager.listFiles(dir, StorageManager.ObjectType.ALL);
         for (File file : files) {
             if (file.getName().endsWith(LogFileUtils.SWAP_FILE_SUFFIX)) {
                 logger.info("Recovering file {} by renaming from {} files.", file.getName(), LogFileUtils.SWAP_FILE_SUFFIX);
@@ -264,22 +264,22 @@ public class LogLoader {
                 new LogOffsetMetadata(recoveryOffsets.nextOffset, activeSegment.baseOffset(), activeSegment.size()));
     }
 
-    private Optional<StorageManager.StorageType> storageType(String fileName) {
+    private Optional<StorageManager.ObjectType> ObjectType(String fileName) {
         if (fileName.contains(LogFileUtils.LOG_FILE_SUFFIX)) {
-            return Optional.of(StorageManager.StorageType.LOG);
+            return Optional.of(StorageManager.ObjectType.LOG);
         } else if (fileName.contains(LogFileUtils.INDEX_FILE_SUFFIX) ||
                 fileName.endsWith(LogFileUtils.TIME_INDEX_FILE_SUFFIX)) {
-            return Optional.of(StorageManager.StorageType.INDEX);
+            return Optional.of(StorageManager.ObjectType.INDEX);
         } else if (fileName.endsWith(LogFileUtils.PRODUCER_SNAPSHOT_FILE_SUFFIX)) {
-            return Optional.of(StorageManager.StorageType.SNAPSHOT);
+            return Optional.of(StorageManager.ObjectType.SNAPSHOT);
         } else if (fileName.endsWith(LogFileUtils.TXN_INDEX_FILE_SUFFIX)) {
-            return Optional.of(StorageManager.StorageType.TXN);
+            return Optional.of(StorageManager.ObjectType.TXN);
         }
         return Optional.empty();
     }
 
     private void deleteFile(File file) {
-        storageType(file.getName()).ifPresent(type -> {
+        ObjectType(file.getName()).ifPresent(type -> {
             try {
                 storageManager.deleteIfExists(file.getAbsolutePath(), type);
             } catch (IOException e) {
@@ -289,7 +289,7 @@ public class LogLoader {
     }
 
     private void renameTo(File file, File newFile) {
-        storageType(file.getName()).ifPresent(type -> {
+        ObjectType(file.getName()).ifPresent(type -> {
             try {
                 storageManager.renameTo(file.getAbsolutePath(), newFile, type);
             } catch (IOException e) {
@@ -311,7 +311,7 @@ public class LogLoader {
         Set<File> cleanedFiles = new HashSet<>();
         long minCleanedFileOffset = Long.MAX_VALUE;
 
-        List<File> files = storageManager.listFiles(dir, StorageManager.StorageType.ALL);
+        List<File> files = storageManager.listFiles(dir, StorageManager.ObjectType.ALL);
         for (File file : files) {
             String filename = file.getName();
 
@@ -400,15 +400,15 @@ public class LogLoader {
         // load segments in ascending order because transactional data from one segment may depend on the
         // segments that come before it
 
-        List<File> sortedFiles = storageManager.listFiles(dir, StorageManager.StorageType.ALL).stream().sorted().toList();
+        List<File> sortedFiles = storageManager.listFiles(dir, StorageManager.ObjectType.ALL).stream().sorted().toList();
         for (File file : sortedFiles) {
             if (LogFileUtils.isIndexFile(file)) {
                 // if it is an index file, make sure it has a corresponding .log file
                 long offset = LogFileUtils.offsetFromFile(file);
                 File logFile = LogFileUtils.logFile(dir, offset);
-                if (!storageManager.exist(logFile.getAbsolutePath(), StorageManager.StorageType.INDEX)) {
+                if (!storageManager.exist(logFile.getAbsolutePath(), StorageManager.ObjectType.INDEX)) {
                     logger.warn("Found an orphaned index file {}, with no corresponding log file.", file.getAbsolutePath());
-                    storageManager.deleteIfExists(logFile.getAbsolutePath(), StorageManager.StorageType.INDEX);
+                    storageManager.deleteIfExists(logFile.getAbsolutePath(), StorageManager.ObjectType.INDEX);
                 }
             } else if (LogFileUtils.isLogFile(file)) {
                 // if it's a log file, load the corresponding log segment

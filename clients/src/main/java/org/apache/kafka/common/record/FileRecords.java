@@ -109,7 +109,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * possible exceptions
      */
     public void readInto(ByteBuffer buffer, int position) throws IOException {
-        storageManager.read(file().getAbsolutePath(), buffer, position + this.start, StorageManager.StorageType.LOG);
+        storageManager.read(file().getAbsolutePath(), buffer, position + this.start, StorageManager.ObjectType.LOG);
         buffer.flip();
     }
 
@@ -187,7 +187,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * Commit all written data to the physical disk
      */
     public void flush() throws IOException {
-        storageManager.flush(file().getAbsolutePath(), StorageManager.StorageType.LOG);
+        storageManager.flush(file().getAbsolutePath(), StorageManager.ObjectType.LOG);
     }
 
     /**
@@ -196,14 +196,14 @@ public class FileRecords extends AbstractRecords implements Closeable {
     public void close() throws IOException {
         flush();
         trim();
-        storageManager.close(file().getAbsolutePath(), StorageManager.StorageType.LOG);
+        storageManager.close(file().getAbsolutePath(), StorageManager.ObjectType.LOG);
     }
 
     /**
      * Close file handlers used by the FileChannel but don't write to disk. This is used when the disk may have failed
      */
     public void closeHandlers() throws IOException {
-        storageManager.close(file().getAbsolutePath(), StorageManager.StorageType.LOG);
+        storageManager.close(file().getAbsolutePath(), StorageManager.ObjectType.LOG);
     }
 
     /**
@@ -213,7 +213,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
      *          because it did not exist
      */
     public boolean deleteIfExists() throws IOException {
-        return storageManager.deleteIfExists(file().getAbsolutePath(), StorageManager.StorageType.LOG);
+        return storageManager.deleteIfExists(file().getAbsolutePath(), StorageManager.ObjectType.LOG);
     }
 
     /**
@@ -228,7 +228,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @param parentDir The new parent directory
      */
     public void updateParentDir(File parentDir) {
-        storageManager.updateParentDir(file().getAbsolutePath(), parentDir, StorageManager.StorageType.LOG);
+        storageManager.updateParentDir(file().getAbsolutePath(), parentDir, StorageManager.ObjectType.LOG);
         this.file = new File(parentDir, file().getName());
     }
 
@@ -237,7 +237,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @throws IOException if rename fails.
      */
     public void renameTo(File f) throws IOException {
-        storageManager.renameTo(file().getAbsolutePath(), f, StorageManager.StorageType.LOG);
+        storageManager.renameTo(file().getAbsolutePath(), f, StorageManager.ObjectType.LOG);
         this.file = f;
     }
 
@@ -256,8 +256,8 @@ public class FileRecords extends AbstractRecords implements Closeable {
         if (targetSize > originalSize || targetSize < 0)
             throw new KafkaException("Attempt to truncate log segment " + "file" + " to " + targetSize + " bytes failed, " +
                     " size of this log segment is " + originalSize + " bytes.");
-        if (targetSize < (int) storageManager.size(file().getAbsolutePath(), StorageManager.StorageType.LOG)) {
-            storageManager.truncate(file().getAbsolutePath(), targetSize, StorageManager.StorageType.LOG);
+        if (targetSize < (int) storageManager.size(file().getAbsolutePath(), StorageManager.ObjectType.LOG)) {
+            storageManager.truncate(file().getAbsolutePath(), targetSize, StorageManager.ObjectType.LOG);
             size.set(targetSize);
         }
         return originalSize - targetSize;
@@ -265,7 +265,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
 
     @Override
     public int writeTo(TransferableChannel destChannel, int offset, int length) throws IOException {
-        long newSize = Math.min(storageManager.size(file().getAbsolutePath(), StorageManager.StorageType.LOG), end) - start;
+        long newSize = Math.min(storageManager.size(file().getAbsolutePath(), StorageManager.ObjectType.LOG), end) - start;
         int oldSize = sizeInBytes();
         if (newSize < oldSize)
             throw new KafkaException(String.format(

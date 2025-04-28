@@ -85,7 +85,7 @@ public class TransactionIndex implements Closeable {
     }
 
     public void updateParentDir(File parentDir) {
-        storageManager.updateParentDir(file().getAbsolutePath(), parentDir, StorageManager.StorageType.TXN);
+        storageManager.updateParentDir(file().getAbsolutePath(), parentDir, StorageManager.ObjectType.TXN);
     }
 
     public void append(AbortedTxn abortedTxn) throws IOException {
@@ -97,7 +97,7 @@ public class TransactionIndex implements Closeable {
         });
         lastOffset = OptionalLong.of(abortedTxn.lastOffset());
 
-        storageManager.append(file().getAbsolutePath(), abortedTxn.buffer.duplicate(), StorageManager.StorageType.TXN);
+        storageManager.append(file().getAbsolutePath(), abortedTxn.buffer.duplicate(), StorageManager.ObjectType.TXN);
     }
 
     public void flush() throws IOException {
@@ -110,12 +110,12 @@ public class TransactionIndex implements Closeable {
      * Remove all the entries from the index. Unlike `AbstractIndex`, this index is not resized ahead of time.
      */
     public void reset() throws IOException {
-        storageManager.truncate(file().getAbsolutePath(), 0, StorageManager.StorageType.TXN);
+        storageManager.truncate(file().getAbsolutePath(), 0, StorageManager.ObjectType.TXN);
         lastOffset = OptionalLong.empty();
     }
 
     public void close() throws IOException {
-       storageManager.close(file().getAbsolutePath(), StorageManager.StorageType.TXN);
+       storageManager.close(file().getAbsolutePath(), StorageManager.ObjectType.TXN);
     }
 
     /**
@@ -127,12 +127,12 @@ public class TransactionIndex implements Closeable {
      */
     public boolean deleteIfExists() throws IOException {
         close();
-        return storageManager.deleteIfExists(file.getAbsolutePath(), StorageManager.StorageType.TXN);
+        return storageManager.deleteIfExists(file.getAbsolutePath(), StorageManager.ObjectType.TXN);
     }
 
     public void renameTo(File f) throws IOException {
         try {
-            storageManager.renameTo(file().getAbsolutePath(), f, StorageManager.StorageType.TXN);
+            storageManager.renameTo(file().getAbsolutePath(), f, StorageManager.ObjectType.TXN);
         } finally {
             this.file = f;
         }
@@ -145,7 +145,7 @@ public class TransactionIndex implements Closeable {
             AbortedTxn abortedTxn = txnWithPosition.txn;
             int position = txnWithPosition.position;
             if (abortedTxn.lastOffset() >= offset) {
-                storageManager.truncate(file().getAbsolutePath(), position, StorageManager.StorageType.TXN);
+                storageManager.truncate(file().getAbsolutePath(), position, StorageManager.ObjectType.TXN);
                 lastOffset = newLastOffset;
                 return;
             }
@@ -229,7 +229,7 @@ public class TransactionIndex implements Closeable {
     }
 
     private Iterable<AbortedTxnWithPosition> iterable(Supplier<ByteBuffer> allocate) {
-        if (!storageManager.exist(file().getAbsolutePath(), StorageManager.StorageType.TXN))
+        if (!storageManager.exist(file().getAbsolutePath(), StorageManager.ObjectType.TXN))
             return Collections.emptyList();
 
         PrimitiveRef.IntRef position = PrimitiveRef.ofInt(0);
@@ -239,7 +239,7 @@ public class TransactionIndex implements Closeable {
             @Override
             public boolean hasNext() {
                 try {
-                    return storageManager.position(file().getAbsolutePath(), StorageManager.StorageType.TXN) - position.value >= AbortedTxn.TOTAL_SIZE;
+                    return storageManager.position(file().getAbsolutePath(), StorageManager.ObjectType.TXN) - position.value >= AbortedTxn.TOTAL_SIZE;
                 } catch (IOException e) {
                     throw new KafkaException("Failed read position from the transaction index " + file.getAbsolutePath(), e);
                 }
@@ -249,7 +249,7 @@ public class TransactionIndex implements Closeable {
             public AbortedTxnWithPosition next() {
                 try {
                     ByteBuffer buffer = allocate.get();
-                    storageManager.read(file.getAbsolutePath(), buffer, position.value, StorageManager.StorageType.TXN);
+                    storageManager.read(file.getAbsolutePath(), buffer, position.value, StorageManager.ObjectType.TXN);
                     buffer.flip();
 
                     AbortedTxn abortedTxn = new AbortedTxn(buffer);

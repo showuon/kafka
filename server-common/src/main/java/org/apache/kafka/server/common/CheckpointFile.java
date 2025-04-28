@@ -74,14 +74,14 @@ public class CheckpointFile<T> {
         synchronized (lock) {
             CheckpointWriteBuffer<T> checkpointWriteBuffer = new CheckpointWriteBuffer<>(version, formatter);
             ByteBuffer buffer = ByteBuffer.wrap(checkpointWriteBuffer.write(entries).getBytes());
-            storageManager.append(absolutePath.toString(), buffer, StorageManager.StorageType.CHECKPOINT);
+            storageManager.append(absolutePath.toString(), buffer, StorageManager.ObjectType.CHECKPOINT);
         }
     }
 
     public List<T> read() throws IOException {
         synchronized (lock) {
-            ByteBuffer buffer = ByteBuffer.allocate((int) storageManager.size(absolutePath.toString(), StorageManager.StorageType.CHECKPOINT));
-            storageManager.read(absolutePath.toString(), buffer, 0, StorageManager.StorageType.CHECKPOINT);
+            ByteBuffer buffer = ByteBuffer.allocate((int) storageManager.size(absolutePath.toString(), StorageManager.ObjectType.CHECKPOINT));
+            storageManager.read(absolutePath.toString(), buffer, 0, StorageManager.ObjectType.CHECKPOINT);
             buffer.flip();
 
             CheckpointReadBuffer<T> checkpointBuffer = new CheckpointReadBuffer<>(absolutePath.toString(), version, formatter);

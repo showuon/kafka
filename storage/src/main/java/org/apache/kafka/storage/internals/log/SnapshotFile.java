@@ -51,7 +51,7 @@ public class SnapshotFile {
     }
 
     public boolean deleteIfExists() throws IOException {
-        boolean deleted = storageManager.deleteIfExists(file.getAbsolutePath(), StorageManager.StorageType.SNAPSHOT);
+        boolean deleted = storageManager.deleteIfExists(file.getAbsolutePath(), StorageManager.ObjectType.SNAPSHOT);
         if (deleted) {
             log.info("Deleted producer state snapshot {}", file.getAbsolutePath());
         } else {
@@ -64,7 +64,7 @@ public class SnapshotFile {
         String name = file.getName();
         String path = file.getAbsolutePath();
         file = new File(parentDir, name);
-        storageManager.updateParentDir(path, parentDir, StorageManager.StorageType.SNAPSHOT);
+        storageManager.updateParentDir(path, parentDir, StorageManager.ObjectType.SNAPSHOT);
     }
 
     public File file() {
@@ -74,7 +74,7 @@ public class SnapshotFile {
     public void renameToDelete() throws IOException {
         File renamed = new File(Utils.replaceSuffix(file.getPath(), "", LogFileUtils.DELETED_FILE_SUFFIX));
         try {
-            storageManager.renameTo(file.getAbsolutePath(), renamed, StorageManager.StorageType.SNAPSHOT);
+            storageManager.renameTo(file.getAbsolutePath(), renamed, StorageManager.ObjectType.SNAPSHOT);
         } finally {
             file = renamed;
         }

@@ -25,7 +25,7 @@ import org.apache.kafka.common.record._
 import org.apache.kafka.common.requests.ListOffsetsRequest
 import org.apache.kafka.common.requests.OffsetsForLeaderEpochResponse.UNDEFINED_EPOCH_OFFSET
 import org.apache.kafka.common.requests.ProduceResponse.RecordError
-import org.apache.kafka.common.storage.StorageManager.StorageType
+import org.apache.kafka.common.storage.StorageManager.ObjectType
 import org.apache.kafka.common.storage.{FileStorageManager, StorageManager}
 import org.apache.kafka.common.utils.{PrimitiveRef, Time}
 import org.apache.kafka.common.{InvalidRecordException, KafkaException, TopicPartition, Uuid}
@@ -1756,7 +1756,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   private[log] def flushProducerStateSnapshot(snapshot: Path): Unit = {
     maybeHandleIOException(s"Error while deleting producer state snapshot $snapshot for $topicPartition in dir ${dir.getParent}") {
       try {
-        storageManager.flush(snapshot.toFile.getAbsolutePath, StorageType.SNAPSHOT)
+        storageManager.flush(snapshot.toFile.getAbsolutePath, ObjectType.SNAPSHOT)
       } catch {
         case e: NoSuchFileException =>
           logger.warn("Failed to flush file {}", snapshot, e)

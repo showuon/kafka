@@ -51,8 +51,8 @@ public class FileStorageManager implements StorageManager {
 
 
     // ----- common -------
-    public boolean deleteIfExists(String path, StorageType storageType) throws IOException {
-        switch (storageType) {
+    public boolean deleteIfExists(String path, ObjectType ObjectType) throws IOException {
+        switch (ObjectType) {
             case LOG:
                 FileChannel fileChannel = channelMap.remove(path);
                 Utils.closeQuietly(fileChannel, "FileChannel");
@@ -70,10 +70,10 @@ public class FileStorageManager implements StorageManager {
 
     }
 
-    public void updateParentDir(String path, File parentDir, StorageType storageType) {
+    public void updateParentDir(String path, File parentDir, ObjectType ObjectType) {
         File existingFile = new File(path);
         File updatedFile = new File(parentDir, existingFile.getName());
-        switch (storageType) {
+        switch (ObjectType) {
             case LOG:
                 channelMap.put(updatedFile.getAbsolutePath(), channelMap.remove(path));
                 break;
@@ -86,9 +86,9 @@ public class FileStorageManager implements StorageManager {
         }
     }
 
-    public void renameTo(String path, File f, StorageType storageType) throws IOException {
+    public void renameTo(String path, File f, ObjectType ObjectType) throws IOException {
         Utils.atomicMoveWithFallback(new File(path).toPath(), f.toPath(), false);
-        switch (storageType) {
+        switch (ObjectType) {
             case LOG:
                 channelMap.put(f.getAbsolutePath(), channelMap.remove(path));
                 break;
@@ -101,9 +101,9 @@ public class FileStorageManager implements StorageManager {
         }
     }
 
-    public int append(String path, ByteBuffer buffer, StorageType storageType) throws IOException {
+    public int append(String path, ByteBuffer buffer, ObjectType ObjectType) throws IOException {
         int sizeToAppend = buffer.remaining();
-        switch (storageType) {
+        switch (ObjectType) {
             case LOG:
                 return channelMap.get(path).write(buffer);
             case TXN:
@@ -123,12 +123,12 @@ public class FileStorageManager implements StorageManager {
         return sizeToAppend;
     }
 
-    public void read(String path, ByteBuffer buffer, int position, StorageType storageType) throws IOException {
+    public void read(String path, ByteBuffer buffer, int position, ObjectType ObjectType) throws IOException {
         File file = new File(path);
         if (!file.exists()) {
             return;
         }
-        switch (storageType) {
+        switch (ObjectType) {
             case LOG:
                 Utils.readFullyOrFail(channelMap.get(path), buffer, position, "log header");
                 break;
@@ -145,8 +145,8 @@ public class FileStorageManager implements StorageManager {
         }
     }
 
-    public void flush(String path, StorageType storageType) throws IOException {
-        switch (storageType) {
+    public void flush(String path, ObjectType ObjectType) throws IOException {
+        switch (ObjectType) {
             case LOG:
                 channelMap.get(path).force(true);
                 break;
@@ -166,8 +166,8 @@ public class FileStorageManager implements StorageManager {
         }
     }
 
-    public void close(String path, StorageType storageType) throws IOException {
-        switch (storageType) {
+    public void close(String path, ObjectType ObjectType) throws IOException {
+        switch (ObjectType) {
             case LOG:
                 FileChannel fileChannel = channelMap.remove(path);
                 fileChannel.close();
@@ -183,8 +183,8 @@ public class FileStorageManager implements StorageManager {
         }
     }
 
-    public long position(String path, StorageType storageType) throws IOException {
-        switch (storageType) {
+    public long position(String path, ObjectType ObjectType) throws IOException {
+        switch (ObjectType) {
             case INDEX:
                 return indexBufferMap.get(path).position();
             case TXN:
@@ -193,12 +193,12 @@ public class FileStorageManager implements StorageManager {
         return 0;
     }
 
-    public long size(String path, StorageType storageType) throws IOException {
+    public long size(String path, ObjectType ObjectType) throws IOException {
         File file = new File(path);
         if (!file.exists()) {
             return 0;
         }
-        switch (storageType) {
+        switch (ObjectType) {
             case LOG:
                 return channelMap.get(path).size();
             case INDEX:
@@ -213,13 +213,13 @@ public class FileStorageManager implements StorageManager {
         return 0;
     }
 
-    public boolean exist(String path, StorageType storageType) {
+    public boolean exist(String path, ObjectType ObjectType) {
         File file = new File(path);
         return file.exists();
     }
 
-    public void truncate(String path, int newPos, StorageType storageType) throws IOException {
-        switch (storageType) {
+    public void truncate(String path, int newPos, ObjectType ObjectType) throws IOException {
+        switch (ObjectType) {
             case LOG:
                 channelMap.get(path).truncate(newPos);
                 break;
@@ -232,9 +232,9 @@ public class FileStorageManager implements StorageManager {
         }
     }
 
-    public List<File> listFiles(File dir, StorageType storageType) throws IOException {
+    public List<File> listFiles(File dir, ObjectType ObjectType) throws IOException {
         if (dir.exists() && dir.isDirectory()) {
-            switch (storageType) {
+            switch (ObjectType) {
                 case SNAPSHOT:
                     try (Stream<Path> paths = Files.list(dir.toPath())) {
                         return paths.filter(this::isSnapshotFile)

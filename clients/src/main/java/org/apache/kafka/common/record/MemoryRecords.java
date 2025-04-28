@@ -94,7 +94,7 @@ public class MemoryRecords extends AbstractRecords {
         buffer.mark();
         int written = 0;
         while (written < sizeInBytes())
-            written += storageManager.append(path, buffer, StorageManager.StorageType.LOG);
+            written += storageManager.append(path, buffer, StorageManager.ObjectType.LOG);
 
         buffer.reset();
         return written;

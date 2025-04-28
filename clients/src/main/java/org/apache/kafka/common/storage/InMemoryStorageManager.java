@@ -44,8 +44,8 @@ public class InMemoryStorageManager implements StorageManager {
     private Map<String, ByteBuffer> checkpointBufferMap = new ConcurrentHashMap<>();
 
     // ----- common -------
-    public boolean deleteIfExists(String path, StorageType storageType) throws IOException {
-        switch (storageType) {
+    public boolean deleteIfExists(String path, ObjectType ObjectType) throws IOException {
+        switch (ObjectType) {
             case LOG:
                 recordBufferMap.remove(path);
                 break;
@@ -65,10 +65,10 @@ public class InMemoryStorageManager implements StorageManager {
         return true;
     }
 
-    public void updateParentDir(String path, File parentDir, StorageType storageType) {
+    public void updateParentDir(String path, File parentDir, ObjectType ObjectType) {
         File existingFile = new File(path);
         File updatedFile = new File(parentDir, existingFile.getName());
-        switch (storageType) {
+        switch (ObjectType) {
             case LOG:
                 if (recordBufferMap.containsKey(path)) {
                     recordBufferMap.put(updatedFile.getAbsolutePath(), recordBufferMap.remove(path));
@@ -92,8 +92,8 @@ public class InMemoryStorageManager implements StorageManager {
         }
     }
 
-    public void renameTo(String path, File f, StorageType storageType) throws IOException {
-        switch (storageType) {
+    public void renameTo(String path, File f, ObjectType ObjectType) throws IOException {
+        switch (ObjectType) {
             case LOG:
                 recordBufferMap.put(f.getAbsolutePath(), recordBufferMap.remove(path));
                 break;
@@ -109,8 +109,8 @@ public class InMemoryStorageManager implements StorageManager {
         }
     }
 
-    public int append(String path, ByteBuffer buffer, StorageType storageType) throws IOException {
-        switch (storageType) {
+    public int append(String path, ByteBuffer buffer, ObjectType ObjectType) throws IOException {
+        switch (ObjectType) {
             case LOG:
                 return appendToBuffer(path, recordBufferMap, buffer);
             case TXN:
@@ -129,8 +129,8 @@ public class InMemoryStorageManager implements StorageManager {
         return 0;
     }
 
-    public void read(String path, ByteBuffer buffer, int position, StorageType storageType) throws IOException {
-        switch (storageType) {
+    public void read(String path, ByteBuffer buffer, int position, ObjectType ObjectType) throws IOException {
+        switch (ObjectType) {
             case LOG:
                 buffer.put(recordBufferMap.get(path).array(), position, buffer.remaining());
                 break;
@@ -170,8 +170,8 @@ public class InMemoryStorageManager implements StorageManager {
         return sizeToAppend;
     }
 
-    public long position(String path, StorageType storageType) throws IOException {
-        switch (storageType) {
+    public long position(String path, ObjectType ObjectType) throws IOException {
+        switch (ObjectType) {
             case INDEX:
                 return indexBufferMap.get(path).position();
             case TXN:
@@ -184,8 +184,8 @@ public class InMemoryStorageManager implements StorageManager {
         return 0;
     }
 
-    public long size(String path, StorageType storageType) throws IOException {
-        switch (storageType) {
+    public long size(String path, ObjectType ObjectType) throws IOException {
+        switch (ObjectType) {
             case LOG:
                 return recordBufferMap.get(path).limit();
             case INDEX:
@@ -198,8 +198,8 @@ public class InMemoryStorageManager implements StorageManager {
         return 0;
     }
 
-    public boolean exist(String path, StorageType storageType) {
-        switch (storageType) {
+    public boolean exist(String path, ObjectType ObjectType) {
+        switch (ObjectType) {
             case TXN:
                 return txnBufferMap.containsKey(path);
             case METADATA:
@@ -208,8 +208,8 @@ public class InMemoryStorageManager implements StorageManager {
         return true;
     }
 
-    public void truncate(String path, int newPos, StorageType storageType) throws IOException {
-        switch (storageType) {
+    public void truncate(String path, int newPos, ObjectType ObjectType) throws IOException {
+        switch (ObjectType) {
             case LOG:
                 recordBufferMap.get(path).limit(newPos);
                 break;
@@ -222,9 +222,9 @@ public class InMemoryStorageManager implements StorageManager {
         }
     }
 
-    public List<File> listFiles(File dir, StorageType storageType) throws IOException {
+    public List<File> listFiles(File dir, ObjectType ObjectType) throws IOException {
         String PRODUCER_SNAPSHOT_FILE_SUFFIX = ".snapshot";
-        switch (storageType) {
+        switch (ObjectType) {
             case SNAPSHOT:
                 return snapshotBufferMap.keySet().stream().filter(path -> path.endsWith(PRODUCER_SNAPSHOT_FILE_SUFFIX))
                         .map(File::new).collect(Collectors.toList());
@@ -286,8 +286,8 @@ public class InMemoryStorageManager implements StorageManager {
         return socketChannel.write(buffer);
     }
 
-    public void close(String path, StorageType storageType) throws IOException {
-        switch (storageType) {
+    public void close(String path, ObjectType ObjectType) throws IOException {
+        switch (ObjectType) {
             case LOG:
                 recordBufferMap.remove(path);
                 break;

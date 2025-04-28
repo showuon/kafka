@@ -66,7 +66,7 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
 
         logHeaderBuffer.rewind();
 
-        fileRecords.storageManager().read(fileRecords.file().getAbsolutePath(), logHeaderBuffer, position, StorageManager.StorageType.LOG);
+        fileRecords.storageManager().read(fileRecords.file().getAbsolutePath(), logHeaderBuffer, position, StorageManager.ObjectType.LOG);
 
         logHeaderBuffer.rewind();
         long offset = logHeaderBuffer.getLong(OFFSET_OFFSET);
@@ -178,7 +178,7 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
             try {
                 int limit = buffer.limit();
                 buffer.limit(buffer.position() + sizeInBytes());
-                fileRecords.storageManager().read(fileRecords.file().getAbsolutePath(), buffer, position, StorageManager.StorageType.LOG);
+                fileRecords.storageManager().read(fileRecords.file().getAbsolutePath(), buffer, position, StorageManager.ObjectType.LOG);
                 buffer.limit(limit);
             } catch (IOException e) {
                 throw new KafkaException("Failed to read record batch at position " + position + " from " + fileRecords, e);
@@ -210,7 +210,7 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
         private RecordBatch loadBatchWithSize(int size, String description) {
             try {
                 ByteBuffer buffer = ByteBuffer.allocate(size);
-                fileRecords.storageManager().read(fileRecords.file().getAbsolutePath(), buffer, position, StorageManager.StorageType.LOG);
+                fileRecords.storageManager().read(fileRecords.file().getAbsolutePath(), buffer, position, StorageManager.ObjectType.LOG);
                 buffer.rewind();
                 return toMemoryRecordBatch(buffer);
             } catch (IOException e) {

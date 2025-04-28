@@ -625,12 +625,12 @@ public class ProducerStateManager {
     }
 
     public static List<ProducerStateEntry> readSnapshot(File file, StorageManager storageManager) throws IOException {
-        long size = storageManager.size(file.getAbsolutePath(), StorageManager.StorageType.SNAPSHOT);
+        long size = storageManager.size(file.getAbsolutePath(), StorageManager.ObjectType.SNAPSHOT);
         if (size > Integer.MAX_VALUE) {
             throw new CorruptSnapshotException("Snapshot size is too large: " + size);
         }
         ByteBuffer byteBuffer = ByteBuffer.allocate((int) size);
-        storageManager.read(file.getAbsolutePath(), byteBuffer, 0, StorageManager.StorageType.SNAPSHOT);
+        storageManager.read(file.getAbsolutePath(), byteBuffer, 0, StorageManager.ObjectType.SNAPSHOT);
         byteBuffer.flip();
 
         short version;
@@ -697,9 +697,9 @@ public class ProducerStateManager {
         long crc = Crc32C.compute(buffer, PRODUCER_ENTRIES_OFFSET, buffer.limit() - PRODUCER_ENTRIES_OFFSET);
         ByteUtils.writeUnsignedInt(buffer, CRC_OFFSET, crc);
 
-        storageManager.append(file.getAbsolutePath(), buffer, StorageManager.StorageType.SNAPSHOT);
+        storageManager.append(file.getAbsolutePath(), buffer, StorageManager.ObjectType.SNAPSHOT);
         if (sync)
-            storageManager.flush(file.getAbsolutePath(), StorageManager.StorageType.SNAPSHOT);
+            storageManager.flush(file.getAbsolutePath(), StorageManager.ObjectType.SNAPSHOT);
 
     }
 
@@ -708,7 +708,7 @@ public class ProducerStateManager {
         return listSnapshotFiles(dir, new FileStorageManager());
     }
     public static List<SnapshotFile> listSnapshotFiles(File dir, StorageManager storageManager) throws IOException {
-        return storageManager.listFiles(dir, StorageManager.StorageType.SNAPSHOT).stream()
+        return storageManager.listFiles(dir, StorageManager.ObjectType.SNAPSHOT).stream()
                 .map(file -> new SnapshotFile(file, storageManager)).collect(Collectors.toList());
     }
 
