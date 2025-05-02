@@ -57,8 +57,9 @@ public class OffsetCheckpointFile {
 
     public OffsetCheckpointFile(File file, LogDirFailureChannel logDirFailureChannel, StorageManager storageManager) throws IOException {
         this.file = file;
+        // checkponit will always use file storage manager, use null temporarily
         checkpoint = new CheckpointFileWithFailureHandler<>(file, OffsetCheckpointFile.CURRENT_VERSION,
-                new OffsetCheckpointFile.Formatter(), logDirFailureChannel, file.getParent(), storageManager);
+                new OffsetCheckpointFile.Formatter(), logDirFailureChannel, file.getParent(), null, storageManager);
     }
 
     public void write(Map<TopicPartition, Long> offsets) {

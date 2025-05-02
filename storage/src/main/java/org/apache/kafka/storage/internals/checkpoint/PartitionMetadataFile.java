@@ -17,6 +17,7 @@
 
 package org.apache.kafka.storage.internals.checkpoint;
 
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.errors.InconsistentTopicIdException;
 import org.apache.kafka.common.errors.KafkaStorageException;
@@ -48,6 +49,7 @@ public class PartitionMetadataFile {
     private final File file;
     private final LogDirFailureChannel logDirFailureChannel;
     private final StorageManager storageManager;
+    private final TopicIdPartition topicIdPartition;
 
     private final Object lock = new Object();
     private volatile Optional<Uuid> dirtyTopicIdOpt = Optional.empty();
@@ -55,10 +57,12 @@ public class PartitionMetadataFile {
     public PartitionMetadataFile(
         final File file,
         final LogDirFailureChannel logDirFailureChannel,
+        final TopicIdPartition topicIdPartition,
         final StorageManager storageManager
     ) {
         this.file = file;
         this.logDirFailureChannel = logDirFailureChannel;
+        this.topicIdPartition = topicIdPartition;
         this.storageManager = storageManager;
     }
 
@@ -83,7 +87,7 @@ public class PartitionMetadataFile {
             synchronized (lock) {
                 dirtyTopicIdOpt.ifPresent(topicId -> {
                     try {
-                        storageManager.append(file.getAbsolutePath(), ByteBuffer.wrap(new PartitionMetadata(CURRENT_VERSION, topicId).encode().getBytes()), StorageManager.ObjectType.METADATA);
+                        storageManager.append(file.getAbsolutePath(), topicIdPartition, ByteBuffer.wrap(new PartitionMetadata(CURRENT_VERSION, topicId).encode().getBytes()), StorageManager.ObjectType.METADATA);
                     } catch (IOException e) {
                         String msg = "Error while writing partition metadata file " + file.getAbsolutePath();
                         logDirFailureChannel.maybeAddOfflineLogDir(logDir(), msg, e);
@@ -98,8 +102,8 @@ public class PartitionMetadataFile {
     public PartitionMetadata read() {
         synchronized (lock) {
             try {
-                ByteBuffer buffer = ByteBuffer.allocate((int) storageManager.size(file.getAbsolutePath(), StorageManager.ObjectType.METADATA));
-                storageManager.read(file.getAbsolutePath(), buffer, 0, StorageManager.ObjectType.METADATA);
+                ByteBuffer buffer = ByteBuffer.allocate((int) storageManager.size(file.getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.METADATA));
+                storageManager.read(file.getAbsolutePath(), topicIdPartition, buffer, 0, StorageManager.ObjectType.METADATA);
                 buffer.flip();
 
                 return PartitionMetadataReadBuffer.read(buffer, file.getAbsolutePath());
@@ -112,11 +116,11 @@ public class PartitionMetadataFile {
     }
 
     public boolean exists() {
-        return storageManager.exist(file.getAbsolutePath(), StorageManager.ObjectType.METADATA);
+        return storageManager.exist(file.getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.METADATA);
     }
 
     public void delete() throws IOException {
-        storageManager.deleteIfExists(file.getAbsolutePath(), StorageManager.ObjectType.METADATA);
+        storageManager.deleteIfExists(file.getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.METADATA);
     }
 
     private Path path() {

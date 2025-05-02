@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.snapshot;
 
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.record.FileRecords;
 import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.record.UnalignedRecords;
@@ -73,12 +74,13 @@ public final class FileRawSnapshotReader implements RawSnapshotReader, AutoClose
      * @param logDir the directory for the topic partition
      * @param snapshotId the end offset and epoch for the snapshotId
      */
-    public static FileRawSnapshotReader open(Path logDir, OffsetAndEpoch snapshotId) {
+    public static FileRawSnapshotReader open(Path logDir, TopicIdPartition topicIdPartition, OffsetAndEpoch snapshotId) {
         FileRecords fileRecords;
         Path filePath = Snapshots.snapshotPath(logDir, snapshotId);
         try {
             fileRecords = FileRecords.open(
                 filePath.toFile(),
+                    topicIdPartition,
                 false, // mutable
                 true, // fileAlreadyExists
                 0, // initFileSize

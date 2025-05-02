@@ -1435,7 +1435,7 @@ public class QuorumControllerTest {
 
         LocalLogManagerTestEnv.Builder logEnvBuilder = new LocalLogManagerTestEnv.Builder(3)
             .setSnapshotReader(FileRawSnapshotReader.open(
-                invalidSnapshot.tempDir.toPath(),
+                invalidSnapshot.tempDir.toPath(), null,
                 new OffsetAndEpoch(0, 0)
             ));
 

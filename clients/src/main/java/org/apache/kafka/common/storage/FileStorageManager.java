@@ -16,6 +16,7 @@ package org.apache.kafka.common.storage;/*
  */
 
 import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.utils.ByteBufferUnmapper;
 import org.apache.kafka.common.utils.OperatingSystem;
 import org.apache.kafka.common.utils.Utils;
@@ -51,7 +52,7 @@ public class FileStorageManager implements StorageManager {
 
 
     // ----- common -------
-    public boolean deleteIfExists(String path, ObjectType ObjectType) throws IOException {
+    public boolean deleteIfExists(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {
         switch (ObjectType) {
             case LOG:
                 FileChannel fileChannel = channelMap.remove(path);
@@ -70,7 +71,7 @@ public class FileStorageManager implements StorageManager {
 
     }
 
-    public void updateParentDir(String path, File parentDir, ObjectType ObjectType) {
+    public void updateParentDir(String path, TopicIdPartition topicIdPartition, File parentDir, ObjectType ObjectType) {
         File existingFile = new File(path);
         File updatedFile = new File(parentDir, existingFile.getName());
         switch (ObjectType) {
@@ -86,7 +87,7 @@ public class FileStorageManager implements StorageManager {
         }
     }
 
-    public void renameTo(String path, File f, ObjectType ObjectType) throws IOException {
+    public void renameTo(String path, TopicIdPartition topicIdPartition, File f, ObjectType ObjectType) throws IOException {
         Utils.atomicMoveWithFallback(new File(path).toPath(), f.toPath(), false);
         switch (ObjectType) {
             case LOG:
@@ -101,7 +102,7 @@ public class FileStorageManager implements StorageManager {
         }
     }
 
-    public int append(String path, ByteBuffer buffer, ObjectType ObjectType) throws IOException {
+    public int append(String path, TopicIdPartition topicIdPartition, ByteBuffer buffer, ObjectType ObjectType) throws IOException {
         int sizeToAppend = buffer.remaining();
         switch (ObjectType) {
             case LOG:
@@ -123,7 +124,7 @@ public class FileStorageManager implements StorageManager {
         return sizeToAppend;
     }
 
-    public void read(String path, ByteBuffer buffer, int position, ObjectType ObjectType) throws IOException {
+    public void read(String path, TopicIdPartition topicIdPartition, ByteBuffer buffer, int position, ObjectType ObjectType) throws IOException {
         File file = new File(path);
         if (!file.exists()) {
             return;
@@ -145,7 +146,7 @@ public class FileStorageManager implements StorageManager {
         }
     }
 
-    public void flush(String path, ObjectType ObjectType) throws IOException {
+    public void flush(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {
         switch (ObjectType) {
             case LOG:
                 channelMap.get(path).force(true);
@@ -166,7 +167,7 @@ public class FileStorageManager implements StorageManager {
         }
     }
 
-    public void close(String path, ObjectType ObjectType) throws IOException {
+    public void close(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {
         switch (ObjectType) {
             case LOG:
                 FileChannel fileChannel = channelMap.remove(path);
@@ -183,7 +184,7 @@ public class FileStorageManager implements StorageManager {
         }
     }
 
-    public long position(String path, ObjectType ObjectType) throws IOException {
+    public long position(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {
         switch (ObjectType) {
             case INDEX:
                 return indexBufferMap.get(path).position();
@@ -193,7 +194,7 @@ public class FileStorageManager implements StorageManager {
         return 0;
     }
 
-    public long size(String path, ObjectType ObjectType) throws IOException {
+    public long size(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {
         File file = new File(path);
         if (!file.exists()) {
             return 0;
@@ -213,12 +214,12 @@ public class FileStorageManager implements StorageManager {
         return 0;
     }
 
-    public boolean exist(String path, ObjectType ObjectType) {
+    public boolean exist(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) {
         File file = new File(path);
         return file.exists();
     }
 
-    public void truncate(String path, int newPos, ObjectType ObjectType) throws IOException {
+    public void truncate(String path, TopicIdPartition topicIdPartition, int newPos, ObjectType ObjectType) throws IOException {
         switch (ObjectType) {
             case LOG:
                 channelMap.get(path).truncate(newPos);
@@ -232,7 +233,7 @@ public class FileStorageManager implements StorageManager {
         }
     }
 
-    public List<File> listFiles(File dir, ObjectType ObjectType) throws IOException {
+    public List<File> listFiles(File dir, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {
         if (dir.exists() && dir.isDirectory()) {
             switch (ObjectType) {
                 case SNAPSHOT:
@@ -258,6 +259,7 @@ public class FileStorageManager implements StorageManager {
 
     // ----- log file ---------
     public int initRecords(File file,
+                           TopicIdPartition topicIdPartition,
                      boolean mutable,
                      boolean fileAlreadyExists,
                      int initFileSize,
@@ -319,7 +321,7 @@ public class FileStorageManager implements StorageManager {
         }
     }
 
-    public long writeRecordsToSocket(String path, SocketChannel socketChannel, long position, long count) throws IOException {
+    public long writeRecordsToSocket(String path, TopicIdPartition topicIdPartition, SocketChannel socketChannel, long position, long count) throws IOException {
         return channelMap.get(path).transferTo(position, count, socketChannel);
     }
 
@@ -332,7 +334,7 @@ public class FileStorageManager implements StorageManager {
 
 
     // ----- index file ---------
-    public long initIndex(File file, int maxIndexSize, boolean writable, int entrySize) throws IOException {
+    public long initIndex(File file, TopicIdPartition topicIdPartition, int maxIndexSize, boolean writable, int entrySize) throws IOException {
         boolean newlyCreated = file.createNewFile();
         RandomAccessFile raf;
         if (writable)
@@ -381,11 +383,11 @@ public class FileStorageManager implements StorageManager {
         return factor * (number / factor);
     }
 
-    public ByteBuffer indexBuffer(String path) {
+    public ByteBuffer indexBuffer(String path, TopicIdPartition topicIdPartition) {
         return indexBufferMap.get(path).duplicate();
     }
 
-    public boolean resizeIndex(String path, int newSize, AtomicLong length, AtomicInteger maxEntries, int entrySize) throws IOException {
+    public boolean resizeIndex(String path, TopicIdPartition topicIdPartition, int newSize, AtomicLong length, AtomicInteger maxEntries, int entrySize) throws IOException {
         RandomAccessFile raf = new RandomAccessFile(new File(path), "rw");
         try {
             MappedByteBuffer buffer = indexBufferMap.get(path);
@@ -429,7 +431,7 @@ public class FileStorageManager implements StorageManager {
 
 
     // ----- transaction index -------
-    public void initTransIndex(File file) throws IOException {
+    public void initTransIndex(File file, TopicIdPartition topicIdPartition) throws IOException {
         if (file.exists()) {
             FileChannel channel = FileChannel.open(file.toPath(), StandardOpenOption.CREATE,
                     StandardOpenOption.READ, StandardOpenOption.WRITE);

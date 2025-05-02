@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.common.record;
 
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.network.TransferableChannel;
 import org.apache.kafka.common.storage.StorageManager;
 
@@ -28,12 +29,14 @@ import java.nio.channels.FileChannel;
 public class UnalignedFileRecords implements UnalignedRecords {
 
     private final StorageManager storageManager;
+    private final TopicIdPartition topicIdPartition;
     private final String path;
     private final long position;
     private final int size;
 
-    public UnalignedFileRecords(StorageManager storageManager, long position, int size, String path) {
+    public UnalignedFileRecords(StorageManager storageManager, TopicIdPartition topicIdPartition, long position, int size, String path) {
         this.storageManager = storageManager;
+        this.topicIdPartition = topicIdPartition;
         this.position = position;
         this.size = size;
         this.path = path;
@@ -49,6 +52,6 @@ public class UnalignedFileRecords implements UnalignedRecords {
         long position = this.position + previouslyWritten;
         int count = Math.min(remaining, sizeInBytes() - previouslyWritten);
         // safe to cast to int since `count` is an int
-        return (int) destChannel.transferFrom(position, count, storageManager, path);
+        return (int) destChannel.transferFrom(position, count, topicIdPartition, storageManager, path);
     }
 }

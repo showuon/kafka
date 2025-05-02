@@ -28,7 +28,7 @@ import org.apache.kafka.common.errors.InvalidConfigurationException
 import org.apache.kafka.common.errors.CorruptRecordException
 import org.apache.kafka.common.record.{MemoryRecords, Records}
 import org.apache.kafka.common.utils.{Time, Utils}
-import org.apache.kafka.common.{KafkaException, TopicPartition, Uuid}
+import org.apache.kafka.common.{KafkaException, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.raft.{Isolation, KafkaRaftClient, LogAppendInfo, LogFetchInfo, LogOffsetMetadata, OffsetAndEpoch, OffsetMetadata, ReplicatedLog, SegmentPosition, ValidOffsetAndEpoch}
 import org.apache.kafka.server.common.RequestLocal
 import org.apache.kafka.server.config.{KRaftConfigs, ServerLogConfigs}
@@ -324,7 +324,7 @@ final class KafkaMetadataLog private (
         case Some(None) =>
           // Snapshot exists but has never been read before
           try {
-            val snapshotReader = Some(FileRawSnapshotReader.open(log.dir.toPath, snapshotId))
+            val snapshotReader = Some(FileRawSnapshotReader.open(log.dir.toPath, new TopicIdPartition(topicId(), topicPartition), snapshotId))
             snapshots.put(snapshotId, snapshotReader)
             snapshotReader
           } catch {

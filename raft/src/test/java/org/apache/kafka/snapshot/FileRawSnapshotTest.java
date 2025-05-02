@@ -101,7 +101,7 @@ public final class FileRawSnapshotTest {
             snapshot.freeze();
         }
 
-        try (FileRawSnapshotReader snapshot = FileRawSnapshotReader.open(tempDir, offsetAndEpoch)) {
+        try (FileRawSnapshotReader snapshot = FileRawSnapshotReader.open(tempDir, null, offsetAndEpoch)) {
             int countBatches = 0;
             int countRecords = 0;
 
@@ -150,7 +150,7 @@ public final class FileRawSnapshotTest {
             snapshot.freeze();
         }
 
-        try (FileRawSnapshotReader snapshot = FileRawSnapshotReader.open(tempDir, offsetAndEpoch)) {
+        try (FileRawSnapshotReader snapshot = FileRawSnapshotReader.open(tempDir, null, offsetAndEpoch)) {
             int totalSize = Math.toIntExact(snapshot.sizeInBytes());
             assertEquals(expectedBuffer.remaining(), totalSize);
 
@@ -187,7 +187,7 @@ public final class FileRawSnapshotTest {
             snapshot.freeze();
         }
 
-        try (FileRawSnapshotReader snapshot = FileRawSnapshotReader.open(tempDir, offsetAndEpoch)) {
+        try (FileRawSnapshotReader snapshot = FileRawSnapshotReader.open(tempDir, null, offsetAndEpoch)) {
             int countBatches = 0;
             int countRecords = 0;
 
@@ -241,7 +241,7 @@ public final class FileRawSnapshotTest {
         assertTrue(Files.exists(Snapshots.snapshotPath(tempDir, offsetAndEpoch)));
         assertEquals(expectedSize, Files.size(Snapshots.snapshotPath(tempDir, offsetAndEpoch)));
 
-        try (FileRawSnapshotReader snapshot = FileRawSnapshotReader.open(tempDir, offsetAndEpoch)) {
+        try (FileRawSnapshotReader snapshot = FileRawSnapshotReader.open(tempDir, null, offsetAndEpoch)) {
             int countBatches = 0;
             int countRecords = 0;
 

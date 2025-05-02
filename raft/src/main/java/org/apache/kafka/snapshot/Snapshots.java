@@ -173,9 +173,9 @@ public final class Snapshots {
         }
     }
 
-    public static long lastContainedLogTimestamp(Path logDir, OffsetAndEpoch snapshotId) {
-        try (FileRawSnapshotReader reader = FileRawSnapshotReader.open(logDir, snapshotId)) {
-            return lastContainedLogTimestamp(reader);
-        }
-    }
+//    public static long lastContainedLogTimestamp(Path logDir, OffsetAndEpoch snapshotId) {
+//        try (FileRawSnapshotReader reader = FileRawSnapshotReader.open(logDir, null, snapshotId)) {
+//            return lastContainedLogTimestamp(reader);
+//        }
+//    }
 }

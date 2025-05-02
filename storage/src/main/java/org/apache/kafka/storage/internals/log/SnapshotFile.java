@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.storage.internals.log;
 
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.storage.FileStorageManager;
 import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.common.utils.Utils;
@@ -35,23 +36,25 @@ public class SnapshotFile {
     public final long offset;
     private volatile File file;
     private final StorageManager storageManager;
+    private final TopicIdPartition topicIdPartition;
 
     public SnapshotFile(File file) {
-        this(file, offsetFromFileName(file.getName()), new FileStorageManager());
+        this(file, offsetFromFileName(file.getName()), null, new FileStorageManager());
     }
 
-    public SnapshotFile(File file, StorageManager storageManager) {
-        this(file, offsetFromFileName(file.getName()), storageManager);
+    public SnapshotFile(File file, TopicIdPartition topicIdPartition, StorageManager storageManager) {
+        this(file, offsetFromFileName(file.getName()), topicIdPartition, storageManager);
     }
 
-    public SnapshotFile(File file, long offset, StorageManager storageManager) {
+    public SnapshotFile(File file, long offset, TopicIdPartition topicIdPartition, StorageManager storageManager) {
         this.file = file;
         this.offset = offset;
+        this.topicIdPartition = topicIdPartition;
         this.storageManager = storageManager;
     }
 
     public boolean deleteIfExists() throws IOException {
-        boolean deleted = storageManager.deleteIfExists(file.getAbsolutePath(), StorageManager.ObjectType.SNAPSHOT);
+        boolean deleted = storageManager.deleteIfExists(file.getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.SNAPSHOT);
         if (deleted) {
             log.info("Deleted producer state snapshot {}", file.getAbsolutePath());
         } else {
@@ -64,7 +67,7 @@ public class SnapshotFile {
         String name = file.getName();
         String path = file.getAbsolutePath();
         file = new File(parentDir, name);
-        storageManager.updateParentDir(path, parentDir, StorageManager.ObjectType.SNAPSHOT);
+        storageManager.updateParentDir(path, topicIdPartition, parentDir, StorageManager.ObjectType.SNAPSHOT);
     }
 
     public File file() {
@@ -74,7 +77,7 @@ public class SnapshotFile {
     public void renameToDelete() throws IOException {
         File renamed = new File(Utils.replaceSuffix(file.getPath(), "", LogFileUtils.DELETED_FILE_SUFFIX));
         try {
-            storageManager.renameTo(file.getAbsolutePath(), renamed, StorageManager.ObjectType.SNAPSHOT);
+            storageManager.renameTo(file.getAbsolutePath(), topicIdPartition, renamed, StorageManager.ObjectType.SNAPSHOT);
         } finally {
             file = renamed;
         }

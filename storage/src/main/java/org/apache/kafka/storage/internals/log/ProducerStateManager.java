@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.storage.internals.log;
 
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.protocol.MessageUtil;
@@ -80,7 +81,7 @@ public class ProducerStateManager {
 
     private final Logger log;
 
-    private final TopicPartition topicPartition;
+    private final TopicIdPartition topicIdPartition;
     private final int maxTransactionTimeoutMs;
     private final ProducerStateManagerConfig producerStateManagerConfig;
     private final Time time;
@@ -110,19 +111,19 @@ public class ProducerStateManager {
     private long lastSnapOffset = 0L;
     private final StorageManager storageManager;
 
-    public ProducerStateManager(TopicPartition topicPartition, File logDir, int maxTransactionTimeoutMs, ProducerStateManagerConfig producerStateManagerConfig, Time time, StorageManager storageManager) throws IOException {
-        this.topicPartition = topicPartition;
+    public ProducerStateManager(TopicIdPartition topicIdPartition, File logDir, int maxTransactionTimeoutMs, ProducerStateManagerConfig producerStateManagerConfig, Time time, StorageManager storageManager) throws IOException {
+        this.topicIdPartition = topicIdPartition;
         this.logDir = logDir;
         this.maxTransactionTimeoutMs = maxTransactionTimeoutMs;
         this.producerStateManagerConfig = producerStateManagerConfig;
         this.time = time;
-        log = new LogContext("[ProducerStateManager partition=" + topicPartition + "] ").logger(ProducerStateManager.class);
+        log = new LogContext("[ProducerStateManager partition=" + topicIdPartition + "] ").logger(ProducerStateManager.class);
         this.storageManager = storageManager;
         snapshots = loadSnapshots();
     }
 
-    public ProducerStateManager(TopicPartition topicPartition, File logDir, int maxTransactionTimeoutMs, ProducerStateManagerConfig producerStateManagerConfig, Time time) throws IOException {
-        this(topicPartition, logDir, maxTransactionTimeoutMs, producerStateManagerConfig, time, new FileStorageManager());
+    public ProducerStateManager(TopicIdPartition topicIdPartition, File logDir, int maxTransactionTimeoutMs, ProducerStateManagerConfig producerStateManagerConfig, Time time) throws IOException {
+        this(topicIdPartition, logDir, maxTransactionTimeoutMs, producerStateManagerConfig, time, new FileStorageManager());
     }
 
     public int maxTransactionTimeoutMs() {
@@ -192,7 +193,7 @@ public class ProducerStateManager {
      */
     private ConcurrentSkipListMap<Long, SnapshotFile> loadSnapshots() throws IOException {
         ConcurrentSkipListMap<Long, SnapshotFile> offsetToSnapshots = new ConcurrentSkipListMap<>();
-        List<SnapshotFile> snapshotFiles = listSnapshotFiles(logDir, storageManager);
+        List<SnapshotFile> snapshotFiles = listSnapshotFiles(logDir, topicIdPartition, storageManager);
         for (SnapshotFile snapshotFile : snapshotFiles) {
             offsetToSnapshots.put(snapshotFile.offset, snapshotFile);
         }
@@ -309,7 +310,7 @@ public class ProducerStateManager {
                 SnapshotFile snapshot = latestSnapshotFileOptional.get();
                 try {
                     log.info("Loading producer state from snapshot file '{}'", snapshot);
-                    Stream<ProducerStateEntry> loadedProducers = readSnapshot(snapshot.file(), storageManager).stream().filter(producerEntry -> !isProducerExpired(currentTime, producerEntry));
+                    Stream<ProducerStateEntry> loadedProducers = readSnapshot(snapshot.file(), topicIdPartition, storageManager).stream().filter(producerEntry -> !isProducerExpired(currentTime, producerEntry));
                     loadedProducers.forEach(this::loadProducerEntry);
                     lastSnapOffset = snapshot.offset;
                     lastMapOffset = lastSnapOffset;
@@ -384,7 +385,7 @@ public class ProducerStateManager {
 
     public ProducerAppendInfo prepareUpdate(long producerId, AppendOrigin origin) {
         ProducerStateEntry currentEntry = lastEntry(producerId).orElse(ProducerStateEntry.empty(producerId));
-        return new ProducerAppendInfo(topicPartition, producerId, currentEntry, origin, verificationStateEntry(producerId));
+        return new ProducerAppendInfo(topicIdPartition.topicPartition(), producerId, currentEntry, origin, verificationStateEntry(producerId));
     }
 
     /**
@@ -393,7 +394,7 @@ public class ProducerStateManager {
     public void update(ProducerAppendInfo appendInfo) {
         if (appendInfo.producerId() == RecordBatch.NO_PRODUCER_ID)
             throw new IllegalArgumentException("Invalid producer id " + appendInfo.producerId() + " passed to update "
-                    + "for partition" + topicPartition);
+                    + "for partition" + topicIdPartition);
 
         log.trace("Updated producer {} state to {}", appendInfo.producerId(), appendInfo);
         ProducerStateEntry updatedEntry = appendInfo.toEntry();
@@ -444,9 +445,9 @@ public class ProducerStateManager {
     public Optional<File> takeSnapshot(boolean sync) throws IOException {
         // If not a new offset, then it is not worth taking another snapshot
         if (lastMapOffset > lastSnapOffset) {
-            SnapshotFile snapshotFile = new SnapshotFile(LogFileUtils.producerSnapshotFile(logDir, lastMapOffset), storageManager);
+            SnapshotFile snapshotFile = new SnapshotFile(LogFileUtils.producerSnapshotFile(logDir, lastMapOffset), topicIdPartition, storageManager);
             long start = time.hiResClockMs();
-            writeSnapshot(snapshotFile.file(), producers, sync, storageManager);
+            writeSnapshot(snapshotFile.file(), topicIdPartition, producers, sync, storageManager);
             log.info("Wrote producer snapshot at offset {} with {} producer ids in {} ms.", lastMapOffset,
                     producers.size(), time.hiResClockMs() - start);
 
@@ -555,7 +556,7 @@ public class ProducerStateManager {
         TxnMetadata txnMetadata = ongoingTxns.remove(completedTxn.firstOffset);
         if (txnMetadata == null)
             throw new IllegalArgumentException("Attempted to complete transaction " + completedTxn + " on partition "
-                    + topicPartition + " which was not started");
+                    + topicIdPartition + " which was not started");
 
         txnMetadata.lastOffset = OptionalLong.of(completedTxn.lastOffset);
         unreplicatedTxns.put(completedTxn.firstOffset, txnMetadata);
@@ -624,13 +625,13 @@ public class ProducerStateManager {
         return Optional.empty();
     }
 
-    public static List<ProducerStateEntry> readSnapshot(File file, StorageManager storageManager) throws IOException {
-        long size = storageManager.size(file.getAbsolutePath(), StorageManager.ObjectType.SNAPSHOT);
+    public static List<ProducerStateEntry> readSnapshot(File file, TopicIdPartition topicIdPartition, StorageManager storageManager) throws IOException {
+        long size = storageManager.size(file.getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.SNAPSHOT);
         if (size > Integer.MAX_VALUE) {
             throw new CorruptSnapshotException("Snapshot size is too large: " + size);
         }
         ByteBuffer byteBuffer = ByteBuffer.allocate((int) size);
-        storageManager.read(file.getAbsolutePath(), byteBuffer, 0, StorageManager.ObjectType.SNAPSHOT);
+        storageManager.read(file.getAbsolutePath(), topicIdPartition, byteBuffer, 0, StorageManager.ObjectType.SNAPSHOT);
         byteBuffer.flip();
 
         short version;
@@ -672,7 +673,7 @@ public class ProducerStateManager {
     }
 
     // visible for testing
-    public static void writeSnapshot(File file, Map<Long, ProducerStateEntry> entries, boolean sync, StorageManager storageManager) throws IOException {
+    public static void writeSnapshot(File file, TopicIdPartition topicIdPartition, Map<Long, ProducerStateEntry> entries, boolean sync, StorageManager storageManager) throws IOException {
         ProducerSnapshot producerSnapshot = new ProducerSnapshot();
         List<ProducerSnapshot.ProducerEntry> producerEntries = new ArrayList<>(entries.size());
         for (Map.Entry<Long, ProducerStateEntry> producerIdEntry : entries.entrySet()) {
@@ -697,19 +698,19 @@ public class ProducerStateManager {
         long crc = Crc32C.compute(buffer, PRODUCER_ENTRIES_OFFSET, buffer.limit() - PRODUCER_ENTRIES_OFFSET);
         ByteUtils.writeUnsignedInt(buffer, CRC_OFFSET, crc);
 
-        storageManager.append(file.getAbsolutePath(), buffer, StorageManager.ObjectType.SNAPSHOT);
+        storageManager.append(file.getAbsolutePath(), topicIdPartition, buffer, StorageManager.ObjectType.SNAPSHOT);
         if (sync)
-            storageManager.flush(file.getAbsolutePath(), StorageManager.ObjectType.SNAPSHOT);
+            storageManager.flush(file.getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.SNAPSHOT);
 
     }
 
     // visible for testing
-    public static List<SnapshotFile> listSnapshotFiles(File dir) throws IOException {
-        return listSnapshotFiles(dir, new FileStorageManager());
+    public static List<SnapshotFile> listSnapshotFiles(File dir, TopicIdPartition topicIdPartition) throws IOException {
+        return listSnapshotFiles(dir, topicIdPartition, new FileStorageManager());
     }
-    public static List<SnapshotFile> listSnapshotFiles(File dir, StorageManager storageManager) throws IOException {
-        return storageManager.listFiles(dir, StorageManager.ObjectType.SNAPSHOT).stream()
-                .map(file -> new SnapshotFile(file, storageManager)).collect(Collectors.toList());
+    public static List<SnapshotFile> listSnapshotFiles(File dir, TopicIdPartition topicIdPartition, StorageManager storageManager) throws IOException {
+        return storageManager.listFiles(dir, topicIdPartition, StorageManager.ObjectType.SNAPSHOT).stream()
+                .map(file -> new SnapshotFile(file, topicIdPartition, storageManager)).collect(Collectors.toList());
     }
 
 }

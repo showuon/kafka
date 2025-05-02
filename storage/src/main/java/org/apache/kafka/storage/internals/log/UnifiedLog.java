@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.storage.internals.log;
 
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.record.FileRecords;
@@ -272,28 +273,28 @@ public class UnifiedLog {
      */
 
     public static LeaderEpochFileCache createLeaderEpochCache(File dir,
-                                                              TopicPartition topicPartition,
+                                                              TopicIdPartition topicIdPartition,
                                                               LogDirFailureChannel logDirFailureChannel,
                                                               Optional<LeaderEpochFileCache> currentCache,
                                                               Scheduler scheduler) throws IOException {
-        return createLeaderEpochCache(dir, topicPartition, logDirFailureChannel, currentCache, scheduler, new FileStorageManager());
+        return createLeaderEpochCache(dir, topicIdPartition, logDirFailureChannel, currentCache, scheduler, new FileStorageManager());
     }
 
     public static LeaderEpochFileCache createLeaderEpochCache(File dir,
-                                                              TopicPartition topicPartition,
+                                                              TopicIdPartition topicIdPartition,
                                                               LogDirFailureChannel logDirFailureChannel,
                                                               Optional<LeaderEpochFileCache> currentCache,
                                                               Scheduler scheduler,
                                                               StorageManager storageManager) throws IOException {
         File leaderEpochFile = LeaderEpochCheckpointFile.newFile(dir);
-        LeaderEpochCheckpointFile checkpointFile = new LeaderEpochCheckpointFile(leaderEpochFile, logDirFailureChannel, storageManager);
+        LeaderEpochCheckpointFile checkpointFile = new LeaderEpochCheckpointFile(leaderEpochFile, logDirFailureChannel, topicIdPartition, storageManager);
         return currentCache.map(cache -> cache.withCheckpoint(checkpointFile))
-                .orElse(new LeaderEpochFileCache(topicPartition, checkpointFile, scheduler));
+                .orElse(new LeaderEpochFileCache(topicIdPartition.topicPartition(), checkpointFile, scheduler));
 
     }
 
-    public static LogSegment createNewCleanedSegment(File dir, LogConfig logConfig, long baseOffset, StorageManager storageManager) throws IOException {
-        return LocalLog.createNewCleanedSegment(dir, logConfig, baseOffset, storageManager);
+    public static LogSegment createNewCleanedSegment(File dir, LogConfig logConfig, long baseOffset, TopicIdPartition topicIdPartition, StorageManager storageManager) throws IOException {
+        return LocalLog.createNewCleanedSegment(dir, logConfig, baseOffset, topicIdPartition, storageManager);
     }
 
     public static long localRetentionMs(LogConfig config, boolean remoteLogEnabledAndRemoteCopyEnabled) {

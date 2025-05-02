@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.server.common;
 
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.common.utils.Utils;
@@ -59,14 +60,17 @@ public class CheckpointFile<T> {
     private final Object lock = new Object();
     private final Path absolutePath;
     private final StorageManager storageManager;
+    private final TopicIdPartition topicIdPartition;
 
     public CheckpointFile(File file,
                           int version,
                           EntryFormatter<T> formatter,
+                          TopicIdPartition topicIdPartition,
                           StorageManager storageManager) throws IOException {
         this.version = version;
         this.formatter = formatter;
         this.storageManager = storageManager;
+        this.topicIdPartition = topicIdPartition;
         absolutePath = file.toPath().toAbsolutePath();
     }
 
@@ -74,14 +78,14 @@ public class CheckpointFile<T> {
         synchronized (lock) {
             CheckpointWriteBuffer<T> checkpointWriteBuffer = new CheckpointWriteBuffer<>(version, formatter);
             ByteBuffer buffer = ByteBuffer.wrap(checkpointWriteBuffer.write(entries).getBytes());
-            storageManager.append(absolutePath.toString(), buffer, StorageManager.ObjectType.CHECKPOINT);
+            storageManager.append(absolutePath.toString(), topicIdPartition, buffer, StorageManager.ObjectType.CHECKPOINT);
         }
     }
 
     public List<T> read() throws IOException {
         synchronized (lock) {
-            ByteBuffer buffer = ByteBuffer.allocate((int) storageManager.size(absolutePath.toString(), StorageManager.ObjectType.CHECKPOINT));
-            storageManager.read(absolutePath.toString(), buffer, 0, StorageManager.ObjectType.CHECKPOINT);
+            ByteBuffer buffer = ByteBuffer.allocate((int) storageManager.size(absolutePath.toString(), topicIdPartition, StorageManager.ObjectType.CHECKPOINT));
+            storageManager.read(absolutePath.toString(), topicIdPartition, buffer, 0, StorageManager.ObjectType.CHECKPOINT);
             buffer.flip();
 
             CheckpointReadBuffer<T> checkpointBuffer = new CheckpointReadBuffer<>(absolutePath.toString(), version, formatter);

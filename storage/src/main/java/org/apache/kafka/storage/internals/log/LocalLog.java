@@ -17,6 +17,7 @@
 package org.apache.kafka.storage.internals.log;
 
 import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.KafkaStorageException;
 import org.apache.kafka.common.errors.OffsetOutOfRangeException;
@@ -83,7 +84,7 @@ public class LocalLog {
     private final LogSegments segments;
     private final Scheduler scheduler;
     private final Time time;
-    private final TopicPartition topicPartition;
+    private final TopicIdPartition topicIdPartition;
     private final LogDirFailureChannel logDirFailureChannel;
     private final Logger logger;
 
@@ -105,9 +106,9 @@ public class LocalLog {
                     LogOffsetMetadata nextOffsetMetadata,
                     Scheduler scheduler,
                     Time time,
-                    TopicPartition topicPartition,
+                    TopicIdPartition topicIdPartition,
                     LogDirFailureChannel logDirFailureChannel) {
-        this(dir, config, segments, recoveryPoint, nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel, null);
+        this(dir, config, segments, recoveryPoint, nextOffsetMetadata, scheduler, time, topicIdPartition, logDirFailureChannel, null);
     }
     /**
      * @param dir The directory in which log segments are created.
@@ -117,7 +118,7 @@ public class LocalLog {
      * @param nextOffsetMetadata The offset where the next message could be appended
      * @param scheduler The thread pool scheduler used for background actions
      * @param time The time instance used for checking the clock
-     * @param topicPartition The topic partition associated with this log
+     * @param topicIdPartition The topic partition associated with this log
      * @param logDirFailureChannel The LogDirFailureChannel instance to asynchronously handle Log dir failure
      */
     public LocalLog(File dir,
@@ -127,7 +128,7 @@ public class LocalLog {
                     LogOffsetMetadata nextOffsetMetadata,
                     Scheduler scheduler,
                     Time time,
-                    TopicPartition topicPartition,
+                    TopicIdPartition topicIdPartition,
                     LogDirFailureChannel logDirFailureChannel,
                     StorageManager storageManager) {
         this.dir = dir;
@@ -137,9 +138,9 @@ public class LocalLog {
         this.nextOffsetMetadata = nextOffsetMetadata;
         this.scheduler = scheduler;
         this.time = time;
-        this.topicPartition = topicPartition;
+        this.topicIdPartition = topicIdPartition;
         this.logDirFailureChannel = logDirFailureChannel;
-        this.logIdent = "[LocalLog partition=" + topicPartition + ", dir=" + dir + "] ";
+        this.logIdent = "[LocalLog partition=" + topicIdPartition + ", dir=" + dir + "] ";
         this.logger = new LogContext(logIdent).logger(LocalLog.class);
         // Last time the log was flushed
         this.lastFlushedTime = new AtomicLong(time.milliseconds());
@@ -176,7 +177,10 @@ public class LocalLog {
     }
 
     public TopicPartition topicPartition() {
-        return topicPartition;
+        return topicIdPartition.topicPartition();
+    }
+    public TopicIdPartition topicIdPartition() {
+        return topicIdPartition;
     }
 
     public LogDirFailureChannel logDirFailureChannel() {
@@ -218,7 +222,7 @@ public class LocalLog {
      */
     public boolean renameDir(String name) {
         return maybeHandleIOException(
-            () -> "Error while renaming dir for " + topicPartition + " in log dir " +  dir.getParent(),
+            () -> "Error while renaming dir for " + topicIdPartition + " in log dir " +  dir.getParent(),
             () -> {
                 File renamedDir = new File(dir.getParent(), name);
                 Utils.atomicMoveWithFallback(dir.toPath(), renamedDir.toPath());
@@ -244,7 +248,7 @@ public class LocalLog {
 
     public void checkIfMemoryMappedBufferClosed() {
         if (isMemoryMappedBufferClosed) {
-            throw new KafkaStorageException("The memory mapped buffer for log of " + topicPartition + " is already closed");
+            throw new KafkaStorageException("The memory mapped buffer for log of " + topicIdPartition + " is already closed");
         }
     }
 
@@ -342,7 +346,7 @@ public class LocalLog {
      */
     public void close() {
         maybeHandleIOException(
-            () -> "Error while renaming dir for " + topicPartition + " in dir " + dir.getParent(),
+            () -> "Error while renaming dir for " + topicIdPartition + " in dir " + dir.getParent(),
             () -> {
                 checkIfMemoryMappedBufferClosed();
                 segments.close();
@@ -356,13 +360,13 @@ public class LocalLog {
      */
     public void deleteEmptyDir() {
         maybeHandleIOException(
-            () -> "Error while deleting dir for " + topicPartition + " in dir " + dir.getParent(),
+            () -> "Error while deleting dir for " + topicIdPartition + " in dir " + dir.getParent(),
             () -> {
                 if (!segments.isEmpty()) {
                     throw new IllegalStateException("Can not delete directory when " + segments.numberOfSegments() + " segments are still present");
                 }
                 if (!isMemoryMappedBufferClosed) {
-                    throw new IllegalStateException("Can not delete directory when memory mapped buffer for log of " + topicPartition + " is still open.");
+                    throw new IllegalStateException("Can not delete directory when memory mapped buffer for log of " + topicIdPartition + " is still open.");
                 }
                 Utils.delete(dir);
                 return null;
@@ -376,7 +380,7 @@ public class LocalLog {
      */
     public List<LogSegment> deleteAllSegments() {
         return maybeHandleIOException(
-            () -> String.format("Error while deleting all segments for %s in dir %s", topicPartition, dir.getParent()),
+            () -> String.format("Error while deleting all segments for %s in dir %s", topicIdPartition, dir.getParent()),
             () -> {
                 List<LogSegment> deletableSegments = new ArrayList<>(segments.values());
                 removeAndDeleteSegments(
@@ -418,7 +422,7 @@ public class LocalLog {
             List<LogSegment> toDelete = new ArrayList<>(segmentsToDelete);
             reason.logReason(toDelete);
             toDelete.forEach(segment -> segments.remove(segment.baseOffset()));
-            deleteSegmentFiles(toDelete, asyncDelete, dir, topicPartition, config, scheduler, logDirFailureChannel, logIdent);
+            deleteSegmentFiles(toDelete, asyncDelete, dir, topicIdPartition.topicPartition(), config, scheduler, logDirFailureChannel, logIdent);
         }
     }
 
@@ -450,6 +454,7 @@ public class LocalLog {
                 time,
                 config.initFileSize(),
                 config.preallocate,
+                topicIdPartition,
                 storageManager);
         segments.add(newSegment);
 
@@ -457,7 +462,7 @@ public class LocalLog {
         if (newOffset != segmentToDelete.baseOffset()) {
             segments.remove(segmentToDelete.baseOffset());
         }
-        deleteSegmentFiles(singletonList(segmentToDelete), asyncDelete, dir, topicPartition, config, scheduler, logDirFailureChannel, logIdent);
+        deleteSegmentFiles(singletonList(segmentToDelete), asyncDelete, dir, topicIdPartition.topicPartition(), config, scheduler, logDirFailureChannel, logIdent);
         return newSegment;
     }
 
@@ -487,7 +492,7 @@ public class LocalLog {
                        LogOffsetMetadata maxOffsetMetadata,
                        boolean includeAbortedTxns) throws IOException {
         return maybeHandleIOException(
-                () -> "Exception while reading from " + topicPartition + " in dir " + dir.getParent(),
+                () -> "Exception while reading from " + topicIdPartition + " in dir " + dir.getParent(),
                 () -> {
                     logger.trace("Reading maximum {} bytes at offset {} from log with total length {} bytes",
                             maxLength, startOffset, segments.sizeInBytes());
@@ -497,7 +502,7 @@ public class LocalLog {
                     Optional<LogSegment> segmentOpt = segments.floorSegment(startOffset);
                     // return error on attempt to read beyond the log end offset
                     if (startOffset > endOffset || segmentOpt.isEmpty()) {
-                        throw new OffsetOutOfRangeException("Received request for offset " + startOffset + " for partition " + topicPartition + ", " +
+                        throw new OffsetOutOfRangeException("Received request for offset " + startOffset + " for partition " + topicIdPartition + ", " +
                                 "but we only have log segments upto " + endOffset + ".");
                     }
                     if (startOffset == maxOffsetMetadata.messageOffset) return emptyFetchDataInfo(maxOffsetMetadata, includeAbortedTxns);
@@ -601,7 +606,7 @@ public class LocalLog {
      */
     public LogSegment roll(Long expectedNextOffset) {
         return maybeHandleIOException(
-            () -> "Error while rolling log segment for " + topicPartition + " in dir " + dir.getParent(),
+            () -> "Error while rolling log segment for " + topicIdPartition + " in dir " + dir.getParent(),
             () -> {
                 long start = time.hiResClockMs();
                 checkIfMemoryMappedBufferClosed();
@@ -627,13 +632,13 @@ public class LocalLog {
                         logger.info("Rolled new log segment at offset {} in {} ms.", newOffset, time.hiResClockMs() - start);
                         return newSegment;
                     } else {
-                        throw new KafkaException("Trying to roll a new log segment for topic partition " + topicPartition + " with start offset " + newOffset +
+                        throw new KafkaException("Trying to roll a new log segment for topic partition " + topicIdPartition + " with start offset " + newOffset +
                                 " =max(provided offset = " + expectedNextOffset + ", LEO = " + logEndOffset() + ") while it already exists. Existing " +
                                 "segment is " + segments.get(newOffset) + ".");
                     }
                 } else if (!segments.isEmpty() && newOffset < activeSegment.baseOffset()) {
                     throw new KafkaException(
-                            "Trying to roll a new log segment for topic partition " + topicPartition + " with " +
+                            "Trying to roll a new log segment for topic partition " + topicIdPartition + " with " +
                             "start offset " + newOffset + " =max(provided offset = " + expectedNextOffset + ", LEO = " + logEndOffset() + ") lower than start offset of the active segment " + activeSegment);
                 } else {
                     File offsetIdxFile = LogFileUtils.offsetIndexFile(dir, newOffset);
@@ -655,6 +660,7 @@ public class LocalLog {
                         time,
                         config.initFileSize(),
                         config.preallocate,
+                        topicIdPartition,
                         storageManager);
                 segments.add(newSegment);
 
@@ -675,7 +681,7 @@ public class LocalLog {
      */
     public List<LogSegment> truncateFullyAndStartAt(long newOffset) {
         return maybeHandleIOException(
-            () -> "Error while truncating the entire log for " + topicPartition + " in dir " + dir.getParent(),
+            () -> "Error while truncating the entire log for " + topicIdPartition + " in dir " + dir.getParent(),
             () -> {
                 logger.debug("Truncate and start at offset {}", newOffset);
                 checkIfMemoryMappedBufferClosed();
@@ -895,9 +901,9 @@ public class LocalLog {
         }
     }
 
-    public static LogSegment createNewCleanedSegment(File dir, LogConfig logConfig, long baseOffset, StorageManager storageManager) throws IOException {
+    public static LogSegment createNewCleanedSegment(File dir, LogConfig logConfig, long baseOffset, TopicIdPartition topicIdPartition, StorageManager storageManager) throws IOException {
         LogSegment.deleteIfExists(dir, baseOffset, CLEANED_FILE_SUFFIX);
-        return LogSegment.open(dir, baseOffset, logConfig, Time.SYSTEM, false, logConfig.initFileSize(), logConfig.preallocate, CLEANED_FILE_SUFFIX, storageManager);
+        return LogSegment.open(dir, baseOffset, logConfig, Time.SYSTEM, false, logConfig.initFileSize(), logConfig.preallocate, CLEANED_FILE_SUFFIX,topicIdPartition, storageManager);
     }
 
     /**
@@ -916,7 +922,7 @@ public class LocalLog {
      * @param segment Segment to split
      * @param existingSegments The existing segments of the log
      * @param dir The directory in which the log will reside
-     * @param topicPartition The topic
+     * @param topicIdPartition The topic
      * @param config The log configuration settings
      * @param scheduler The thread pool scheduler used for background actions
      * @param logDirFailureChannel The LogDirFailureChannel to asynchronously handle log dir failure
@@ -926,7 +932,7 @@ public class LocalLog {
     public static SplitSegmentResult splitOverflowedSegment(LogSegment segment,
                                                      LogSegments existingSegments,
                                                      File dir,
-                                                     TopicPartition topicPartition,
+                                                     TopicIdPartition topicIdPartition,
                                                      LogConfig config,
                                                      Scheduler scheduler,
                                                      LogDirFailureChannel logDirFailureChannel,
@@ -943,7 +949,7 @@ public class LocalLog {
             FileRecords sourceRecords = segment.log();
             while (position < sourceRecords.sizeInBytes()) {
                 FileLogInputStream.FileChannelRecordBatch firstBatch = sourceRecords.batchesFrom(position).iterator().next();
-                LogSegment newSegment = createNewCleanedSegment(dir, config, firstBatch.baseOffset(), storageManager);
+                LogSegment newSegment = createNewCleanedSegment(dir, config, firstBatch.baseOffset(), topicIdPartition, storageManager);
                 newSegments.add(newSegment);
                 int bytesAppended = newSegment.appendFromFile(sourceRecords, position);
                 if (bytesAppended == 0) {
@@ -966,7 +972,7 @@ public class LocalLog {
             // replace old segment with new ones
             LOG.info("{}Replacing overflowed segment {} with split segments {}", logPrefix, segment, newSegments);
             List<LogSegment> deletedSegments = replaceSegments(existingSegments, newSegments, singletonList(segment),
-                    dir, topicPartition, config, scheduler, logDirFailureChannel, logPrefix, false);
+                    dir, topicIdPartition, config, scheduler, logDirFailureChannel, logPrefix, false);
             return new SplitSegmentResult(deletedSegments, newSegments);
         } catch (Exception e) {
             for (LogSegment splitSegment : newSegments) {
@@ -1009,7 +1015,7 @@ public class LocalLog {
      * @param newSegments The new log segment to add to the log
      * @param oldSegments The old log segments to delete from the log
      * @param dir The directory in which the log will reside
-     * @param topicPartition The topic
+     * @param topicIdPartition The topic
      * @param config The log configuration settings
      * @param scheduler The thread pool scheduler used for background actions
      * @param logDirFailureChannel The LogDirFailureChannel to asynchronously handle log dir failure
@@ -1020,7 +1026,7 @@ public class LocalLog {
                                                    List<LogSegment> newSegments,
                                                    List<LogSegment> oldSegments,
                                                    File dir,
-                                                   TopicPartition topicPartition,
+                                                   TopicIdPartition topicIdPartition,
                                                    LogConfig config,
                                                    Scheduler scheduler,
                                                    LogDirFailureChannel logDirFailureChannel,
@@ -1060,7 +1066,7 @@ public class LocalLog {
                     singletonList(segment),
                     true,
                     dir,
-                    topicPartition,
+                    topicIdPartition.topicPartition(),
                     config,
                     scheduler,
                     logDirFailureChannel,

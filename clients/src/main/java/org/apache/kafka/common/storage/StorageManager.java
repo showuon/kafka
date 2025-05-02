@@ -16,6 +16,8 @@
  */
 package org.apache.kafka.common.storage;
 
+import org.apache.kafka.common.TopicIdPartition;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -46,56 +48,79 @@ public interface StorageManager {
     // ----- common -------
 
     /**
+     * Check if the storage type is a shared storage or not.
+     * @return true if the storage type is a shared storage.
+     */
+    default boolean sharedStorage() {
+        return false;
+    }
+
+    /**
      * Delete the object if existed.
      */
-    boolean deleteIfExists(String path, ObjectType ObjectType) throws IOException;
+    boolean deleteIfExists(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException;
+
     /**
      * Update the parent directory. Used when partition movement, and stray logs handling, ex: Update the new created partition
      * folder as the normal partition name without "-future" suffix, and update the removed partition folder as "-deleted"...
+     *
+     * Note: if the implementation doesn't rely on file path, this can be no-op
      */
-    void updateParentDir(String path, File parentDir, ObjectType ObjectType);
+    void updateParentDir(String path, TopicIdPartition topicIdPartition, File parentDir, ObjectType ObjectType);
 
     /**
-     * Rename the Object. Used when file deletion (i.e. adding ".delete" suffix), compacted file marking (i.e. adding ".cleaned" suffix),...etc
+     * Rename the Object. Used when file deletion (i.e. adding ".delete" suffix), compacted file marking
+     * (i.e. adding ".cleaned" suffix),...etc
+     *
+     * Note: if the implementation doesn't rely on file path, this can be no-op
      */
-    void renameTo(String path, File f, ObjectType ObjectType) throws IOException;
+    void renameTo(String path, TopicIdPartition topicIdPartition, File f, ObjectType ObjectType) throws IOException;
+
     /**
      * Truncate the object to a new position. This position could be an offset (ex: index files), a file position (ex: local file)
      */
-    void truncate(String path, int newPos, ObjectType ObjectType) throws IOException;
+    void truncate(String path, TopicIdPartition topicIdPartition, int newPos, ObjectType ObjectType) throws IOException;
+
     /**
      * Append the provided buffer to the backend storage
      */
-    int append(String path, ByteBuffer buffer, ObjectType ObjectType) throws IOException;
+    int append(String path, TopicIdPartition topicIdPartition, ByteBuffer buffer, ObjectType ObjectType) throws IOException;
+
     /**
      * Read the content from the backend storage to the provided buffer
      */
-    void read(String path, ByteBuffer buffer, int position, ObjectType ObjectType) throws IOException;
+    void read(String path, TopicIdPartition topicIdPartition, ByteBuffer buffer, int position, ObjectType ObjectType) throws IOException;
+
     /**
      * Flush the data into the backend storage
      */
-    default void flush(String path, ObjectType ObjectType) throws IOException {}
+    default void flush(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {}
+
     /**
      * Close the resource used in the backend storage
      */
-    default void close(String path, ObjectType ObjectType) throws IOException {}
+    default void close(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {}
+
     /**
      * Get the current position in the backend storage
      */
-    long position(String path, ObjectType ObjectType) throws IOException;
+    long position(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException;
+
     /**
      * Get the current size of the backend storage
      */
-    long size(String path, ObjectType ObjectType) throws IOException;
+    long size(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException;
+
     /**
      * Test whether if the path file existed or not in the backend storage
      */
-    boolean exist(String path, ObjectType ObjectType);
+    boolean exist(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType);
+
     /**
      * List files/objects under a directory. Used when log loader to verify if there is any temporary files, or
      * log segment files loader to check if log recovery is needed.
      */
-    List<File> listFiles(File dir, ObjectType ObjectType) throws IOException;
+    List<File> listFiles(File dir, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException;
 
 
     // ---- log files ----
@@ -103,6 +128,7 @@ public interface StorageManager {
      * Initialize records used to store logs
      */
     int initRecords(File file,
+                    TopicIdPartition topicIdPartition,
                      boolean mutable,
                      boolean fileAlreadyExists,
                      int initFileSize,
@@ -110,22 +136,25 @@ public interface StorageManager {
                      boolean isSlice,
                      int start,
                      int end) throws IOException;
+
     /**
      * Write the records located to the socket channel. If the backend storage supports zero-copy or other optimization,
      * it can be applied here.
      */
-    long writeRecordsToSocket(String path, SocketChannel socketChannel, long position, long count) throws IOException;
+    long writeRecordsToSocket(String path, TopicIdPartition topicIdPartition, SocketChannel socketChannel, long position, long count) throws IOException;
 
 
     // ---- index files ----
     /**
      * Initialize the index objects
      */
-    long initIndex(File file, int maxIndexSize, boolean writable, int entrySize) throws IOException;
+    long initIndex(File file, TopicIdPartition topicIdPartition, int maxIndexSize, boolean writable, int entrySize) throws IOException;
+
     /**
      * Retrieve the content of the index files.
      */
-    ByteBuffer indexBuffer(String path);
+    ByteBuffer indexBuffer(String path, TopicIdPartition topicIdPartition);
+
     /**
      * Reset the size of the index object. This is used in two kinds of cases: (1) in
      * trimToValidSize() which is called at closing the segment or new segment being rolled; (2) at
@@ -133,11 +162,11 @@ public interface StorageManager {
      * we want to reset the index size to maximum index size to avoid rolling new segment.
      *
      */
-    boolean resizeIndex(String path, int newSize, AtomicLong length, AtomicInteger maxEntries, int entrySize) throws IOException;
+    boolean resizeIndex(String path, TopicIdPartition topicIdPartition, int newSize, AtomicLong length, AtomicInteger maxEntries, int entrySize) throws IOException;
 
     // ----- transaction index file --------
     /**
      * Initialize transaction index files
      */
-    default void initTransIndex(File file) throws IOException {}
+    default void initTransIndex(File file, TopicIdPartition topicIdPartition) throws IOException {}
 }

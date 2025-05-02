@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.common.record;
 
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.message.KRaftVersionRecord;
@@ -90,11 +91,11 @@ public class MemoryRecords extends AbstractRecords {
         return written;
     }
 
-    public int writeFullyToStorageManager(String path, StorageManager storageManager) throws IOException {
+    public int writeFullyToStorageManager(String path, TopicIdPartition topicIdPartition, StorageManager storageManager) throws IOException {
         buffer.mark();
         int written = 0;
         while (written < sizeInBytes())
-            written += storageManager.append(path, buffer, StorageManager.ObjectType.LOG);
+            written += storageManager.append(path, topicIdPartition, buffer, StorageManager.ObjectType.LOG);
 
         buffer.reset();
         return written;

@@ -17,6 +17,8 @@
 package org.apache.kafka.common.record;
 
 import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.TopicIdPartition;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.network.TransferableChannel;
 import org.apache.kafka.common.record.FileLogInputStream.FileChannelRecordBatch;
 import org.apache.kafka.common.storage.StorageManager;
@@ -46,13 +48,14 @@ public class FileRecords extends AbstractRecords implements Closeable {
     private final AtomicInteger size;
     private volatile File file;
     private final StorageManager storageManager;
+    private final TopicIdPartition topicIdPartition;
 
     FileRecords(File file,
                 FileChannel channel,
                 int start,
                 int end,
                 boolean isSlice) throws IOException {
-        this(file, start, end, isSlice, null, 0);
+        this(file, start, end, isSlice, null, null, 0);
     }
     /**
      * The {@code FileRecords.open} methods should be used instead of this constructor whenever possible.
@@ -62,12 +65,14 @@ public class FileRecords extends AbstractRecords implements Closeable {
                 int start,
                 int end,
                 boolean isSlice,
+                TopicIdPartition topicIdPartition,
                 StorageManager storageManager,
                 int size) {
         this.start = start;
         this.end = end;
         this.isSlice = isSlice;
         this.size = new AtomicInteger(size);
+        this.topicIdPartition = topicIdPartition;
         this.storageManager = storageManager;
         this.file = file;
 
@@ -99,6 +104,10 @@ public class FileRecords extends AbstractRecords implements Closeable {
         return storageManager;
     }
 
+    public TopicIdPartition topicIdPartition() {
+        return topicIdPartition;
+    }
+
     /**
      * Read log batches into the given buffer until there are no bytes remaining in the buffer or the end of the file
      * is reached.
@@ -109,7 +118,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * possible exceptions
      */
     public void readInto(ByteBuffer buffer, int position) throws IOException {
-        storageManager.read(file().getAbsolutePath(), buffer, position + this.start, StorageManager.ObjectType.LOG);
+        storageManager.read(file().getAbsolutePath(), topicIdPartition, buffer, position + this.start, StorageManager.ObjectType.LOG);
         buffer.flip();
     }
 
@@ -128,7 +137,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
     public FileRecords slice(int position, int size) throws IOException {
         int availableBytes = availableBytes(position, size);
         int startPosition = this.start + position;
-        return new FileRecords(file, startPosition, startPosition + availableBytes, true, storageManager, availableBytes);
+        return new FileRecords(file, startPosition, startPosition + availableBytes, true, topicIdPartition, storageManager, availableBytes);
     }
 
     /**
@@ -144,7 +153,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
      */
     public UnalignedFileRecords sliceUnaligned(int position, int size) {
         int availableBytes = availableBytes(position, size);
-        return new UnalignedFileRecords(storageManager, this.start + position, availableBytes, file().getAbsolutePath());
+        return new UnalignedFileRecords(storageManager, topicIdPartition, this.start + position, availableBytes, file().getAbsolutePath());
     }
 
     private int availableBytes(int position, int size) {
@@ -179,7 +188,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
             throw new IllegalArgumentException("Append of size " + records.sizeInBytes() +
                     " bytes is too large for segment with current file position at " + size.get());
 
-        int written = records.writeFullyToStorageManager(file().getAbsolutePath(), storageManager);
+        int written = records.writeFullyToStorageManager(file().getAbsolutePath(), topicIdPartition, storageManager);
         size.getAndAdd(written);
         return written;
     }
@@ -187,7 +196,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * Commit all written data to the physical disk
      */
     public void flush() throws IOException {
-        storageManager.flush(file().getAbsolutePath(), StorageManager.ObjectType.LOG);
+        storageManager.flush(file().getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.LOG);
     }
 
     /**
@@ -196,14 +205,14 @@ public class FileRecords extends AbstractRecords implements Closeable {
     public void close() throws IOException {
         flush();
         trim();
-        storageManager.close(file().getAbsolutePath(), StorageManager.ObjectType.LOG);
+        storageManager.close(file().getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.LOG);
     }
 
     /**
      * Close file handlers used by the FileChannel but don't write to disk. This is used when the disk may have failed
      */
     public void closeHandlers() throws IOException {
-        storageManager.close(file().getAbsolutePath(), StorageManager.ObjectType.LOG);
+        storageManager.close(file().getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.LOG);
     }
 
     /**
@@ -213,7 +222,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
      *          because it did not exist
      */
     public boolean deleteIfExists() throws IOException {
-        return storageManager.deleteIfExists(file().getAbsolutePath(), StorageManager.ObjectType.LOG);
+        return storageManager.deleteIfExists(file().getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.LOG);
     }
 
     /**
@@ -228,7 +237,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @param parentDir The new parent directory
      */
     public void updateParentDir(File parentDir) {
-        storageManager.updateParentDir(file().getAbsolutePath(), parentDir, StorageManager.ObjectType.LOG);
+        storageManager.updateParentDir(file().getAbsolutePath(), topicIdPartition, parentDir, StorageManager.ObjectType.LOG);
         this.file = new File(parentDir, file().getName());
     }
 
@@ -237,7 +246,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @throws IOException if rename fails.
      */
     public void renameTo(File f) throws IOException {
-        storageManager.renameTo(file().getAbsolutePath(), f, StorageManager.ObjectType.LOG);
+        storageManager.renameTo(file().getAbsolutePath(), topicIdPartition, f, StorageManager.ObjectType.LOG);
         this.file = f;
     }
 
@@ -256,8 +265,8 @@ public class FileRecords extends AbstractRecords implements Closeable {
         if (targetSize > originalSize || targetSize < 0)
             throw new KafkaException("Attempt to truncate log segment " + "file" + " to " + targetSize + " bytes failed, " +
                     " size of this log segment is " + originalSize + " bytes.");
-        if (targetSize < (int) storageManager.size(file().getAbsolutePath(), StorageManager.ObjectType.LOG)) {
-            storageManager.truncate(file().getAbsolutePath(), targetSize, StorageManager.ObjectType.LOG);
+        if (targetSize < (int) storageManager.size(file().getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.LOG)) {
+            storageManager.truncate(file().getAbsolutePath(), topicIdPartition, targetSize, StorageManager.ObjectType.LOG);
             size.set(targetSize);
         }
         return originalSize - targetSize;
@@ -265,7 +274,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
 
     @Override
     public int writeTo(TransferableChannel destChannel, int offset, int length) throws IOException {
-        long newSize = Math.min(storageManager.size(file().getAbsolutePath(), StorageManager.ObjectType.LOG), end) - start;
+        long newSize = Math.min(storageManager.size(file().getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.LOG), end) - start;
         int oldSize = sizeInBytes();
         if (newSize < oldSize)
             throw new KafkaException(String.format(
@@ -275,7 +284,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
         long position = start + offset;
         int count = Math.min(length, oldSize - offset);
         // safe to cast to int since `count` is an int
-        return (int) destChannel.transferFrom(position, count, storageManager, file().getAbsolutePath());
+        return (int) destChannel.transferFrom(position, count, topicIdPartition, storageManager, file().getAbsolutePath());
     }
 
     /**
@@ -395,22 +404,24 @@ public class FileRecords extends AbstractRecords implements Closeable {
     }
 
     public static FileRecords open(File file,
+                                   TopicIdPartition topicIdPartition,
                                    boolean mutable,
                                    boolean fileAlreadyExists,
                                    int initFileSize,
                                    boolean preallocate,
                                    StorageManager storageManager) throws IOException {
         int end = (!fileAlreadyExists && preallocate) ? 0 : Integer.MAX_VALUE;
-        int size = storageManager.initRecords(file, mutable, fileAlreadyExists, initFileSize, preallocate, false, 0, end);
-        return new FileRecords(file, 0, end, false, storageManager, size);
+        int size = storageManager.initRecords(file, topicIdPartition, mutable, fileAlreadyExists, initFileSize, preallocate, false, 0, end);
+        return new FileRecords(file, 0, end, false, topicIdPartition, storageManager, size);
     }
 
     public static FileRecords open(File file,
+                                   TopicIdPartition topicIdPartition,
                                    boolean fileAlreadyExists,
                                    int initFileSize,
                                    boolean preallocate,
                                    StorageManager storageManager) throws IOException {
-        return open(file, true, fileAlreadyExists, initFileSize, preallocate, storageManager);
+        return open(file, topicIdPartition, true, fileAlreadyExists, initFileSize, preallocate, storageManager);
     }
 
     public static FileRecords open(File file,
@@ -418,7 +429,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
                                    boolean fileAlreadyExists,
                                    int initFileSize,
                                    boolean preallocate) throws IOException {
-        return open(file, mutable, fileAlreadyExists, initFileSize, preallocate, null);
+        return open(file, null, mutable, fileAlreadyExists, initFileSize, preallocate, null);
     }
 
     public static FileRecords open(File file,

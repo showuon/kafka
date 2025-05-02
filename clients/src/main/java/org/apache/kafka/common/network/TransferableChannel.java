@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.common.network;
 
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.storage.StorageManager;
 
 import java.io.IOException;
@@ -52,5 +53,5 @@ public interface TransferableChannel extends GatheringByteChannel {
      */
     long transferFrom(FileChannel fileChannel, long position, long count) throws IOException;
 
-    default long transferFrom(long position, long count, StorageManager storageManager, String path) throws IOException {return 0;};
+    default long transferFrom(long position, long count, TopicIdPartition topicIdPartition, StorageManager storageManager, String path) throws IOException {return 0;};
 }

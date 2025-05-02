@@ -17,6 +17,7 @@
 package org.apache.kafka.storage.internals.log;
 
 import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.storage.FileStorageManager;
 import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.common.utils.PrimitiveRef;
@@ -67,17 +68,19 @@ public class TransactionIndex implements Closeable {
     private Optional<FileChannel> maybeChannel = Optional.empty();
     private OptionalLong lastOffset = OptionalLong.empty();
     private final StorageManager storageManager;
+    private final TopicIdPartition topicIdPartition;
 
     public TransactionIndex(long startOffset, File file) throws IOException {
-        this(startOffset, file, new FileStorageManager());
+        this(startOffset, file, null, new FileStorageManager());
     }
 
-    public TransactionIndex(long startOffset, File file, StorageManager storageManager) throws IOException {
+    public TransactionIndex(long startOffset, File file, TopicIdPartition topicIdPartition, StorageManager storageManager) throws IOException {
         this.startOffset = startOffset;
         this.file = file;
         this.storageManager = storageManager;
+        this.topicIdPartition = topicIdPartition;
 
-        storageManager.initTransIndex(file);
+        storageManager.initTransIndex(file, topicIdPartition);
     }
 
     public File file() {
@@ -85,7 +88,7 @@ public class TransactionIndex implements Closeable {
     }
 
     public void updateParentDir(File parentDir) {
-        storageManager.updateParentDir(file().getAbsolutePath(), parentDir, StorageManager.ObjectType.TXN);
+        storageManager.updateParentDir(file().getAbsolutePath(), topicIdPartition, parentDir, StorageManager.ObjectType.TXN);
     }
 
     public void append(AbortedTxn abortedTxn) throws IOException {
@@ -97,7 +100,7 @@ public class TransactionIndex implements Closeable {
         });
         lastOffset = OptionalLong.of(abortedTxn.lastOffset());
 
-        storageManager.append(file().getAbsolutePath(), abortedTxn.buffer.duplicate(), StorageManager.ObjectType.TXN);
+        storageManager.append(file().getAbsolutePath(), topicIdPartition, abortedTxn.buffer.duplicate(), StorageManager.ObjectType.TXN);
     }
 
     public void flush() throws IOException {
@@ -110,12 +113,12 @@ public class TransactionIndex implements Closeable {
      * Remove all the entries from the index. Unlike `AbstractIndex`, this index is not resized ahead of time.
      */
     public void reset() throws IOException {
-        storageManager.truncate(file().getAbsolutePath(), 0, StorageManager.ObjectType.TXN);
+        storageManager.truncate(file().getAbsolutePath(), topicIdPartition, 0, StorageManager.ObjectType.TXN);
         lastOffset = OptionalLong.empty();
     }
 
     public void close() throws IOException {
-       storageManager.close(file().getAbsolutePath(), StorageManager.ObjectType.TXN);
+       storageManager.close(file().getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.TXN);
     }
 
     /**
@@ -127,12 +130,12 @@ public class TransactionIndex implements Closeable {
      */
     public boolean deleteIfExists() throws IOException {
         close();
-        return storageManager.deleteIfExists(file.getAbsolutePath(), StorageManager.ObjectType.TXN);
+        return storageManager.deleteIfExists(file.getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.TXN);
     }
 
     public void renameTo(File f) throws IOException {
         try {
-            storageManager.renameTo(file().getAbsolutePath(), f, StorageManager.ObjectType.TXN);
+            storageManager.renameTo(file().getAbsolutePath(), topicIdPartition, f, StorageManager.ObjectType.TXN);
         } finally {
             this.file = f;
         }
@@ -145,7 +148,7 @@ public class TransactionIndex implements Closeable {
             AbortedTxn abortedTxn = txnWithPosition.txn;
             int position = txnWithPosition.position;
             if (abortedTxn.lastOffset() >= offset) {
-                storageManager.truncate(file().getAbsolutePath(), position, StorageManager.ObjectType.TXN);
+                storageManager.truncate(file().getAbsolutePath(), topicIdPartition, position, StorageManager.ObjectType.TXN);
                 lastOffset = newLastOffset;
                 return;
             }
@@ -229,7 +232,7 @@ public class TransactionIndex implements Closeable {
     }
 
     private Iterable<AbortedTxnWithPosition> iterable(Supplier<ByteBuffer> allocate) {
-        if (!storageManager.exist(file().getAbsolutePath(), StorageManager.ObjectType.TXN))
+        if (!storageManager.exist(file().getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.TXN))
             return Collections.emptyList();
 
         PrimitiveRef.IntRef position = PrimitiveRef.ofInt(0);
@@ -239,7 +242,7 @@ public class TransactionIndex implements Closeable {
             @Override
             public boolean hasNext() {
                 try {
-                    return storageManager.position(file().getAbsolutePath(), StorageManager.ObjectType.TXN) - position.value >= AbortedTxn.TOTAL_SIZE;
+                    return storageManager.position(file().getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.TXN) - position.value >= AbortedTxn.TOTAL_SIZE;
                 } catch (IOException e) {
                     throw new KafkaException("Failed read position from the transaction index " + file.getAbsolutePath(), e);
                 }
@@ -249,7 +252,7 @@ public class TransactionIndex implements Closeable {
             public AbortedTxnWithPosition next() {
                 try {
                     ByteBuffer buffer = allocate.get();
-                    storageManager.read(file.getAbsolutePath(), buffer, position.value, StorageManager.ObjectType.TXN);
+                    storageManager.read(file.getAbsolutePath(), topicIdPartition, buffer, position.value, StorageManager.ObjectType.TXN);
                     buffer.flip();
 
                     AbortedTxn abortedTxn = new AbortedTxn(buffer);

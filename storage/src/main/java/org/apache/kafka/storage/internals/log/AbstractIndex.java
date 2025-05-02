@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.storage.internals.log;
 
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.storage.StorageManager;
 import org.apache.kafka.common.utils.OperatingSystem;
 
@@ -51,6 +52,7 @@ public abstract class AbstractIndex implements Closeable {
     private final int maxIndexSize;
     private final boolean writable;
     private StorageManager storageManager;
+    private TopicIdPartition topicIdPartition;
 
     private volatile File file;
 
@@ -71,7 +73,7 @@ public abstract class AbstractIndex implements Closeable {
      * @param maxIndexSize The maximum index size in bytes.
      */
     @SuppressWarnings("this-escape")
-    public AbstractIndex(File file, long baseOffset, int maxIndexSize, boolean writable, StorageManager storageManager) throws IOException {
+    public AbstractIndex(File file, long baseOffset, int maxIndexSize, boolean writable, TopicIdPartition topicIdPartition, StorageManager storageManager) throws IOException {
         Objects.requireNonNull(file);
         if (maxIndexSize < entrySize())
             throw new IllegalArgumentException("Invalid max index size: " + maxIndexSize);
@@ -80,10 +82,11 @@ public abstract class AbstractIndex implements Closeable {
         this.maxIndexSize = maxIndexSize;
         this.writable = writable;
         this.storageManager = storageManager;
-        this.length = new AtomicLong(storageManager.initIndex(file, maxIndexSize, writable, entrySize()));
-        ByteBuffer buffer = storageManager.indexBuffer(file().getAbsolutePath());
+        this.topicIdPartition = topicIdPartition;
+        this.length = new AtomicLong(storageManager.initIndex(file, topicIdPartition, maxIndexSize, writable, entrySize()));
+        ByteBuffer buffer = storageManager.indexBuffer(file().getAbsolutePath(), topicIdPartition);
         this.maxEntries = new AtomicInteger(buffer.limit() / entrySize());
-        this.entries = (int) (storageManager.position(file.getAbsolutePath(), StorageManager.ObjectType.INDEX) / entrySize());
+        this.entries = (int) (storageManager.position(file.getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.INDEX) / entrySize());
     }
 
 
@@ -149,7 +152,7 @@ public abstract class AbstractIndex implements Closeable {
     }
 
     public void updateParentDir(File parentDir) {
-        storageManager.updateParentDir(file.getAbsolutePath(), parentDir, StorageManager.ObjectType.INDEX);
+        storageManager.updateParentDir(file.getAbsolutePath(), topicIdPartition, parentDir, StorageManager.ObjectType.INDEX);
         this.file = new File(parentDir, file.getName());
     }
 
@@ -171,10 +174,10 @@ public abstract class AbstractIndex implements Closeable {
                 log.debug("Index {} was not resized because it already has size {}", file.getAbsolutePath(), roundedNewSize);
                 return false;
             } else {
-                storageManager.resizeIndex(file.getAbsolutePath(), roundedNewSize, length, maxEntries, entrySize());
+                storageManager.resizeIndex(file.getAbsolutePath(), topicIdPartition, roundedNewSize, length, maxEntries, entrySize());
                 log.debug("Resized {} to {}, position is {} and limit is {}", file.getAbsolutePath(), roundedNewSize,
-                        storageManager.position(file().getAbsolutePath(), StorageManager.ObjectType.INDEX),
-                        storageManager.size(file().getAbsolutePath(), StorageManager.ObjectType.INDEX));
+                        storageManager.position(file().getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.INDEX),
+                        storageManager.size(file().getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.INDEX));
                 return true;
             }
         } finally {
@@ -189,7 +192,7 @@ public abstract class AbstractIndex implements Closeable {
      */
     public void renameTo(File f) throws IOException {
         try {
-            storageManager.renameTo(file().getAbsolutePath(), f, StorageManager.ObjectType.INDEX);
+            storageManager.renameTo(file().getAbsolutePath(), topicIdPartition, f, StorageManager.ObjectType.INDEX);
         } finally {
             this.file = f;
         }
@@ -201,7 +204,7 @@ public abstract class AbstractIndex implements Closeable {
     public void flush() {
         lock.lock();
         try {
-            storageManager.flush(file().getAbsolutePath(), StorageManager.ObjectType.INDEX);
+            storageManager.flush(file().getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.INDEX);
         } catch (IOException e) {
             throw new RuntimeException(e);
         } finally {
@@ -218,7 +221,7 @@ public abstract class AbstractIndex implements Closeable {
      */
     public boolean deleteIfExists() throws IOException {
         closeHandler();
-        return storageManager.deleteIfExists(file.getAbsolutePath(), StorageManager.ObjectType.INDEX);
+        return storageManager.deleteIfExists(file.getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.INDEX);
     }
 
     /**
@@ -253,7 +256,7 @@ public abstract class AbstractIndex implements Closeable {
         // See https://issues.apache.org/jira/browse/KAFKA-4614 for the details.
         lock.lock();
         try {
-            storageManager.close(file.getAbsolutePath(), StorageManager.ObjectType.INDEX);
+            storageManager.close(file.getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.INDEX);
         } catch (IOException e) {
             log.error("Error closing index {}", file, e);
         } finally {
@@ -361,7 +364,7 @@ public abstract class AbstractIndex implements Closeable {
     protected void truncateToEntries0(int entries) {
         this.entries = entries;
         try {
-            storageManager.truncate(file.getAbsolutePath(), entries * entrySize(), StorageManager.ObjectType.INDEX);
+            storageManager.truncate(file.getAbsolutePath(), topicIdPartition, entries * entrySize(), StorageManager.ObjectType.INDEX);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

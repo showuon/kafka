@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.storage.internals.log;
 
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.errors.InvalidOffsetException;
 import org.apache.kafka.common.record.RecordBatch;
 
@@ -58,6 +59,7 @@ public class TimeIndex extends AbstractIndex {
     private static final int ENTRY_SIZE = 12;
 
     private final StorageManager storageManager;
+    private final TopicIdPartition topicIdPartition;
     private volatile TimestampOffset lastEntry;
 
     public TimeIndex(File file, long baseOffset, int maxIndexSize) throws IOException {
@@ -65,17 +67,18 @@ public class TimeIndex extends AbstractIndex {
     }
 
     public TimeIndex(File file, long baseOffset, int maxIndexSize, boolean writable) throws IOException {
-        this(file, baseOffset, maxIndexSize, writable, new FileStorageManager());
+        this(file, baseOffset, maxIndexSize, writable, null, new FileStorageManager());
     }
 
     @SuppressWarnings("this-escape")
-    public TimeIndex(File file, long baseOffset, int maxIndexSize, boolean writable, StorageManager storageManager) throws IOException {
-        super(file, baseOffset, maxIndexSize, writable, storageManager);
+    public TimeIndex(File file, long baseOffset, int maxIndexSize, boolean writable, TopicIdPartition topicIdPartition, StorageManager storageManager) throws IOException {
+        super(file, baseOffset, maxIndexSize, writable, topicIdPartition, storageManager);
         this.storageManager = storageManager;
+        this.topicIdPartition = topicIdPartition;
         this.lastEntry = lastEntryFromIndexFile();
 
         log.debug("Loaded index file {} with maxEntries = {}, maxIndexSize = {}, entries = {}, lastOffset = {}, file position = {}",
-            file.getAbsolutePath(), maxEntries(), maxIndexSize, entries(), lastEntry.offset, storageManager.position(file.getAbsolutePath(), StorageManager.ObjectType.INDEX));
+            file.getAbsolutePath(), maxEntries(), maxIndexSize, entries(), lastEntry.offset, storageManager.position(file.getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.INDEX));
     }
 
     @Override
@@ -83,10 +86,10 @@ public class TimeIndex extends AbstractIndex {
         TimestampOffset entry = lastEntry();
         long lastTimestamp = entry.timestamp;
         long lastOffset = entry.offset;
-        if (entries() != 0 && lastTimestamp < timestamp(storageManager.indexBuffer(file().getAbsolutePath()), 0))
+        if (entries() != 0 && lastTimestamp < timestamp(storageManager.indexBuffer(file().getAbsolutePath(), topicIdPartition), 0))
             throw new CorruptIndexException("Corrupt time index found, time index file (" + file().getAbsolutePath() + ") has "
                 + "non-zero size but the last timestamp is " + lastTimestamp + " which is less than the first timestamp "
-                + timestamp(storageManager.indexBuffer(file().getAbsolutePath()), 0));
+                + timestamp(storageManager.indexBuffer(file().getAbsolutePath(), topicIdPartition), 0));
         if (entries() != 0 && lastOffset < baseOffset())
             throw new CorruptIndexException("Corrupt time index found, time index file (" + file().getAbsolutePath() + ") has "
                 + "non-zero size but the last offset is " + lastOffset + " which is less than the first offset " + baseOffset());
@@ -103,7 +106,7 @@ public class TimeIndex extends AbstractIndex {
     public void truncateTo(long offset) {
         lock.lock();
         try {
-            ByteBuffer idx = storageManager.indexBuffer(file().getAbsolutePath());
+            ByteBuffer idx = storageManager.indexBuffer(file().getAbsolutePath(), topicIdPartition);
             int slot = largestLowerBoundSlotFor(idx, offset, IndexSearchType.VALUE);
 
             /* There are 3 cases for choosing the new size
@@ -145,7 +148,7 @@ public class TimeIndex extends AbstractIndex {
             if (n >= entries())
                 throw new IllegalArgumentException("Attempt to fetch the " + n + "th entry from time index "
                     + file().getAbsolutePath() + " which has size " + entries());
-            return parseEntry(storageManager.indexBuffer(file().getAbsolutePath()), n);
+            return parseEntry(storageManager.indexBuffer(file().getAbsolutePath(), topicIdPartition), n);
         });
     }
 
@@ -159,7 +162,7 @@ public class TimeIndex extends AbstractIndex {
      */
     public TimestampOffset lookup(long targetTimestamp) {
         return maybeLock(lock, () -> {
-            ByteBuffer idx = storageManager.indexBuffer(file().getAbsolutePath());
+            ByteBuffer idx = storageManager.indexBuffer(file().getAbsolutePath(), topicIdPartition);
             int slot = largestLowerBoundSlotFor(idx, targetTimestamp, IndexSearchType.KEY);
             if (slot == -1)
                 return new TimestampOffset(RecordBatch.NO_TIMESTAMP, baseOffset());
@@ -215,11 +218,11 @@ public class TimeIndex extends AbstractIndex {
                 buffer.putLong(timestamp);
                 buffer.putInt(relativeOffset(offset));
                 buffer.flip();
-                storageManager.append(file().getAbsolutePath(), buffer, StorageManager.ObjectType.INDEX);
+                storageManager.append(file().getAbsolutePath(), topicIdPartition, buffer, StorageManager.ObjectType.INDEX);
 
                 incrementEntries();
                 this.lastEntry = new TimestampOffset(timestamp, offset);
-                long pos = storageManager.position(file().getAbsolutePath(), StorageManager.ObjectType.INDEX);
+                long pos = storageManager.position(file().getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.INDEX);
                 if (entries() * ENTRY_SIZE != pos)
                     throw new IllegalStateException(entries() + " entries but file position in index is " + pos);
             }
@@ -278,7 +281,7 @@ public class TimeIndex extends AbstractIndex {
             if (entries == 0)
                 return new TimestampOffset(RecordBatch.NO_TIMESTAMP, baseOffset());
             else
-                return parseEntry(storageManager.indexBuffer(file().getAbsolutePath()), entries - 1);
+                return parseEntry(storageManager.indexBuffer(file().getAbsolutePath(), topicIdPartition), entries - 1);
         } finally {
             lock.unlock();
         }
@@ -292,7 +295,7 @@ public class TimeIndex extends AbstractIndex {
         try {
             super.truncateToEntries0(entries);
             this.lastEntry = lastEntryFromIndexFile();
-            long pos = storageManager.position(file().getAbsolutePath(), StorageManager.ObjectType.INDEX);
+            long pos = storageManager.position(file().getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.INDEX);
             log.debug("Truncated index {} to {} entries; position is now {} and last entry is now {}",
                 file().getAbsolutePath(), entries, pos, lastEntry.offset);
         } catch (IOException e) {

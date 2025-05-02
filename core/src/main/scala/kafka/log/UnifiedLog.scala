@@ -28,7 +28,7 @@ import org.apache.kafka.common.requests.ProduceResponse.RecordError
 import org.apache.kafka.common.storage.StorageManager.ObjectType
 import org.apache.kafka.common.storage.{FileStorageManager, StorageManager}
 import org.apache.kafka.common.utils.{PrimitiveRef, Time}
-import org.apache.kafka.common.{InvalidRecordException, KafkaException, TopicPartition, Uuid}
+import org.apache.kafka.common.{InvalidRecordException, KafkaException, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.server.common.{OffsetAndEpoch, RequestLocal}
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
 import org.apache.kafka.server.record.BrokerCompressionType
@@ -453,7 +453,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
 
   private def initializePartitionMetadata(): Unit = lock synchronized {
     val partitionMetadata = PartitionMetadataFile.newFile(dir)
-    partitionMetadataFile = Some(new PartitionMetadataFile(partitionMetadata, logDirFailureChannel, storageManager))
+    partitionMetadataFile = Some(new PartitionMetadataFile(partitionMetadata, logDirFailureChannel, new TopicIdPartition(topicId.getOrElse(Uuid.ZERO_UUID), topicPartition), storageManager))
   }
 
   private def maybeFlushMetadataFile(): Unit = {
@@ -485,7 +485,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
 
   private def reinitializeLeaderEpochCache(): Unit = lock synchronized {
     leaderEpochCache = JUnifiedLog.createLeaderEpochCache(
-      dir, topicPartition, logDirFailureChannel, Optional.of(leaderEpochCache), scheduler, storageManager)
+      dir, new TopicIdPartition(Uuid.ZERO_UUID, topicPartition), logDirFailureChannel, Optional.of(leaderEpochCache), scheduler, storageManager)
   }
 
   private def updateHighWatermarkWithLogEndOffset(): Unit = {
@@ -1756,7 +1756,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   private[log] def flushProducerStateSnapshot(snapshot: Path): Unit = {
     maybeHandleIOException(s"Error while deleting producer state snapshot $snapshot for $topicPartition in dir ${dir.getParent}") {
       try {
-        storageManager.flush(snapshot.toFile.getAbsolutePath, ObjectType.SNAPSHOT)
+        storageManager.flush(snapshot.toFile.getAbsolutePath, new TopicIdPartition(Uuid.ZERO_UUID, topicPartition), ObjectType.SNAPSHOT)
       } catch {
         case e: NoSuchFileException =>
           logger.warn("Failed to flush file {}", snapshot, e)
@@ -1873,7 +1873,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   private[log] def replaceSegments(newSegments: Seq[LogSegment], oldSegments: Seq[LogSegment]): Unit = {
     lock synchronized {
       localLog.checkIfMemoryMappedBufferClosed()
-      val deletedSegments = LocalLog.replaceSegments(localLog.segments, newSegments.asJava, oldSegments.asJava, dir, topicPartition,
+      val deletedSegments = LocalLog.replaceSegments(localLog.segments, newSegments.asJava, oldSegments.asJava, dir, new TopicIdPartition(Uuid.ZERO_UUID, topicPartition),
         config, scheduler, logDirFailureChannel, logIdent, false)
       deleteProducerSnapshots(deletedSegments, asyncDelete = true)
     }
@@ -1912,7 +1912,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   }
 
   private[log] def splitOverflowedSegment(segment: LogSegment): List[LogSegment] = lock synchronized {
-    val result = LocalLog.splitOverflowedSegment(segment, localLog.segments, dir, topicPartition, config, scheduler, logDirFailureChannel, logIdent, storageManager)
+    val result = LocalLog.splitOverflowedSegment(segment, localLog.segments, dir, new TopicIdPartition(Uuid.ZERO_UUID, topicPartition), config, scheduler, logDirFailureChannel, logIdent, storageManager)
     deleteProducerSnapshots(result.deletedSegments, asyncDelete = true)
     result.newSegments.asScala.toList
   }
@@ -1944,23 +1944,24 @@ object UnifiedLog extends Logging {
     // create the log directory if it doesn't exist
     Files.createDirectories(dir.toPath)
     val topicPartition = JUnifiedLog.parseTopicPartitionName(dir)
+    val topicIdPartition = new TopicIdPartition(topicId.getOrElse(Uuid.ZERO_UUID), topicPartition)
     val segments = new LogSegments(topicPartition)
     // The created leaderEpochCache will be truncated by LogLoader if necessary
     // so it is guaranteed that the epoch entries will be correct even when on-disk
     // checkpoint was stale (due to async nature of LeaderEpochFileCache#truncateFromStart/End).
     val leaderEpochCache = JUnifiedLog.createLeaderEpochCache(
       dir,
-      topicPartition,
+      topicIdPartition,
       logDirFailureChannel,
       Optional.empty,
       scheduler,
       storageManager)
-    val producerStateManager = new ProducerStateManager(topicPartition, dir,
+    val producerStateManager = new ProducerStateManager(topicIdPartition, dir,
       maxTransactionTimeoutMs, producerStateManagerConfig, time, storageManager)
     val isRemoteLogEnabled = JUnifiedLog.isRemoteLogEnabled(remoteStorageSystemEnable, config, topicPartition.topic)
     val offsets = new LogLoader(
       dir,
-      topicPartition,
+      topicIdPartition,
       config,
       scheduler,
       time,
@@ -1977,7 +1978,7 @@ object UnifiedLog extends Logging {
     ).load()
 
     val localLog = new LocalLog(dir, config, segments, offsets.recoveryPoint,
-      offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel, storageManager)
+      offsets.nextOffsetMetadata, scheduler, time, topicIdPartition, logDirFailureChannel, storageManager)
     new UnifiedLog(offsets.logStartOffset,
       localLog,
       brokerTopicStats,

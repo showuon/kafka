@@ -17,6 +17,7 @@
 package org.apache.kafka.storage.internals.log;
 
 import org.apache.kafka.common.InvalidRecordException;
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.record.FileLogInputStream.FileChannelRecordBatch;
 import org.apache.kafka.common.record.FileRecords;
@@ -176,8 +177,8 @@ public class LogSegment implements Closeable {
         timeIndex().resize(size);
     }
 
-    public void sanityCheck(boolean timeIndexFileNewlyCreated, StorageManager storageManager) throws IOException {
-        if (storageManager.exist(offsetIndexFile().getAbsolutePath(), StorageManager.ObjectType.INDEX)) {
+    public void sanityCheck(boolean timeIndexFileNewlyCreated, TopicIdPartition topicIdPartition, StorageManager storageManager) throws IOException {
+        if (storageManager.exist(offsetIndexFile().getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.INDEX)) {
             // Resize the time index file to 0 if it is newly created.
             if (timeIndexFileNewlyCreated) 
                 timeIndex().resize(0);
@@ -863,23 +864,23 @@ public class LogSegment implements Closeable {
         Files.setLastModifiedTime(timeIndexFile().toPath(), fileTime);
     }
 
-    public static LogSegment open(File dir, long baseOffset, LogConfig config, Time time, int initFileSize, boolean preallocate, StorageManager storageManager) throws IOException {
-        return open(dir, baseOffset, config, time, false, initFileSize, preallocate, "", storageManager);
+    public static LogSegment open(File dir, long baseOffset, LogConfig config, Time time, int initFileSize, boolean preallocate, TopicIdPartition topicIdPartition, StorageManager storageManager) throws IOException {
+        return open(dir, baseOffset, config, time, false, initFileSize, preallocate, "", topicIdPartition, storageManager);
     }
 
     public static LogSegment open(File dir, long baseOffset, LogConfig config, Time time, int initFileSize, boolean preallocate) throws IOException {
-        return open(dir, baseOffset, config, time, false, initFileSize, preallocate, "", new FileStorageManager());
+        return open(dir, baseOffset, config, time, false, initFileSize, preallocate, "", null, new FileStorageManager());
     }
 
     public static LogSegment open(File dir, long baseOffset, LogConfig config, Time time, boolean fileAlreadyExists,
-                                  int initFileSize, boolean preallocate, String fileSuffix, StorageManager storageManager) throws IOException {
+                                  int initFileSize, boolean preallocate, String fileSuffix, TopicIdPartition topicIdPartition, StorageManager storageManager) throws IOException {
         int maxIndexSize = config.maxIndexSize;
 
         return new LogSegment(
-            FileRecords.open(LogFileUtils.logFile(dir, baseOffset, fileSuffix), fileAlreadyExists, initFileSize, preallocate, storageManager),
-            LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize, storageManager),
-            LazyIndex.forTime(LogFileUtils.timeIndexFile(dir, baseOffset, fileSuffix), baseOffset, maxIndexSize, storageManager),
-            new TransactionIndex(baseOffset, LogFileUtils.transactionIndexFile(dir, baseOffset, fileSuffix), storageManager),
+            FileRecords.open(LogFileUtils.logFile(dir, baseOffset, fileSuffix), topicIdPartition, fileAlreadyExists, initFileSize, preallocate, storageManager),
+            LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), topicIdPartition, baseOffset, maxIndexSize, storageManager),
+            LazyIndex.forTime(LogFileUtils.timeIndexFile(dir, baseOffset, fileSuffix), topicIdPartition, baseOffset, maxIndexSize, storageManager),
+            new TransactionIndex(baseOffset, LogFileUtils.transactionIndexFile(dir, baseOffset, fileSuffix), topicIdPartition, storageManager),
             baseOffset,
             config.indexInterval,
             config.randomSegmentJitter(),

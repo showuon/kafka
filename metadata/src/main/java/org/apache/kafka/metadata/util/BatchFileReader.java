@@ -17,6 +17,7 @@
 
 package org.apache.kafka.metadata.util;
 
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.message.LeaderChangeMessage;
 import org.apache.kafka.common.message.SnapshotFooterRecord;
 import org.apache.kafka.common.message.SnapshotHeaderRecord;
@@ -60,7 +61,8 @@ public final class BatchFileReader implements Iterator<BatchFileReader.BatchAndT
             if (path == null) {
                 throw new RuntimeException("You must specify a path.");
             }
-            FileRecords fileRecords = FileRecords.open(new File(path), false, false, 0, false, new FileStorageManager());
+            // use null as topicIdPartition temporarily here. It's for metadata topic, which has fixed Uuid and name.
+            FileRecords fileRecords = FileRecords.open(new File(path), null, false, 0, false, new FileStorageManager());
             try {
                 return new BatchFileReader(fileRecords);
             } catch (Throwable e) {

@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.storage.internals.log;
 
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.errors.InvalidOffsetException;
 
 import org.apache.kafka.common.storage.FileStorageManager;
@@ -57,6 +58,7 @@ public final class OffsetIndex extends AbstractIndex {
     private static final Logger log = LoggerFactory.getLogger(OffsetIndex.class);
     private static final int ENTRY_SIZE = 8;
     private final StorageManager storageManager;
+    private final TopicIdPartition topicIdPartition;
 
     /* the last offset in the index */
     private long lastOffset;
@@ -70,16 +72,17 @@ public final class OffsetIndex extends AbstractIndex {
     }
 
     public OffsetIndex(File file, long baseOffset, int maxIndexSize, boolean writable) throws IOException {
-        this(file, baseOffset, maxIndexSize, writable, new FileStorageManager());
+        this(file, baseOffset, maxIndexSize, writable, null, new FileStorageManager());
     }
 
-    public OffsetIndex(File file, long baseOffset, int maxIndexSize, boolean writable, StorageManager storageManager) throws IOException {
-        super(file, baseOffset, maxIndexSize, writable, storageManager);
+    public OffsetIndex(File file, long baseOffset, int maxIndexSize, boolean writable, TopicIdPartition topicIdPartition, StorageManager storageManager) throws IOException {
+        super(file, baseOffset, maxIndexSize, writable, topicIdPartition, storageManager);
         this.storageManager = storageManager;
+        this.topicIdPartition = topicIdPartition;
         lastOffset = lastEntry().offset;
 
         log.debug("Loaded index file {} with maxEntries = {}, maxIndexSize = {}, entries = {}, lastOffset = {}, file position = {}",
-            file.getAbsolutePath(), maxEntries(), maxIndexSize, entries(), lastOffset, storageManager.position(file().getAbsolutePath(), StorageManager.ObjectType.INDEX));
+            file.getAbsolutePath(), maxEntries(), maxIndexSize, entries(), lastOffset, storageManager.position(file().getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.INDEX));
     }
 
     @Override
@@ -103,7 +106,7 @@ public final class OffsetIndex extends AbstractIndex {
      */
     public OffsetPosition lookup(long targetOffset) {
         return maybeLock(lock, () -> {
-            ByteBuffer idx = storageManager.indexBuffer(file().getAbsolutePath());
+            ByteBuffer idx = storageManager.indexBuffer(file().getAbsolutePath(), topicIdPartition);
             int slot = largestLowerBoundSlotFor(idx, targetOffset, IndexSearchType.KEY);
             if (slot == -1)
                 return new OffsetPosition(baseOffset(), 0);
@@ -122,7 +125,7 @@ public final class OffsetIndex extends AbstractIndex {
             if (n >= entries())
                 throw new IllegalArgumentException("Attempt to fetch the " + n + "th entry from index " +
                     file().getAbsolutePath() + ", which has size " + entries());
-            return parseEntry(storageManager.indexBuffer(file().getAbsolutePath()), n);
+            return parseEntry(storageManager.indexBuffer(file().getAbsolutePath(), topicIdPartition), n);
         });
     }
 
@@ -133,7 +136,7 @@ public final class OffsetIndex extends AbstractIndex {
      */
     public Optional<OffsetPosition> fetchUpperBoundOffset(OffsetPosition fetchOffset, int fetchSize) {
         return maybeLock(lock, () -> {
-            ByteBuffer idx = storageManager.indexBuffer(file().getAbsolutePath());
+            ByteBuffer idx = storageManager.indexBuffer(file().getAbsolutePath(), topicIdPartition);
             int slot = smallestUpperBoundSlotFor(idx, fetchOffset.position + fetchSize, IndexSearchType.VALUE);
             if (slot == -1)
                 return Optional.empty();
@@ -159,11 +162,11 @@ public final class OffsetIndex extends AbstractIndex {
                 buffer.putInt(relativeOffset(offset));
                 buffer.putInt(position);
                 buffer.flip();
-                storageManager.append(file().getAbsolutePath(), buffer, StorageManager.ObjectType.INDEX);
+                storageManager.append(file().getAbsolutePath(), topicIdPartition, buffer, StorageManager.ObjectType.INDEX);
 
                 incrementEntries();
                 lastOffset = offset;
-                long pos = storageManager.position(file().getAbsolutePath(), StorageManager.ObjectType.INDEX);
+                long pos = storageManager.position(file().getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.INDEX);
                 if (entries() * ENTRY_SIZE != pos)
                     throw new IllegalStateException(entries() + " entries but file position in index is " + pos);
             } else
@@ -180,7 +183,7 @@ public final class OffsetIndex extends AbstractIndex {
     public void truncateTo(long offset) {
         lock.lock();
         try {
-            ByteBuffer idx = storageManager.indexBuffer(file().getAbsolutePath());
+            ByteBuffer idx = storageManager.indexBuffer(file().getAbsolutePath(), topicIdPartition);
             int slot = largestLowerBoundSlotFor(idx, offset, IndexSearchType.KEY);
 
             /* There are 3 cases for choosing the new size
@@ -236,7 +239,7 @@ public final class OffsetIndex extends AbstractIndex {
         try {
             super.truncateToEntries0(entries);
             this.lastOffset = lastEntry().offset;
-            long pos = storageManager.position(file().getAbsolutePath(), StorageManager.ObjectType.INDEX);
+            long pos = storageManager.position(file().getAbsolutePath(), topicIdPartition, StorageManager.ObjectType.INDEX);
             log.debug("Truncated index {} to {} entries; position is now {} and last offset is now {}",
                     file().getAbsolutePath(), entries, pos, lastOffset);
         } catch (IOException e) {
@@ -256,7 +259,7 @@ public final class OffsetIndex extends AbstractIndex {
             if (entries == 0)
                 return new OffsetPosition(baseOffset(), 0);
             else
-                return parseEntry(storageManager.indexBuffer(file().getAbsolutePath()), entries - 1);
+                return parseEntry(storageManager.indexBuffer(file().getAbsolutePath(), topicIdPartition), entries - 1);
         } finally {
             lock.unlock();
         }

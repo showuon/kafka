@@ -20,6 +20,7 @@ package org.apache.kafka.common.network;
  * Transport layer for PLAINTEXT communication
  */
 
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.security.auth.KafkaPrincipal;
 import org.apache.kafka.common.storage.StorageManager;
 
@@ -216,7 +217,7 @@ public class PlaintextTransportLayer implements TransportLayer {
     }
 
     @Override
-    public long transferFrom(long position, long count, StorageManager storageManager, String path) throws IOException {
-        return storageManager.writeRecordsToSocket(path, socketChannel, position, count);
+    public long transferFrom(long position, long count, TopicIdPartition topicIdPartition, StorageManager storageManager, String path) throws IOException {
+        return storageManager.writeRecordsToSocket(path, topicIdPartition, socketChannel, position, count);
     }
 }
