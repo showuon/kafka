@@ -91,11 +91,11 @@ public class MemoryRecords extends AbstractRecords {
         return written;
     }
 
-    public int writeFullyToStorageManager(String path, TopicIdPartition topicIdPartition, StorageManager storageManager) throws IOException {
+    public int writeFullyToStorageManager(String path, long offset, TopicIdPartition topicIdPartition, StorageManager storageManager) throws IOException {
         buffer.mark();
         int written = 0;
         while (written < sizeInBytes())
-            written += storageManager.append(path, topicIdPartition, buffer, StorageManager.ObjectType.LOG);
+            written += storageManager.appendLog(path, topicIdPartition, offset, buffer);
 
         buffer.reset();
         return written;

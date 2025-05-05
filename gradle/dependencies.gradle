@@ -126,11 +126,13 @@ versions += [
   // Also make sure the compression levels in org.apache.kafka.common.record.CompressionType are still valid
   zstd: "1.5.6-6",
   junitPlatform: "1.10.2",
-  hdrHistogram: "2.2.2"
+  hdrHistogram: "2.2.2",
+  aws: "2.30.31"
 ]
 
 libs += [
   activation: "javax.activation:activation:$versions.activation",
+  aws: "software.amazon.awssdk:s3:$versions.aws",
   apacheda: "org.apache.directory.api:api-all:$versions.apacheda",
   apachedsCoreApi: "org.apache.directory.server:apacheds-core-api:$versions.apacheds",
   apachedsInterceptorKerberos: "org.apache.directory.server:apacheds-interceptor-kerberos:$versions.apacheds",

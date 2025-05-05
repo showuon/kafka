@@ -248,7 +248,7 @@ public class LogSegment implements Closeable {
             ensureOffsetInRange(largestOffset);
 
             // append the messages
-            long appendedBytes = log.append(records);
+            long appendedBytes = log.append(records, largestOffset);
             LOGGER.trace("Appended {} to {} at end offset {}", appendedBytes, log.file(), largestOffset);
 
             for (RecordBatch batch : records.batches()) {

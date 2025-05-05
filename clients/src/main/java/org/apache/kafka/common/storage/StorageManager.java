@@ -143,6 +143,13 @@ public interface StorageManager {
      */
     long writeRecordsToSocket(String path, TopicIdPartition topicIdPartition, SocketChannel socketChannel, long position, long count) throws IOException;
 
+    /**
+     * Append the provided buffer to the backend storage
+     */
+    default int appendLog(String path, TopicIdPartition topicIdPartition, long offset, ByteBuffer buffer) throws IOException {
+        return append(path, topicIdPartition, buffer, ObjectType.LOG);
+    }
+
 
     // ---- index files ----
     /**

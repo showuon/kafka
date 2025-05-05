@@ -17,28 +17,29 @@ package org.apache.kafka.common.storage;/*
 
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicIdPartition;
-import org.apache.kafka.common.Uuid;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
 import java.nio.channels.SocketChannel;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
-public class InMemoryStorageManager implements StorageManager {
+public class MinioStorageManager implements StorageManager {
     private Map<String, ByteBuffer> recordBufferMap = new ConcurrentHashMap<>();
     private Map<String, ByteBuffer> indexBufferMap = new ConcurrentHashMap<>();
     private Map<String, ByteBuffer> timeIndexBufferMap = new ConcurrentHashMap<>();
@@ -46,7 +47,33 @@ public class InMemoryStorageManager implements StorageManager {
     private Map<String, ByteBuffer> snapshotBufferMap = new ConcurrentHashMap<>();
     private Map<String, ByteBuffer> partitionMetadataBufferMap = new ConcurrentHashMap<>();
     private Map<String, ByteBuffer> checkpointBufferMap = new ConcurrentHashMap<>();
+    private S3Client s3Client;
 
+    public MinioStorageManager() {
+        initS3();
+    }
+
+    private void initS3() {
+        String accessKey = "minioadmin";
+        String secretKey = "minioadmin";
+        AwsCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
+        try {
+            s3Client = S3Client.builder()
+                    .region(Region.US_EAST_1)
+                    .endpointOverride(new URI("http://localhost:9000"))
+                    .credentialsProvider(StaticCredentialsProvider.create(credentials))
+                    .forcePathStyle(true)
+                    .build();
+        } catch (URISyntaxException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+
+    @Override
+    public boolean sharedStorage() {
+        return true;
+    }
 
     private Map<String, ByteBuffer> indexBuffer(String path) {
         if (path.contains(".timeindex")) {
@@ -58,8 +85,12 @@ public class InMemoryStorageManager implements StorageManager {
         throw new IllegalArgumentException("not a correct index path:" + path);
     }
 
+    private String key(String path, long offset, TopicIdPartition topicIdPartition) {
+        return path.substring(path.lastIndexOf("/") + 1) + offset + topicIdPartition.topicId();
+    }
+
     private String key(String path, TopicIdPartition topicIdPartition) {
-        return path.substring(path.lastIndexOf("/") + 1) + topicIdPartition.topicId();
+        return key(path, 0, topicIdPartition);
     }
 
     // ----- common -------
@@ -91,7 +122,14 @@ public class InMemoryStorageManager implements StorageManager {
     public int append(String path, TopicIdPartition topicIdPartition, ByteBuffer buffer, ObjectType objectType) throws IOException {
         switch (objectType) {
             case LOG:
-                return appendToBuffer(key(path, topicIdPartition), recordBufferMap, buffer);
+                //return appendToBuffer(key(path, topicIdPartition), recordBufferMap, buffer);
+
+                PutObjectRequest objectRequest = PutObjectRequest.builder()
+                        .bucket("test")
+                        .key(key(path, topicIdPartition))
+                        .build();
+                PutObjectResponse response = s3Client.putObject(objectRequest, RequestBody.fromByteBuffer(buffer));
+                break;
             case TXN:
                 return appendToBuffer(key(path, topicIdPartition), txnBufferMap, buffer);
             case INDEX:
@@ -271,6 +309,20 @@ public class InMemoryStorageManager implements StorageManager {
         }
     }
 
+    public int appendLog(String path, TopicIdPartition topicIdPartition, long offset, ByteBuffer buffer) throws IOException {
+        int sizeToAppend = buffer.remaining();
+        PutObjectRequest objectRequest = PutObjectRequest.builder()
+                .bucket("test")
+                .key(key(path, offset, topicIdPartition))
+                .build();
+        PutObjectResponse response = s3Client.putObject(objectRequest, RequestBody.fromByteBuffer(buffer));
+        return sizeToAppend;
+    }
+
+// GetObjectRequest objectRequest = GetObjectRequest.builder()
+//                .bucket("test")
+//                .key(path + "/" + baseOffset + ".log" + suffix)
+//                .build();
 
 
 

@@ -183,12 +183,12 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @param records The records to append
      * @return the number of bytes written to the underlying file
      */
-    public int append(MemoryRecords records) throws IOException {
+    public int append(MemoryRecords records, long offset) throws IOException {
         if (records.sizeInBytes() > Integer.MAX_VALUE - size.get())
             throw new IllegalArgumentException("Append of size " + records.sizeInBytes() +
                     " bytes is too large for segment with current file position at " + size.get());
 
-        int written = records.writeFullyToStorageManager(file().getAbsolutePath(), topicIdPartition, storageManager);
+        int written = records.writeFullyToStorageManager(file().getAbsolutePath(), offset, topicIdPartition, storageManager);
         size.getAndAdd(written);
         return written;
     }
