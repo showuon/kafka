@@ -93,6 +93,9 @@ public class InMemoryStorageManager implements StorageManager {
     }
 
     public void renameTo(String path, File f, ObjectType ObjectType) throws IOException {
+        if (!exist(path, ObjectType)) {
+            return;
+        }
         switch (ObjectType) {
             case LOG:
                 recordBufferMap.put(f.getAbsolutePath(), recordBufferMap.remove(path));

@@ -87,6 +87,9 @@ public class FileStorageManager implements StorageManager {
     }
 
     public void renameTo(String path, File f, ObjectType ObjectType) throws IOException {
+        if (!exist(path, ObjectType)) {
+            return;
+        }
         Utils.atomicMoveWithFallback(new File(path).toPath(), f.toPath(), false);
         switch (ObjectType) {
             case LOG:
@@ -178,7 +181,9 @@ public class FileStorageManager implements StorageManager {
                 break;
             case TXN:
                 fileChannel = txnChannelMap.remove(path);
-                fileChannel.close();
+                if (fileChannel != null) {
+                    fileChannel.close();
+                }
                 break;
         }
     }
@@ -219,6 +224,9 @@ public class FileStorageManager implements StorageManager {
     }
 
     public void truncate(String path, int newPos, ObjectType ObjectType) throws IOException {
+        if (!exist(path, ObjectType)) {
+            return;
+        }
         switch (ObjectType) {
             case LOG:
                 channelMap.get(path).truncate(newPos);
