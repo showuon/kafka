@@ -52,8 +52,8 @@ public class FileStorageManager implements StorageManager {
 
 
     // ----- common -------
-    public boolean deleteIfExists(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {
-        switch (ObjectType) {
+    public boolean deleteIfExists(String path, TopicIdPartition topicIdPartition, ObjectType objectType) throws IOException {
+        switch (objectType) {
             case LOG:
                 FileChannel fileChannel = channelMap.remove(path);
                 Utils.closeQuietly(fileChannel, "FileChannel");
@@ -71,10 +71,10 @@ public class FileStorageManager implements StorageManager {
 
     }
 
-    public void updateParentDir(String path, TopicIdPartition topicIdPartition, File parentDir, ObjectType ObjectType) {
+    public void updateParentDir(String path, TopicIdPartition topicIdPartition, File parentDir, ObjectType objectType) {
         File existingFile = new File(path);
         File updatedFile = new File(parentDir, existingFile.getName());
-        switch (ObjectType) {
+        switch (objectType) {
             case LOG:
                 channelMap.put(updatedFile.getAbsolutePath(), channelMap.remove(path));
                 break;
@@ -87,9 +87,11 @@ public class FileStorageManager implements StorageManager {
         }
     }
 
-    public void renameTo(String path, TopicIdPartition topicIdPartition, File f, ObjectType ObjectType) throws IOException {
+    public void renameTo(String path, TopicIdPartition topicIdPartition, File f, ObjectType objectType) throws IOException {
+        if (!exist(path, topicIdPartition, objectType))
+            return;
         Utils.atomicMoveWithFallback(new File(path).toPath(), f.toPath(), false);
-        switch (ObjectType) {
+        switch (objectType) {
             case LOG:
                 channelMap.put(f.getAbsolutePath(), channelMap.remove(path));
                 break;
@@ -102,9 +104,9 @@ public class FileStorageManager implements StorageManager {
         }
     }
 
-    public int append(String path, TopicIdPartition topicIdPartition, ByteBuffer buffer, ObjectType ObjectType) throws IOException {
+    public int append(String path, TopicIdPartition topicIdPartition, ByteBuffer buffer, ObjectType objectType) throws IOException {
         int sizeToAppend = buffer.remaining();
-        switch (ObjectType) {
+        switch (objectType) {
             case LOG:
                 return channelMap.get(path).write(buffer);
             case TXN:
@@ -124,12 +126,12 @@ public class FileStorageManager implements StorageManager {
         return sizeToAppend;
     }
 
-    public void read(String path, TopicIdPartition topicIdPartition, ByteBuffer buffer, int position, ObjectType ObjectType) throws IOException {
+    public void read(String path, TopicIdPartition topicIdPartition, ByteBuffer buffer, int position, ObjectType objectType) throws IOException {
         File file = new File(path);
         if (!file.exists()) {
             return;
         }
-        switch (ObjectType) {
+        switch (objectType) {
             case LOG:
                 Utils.readFullyOrFail(channelMap.get(path), buffer, position, "log header");
                 break;
@@ -146,8 +148,8 @@ public class FileStorageManager implements StorageManager {
         }
     }
 
-    public void flush(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {
-        switch (ObjectType) {
+    public void flush(String path, TopicIdPartition topicIdPartition, ObjectType objectType) throws IOException {
+        switch (objectType) {
             case LOG:
                 channelMap.get(path).force(true);
                 break;
@@ -167,8 +169,8 @@ public class FileStorageManager implements StorageManager {
         }
     }
 
-    public void close(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {
-        switch (ObjectType) {
+    public void close(String path, TopicIdPartition topicIdPartition, ObjectType objectType) throws IOException {
+        switch (objectType) {
             case LOG:
                 FileChannel fileChannel = channelMap.remove(path);
                 fileChannel.close();
@@ -179,13 +181,15 @@ public class FileStorageManager implements StorageManager {
                 break;
             case TXN:
                 fileChannel = txnChannelMap.remove(path);
-                fileChannel.close();
+                if (fileChannel != null) {
+                    fileChannel.close();
+                }
                 break;
         }
     }
 
-    public long position(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {
-        switch (ObjectType) {
+    public long position(String path, TopicIdPartition topicIdPartition, ObjectType objectType) throws IOException {
+        switch (objectType) {
             case INDEX:
                 return indexBufferMap.get(path).position();
             case TXN:
@@ -194,12 +198,12 @@ public class FileStorageManager implements StorageManager {
         return 0;
     }
 
-    public long size(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {
+    public long size(String path, TopicIdPartition topicIdPartition, ObjectType objectType) throws IOException {
         File file = new File(path);
         if (!file.exists()) {
             return 0;
         }
-        switch (ObjectType) {
+        switch (objectType) {
             case LOG:
                 return channelMap.get(path).size();
             case INDEX:
@@ -214,13 +218,13 @@ public class FileStorageManager implements StorageManager {
         return 0;
     }
 
-    public boolean exist(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) {
+    public boolean exist(String path, TopicIdPartition topicIdPartition, ObjectType objectType) {
         File file = new File(path);
         return file.exists();
     }
 
-    public void truncate(String path, TopicIdPartition topicIdPartition, int newPos, ObjectType ObjectType) throws IOException {
-        switch (ObjectType) {
+    public void truncate(String path, TopicIdPartition topicIdPartition, int newPos, ObjectType objectType) throws IOException {
+        switch (objectType) {
             case LOG:
                 channelMap.get(path).truncate(newPos);
                 break;
@@ -233,9 +237,9 @@ public class FileStorageManager implements StorageManager {
         }
     }
 
-    public List<File> listFiles(File dir, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {
+    public List<File> listFiles(File dir, TopicIdPartition topicIdPartition, ObjectType objectType) throws IOException {
         if (dir.exists() && dir.isDirectory()) {
-            switch (ObjectType) {
+            switch (objectType) {
                 case SNAPSHOT:
                     try (Stream<Path> paths = Files.list(dir.toPath())) {
                         return paths.filter(this::isSnapshotFile)

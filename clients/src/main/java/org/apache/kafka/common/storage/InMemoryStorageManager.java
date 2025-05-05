@@ -41,19 +41,31 @@ import java.util.stream.Stream;
 public class InMemoryStorageManager implements StorageManager {
     private Map<Uuid, ByteBuffer> recordBufferMap = new ConcurrentHashMap<>();
     private Map<Uuid, ByteBuffer> indexBufferMap = new ConcurrentHashMap<>();
+    private Map<Uuid, ByteBuffer> timeIndexBufferMap = new ConcurrentHashMap<>();
     private Map<Uuid, ByteBuffer> txnBufferMap = new ConcurrentHashMap<>();
     private Map<Uuid, ByteBuffer> snapshotBufferMap = new ConcurrentHashMap<>();
     private Map<Uuid, ByteBuffer> partitionMetadataBufferMap = new ConcurrentHashMap<>();
     private Map<Uuid, ByteBuffer> checkpointBufferMap = new ConcurrentHashMap<>();
 
+
+    private Map<Uuid, ByteBuffer> indexBuffer(String path) {
+        if (path.contains(".timeindex")) {
+            return timeIndexBufferMap;
+        } else if (path.contains(".index")) {
+            return indexBufferMap;
+        }
+
+        throw new IllegalArgumentException("not a correct index path:" + path);
+    }
+
     // ----- common -------
-    public boolean deleteIfExists(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {
-        switch (ObjectType) {
+    public boolean deleteIfExists(String path, TopicIdPartition topicIdPartition, ObjectType objectType) throws IOException {
+        switch (objectType) {
             case LOG:
                 recordBufferMap.remove(topicIdPartition.topicId());
                 break;
             case INDEX:
-                indexBufferMap.remove(topicIdPartition.topicId());
+                indexBuffer(path).remove(topicIdPartition.topicId());
                 break;
             case TXN:
                 txnBufferMap.remove(topicIdPartition.topicId());
@@ -69,18 +81,18 @@ public class InMemoryStorageManager implements StorageManager {
     }
 
     // no-op
-    public void updateParentDir(String path, TopicIdPartition topicIdPartition, File parentDir, ObjectType ObjectType) {}
-    public void renameTo(String path, TopicIdPartition topicIdPartition, File f, ObjectType ObjectType) throws IOException {}
+    public void updateParentDir(String path, TopicIdPartition topicIdPartition, File parentDir, ObjectType objectType) {}
+    public void renameTo(String path, TopicIdPartition topicIdPartition, File f, ObjectType objectType) throws IOException {}
 
-    public int append(String path, TopicIdPartition topicIdPartition, ByteBuffer buffer, ObjectType ObjectType) throws IOException {
-        switch (ObjectType) {
+    public int append(String path, TopicIdPartition topicIdPartition, ByteBuffer buffer, ObjectType objectType) throws IOException {
+        switch (objectType) {
             case LOG:
                 return appendToBuffer(topicIdPartition.topicId(), recordBufferMap, buffer);
             case TXN:
                 return appendToBuffer(topicIdPartition.topicId(), txnBufferMap, buffer);
             case INDEX:
                 int sizeToAppend = buffer.remaining();
-                indexBufferMap.get(topicIdPartition.topicId()).put(buffer);
+                indexBuffer(path).get(topicIdPartition.topicId()).put(buffer);
                 return sizeToAppend;
             case SNAPSHOT:
                 return appendToBuffer(topicIdPartition.topicId(), snapshotBufferMap, buffer);
@@ -92,8 +104,8 @@ public class InMemoryStorageManager implements StorageManager {
         return 0;
     }
 
-    public void read(String path, TopicIdPartition topicIdPartition, ByteBuffer buffer, int position, ObjectType ObjectType) throws IOException {
-        switch (ObjectType) {
+    public void read(String path, TopicIdPartition topicIdPartition, ByteBuffer buffer, int position, ObjectType objectType) throws IOException {
+        switch (objectType) {
             case LOG:
                 buffer.put(recordBufferMap.get(topicIdPartition.topicId()).array(), position, buffer.remaining());
                 break;
@@ -133,10 +145,10 @@ public class InMemoryStorageManager implements StorageManager {
         return sizeToAppend;
     }
 
-    public long position(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {
-        switch (ObjectType) {
+    public long position(String path, TopicIdPartition topicIdPartition, ObjectType objectType) throws IOException {
+        switch (objectType) {
             case INDEX:
-                return indexBufferMap.get(topicIdPartition.topicId()).position();
+                return indexBuffer(path).get(topicIdPartition.topicId()).position();
             case TXN:
                 return txnBufferMap.get(topicIdPartition.topicId()).position();
             case SNAPSHOT:
@@ -147,12 +159,12 @@ public class InMemoryStorageManager implements StorageManager {
         return 0;
     }
 
-    public long size(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {
-        switch (ObjectType) {
+    public long size(String path, TopicIdPartition topicIdPartition, ObjectType objectType) throws IOException {
+        switch (objectType) {
             case LOG:
                 return recordBufferMap.get(topicIdPartition.topicId()).limit();
             case INDEX:
-                return indexBufferMap.get(topicIdPartition.topicId()).limit();
+                return indexBuffer(path).get(topicIdPartition.topicId()).limit();
             case SNAPSHOT:
                 return snapshotBufferMap.get(topicIdPartition.topicId()).limit();
             case METADATA:
@@ -161,8 +173,8 @@ public class InMemoryStorageManager implements StorageManager {
         return 0;
     }
 
-    public boolean exist(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) {
-        switch (ObjectType) {
+    public boolean exist(String path, TopicIdPartition topicIdPartition, ObjectType objectType) {
+        switch (objectType) {
             case TXN:
                 return txnBufferMap.containsKey(topicIdPartition.topicId());
             case METADATA:
@@ -171,13 +183,13 @@ public class InMemoryStorageManager implements StorageManager {
         return true;
     }
 
-    public void truncate(String path, TopicIdPartition topicIdPartition, int newPos, ObjectType ObjectType) throws IOException {
-        switch (ObjectType) {
+    public void truncate(String path, TopicIdPartition topicIdPartition, int newPos, ObjectType objectType) throws IOException {
+        switch (objectType) {
             case LOG:
                 recordBufferMap.get(topicIdPartition.topicId()).limit(newPos);
                 break;
             case INDEX:
-                indexBufferMap.get(topicIdPartition.topicId()).limit(newPos);
+                indexBuffer(path).get(topicIdPartition.topicId()).limit(newPos);
                 break;
             case TXN:
                 txnBufferMap.get(topicIdPartition.topicId()).limit(newPos);
@@ -186,7 +198,7 @@ public class InMemoryStorageManager implements StorageManager {
     }
 
     // no-op
-    public List<File> listFiles(File dir, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {
+    public List<File> listFiles(File dir, TopicIdPartition topicIdPartition, ObjectType objectType) throws IOException {
         return Collections.emptyList();
     }
 
@@ -211,8 +223,8 @@ public class InMemoryStorageManager implements StorageManager {
             // don't check the file size if this is just a slice view
             size = end - start;
         } else {
-            if (recordBufferMap.containsKey(file.getAbsolutePath())) {
-                ByteBuffer buffer = recordBufferMap.get(file.getAbsolutePath());
+            if (recordBufferMap.containsKey(topicIdPartition.topicId())) {
+                ByteBuffer buffer = recordBufferMap.get(topicIdPartition.topicId());
                 if (buffer.limit() > Integer.MAX_VALUE) {
                     throw new KafkaException("The size of segment " + file + " (" + buffer.limit() +
                             ") is larger than the maximum allowed segment size of " + Integer.MAX_VALUE);
@@ -230,7 +242,7 @@ public class InMemoryStorageManager implements StorageManager {
     }
 
     public long writeRecordsToSocket(String path, TopicIdPartition topicIdPartition, SocketChannel socketChannel, long position, long count) throws IOException {
-        ByteBuffer buffer = recordBufferMap.get(path);
+        ByteBuffer buffer = recordBufferMap.get(topicIdPartition.topicId());
         buffer.position((int) position);
         buffer.slice();
         return socketChannel.write(buffer);
@@ -239,13 +251,13 @@ public class InMemoryStorageManager implements StorageManager {
     public void close(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {
         switch (ObjectType) {
             case LOG:
-                recordBufferMap.remove(path);
+                recordBufferMap.remove(topicIdPartition.topicId());
                 break;
             case INDEX:
-                indexBufferMap.remove(path);
+                indexBuffer(path).remove(topicIdPartition.topicId());
                 break;
             case TXN:
-                txnBufferMap.remove(path);
+                txnBufferMap.remove(topicIdPartition.topicId());
                 break;
         }
     }
@@ -258,16 +270,16 @@ public class InMemoryStorageManager implements StorageManager {
     // ----- index file ---------
     public long initIndex(File file, TopicIdPartition topicIdPartition, int maxIndexSize, boolean writable, int entrySize) throws IOException {
         int length = roundDownToExactMultiple(maxIndexSize, entrySize);
-        indexBufferMap.putIfAbsent(topicIdPartition.topicId(), ByteBuffer.allocate(length));
+        indexBuffer(file.getAbsolutePath()).putIfAbsent(topicIdPartition.topicId(), ByteBuffer.allocate(length));
         return length;
     }
 
     public ByteBuffer indexBuffer(String path, TopicIdPartition topicIdPartition) {
-        return indexBufferMap.get(path).duplicate();
+        return indexBuffer(path).get(topicIdPartition.topicId()).duplicate();
     }
 
     public boolean resizeIndex(String path, TopicIdPartition topicIdPartition, int newSize, AtomicLong length, AtomicInteger maxEntries, int entrySize) throws IOException {
-        ByteBuffer buffer = indexBufferMap.get(path);
+        ByteBuffer buffer = indexBuffer(path).get(topicIdPartition.topicId());
         int position = buffer.position();
         length.set(newSize);
         buffer.limit(newSize);

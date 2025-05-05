@@ -58,7 +58,7 @@ public interface StorageManager {
     /**
      * Delete the object if existed.
      */
-    boolean deleteIfExists(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException;
+    boolean deleteIfExists(String path, TopicIdPartition topicIdPartition, ObjectType objectType) throws IOException;
 
     /**
      * Update the parent directory. Used when partition movement, and stray logs handling, ex: Update the new created partition
@@ -66,7 +66,7 @@ public interface StorageManager {
      *
      * Note: if the implementation doesn't rely on file path, this can be no-op
      */
-    void updateParentDir(String path, TopicIdPartition topicIdPartition, File parentDir, ObjectType ObjectType);
+    void updateParentDir(String path, TopicIdPartition topicIdPartition, File parentDir, ObjectType objectType);
 
     /**
      * Rename the Object. Used when file deletion (i.e. adding ".delete" suffix), compacted file marking
@@ -74,53 +74,53 @@ public interface StorageManager {
      *
      * Note: if the implementation doesn't rely on file path, this can be no-op
      */
-    void renameTo(String path, TopicIdPartition topicIdPartition, File f, ObjectType ObjectType) throws IOException;
+    void renameTo(String path, TopicIdPartition topicIdPartition, File f, ObjectType objectType) throws IOException;
 
     /**
      * Truncate the object to a new position. This position could be an offset (ex: index files), a file position (ex: local file)
      */
-    void truncate(String path, TopicIdPartition topicIdPartition, int newPos, ObjectType ObjectType) throws IOException;
+    void truncate(String path, TopicIdPartition topicIdPartition, int newPos, ObjectType objectType) throws IOException;
 
     /**
      * Append the provided buffer to the backend storage
      */
-    int append(String path, TopicIdPartition topicIdPartition, ByteBuffer buffer, ObjectType ObjectType) throws IOException;
+    int append(String path, TopicIdPartition topicIdPartition, ByteBuffer buffer, ObjectType objectType) throws IOException;
 
     /**
      * Read the content from the backend storage to the provided buffer
      */
-    void read(String path, TopicIdPartition topicIdPartition, ByteBuffer buffer, int position, ObjectType ObjectType) throws IOException;
+    void read(String path, TopicIdPartition topicIdPartition, ByteBuffer buffer, int position, ObjectType objectType) throws IOException;
 
     /**
      * Flush the data into the backend storage
      */
-    default void flush(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {}
+    default void flush(String path, TopicIdPartition topicIdPartition, ObjectType objectType) throws IOException {}
 
     /**
      * Close the resource used in the backend storage
      */
-    default void close(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {}
+    default void close(String path, TopicIdPartition topicIdPartition, ObjectType objectType) throws IOException {}
 
     /**
      * Get the current position in the backend storage
      */
-    long position(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException;
+    long position(String path, TopicIdPartition topicIdPartition, ObjectType objectType) throws IOException;
 
     /**
      * Get the current size of the backend storage
      */
-    long size(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException;
+    long size(String path, TopicIdPartition topicIdPartition, ObjectType objectType) throws IOException;
 
     /**
      * Test whether if the path file existed or not in the backend storage
      */
-    boolean exist(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType);
+    boolean exist(String path, TopicIdPartition topicIdPartition, ObjectType objectType);
 
     /**
      * List files/objects under a directory. Used when log loader to verify if there is any temporary files, or
      * log segment files loader to check if log recovery is needed.
      */
-    List<File> listFiles(File dir, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException;
+    List<File> listFiles(File dir, TopicIdPartition topicIdPartition, ObjectType objectType) throws IOException;
 
 
     // ---- log files ----
