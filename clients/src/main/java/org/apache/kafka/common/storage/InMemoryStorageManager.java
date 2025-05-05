@@ -39,16 +39,16 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class InMemoryStorageManager implements StorageManager {
-    private Map<Uuid, ByteBuffer> recordBufferMap = new ConcurrentHashMap<>();
-    private Map<Uuid, ByteBuffer> indexBufferMap = new ConcurrentHashMap<>();
-    private Map<Uuid, ByteBuffer> timeIndexBufferMap = new ConcurrentHashMap<>();
-    private Map<Uuid, ByteBuffer> txnBufferMap = new ConcurrentHashMap<>();
-    private Map<Uuid, ByteBuffer> snapshotBufferMap = new ConcurrentHashMap<>();
-    private Map<Uuid, ByteBuffer> partitionMetadataBufferMap = new ConcurrentHashMap<>();
-    private Map<Uuid, ByteBuffer> checkpointBufferMap = new ConcurrentHashMap<>();
+    private Map<String, ByteBuffer> recordBufferMap = new ConcurrentHashMap<>();
+    private Map<String, ByteBuffer> indexBufferMap = new ConcurrentHashMap<>();
+    private Map<String, ByteBuffer> timeIndexBufferMap = new ConcurrentHashMap<>();
+    private Map<String, ByteBuffer> txnBufferMap = new ConcurrentHashMap<>();
+    private Map<String, ByteBuffer> snapshotBufferMap = new ConcurrentHashMap<>();
+    private Map<String, ByteBuffer> partitionMetadataBufferMap = new ConcurrentHashMap<>();
+    private Map<String, ByteBuffer> checkpointBufferMap = new ConcurrentHashMap<>();
 
 
-    private Map<Uuid, ByteBuffer> indexBuffer(String path) {
+    private Map<String, ByteBuffer> indexBuffer(String path) {
         if (path.contains(".timeindex")) {
             return timeIndexBufferMap;
         } else if (path.contains(".index")) {
@@ -58,23 +58,27 @@ public class InMemoryStorageManager implements StorageManager {
         throw new IllegalArgumentException("not a correct index path:" + path);
     }
 
+    private String key(String path, TopicIdPartition topicIdPartition) {
+        return path.substring(path.lastIndexOf("/")) + topicIdPartition.topicId();
+    }
+
     // ----- common -------
     public boolean deleteIfExists(String path, TopicIdPartition topicIdPartition, ObjectType objectType) throws IOException {
         switch (objectType) {
             case LOG:
-                recordBufferMap.remove(topicIdPartition.topicId());
+                recordBufferMap.remove(key(path, topicIdPartition));
                 break;
             case INDEX:
-                indexBuffer(path).remove(topicIdPartition.topicId());
+                indexBuffer(path).remove(key(path, topicIdPartition));
                 break;
             case TXN:
-                txnBufferMap.remove(topicIdPartition.topicId());
+                txnBufferMap.remove(key(path, topicIdPartition));
                 break;
             case SNAPSHOT:
-                snapshotBufferMap.remove(topicIdPartition.topicId());
+                snapshotBufferMap.remove(key(path, topicIdPartition));
                 break;
             case METADATA:
-                partitionMetadataBufferMap.remove(topicIdPartition.topicId());
+                partitionMetadataBufferMap.remove(key(path, topicIdPartition));
                 break;
         }
         return true;
@@ -87,19 +91,19 @@ public class InMemoryStorageManager implements StorageManager {
     public int append(String path, TopicIdPartition topicIdPartition, ByteBuffer buffer, ObjectType objectType) throws IOException {
         switch (objectType) {
             case LOG:
-                return appendToBuffer(topicIdPartition.topicId(), recordBufferMap, buffer);
+                return appendToBuffer(key(path, topicIdPartition), recordBufferMap, buffer);
             case TXN:
-                return appendToBuffer(topicIdPartition.topicId(), txnBufferMap, buffer);
+                return appendToBuffer(key(path, topicIdPartition), txnBufferMap, buffer);
             case INDEX:
                 int sizeToAppend = buffer.remaining();
-                indexBuffer(path).get(topicIdPartition.topicId()).put(buffer);
+                indexBuffer(path).get(key(path, topicIdPartition)).put(buffer);
                 return sizeToAppend;
             case SNAPSHOT:
-                return appendToBuffer(topicIdPartition.topicId(), snapshotBufferMap, buffer);
+                return appendToBuffer(key(path, topicIdPartition), snapshotBufferMap, buffer);
             case METADATA:
-                return appendToBuffer(topicIdPartition.topicId(), partitionMetadataBufferMap, buffer);
+                return appendToBuffer(key(path, topicIdPartition), partitionMetadataBufferMap, buffer);
             case CHECKPOINT:
-                return appendToBuffer(topicIdPartition.topicId(), checkpointBufferMap, buffer);
+                return appendToBuffer(key(path, topicIdPartition), checkpointBufferMap, buffer);
         }
         return 0;
     }
@@ -107,40 +111,40 @@ public class InMemoryStorageManager implements StorageManager {
     public void read(String path, TopicIdPartition topicIdPartition, ByteBuffer buffer, int position, ObjectType objectType) throws IOException {
         switch (objectType) {
             case LOG:
-                buffer.put(recordBufferMap.get(topicIdPartition.topicId()).array(), position, buffer.remaining());
+                buffer.put(recordBufferMap.get(key(path, topicIdPartition)).array(), position, buffer.remaining());
                 break;
             case TXN:
-                buffer.put(txnBufferMap.get(topicIdPartition.topicId()).array(), position, buffer.remaining());
+                buffer.put(txnBufferMap.get(key(path, topicIdPartition)).array(), position, buffer.remaining());
                 break;
             case SNAPSHOT:
-                buffer.put(snapshotBufferMap.get(topicIdPartition.topicId()).array(), position, buffer.remaining());
+                buffer.put(snapshotBufferMap.get(key(path, topicIdPartition)).array(), position, buffer.remaining());
                 break;
             case METADATA:
-                if (partitionMetadataBufferMap.containsKey(topicIdPartition.topicId())) {
-                    buffer.put(partitionMetadataBufferMap.get(topicIdPartition.topicId()).array(), position, buffer.remaining());
+                if (partitionMetadataBufferMap.containsKey(key(path, topicIdPartition))) {
+                    buffer.put(partitionMetadataBufferMap.get(key(path, topicIdPartition)).array(), position, buffer.remaining());
                 }
                 break;
             case CHECKPOINT:
-                if (checkpointBufferMap.containsKey(topicIdPartition.topicId())) {
-                    buffer.put(checkpointBufferMap.get(topicIdPartition.topicId()).array(), position, buffer.remaining());
+                if (checkpointBufferMap.containsKey(key(path, topicIdPartition))) {
+                    buffer.put(checkpointBufferMap.get(key(path, topicIdPartition)).array(), position, buffer.remaining());
                 }
                 break;
         }
     }
 
-    private int appendToBuffer(Uuid uuid, Map<Uuid, ByteBuffer> bufferMap, ByteBuffer buffer) throws IOException {
+    private int appendToBuffer(String key, Map<String, ByteBuffer> bufferMap, ByteBuffer buffer) throws IOException {
         int sizeToAppend = buffer.remaining();
-        if (!bufferMap.containsKey(uuid)) {
+        if (!bufferMap.containsKey(key)) {
             ByteBuffer temp = ByteBuffer.allocate(sizeToAppend);
             temp.put(buffer);
-            bufferMap.put(uuid, temp);
+            bufferMap.put(key, temp);
         } else {
-            ByteBuffer existingBuffer = bufferMap.get(uuid);
+            ByteBuffer existingBuffer = bufferMap.get(key);
             int limit = existingBuffer.limit();
             ByteBuffer temp = ByteBuffer.allocate(limit + sizeToAppend);
             temp.put(existingBuffer.array(), 0, limit);
             temp.put(buffer);
-            bufferMap.put(uuid, temp);
+            bufferMap.put(key, temp);
         }
         return sizeToAppend;
     }
@@ -148,37 +152,42 @@ public class InMemoryStorageManager implements StorageManager {
     public long position(String path, TopicIdPartition topicIdPartition, ObjectType objectType) throws IOException {
         switch (objectType) {
             case INDEX:
-                return indexBuffer(path).get(topicIdPartition.topicId()).position();
+                return indexBuffer(path).get(key(path, topicIdPartition)).position();
             case TXN:
-                return txnBufferMap.get(topicIdPartition.topicId()).position();
+                return txnBufferMap.get(key(path, topicIdPartition)).position();
             case SNAPSHOT:
-                return snapshotBufferMap.get(topicIdPartition.topicId()).position();
+                return snapshotBufferMap.get(key(path, topicIdPartition)).position();
             case METADATA:
-                return partitionMetadataBufferMap.get(topicIdPartition.topicId()).position();
+                return partitionMetadataBufferMap.get(key(path, topicIdPartition)).position();
         }
         return 0;
     }
 
     public long size(String path, TopicIdPartition topicIdPartition, ObjectType objectType) throws IOException {
+        if (!exist(path, topicIdPartition, objectType)) {
+            return 0;
+        }
         switch (objectType) {
             case LOG:
-                return recordBufferMap.get(topicIdPartition.topicId()).limit();
+                return recordBufferMap.get(key(path, topicIdPartition)).limit();
             case INDEX:
-                return indexBuffer(path).get(topicIdPartition.topicId()).limit();
+                return indexBuffer(path).get(key(path, topicIdPartition)).limit();
             case SNAPSHOT:
-                return snapshotBufferMap.get(topicIdPartition.topicId()).limit();
+                return snapshotBufferMap.get(key(path, topicIdPartition)).limit();
             case METADATA:
-                return partitionMetadataBufferMap.get(topicIdPartition.topicId()).limit();
+                return partitionMetadataBufferMap.get(key(path, topicIdPartition)).limit();
         }
         return 0;
     }
 
     public boolean exist(String path, TopicIdPartition topicIdPartition, ObjectType objectType) {
         switch (objectType) {
+            case LOG:
+                return recordBufferMap.containsKey(key(path, topicIdPartition));
             case TXN:
-                return txnBufferMap.containsKey(topicIdPartition.topicId());
+                return txnBufferMap.containsKey(key(path, topicIdPartition));
             case METADATA:
-                return partitionMetadataBufferMap.containsKey(topicIdPartition.topicId());
+                return partitionMetadataBufferMap.containsKey(key(path, topicIdPartition));
         }
         return true;
     }
@@ -186,13 +195,13 @@ public class InMemoryStorageManager implements StorageManager {
     public void truncate(String path, TopicIdPartition topicIdPartition, int newPos, ObjectType objectType) throws IOException {
         switch (objectType) {
             case LOG:
-                recordBufferMap.get(topicIdPartition.topicId()).limit(newPos);
+                recordBufferMap.get(key(path, topicIdPartition)).limit(newPos);
                 break;
             case INDEX:
-                indexBuffer(path).get(topicIdPartition.topicId()).limit(newPos);
+                indexBuffer(path).get(key(path, topicIdPartition)).limit(newPos);
                 break;
             case TXN:
-                txnBufferMap.get(topicIdPartition.topicId()).limit(newPos);
+                txnBufferMap.get(key(path, topicIdPartition)).limit(newPos);
                 break;
         }
     }
@@ -223,8 +232,8 @@ public class InMemoryStorageManager implements StorageManager {
             // don't check the file size if this is just a slice view
             size = end - start;
         } else {
-            if (recordBufferMap.containsKey(topicIdPartition.topicId())) {
-                ByteBuffer buffer = recordBufferMap.get(topicIdPartition.topicId());
+            if (recordBufferMap.containsKey(key(file.getAbsolutePath(), topicIdPartition))) {
+                ByteBuffer buffer = recordBufferMap.get(key(file.getAbsolutePath(), topicIdPartition));
                 if (buffer.limit() > Integer.MAX_VALUE) {
                     throw new KafkaException("The size of segment " + file + " (" + buffer.limit() +
                             ") is larger than the maximum allowed segment size of " + Integer.MAX_VALUE);
@@ -242,7 +251,7 @@ public class InMemoryStorageManager implements StorageManager {
     }
 
     public long writeRecordsToSocket(String path, TopicIdPartition topicIdPartition, SocketChannel socketChannel, long position, long count) throws IOException {
-        ByteBuffer buffer = recordBufferMap.get(topicIdPartition.topicId());
+        ByteBuffer buffer = recordBufferMap.get(key(path, topicIdPartition));
         buffer.position((int) position);
         buffer.slice();
         return socketChannel.write(buffer);
@@ -251,13 +260,13 @@ public class InMemoryStorageManager implements StorageManager {
     public void close(String path, TopicIdPartition topicIdPartition, ObjectType ObjectType) throws IOException {
         switch (ObjectType) {
             case LOG:
-                recordBufferMap.remove(topicIdPartition.topicId());
+                recordBufferMap.remove(key(path, topicIdPartition));
                 break;
             case INDEX:
-                indexBuffer(path).remove(topicIdPartition.topicId());
+                indexBuffer(path).remove(key(path, topicIdPartition));
                 break;
             case TXN:
-                txnBufferMap.remove(topicIdPartition.topicId());
+                txnBufferMap.remove(key(path, topicIdPartition));
                 break;
         }
     }
@@ -270,16 +279,16 @@ public class InMemoryStorageManager implements StorageManager {
     // ----- index file ---------
     public long initIndex(File file, TopicIdPartition topicIdPartition, int maxIndexSize, boolean writable, int entrySize) throws IOException {
         int length = roundDownToExactMultiple(maxIndexSize, entrySize);
-        indexBuffer(file.getAbsolutePath()).putIfAbsent(topicIdPartition.topicId(), ByteBuffer.allocate(length));
+        indexBuffer(file.getAbsolutePath()).putIfAbsent(key(file.getAbsolutePath(), topicIdPartition), ByteBuffer.allocate(length));
         return length;
     }
 
     public ByteBuffer indexBuffer(String path, TopicIdPartition topicIdPartition) {
-        return indexBuffer(path).get(topicIdPartition.topicId()).duplicate();
+        return indexBuffer(path).get(key(path, topicIdPartition)).duplicate();
     }
 
     public boolean resizeIndex(String path, TopicIdPartition topicIdPartition, int newSize, AtomicLong length, AtomicInteger maxEntries, int entrySize) throws IOException {
-        ByteBuffer buffer = indexBuffer(path).get(topicIdPartition.topicId());
+        ByteBuffer buffer = indexBuffer(path).get(key(path, topicIdPartition));
         int position = buffer.position();
         length.set(newSize);
         buffer.limit(newSize);

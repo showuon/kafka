@@ -224,6 +224,9 @@ public class FileStorageManager implements StorageManager {
     }
 
     public void truncate(String path, TopicIdPartition topicIdPartition, int newPos, ObjectType objectType) throws IOException {
+        if (!exist(path, topicIdPartition, objectType)) {
+            return;
+        }
         switch (objectType) {
             case LOG:
                 channelMap.get(path).truncate(newPos);
