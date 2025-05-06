@@ -49,6 +49,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
     private volatile File file;
     private final StorageManager storageManager;
     private final TopicIdPartition topicIdPartition;
+    private final long baseOffset;
 
     FileRecords(File file,
                 FileChannel channel,
@@ -57,6 +58,17 @@ public class FileRecords extends AbstractRecords implements Closeable {
                 boolean isSlice) throws IOException {
         this(file, start, end, isSlice, null, null, 0);
     }
+
+    FileRecords(File file,
+                int start,
+                int end,
+                boolean isSlice,
+                TopicIdPartition topicIdPartition,
+                StorageManager storageManager,
+                int size) {
+        this(file, start, end, isSlice, topicIdPartition, storageManager, size, 0L);
+    }
+
     /**
      * The {@code FileRecords.open} methods should be used instead of this constructor whenever possible.
      * The constructor is visible for tests.
@@ -67,7 +79,8 @@ public class FileRecords extends AbstractRecords implements Closeable {
                 boolean isSlice,
                 TopicIdPartition topicIdPartition,
                 StorageManager storageManager,
-                int size) {
+                int size,
+                long baseOffset) {
         this.start = start;
         this.end = end;
         this.isSlice = isSlice;
@@ -75,8 +88,9 @@ public class FileRecords extends AbstractRecords implements Closeable {
         this.topicIdPartition = topicIdPartition;
         this.storageManager = storageManager;
         this.file = file;
+        this.baseOffset = baseOffset;
 
-        batches = batchesFrom(start);
+        batches = batchesFrom(start, baseOffset);
     }
 
     @Override
@@ -106,6 +120,10 @@ public class FileRecords extends AbstractRecords implements Closeable {
 
     public TopicIdPartition topicIdPartition() {
         return topicIdPartition;
+    }
+
+    public long baseOffset() {
+        return baseOffset;
     }
 
     /**
@@ -296,7 +314,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @return the batch's base offset, its physical position, and its size (including log overhead)
      */
     public LogOffsetPosition searchForOffsetWithSize(long targetOffset, int startingPosition) {
-        for (FileChannelRecordBatch batch : batchesFrom(startingPosition)) {
+        for (FileChannelRecordBatch batch : batchesFrom(startingPosition, targetOffset)) {
             long offset = batch.lastOffset();
             if (offset >= targetOffset)
                 return new LogOffsetPosition(batch.baseOffset(), batch.position(), batch.sizeInBytes());
@@ -316,7 +334,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @return The timestamp and offset of the message found. Null if no message is found.
      */
     public TimestampAndOffset searchForTimestamp(long targetTimestamp, int startingPosition, long startingOffset) {
-        for (RecordBatch batch : batchesFrom(startingPosition)) {
+        for (RecordBatch batch : batchesFrom(startingPosition, startingOffset)) {
             if (batch.maxTimestamp() >= targetTimestamp) {
                 // We found a message
                 for (Record record : batch) {
@@ -335,12 +353,12 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @param startingPosition The starting position.
      * @return The largest timestamp of the messages after the given position.
      */
-    public TimestampAndOffset largestTimestampAfter(int startingPosition) {
+    public TimestampAndOffset largestTimestampAfter(int startingPosition, long startingOffset) {
         long maxTimestamp = RecordBatch.NO_TIMESTAMP;
         long shallowOffsetOfMaxTimestamp = -1L;
         int leaderEpochOfMaxTimestamp = RecordBatch.NO_PARTITION_LEADER_EPOCH;
 
-        for (RecordBatch batch : batchesFrom(startingPosition)) {
+        for (RecordBatch batch : batchesFrom(startingPosition, startingOffset)) {
             long timestamp = batch.maxTimestamp();
             if (timestamp > maxTimestamp) {
                 maxTimestamp = timestamp;
@@ -384,16 +402,16 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @param start The position to start record iteration from; must be a known position for start of a batch
      * @return An iterator over batches starting from {@code start}
      */
-    public Iterable<FileChannelRecordBatch> batchesFrom(final int start) {
-        return () -> batchIterator(start);
+    public Iterable<FileChannelRecordBatch> batchesFrom(final int start, final long offset) {
+        return () -> batchIterator(start, offset);
     }
 
     @Override
     public AbstractIterator<FileChannelRecordBatch> batchIterator() {
-        return batchIterator(start);
+        return batchIterator(start, baseOffset);
     }
 
-    private AbstractIterator<FileChannelRecordBatch> batchIterator(int start) {
+    private AbstractIterator<FileChannelRecordBatch> batchIterator(int start, long offset) {
         final int end;
         if (isSlice)
             end = this.end;
@@ -409,10 +427,21 @@ public class FileRecords extends AbstractRecords implements Closeable {
                                    boolean fileAlreadyExists,
                                    int initFileSize,
                                    boolean preallocate,
-                                   StorageManager storageManager) throws IOException {
+                                   StorageManager storageManager,
+                                   long baseOffset) throws IOException {
         int end = (!fileAlreadyExists && preallocate) ? 0 : Integer.MAX_VALUE;
         int size = storageManager.initRecords(file, topicIdPartition, mutable, fileAlreadyExists, initFileSize, preallocate, false, 0, end);
-        return new FileRecords(file, 0, end, false, topicIdPartition, storageManager, size);
+        return new FileRecords(file, 0, end, false, topicIdPartition, storageManager, size, baseOffset);
+    }
+
+    public static FileRecords open(File file,
+                                   TopicIdPartition topicIdPartition,
+                                   boolean mutable,
+                                   boolean fileAlreadyExists,
+                                   int initFileSize,
+                                   boolean preallocate,
+                                   StorageManager storageManager) throws IOException {
+        return open(file, topicIdPartition, mutable, fileAlreadyExists, initFileSize, preallocate, storageManager, 0L);
     }
 
     public static FileRecords open(File file,

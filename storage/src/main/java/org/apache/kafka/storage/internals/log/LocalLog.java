@@ -903,7 +903,7 @@ public class LocalLog {
 
     public static LogSegment createNewCleanedSegment(File dir, LogConfig logConfig, long baseOffset, TopicIdPartition topicIdPartition, StorageManager storageManager) throws IOException {
         LogSegment.deleteIfExists(dir, baseOffset, CLEANED_FILE_SUFFIX);
-        return LogSegment.open(dir, baseOffset, logConfig, Time.SYSTEM, false, logConfig.initFileSize(), logConfig.preallocate, CLEANED_FILE_SUFFIX,topicIdPartition, storageManager);
+        return LogSegment.open(dir, baseOffset, logConfig, Time.SYSTEM, false, logConfig.initFileSize(), logConfig.preallocate, CLEANED_FILE_SUFFIX, topicIdPartition, storageManager);
     }
 
     /**
@@ -948,7 +948,8 @@ public class LocalLog {
             int position = 0;
             FileRecords sourceRecords = segment.log();
             while (position < sourceRecords.sizeInBytes()) {
-                FileLogInputStream.FileChannelRecordBatch firstBatch = sourceRecords.batchesFrom(position).iterator().next();
+                long startOffset = sourceRecords.baseOffset();
+                FileLogInputStream.FileChannelRecordBatch firstBatch = sourceRecords.batchesFrom(position, startOffset).iterator().next();
                 LogSegment newSegment = createNewCleanedSegment(dir, config, firstBatch.baseOffset(), topicIdPartition, storageManager);
                 newSegments.add(newSegment);
                 int bytesAppended = newSegment.appendFromFile(sourceRecords, position);
@@ -956,6 +957,7 @@ public class LocalLog {
                     throw new IllegalStateException("Failed to append records from position " + position + " in " + segment);
                 }
                 position += bytesAppended;
+                // luke
             }
             // prepare new segments
             int totalSizeOfNewSegments = 0;

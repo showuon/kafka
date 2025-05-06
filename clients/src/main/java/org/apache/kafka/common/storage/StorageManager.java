@@ -150,6 +150,10 @@ public interface StorageManager {
         return append(path, topicIdPartition, buffer, ObjectType.LOG);
     }
 
+    default void readLog(String path, TopicIdPartition topicIdPartition, ByteBuffer buffer, int position, long offset) throws IOException {
+        read(path, topicIdPartition, buffer, position, ObjectType.LOG);
+    }
+
 
     // ---- index files ----
     /**

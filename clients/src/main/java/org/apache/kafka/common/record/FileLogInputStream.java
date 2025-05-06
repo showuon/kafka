@@ -63,10 +63,9 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
         if (position >= end - HEADER_SIZE_UP_TO_MAGIC)
             return null;
 
-
         logHeaderBuffer.rewind();
 
-        fileRecords.storageManager().read(fileRecords.file().getAbsolutePath(), fileRecords.topicIdPartition(), logHeaderBuffer, position, StorageManager.ObjectType.LOG);
+        fileRecords.storageManager().readLog(fileRecords.file().getAbsolutePath(), fileRecords.topicIdPartition(), logHeaderBuffer, position, fileRecords.baseOffset());
 
         logHeaderBuffer.rewind();
         long offset = logHeaderBuffer.getLong(OFFSET_OFFSET);

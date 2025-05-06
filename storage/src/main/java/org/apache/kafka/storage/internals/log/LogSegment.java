@@ -584,7 +584,7 @@ public class LogSegment implements Closeable {
         OffsetPosition offsetPosition = offsetIndex().lookup(lastTimeIndexEntry.offset);
 
         // Scan the rest of the messages to see if there is a larger timestamp after the last time index entry.
-        FileRecords.TimestampAndOffset maxTimestampOffsetAfterLastEntry = log.largestTimestampAfter(offsetPosition.position);
+        FileRecords.TimestampAndOffset maxTimestampOffsetAfterLastEntry = log.largestTimestampAfter(offsetPosition.position, offsetPosition.offset);
         if (maxTimestampOffsetAfterLastEntry.timestamp > lastTimeIndexEntry.timestamp)
             return new TimestampOffset(maxTimestampOffsetAfterLastEntry.timestamp, maxTimestampOffsetAfterLastEntry.offset);
 
@@ -877,7 +877,7 @@ public class LogSegment implements Closeable {
         int maxIndexSize = config.maxIndexSize;
 
         return new LogSegment(
-            FileRecords.open(LogFileUtils.logFile(dir, baseOffset, fileSuffix), topicIdPartition, fileAlreadyExists, initFileSize, preallocate, storageManager),
+            FileRecords.open(LogFileUtils.logFile(dir, baseOffset, fileSuffix), topicIdPartition, true, fileAlreadyExists, initFileSize, preallocate, storageManager, baseOffset),
             LazyIndex.forOffset(LogFileUtils.offsetIndexFile(dir, baseOffset, fileSuffix), topicIdPartition, baseOffset, maxIndexSize, storageManager),
             LazyIndex.forTime(LogFileUtils.timeIndexFile(dir, baseOffset, fileSuffix), topicIdPartition, baseOffset, maxIndexSize, storageManager),
             new TransactionIndex(baseOffset, LogFileUtils.transactionIndexFile(dir, baseOffset, fileSuffix), topicIdPartition, storageManager),
