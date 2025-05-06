@@ -135,8 +135,8 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @throws IOException If an I/O error occurs, see {@link FileChannel#read(ByteBuffer, long)} for details on the
      * possible exceptions
      */
-    public void readInto(ByteBuffer buffer, int position) throws IOException {
-        storageManager.read(file().getAbsolutePath(), topicIdPartition, buffer, position + this.start, StorageManager.ObjectType.LOG);
+    public void readInto(ByteBuffer buffer, int position, long offset) throws IOException {
+        storageManager.readLog(file().getAbsolutePath(), topicIdPartition, buffer, position + this.start, offset);
         buffer.flip();
     }
 
@@ -152,10 +152,14 @@ public class FileRecords extends AbstractRecords implements Closeable {
      * @param size The number of bytes after the start position to include
      * @return A sliced wrapper on this message set limited based on the given position and size
      */
-    public FileRecords slice(int position, int size) throws IOException {
+    public FileRecords slice(int position, int size, long offset) throws IOException {
         int availableBytes = availableBytes(position, size);
         int startPosition = this.start + position;
-        return new FileRecords(file, startPosition, startPosition + availableBytes, true, topicIdPartition, storageManager, availableBytes);
+        return new FileRecords(file, startPosition, startPosition + availableBytes, true, topicIdPartition, storageManager, availableBytes, offset);
+    }
+
+    public FileRecords slice(int position, int size) throws IOException {
+        return slice(position, size, 0);
     }
 
     /**
@@ -209,6 +213,10 @@ public class FileRecords extends AbstractRecords implements Closeable {
         int written = records.writeFullyToStorageManager(file().getAbsolutePath(), offset, topicIdPartition, storageManager);
         size.getAndAdd(written);
         return written;
+    }
+
+    public int append(MemoryRecords records) throws IOException {
+        return append(records, 0);
     }
     /**
      * Commit all written data to the physical disk

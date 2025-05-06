@@ -801,13 +801,14 @@ private[log] class Cleaner(val id: Int,
     }
 
     var position = 0
+    var offset = sourceRecords.baseOffset()
     while (position < sourceRecords.sizeInBytes) {
       checkDone(topicPartition)
       // read a chunk of messages and copy any that are to be retained to the write buffer to be written out
       readBuffer.clear()
       writeBuffer.clear()
 
-      sourceRecords.readInto(readBuffer, position)
+      sourceRecords.readInto(readBuffer, position, offset)
       val records = MemoryRecords.readableRecords(readBuffer)
       throttler.maybeThrottle(records.sizeInBytes)
       val result = records.filterTo(logCleanerFilter, writeBuffer, decompressionBufferSupplier)
@@ -816,6 +817,7 @@ private[log] class Cleaner(val id: Int,
       stats.recopyMessages(result.messagesRetained, result.bytesRetained)
 
       position += result.bytesRead
+      offset = result.maxOffsetRead + 1
 
       // if any messages are to be retained, write them out
       val outputBuffer = result.outputBuffer
@@ -1088,11 +1090,12 @@ private[log] class Cleaner(val id: Int,
                                        stats: CleanerStats): Boolean = {
     var position = segment.offsetIndex.lookup(startOffset).position
     val maxDesiredMapSize = (map.slots * this.dupBufferLoadFactor).toInt
+    var offset = startOffset
     while (position < segment.log.sizeInBytes) {
       checkDone(topicPartition)
       readBuffer.clear()
       try {
-        segment.log.readInto(readBuffer, position)
+        segment.log.readInto(readBuffer, position, offset)
       } catch {
         case e: Exception =>
           throw new KafkaException(s"Failed to read from segment $segment of partition $topicPartition " +
@@ -1133,6 +1136,7 @@ private[log] class Cleaner(val id: Int,
       }
       val bytesRead = records.validBytes
       position += bytesRead
+      offset = records.validMaxOffset() + 1
       stats.indexBytesRead(bytesRead)
 
       // if we didn't read even one complete message, our read buffer may be too small

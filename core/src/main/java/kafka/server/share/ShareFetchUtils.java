@@ -225,6 +225,7 @@ public class ShareFetchUtils {
             final long firstAcquiredOffset = acquiredRecords.get(0).firstOffset();
             final long lastAcquiredOffset = acquiredRecords.get(acquiredRecords.size() - 1).lastOffset();
             int startPosition = 0;
+            long startOffset = 0;
             int size = 0;
             // Start iterating from the second batch.
             while (iterator.hasNext()) {
@@ -234,6 +235,7 @@ public class ShareFetchUtils {
                 // position.
                 if (batch.baseOffset() <= firstAcquiredOffset) {
                     startPosition += firstOverlapBatch.sizeInBytes();
+                    startOffset = batch.lastOffset() + 1;
                     firstOverlapBatch = batch;
                     continue;
                 }
@@ -250,7 +252,7 @@ public class ShareFetchUtils {
             if (startPosition == 0 && size == fileRecords.sizeInBytes()) {
                 return records;
             }
-            return fileRecords.slice(startPosition, size);
+            return fileRecords.slice(startPosition, size, startOffset);
         } catch (Exception e) {
             log.error("Error while checking batches for acquired records: {}, skipping slicing.", acquiredRecords, e);
             // If there is an exception while slicing, return the original records so that the fetch

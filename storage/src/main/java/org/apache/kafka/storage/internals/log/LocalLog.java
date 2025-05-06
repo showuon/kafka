@@ -947,17 +947,17 @@ public class LocalLog {
         try {
             int position = 0;
             FileRecords sourceRecords = segment.log();
+            long nextOffset = sourceRecords.baseOffset();
             while (position < sourceRecords.sizeInBytes()) {
-                long startOffset = sourceRecords.baseOffset();
-                FileLogInputStream.FileChannelRecordBatch firstBatch = sourceRecords.batchesFrom(position, startOffset).iterator().next();
+                FileLogInputStream.FileChannelRecordBatch firstBatch = sourceRecords.batchesFrom(position, nextOffset).iterator().next();
                 LogSegment newSegment = createNewCleanedSegment(dir, config, firstBatch.baseOffset(), topicIdPartition, storageManager);
                 newSegments.add(newSegment);
-                int bytesAppended = newSegment.appendFromFile(sourceRecords, position);
-                if (bytesAppended == 0) {
+                OffsetPosition offsetPosition = newSegment.appendFromFile(sourceRecords, position);
+                if (offsetPosition.position == 0) {
                     throw new IllegalStateException("Failed to append records from position " + position + " in " + segment);
                 }
-                position += bytesAppended;
-                // luke
+                position += offsetPosition.position;
+                nextOffset = offsetPosition.offset + 1;
             }
             // prepare new segments
             int totalSizeOfNewSegments = 0;

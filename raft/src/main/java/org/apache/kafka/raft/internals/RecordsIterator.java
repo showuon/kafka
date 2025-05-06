@@ -57,6 +57,7 @@ public final class RecordsIterator<T> implements Iterator<Batch<T>>, AutoCloseab
     private Optional<Batch<T>> nextBatch = Optional.empty();
     // Buffer used as the backing store for nextBatches if needed
     private Optional<ByteBuffer> allocatedBuffer = Optional.empty();
+    private long readMaxOffset = -1;
     // Number of bytes from records read up to now
     private int bytesRead = 0;
     private boolean isClosed = false;
@@ -110,6 +111,7 @@ public final class RecordsIterator<T> implements Iterator<Batch<T>>, AutoCloseab
         isClosed = true;
         allocatedBuffer.ifPresent(bufferSupplier::release);
         allocatedBuffer = Optional.empty();
+        readMaxOffset = -1;
     }
 
     private void ensureOpen() {
@@ -121,7 +123,7 @@ public final class RecordsIterator<T> implements Iterator<Batch<T>>, AutoCloseab
     private MemoryRecords readFileRecords(FileRecords fileRecords, ByteBuffer buffer) {
         int start = buffer.position();
         try {
-            fileRecords.readInto(buffer, bytesRead);
+            fileRecords.readInto(buffer, bytesRead, readMaxOffset + 1);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to read records into memory", e);
         }
@@ -138,6 +140,7 @@ public final class RecordsIterator<T> implements Iterator<Batch<T>>, AutoCloseab
         } else {
             buffer = bufferSupplier.get(Math.min(batchSize, records.sizeInBytes()));
             allocatedBuffer = Optional.of(buffer);
+            readMaxOffset = 0;
         }
 
         MemoryRecords memoryRecords = readFileRecords(fileRecords, buffer);
@@ -185,6 +188,7 @@ public final class RecordsIterator<T> implements Iterator<Batch<T>>, AutoCloseab
             MutableRecordBatch nextBatch = nextBatches.next();
             // Update the buffer position to reflect the read batch
             allocatedBuffer.ifPresent(buffer -> buffer.position(buffer.position() + nextBatch.sizeInBytes()));
+            readMaxOffset = nextBatch.lastOffset();
 
             if (!(nextBatch instanceof DefaultRecordBatch)) {
                 throw new IllegalStateException(

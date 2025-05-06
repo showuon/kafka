@@ -1328,7 +1328,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
         val maxTimestampSoFar = latestTimestampSegment.readMaxTimestampAndOffsetSoFar
         // lookup the position of batch to avoid extra I/O
         val position = latestTimestampSegment.offsetIndex.lookup(maxTimestampSoFar.offset)
-        val timestampAndOffsetOpt = latestTimestampSegment.log.batchesFrom(position.position).asScala
+        val timestampAndOffsetOpt = latestTimestampSegment.log.batchesFrom(position.position, maxTimestampSoFar.offset).asScala
           .find(_.maxTimestamp() == maxTimestampSoFar.timestamp)
           .flatMap(batch => batch.offsetOfMaxTimestamp().toScala.map(new TimestampAndOffset(batch.maxTimestamp(), _,
             Optional.of[Integer](batch.partitionLeaderEpoch()).filter(_ >= 0))))

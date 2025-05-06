@@ -854,7 +854,7 @@ abstract class AbstractFetcherThread(name: String,
       case r: MemoryRecords => r
       case r: FileRecords =>
         val buffer = ByteBuffer.allocate(r.sizeInBytes)
-        r.readInto(buffer, 0)
+        r.readInto(buffer, 0, r.baseOffset())
         MemoryRecords.readableRecords(buffer)
     }
   }

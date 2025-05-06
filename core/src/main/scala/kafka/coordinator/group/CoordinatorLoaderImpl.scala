@@ -132,7 +132,7 @@ class CoordinatorLoaderImpl[T](
                   buffer.clear()
                 }
 
-                fileRecords.readInto(buffer, 0)
+                fileRecords.readInto(buffer, 0, fileRecords.baseOffset())
                 MemoryRecords.readableRecords(buffer)
             }
 

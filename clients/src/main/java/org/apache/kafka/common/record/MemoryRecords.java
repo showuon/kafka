@@ -55,6 +55,7 @@ public class MemoryRecords extends AbstractRecords {
     private final Iterable<MutableRecordBatch> batches = this::batchIterator;
 
     private int validBytes = -1;
+    private long validMaxOffset = -1;
 
     // Construct a writable memory records
     private MemoryRecords(ByteBuffer buffer) {
@@ -111,8 +112,24 @@ public class MemoryRecords extends AbstractRecords {
             return validBytes;
 
         int bytes = 0;
-        for (RecordBatch batch : batches())
+        for (RecordBatch batch : batches()) {
             bytes += batch.sizeInBytes();
+            validMaxOffset = batch.lastOffset();
+        }
+
+        this.validBytes = bytes;
+        return bytes;
+    }
+
+    public long validMaxOffset() {
+        if (validMaxOffset >= 0)
+            return validMaxOffset;
+
+        int bytes = 0;
+        for (RecordBatch batch : batches()) {
+            bytes += batch.sizeInBytes();
+            validMaxOffset = batch.lastOffset();
+        }
 
         this.validBytes = bytes;
         return bytes;
@@ -165,6 +182,7 @@ public class MemoryRecords extends AbstractRecords {
             final BatchRetention batchRetention = batchRetentionResult.batchRetention;
 
             filterResult.bytesRead += batch.sizeInBytes();
+            filterResult.maxOffsetRead = batch.lastOffset();
 
             if (batchRetention == BatchRetention.DELETE)
                 continue;
@@ -391,6 +409,7 @@ public class MemoryRecords extends AbstractRecords {
         private long maxOffset = -1L;
         private long maxTimestamp = RecordBatch.NO_TIMESTAMP;
         private long shallowOffsetOfMaxTimestamp = -1L;
+        private long maxOffsetRead = -1;
 
         private FilterResult(ByteBuffer outputBuffer) {
             this.outputBuffer = outputBuffer;
@@ -431,6 +450,10 @@ public class MemoryRecords extends AbstractRecords {
 
         public int bytesRead() {
             return bytesRead;
+        }
+
+        public long maxOffsetRead() {
+            return maxOffsetRead;
         }
 
         public int messagesRetained() {

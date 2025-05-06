@@ -177,7 +177,7 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
             try {
                 int limit = buffer.limit();
                 buffer.limit(buffer.position() + sizeInBytes());
-                fileRecords.storageManager().read(fileRecords.file().getAbsolutePath(), fileRecords.topicIdPartition(), buffer, position, StorageManager.ObjectType.LOG);
+                fileRecords.storageManager().readLog(fileRecords.file().getAbsolutePath(), fileRecords.topicIdPartition(), buffer, position, offset);
                 buffer.limit(limit);
             } catch (IOException e) {
                 throw new KafkaException("Failed to read record batch at position " + position + " from " + fileRecords, e);
@@ -209,7 +209,7 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
         private RecordBatch loadBatchWithSize(int size, String description) {
             try {
                 ByteBuffer buffer = ByteBuffer.allocate(size);
-                fileRecords.storageManager().read(fileRecords.file().getAbsolutePath(), fileRecords.topicIdPartition(), buffer, position, StorageManager.ObjectType.LOG);
+                fileRecords.storageManager().readLog(fileRecords.file().getAbsolutePath(), fileRecords.topicIdPartition(), buffer, position, offset);
                 buffer.rewind();
                 return toMemoryRecordBatch(buffer);
             } catch (IOException e) {

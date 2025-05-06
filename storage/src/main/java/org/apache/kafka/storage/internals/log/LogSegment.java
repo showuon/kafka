@@ -275,14 +275,14 @@ public class LogSegment implements Closeable {
             throw new LogSegmentOffsetOverflowException(this, offset);
     }
 
-    private int appendChunkFromFile(FileRecords records, int position, BufferSupplier bufferSupplier) throws IOException {
+    private OffsetPosition appendChunkFromFile(FileRecords records, int position, BufferSupplier bufferSupplier) throws IOException {
         int bytesToAppend = 0;
         long maxOffset = Long.MIN_VALUE;
         ByteBuffer readBuffer = bufferSupplier.get(1024 * 1024);
 
         // find all batches that are valid to be appended to the current log segment and
         // determine the maximum offset and timestamp
-        Iterator<FileChannelRecordBatch> nextBatches = records.batchesFrom(position).iterator();
+        Iterator<FileChannelRecordBatch> nextBatches = records.batchesFrom(position, 0).iterator();
         FileChannelRecordBatch batch;
         while ((batch = nextAppendableBatch(nextBatches, readBuffer, bytesToAppend)) != null) {
             maxOffset = batch.lastOffset();
@@ -295,13 +295,14 @@ public class LogSegment implements Closeable {
                 readBuffer = bufferSupplier.get(bytesToAppend);
 
             readBuffer.limit(bytesToAppend);
-            records.readInto(readBuffer, position);
+            // luke
+            records.readInto(readBuffer, position, 0);
 
             append(maxOffset, MemoryRecords.readableRecords(readBuffer));
         }
 
         bufferSupplier.release(readBuffer);
-        return bytesToAppend;
+        return new OffsetPosition(maxOffset, bytesToAppend + position);
     }
 
     private FileChannelRecordBatch nextAppendableBatch(Iterator<FileChannelRecordBatch> recordBatches,
@@ -323,16 +324,15 @@ public class LogSegment implements Closeable {
      * @return the number of bytes appended to the log (may be less than the size of the input if an
      *         offset is encountered which would overflow this segment)
      */
-    public int appendFromFile(FileRecords records, int start) throws IOException {
+    public OffsetPosition appendFromFile(FileRecords records, int start) throws IOException {
         int position = start;
         BufferSupplier bufferSupplier = new BufferSupplier.GrowableBufferSupplier();
+        OffsetPosition offsetPosition = new OffsetPosition(0, 0);
         while (position < start + records.sizeInBytes()) {
-            int bytesAppended = appendChunkFromFile(records, position, bufferSupplier);
-            if (bytesAppended == 0)
-                return position - start;
-            position += bytesAppended;
+            offsetPosition = appendChunkFromFile(records, position, bufferSupplier);
         }
-        return position - start;
+        // TODO: can remove "- start"
+        return new OffsetPosition(offsetPosition.offset, offsetPosition.position - start);
     }
 
     /* not thread safe */
@@ -445,7 +445,7 @@ public class LogSegment implements Closeable {
         // calculate the length of the message set to read based on whether or not they gave us a maxOffset
         int fetchSize = Math.min((int) (maxPositionOpt.get() - startPosition), adjustedMaxSize);
 
-        return new FetchDataInfo(offsetMetadata, log.slice(startPosition, fetchSize),
+        return new FetchDataInfo(offsetMetadata, log.slice(startPosition, fetchSize, startOffset),
             adjustedMaxSize < startOffsetAndSize.size, Optional.empty());
     }
 
