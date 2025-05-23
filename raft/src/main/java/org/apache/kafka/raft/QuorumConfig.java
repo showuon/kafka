@@ -55,6 +55,7 @@ public class QuorumConfig {
     public static final String NON_ROUTABLE_HOST = "0.0.0.0";
 
     public static final String QUORUM_VOTERS_CONFIG = QUORUM_PREFIX + "voters";
+    public static final String QUORUM_REMOTE_VOTERS_CONFIG = QUORUM_PREFIX + "remote.voters";
     public static final String QUORUM_VOTERS_DOC = "Map of id/endpoint information for " +
         "the set of voters in a comma-separated list of <code>{id}@{host}:{port}</code> entries. " +
         "For example: <code>1@localhost:9092,2@localhost:9093,3@localhost:9094</code>";
@@ -101,6 +102,7 @@ public class QuorumConfig {
 
     public static final ConfigDef CONFIG_DEF =  new ConfigDef()
             .define(QUORUM_VOTERS_CONFIG, LIST, DEFAULT_QUORUM_VOTERS, new ControllerQuorumVotersValidator(), HIGH, QUORUM_VOTERS_DOC)
+            .define(QUORUM_REMOTE_VOTERS_CONFIG, LIST, DEFAULT_QUORUM_VOTERS, new ControllerQuorumVotersValidator(), HIGH, QUORUM_VOTERS_DOC)
             .define(QUORUM_BOOTSTRAP_SERVERS_CONFIG, LIST, DEFAULT_QUORUM_BOOTSTRAP_SERVERS, new ControllerQuorumBootstrapServersValidator(), HIGH, QUORUM_BOOTSTRAP_SERVERS_DOC)
             .define(QUORUM_ELECTION_TIMEOUT_MS_CONFIG, INT, DEFAULT_QUORUM_ELECTION_TIMEOUT_MS, null, HIGH, QUORUM_ELECTION_TIMEOUT_MS_DOC)
             .define(QUORUM_FETCH_TIMEOUT_MS_CONFIG, INT, DEFAULT_QUORUM_FETCH_TIMEOUT_MS, null, HIGH, QUORUM_FETCH_TIMEOUT_MS_DOC)

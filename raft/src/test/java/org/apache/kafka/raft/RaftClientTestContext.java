@@ -422,7 +422,8 @@ public final class RaftClientTestContext {
                 Features.KRAFT_VERSION.supportedVersionRange(),
                 logContext,
                 random,
-                quorumConfig
+                quorumConfig,
+                    null
             );
 
             client.register(listener);

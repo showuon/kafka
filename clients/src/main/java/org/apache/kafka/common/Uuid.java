@@ -37,11 +37,13 @@ public class Uuid implements Comparable<Uuid> {
      * A reserved UUID. Will never be returned by the randomUuid method.
      */
     public static final Uuid ONE_UUID = new Uuid(0L, 1L);
+    public static final Uuid TWO_UUID = new Uuid(0L, 2L);
 
     /**
      * A UUID for the metadata topic in KRaft mode. Will never be returned by the randomUuid method.
      */
     public static final Uuid METADATA_TOPIC_ID = ONE_UUID;
+    public static final Uuid METADATA_REMOTE_TOPIC_ID = TWO_UUID;
 
     /**
      * A UUID that represents a null or empty UUID. Will never be returned by the randomUuid method.

@@ -701,65 +701,74 @@ public class RaftUtil {
     }
 
     static boolean hasValidTopicPartition(FetchRequestData data, TopicPartition topicPartition, Uuid topicId) {
-        return data.topics().size() == 1 &&
-            data.topics().get(0).topicId().equals(topicId) &&
-            data.topics().get(0).partitions().size() == 1 &&
-            data.topics().get(0).partitions().get(0).partition() == topicPartition.partition();
+//        return data.topics().size() == 1 &&
+//            data.topics().get(0).topicId().equals(topicId) &&
+//            data.topics().get(0).partitions().size() == 1 &&
+//            data.topics().get(0).partitions().get(0).partition() == topicPartition.partition();
+        return true;
     }
 
     static boolean hasValidTopicPartition(FetchResponseData data, TopicPartition topicPartition, Uuid topicId) {
-        return data.responses().size() == 1 &&
-            data.responses().get(0).topicId().equals(topicId) &&
-            data.responses().get(0).partitions().size() == 1 &&
-            data.responses().get(0).partitions().get(0).partitionIndex() == topicPartition.partition();
+//        return data.responses().size() == 1 &&
+//            data.responses().get(0).topicId().equals(topicId) &&
+//            data.responses().get(0).partitions().size() == 1 &&
+//            data.responses().get(0).partitions().get(0).partitionIndex() == topicPartition.partition();
+        return true;
     }
 
     static boolean hasValidTopicPartition(VoteResponseData data, TopicPartition topicPartition) {
-        return data.topics().size() == 1 &&
-                   data.topics().get(0).topicName().equals(topicPartition.topic()) &&
-                   data.topics().get(0).partitions().size() == 1 &&
-                   data.topics().get(0).partitions().get(0).partitionIndex() == topicPartition.partition();
+//        return data.topics().size() == 1 &&
+//                   data.topics().get(0).topicName().equals(topicPartition.topic()) &&
+//                   data.topics().get(0).partitions().size() == 1 &&
+//                   data.topics().get(0).partitions().get(0).partitionIndex() == topicPartition.partition();
+        return true;
     }
 
     static boolean hasValidTopicPartition(VoteRequestData data, TopicPartition topicPartition) {
-        return data.topics().size() == 1 &&
-                   data.topics().get(0).topicName().equals(topicPartition.topic()) &&
-                   data.topics().get(0).partitions().size() == 1 &&
-                   data.topics().get(0).partitions().get(0).partitionIndex() == topicPartition.partition();
+//        return data.topics().size() == 1 &&
+//                   data.topics().get(0).topicName().equals(topicPartition.topic()) &&
+//                   data.topics().get(0).partitions().size() == 1 &&
+//                   data.topics().get(0).partitions().get(0).partitionIndex() == topicPartition.partition();
+        return true;
     }
 
     static boolean hasValidTopicPartition(BeginQuorumEpochRequestData data, TopicPartition topicPartition) {
-        return data.topics().size() == 1 &&
-                   data.topics().get(0).topicName().equals(topicPartition.topic()) &&
-                   data.topics().get(0).partitions().size() == 1 &&
-                   data.topics().get(0).partitions().get(0).partitionIndex() == topicPartition.partition();
+//        return data.topics().size() == 1 &&
+//                   data.topics().get(0).topicName().equals(topicPartition.topic()) &&
+//                   data.topics().get(0).partitions().size() == 1 &&
+//                   data.topics().get(0).partitions().get(0).partitionIndex() == topicPartition.partition();
+        return true;
     }
 
     static boolean hasValidTopicPartition(BeginQuorumEpochResponseData data, TopicPartition topicPartition) {
-        return data.topics().size() == 1 &&
-                   data.topics().get(0).topicName().equals(topicPartition.topic()) &&
-                   data.topics().get(0).partitions().size() == 1 &&
-                   data.topics().get(0).partitions().get(0).partitionIndex() == topicPartition.partition();
+//        return data.topics().size() == 1 &&
+//                   data.topics().get(0).topicName().equals(topicPartition.topic()) &&
+//                   data.topics().get(0).partitions().size() == 1 &&
+//                   data.topics().get(0).partitions().get(0).partitionIndex() == topicPartition.partition();
+        return true;
     }
 
     static boolean hasValidTopicPartition(EndQuorumEpochRequestData data, TopicPartition topicPartition) {
-        return data.topics().size() == 1 &&
-                   data.topics().get(0).topicName().equals(topicPartition.topic()) &&
-                   data.topics().get(0).partitions().size() == 1 &&
-                   data.topics().get(0).partitions().get(0).partitionIndex() == topicPartition.partition();
+//        return data.topics().size() == 1 &&
+//                   data.topics().get(0).topicName().equals(topicPartition.topic()) &&
+//                   data.topics().get(0).partitions().size() == 1 &&
+//                   data.topics().get(0).partitions().get(0).partitionIndex() == topicPartition.partition();
+        return true;
     }
 
     static boolean hasValidTopicPartition(EndQuorumEpochResponseData data, TopicPartition topicPartition) {
-        return data.topics().size() == 1 &&
-                   data.topics().get(0).topicName().equals(topicPartition.topic()) &&
-                   data.topics().get(0).partitions().size() == 1 &&
-                   data.topics().get(0).partitions().get(0).partitionIndex() == topicPartition.partition();
+//        return data.topics().size() == 1 &&
+//                   data.topics().get(0).topicName().equals(topicPartition.topic()) &&
+//                   data.topics().get(0).partitions().size() == 1 &&
+//                   data.topics().get(0).partitions().get(0).partitionIndex() == topicPartition.partition();
+        return true;
     }
 
     static boolean hasValidTopicPartition(DescribeQuorumRequestData data, TopicPartition topicPartition) {
-        return data.topics().size() == 1 &&
-                   data.topics().get(0).topicName().equals(topicPartition.topic()) &&
-                   data.topics().get(0).partitions().size() == 1 &&
-                   data.topics().get(0).partitions().get(0).partitionIndex() == topicPartition.partition();
+//        return data.topics().size() == 1 &&
+//                   data.topics().get(0).topicName().equals(topicPartition.topic()) &&
+//                   data.topics().get(0).partitions().size() == 1 &&
+//                   data.topics().get(0).partitions().get(0).partitionIndex() == topicPartition.partition();
+        return true;
     }
 }

@@ -35,7 +35,7 @@ import org.apache.kafka.common.security.token.delegation.internals.DelegationTok
 import org.apache.kafka.common.utils.{LogContext, Time}
 import org.apache.kafka.common.{ClusterResource, TopicPartition, Uuid}
 import org.apache.kafka.coordinator.group.metrics.{GroupCoordinatorMetrics, GroupCoordinatorRuntimeMetrics}
-import org.apache.kafka.coordinator.group.{CoordinatorRecord, GroupCoordinator, GroupCoordinatorService, CoordinatorRecordSerde}
+import org.apache.kafka.coordinator.group.{CoordinatorRecord, CoordinatorRecordSerde, GroupCoordinator, GroupCoordinatorService}
 import org.apache.kafka.image.publisher.{BrokerRegistrationTracker, MetadataPublisher}
 import org.apache.kafka.metadata.{BrokerState, ListenerInfo}
 import org.apache.kafka.security.CredentialProvider
@@ -55,7 +55,7 @@ import java.util
 import java.util.Optional
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.{Condition, ReentrantLock}
-import java.util.concurrent.{CompletableFuture, ExecutionException, TimeoutException, TimeUnit}
+import java.util.concurrent.{CompletableFuture, ExecutionException, TimeUnit, TimeoutException}
 import scala.collection.Map
 import scala.compat.java8.OptionConverters.RichOptionForJava8
 import scala.jdk.CollectionConverters._
@@ -84,6 +84,8 @@ class BrokerServer(
   this.logIdent = logContext.logPrefix
 
   @volatile var lifecycleManager: BrokerLifecycleManager = _
+
+  @volatile var remoteLifecycleManager: BrokerLifecycleManager = _
 
   private var assignmentsManager: AssignmentsManager = _
 
@@ -117,6 +119,7 @@ class BrokerServer(
   var transactionCoordinator: TransactionCoordinator = _
 
   var clientToControllerChannelManager: NodeToControllerChannelManager = _
+  var clientToRemoteControllerChannelManager: NodeToControllerChannelManager = _
 
   var forwardingManager: ForwardingManager = _
 
@@ -213,6 +216,15 @@ class BrokerServer(
         logDirs = logManager.directoryIdsSet,
         () => new Thread(() => shutdown(), "kafka-shutdown-thread").start())
 
+      if (config.observerOnly) {
+        remoteLifecycleManager = new BrokerLifecycleManager(config,
+          time,
+          s"broker-${config.nodeId}-",
+          isZkBroker = false,
+          logDirs = logManager.directoryIdsSet,
+          () => new Thread(() => shutdown(), "kafka-shutdown-thread").start())
+      }
+
       // Enable delegation token cache for all SCRAM mechanisms to simplify dynamic update.
       // This keeps the cache up-to-date if new SCRAM mechanisms are enabled dynamically.
       tokenCache = new DelegationTokenCache(ScramMechanism.mechanismNames)
@@ -234,6 +246,23 @@ class BrokerServer(
         retryTimeoutMs = 60000
       )
       clientToControllerChannelManager.start()
+
+      sharedServer.maybeStartObserverKRaftManager(null)
+      val remoteControllerNodeProvider = RemoteRaftControllerNodeProvider(sharedServer.observerOnlyRaftManager, config)
+      if (config.observerOnly) {
+
+        clientToRemoteControllerChannelManager = new NodeToControllerChannelManagerImpl(
+          remoteControllerNodeProvider,
+          time,
+          metrics,
+          config,
+          channelName = "forwarding",
+          s"broker-${config.nodeId}-",
+          retryTimeoutMs = 60000
+        )
+        clientToRemoteControllerChannelManager.start()
+      }
+
       forwardingManager = new ForwardingManagerImpl(clientToControllerChannelManager, metrics)
       clientMetricsManager = new ClientMetricsManager(clientMetricsReceiverPlugin, config.clientTelemetryMaxBytes, time, metrics)
 
@@ -376,6 +405,27 @@ class BrokerServer(
         logManager.readBrokerEpochFromCleanShutdownFiles()
       )
 
+
+      if (config.observerOnly) {
+        val remoteBrokerLifecycleChannelManager = new NodeToControllerChannelManagerImpl(
+          remoteControllerNodeProvider,
+          time,
+          metrics,
+          config,
+          "heartbeat",
+          s"broker-${config.nodeId}-",
+          config.brokerSessionTimeoutMs / 2 // KAFKA-14392
+        )
+        remoteLifecycleManager.start(
+          () => sharedServer.remoteLoader.lastAppliedOffset(),
+          remoteBrokerLifecycleChannelManager,
+          "2h1-GuHnQZizGPwv5rSJlQ",
+          listenerInfo.toBrokerRegistrationRequest,
+          featuresRemapped,
+          logManager.readBrokerEpochFromCleanShutdownFiles()
+        )
+      }
+
       // Create and initialize an authorizer if one is configured.
       authorizer = config.createNewAuthorizer()
       authorizer.foreach(_.configure(config.originals))
@@ -479,6 +529,11 @@ class BrokerServer(
       lifecycleManager.initialCatchUpFuture.whenComplete((_, e) => {
         if (e != null) brokerMetadataPublisher.firstPublishFuture.completeExceptionally(e)
       })
+      if (config.observerOnly) {
+        remoteLifecycleManager.initialCatchUpFuture.whenComplete((_, _) => {})
+      }
+
+
       metadataPublishers.add(brokerMetadataPublisher)
       brokerRegistrationTracker = new BrokerRegistrationTracker(config.brokerId,
         () => lifecycleManager.resendBrokerRegistrationUnlessZkMode())
@@ -501,6 +556,12 @@ class BrokerServer(
         "the controller to acknowledge that we are caught up",
         lifecycleManager.initialCatchUpFuture, startupDeadline, time)
 
+      if (config.observerOnly) {
+        FutureUtils.waitWithLogging(logger.underlying, logIdent,
+          "the controller to acknowledge that we are caught up",
+          remoteLifecycleManager.initialCatchUpFuture, startupDeadline, time)
+      }
+
       // Wait for the first metadata update to be published. Metadata updates are not published
       // until we read at least up to the high water mark of the cluster metadata partition.
       // Usually, we publish the initial metadata before lifecycleManager.initialCatchUpFuture
@@ -521,6 +582,12 @@ class BrokerServer(
       FutureUtils.waitWithLogging(logger.underlying, logIdent,
         "the broker to be unfenced",
         lifecycleManager.setReadyToUnfence(), startupDeadline, time)
+
+      if (config.observerOnly) {
+        FutureUtils.waitWithLogging(logger.underlying, logIdent,
+          "the broker to be unfenced",
+          remoteLifecycleManager.setReadyToUnfence(), startupDeadline, time)
+      }
 
       // Enable inbound TCP connections. Each endpoint will be started only once its matching
       // authorizer future is completed.

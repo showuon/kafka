@@ -314,6 +314,8 @@ class ControllerServer(
         migrationSupport = Some(ControllerMigrationSupport(zkClient, migrationDriver, propagator))
       }
 
+      sharedServer.maybeStartObserverKRaftManager(controller.asInstanceOf[QuorumController].remoteRecordConsumer())
+
       quotaManagers = QuotaFactory.instantiate(config,
         metrics,
         time,

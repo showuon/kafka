@@ -79,6 +79,7 @@ public class KRaftConfigs {
             "maximum bytes limit is reached.";
 
     public static final String CONTROLLER_LISTENER_NAMES_CONFIG = "controller.listener.names";
+    public static final String CONTROLLER_LISTENER_REMOTE_NAMES_CONFIG = "controller.listener.remote.names";
     public static final String CONTROLLER_LISTENER_NAMES_DOC = "A comma-separated list of the names of the listeners used by the controller. This is required " +
             "if running in KRaft mode. When communicating with the controller quorum, the broker will always use the first listener in this list.\n " +
             "Note: The ZooKeeper-based controller should not set this configuration.";
@@ -119,6 +120,8 @@ public class KRaftConfigs {
     public static final String MIGRATION_ENABLED_CONFIG = "zookeeper.metadata.migration.enable";
     public static final String MIGRATION_ENABLED_DOC = "Enable ZK to KRaft migration";
 
+    public static final String OBSERVER_ONLY_CONFIG = "observer.only";
+
     public static final String MIGRATION_METADATA_MIN_BATCH_SIZE_CONFIG = "zookeeper.metadata.migration.min.batch.size";
     public static final int MIGRATION_METADATA_MIN_BATCH_SIZE_DEFAULT = 200;
     public static final String MIGRATION_METADATA_MIN_BATCH_SIZE_DOC = "Soft minimum batch size to use when migrating metadata from ZooKeeper to KRaft";
@@ -135,6 +138,7 @@ public class KRaftConfigs {
             .define(BROKER_HEARTBEAT_INTERVAL_MS_CONFIG, INT, BROKER_HEARTBEAT_INTERVAL_MS_DEFAULT, null, MEDIUM, BROKER_HEARTBEAT_INTERVAL_MS_DOC)
             .define(BROKER_SESSION_TIMEOUT_MS_CONFIG, INT, BROKER_SESSION_TIMEOUT_MS_DEFAULT, null, MEDIUM, BROKER_SESSION_TIMEOUT_MS_DOC)
             .define(CONTROLLER_LISTENER_NAMES_CONFIG, STRING, null, null, HIGH, CONTROLLER_LISTENER_NAMES_DOC)
+            .define(CONTROLLER_LISTENER_REMOTE_NAMES_CONFIG, STRING, null, null, HIGH, CONTROLLER_LISTENER_NAMES_DOC)
             .define(SASL_MECHANISM_CONTROLLER_PROTOCOL_CONFIG, STRING, SaslConfigs.DEFAULT_SASL_MECHANISM, null, HIGH, SASL_MECHANISM_CONTROLLER_PROTOCOL_DOC)
             .define(METADATA_LOG_DIR_CONFIG, STRING, null, null, HIGH, METADATA_LOG_DIR_DOC)
             .define(METADATA_LOG_SEGMENT_BYTES_CONFIG, INT, LogConfig.DEFAULT_SEGMENT_BYTES, atLeast(Records.LOG_OVERHEAD), HIGH, METADATA_LOG_SEGMENT_BYTES_DOC)
@@ -145,6 +149,7 @@ public class KRaftConfigs {
             .define(METADATA_MAX_IDLE_INTERVAL_MS_CONFIG, INT, METADATA_MAX_IDLE_INTERVAL_MS_DEFAULT, atLeast(0), LOW, METADATA_MAX_IDLE_INTERVAL_MS_DOC)
             .defineInternal(SERVER_MAX_STARTUP_TIME_MS_CONFIG, LONG, SERVER_MAX_STARTUP_TIME_MS_DEFAULT, atLeast(0), MEDIUM, SERVER_MAX_STARTUP_TIME_MS_DOC)
             .define(MIGRATION_ENABLED_CONFIG, BOOLEAN, false, HIGH, MIGRATION_ENABLED_DOC)
+            .define(OBSERVER_ONLY_CONFIG, BOOLEAN, false, HIGH, MIGRATION_ENABLED_DOC)
             .define(ELR_ENABLED_CONFIG, BOOLEAN, false, HIGH, ELR_ENABLED_DOC)
             .defineInternal(MIGRATION_METADATA_MIN_BATCH_SIZE_CONFIG, INT, MIGRATION_METADATA_MIN_BATCH_SIZE_DEFAULT, atLeast(1),
                     MEDIUM, MIGRATION_METADATA_MIN_BATCH_SIZE_DOC);

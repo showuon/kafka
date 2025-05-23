@@ -24,6 +24,7 @@ import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.image.loader.MetadataLoader;
 import org.apache.kafka.metadata.util.SnapshotFileReader;
+import org.apache.kafka.raft.FileQuorumStateStore;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.fault.FaultHandler;
 import org.apache.kafka.server.fault.LoggingFaultHandler;
@@ -165,7 +166,7 @@ public final class MetadataShell {
     }
 
     private void initializeWithRaftManager() {
-        raftManager.startup();
+        raftManager.startup(FileQuorumStateStore.DEFAULT_FILE_NAME);
         this.loader = new MetadataLoader.Builder().
                 setFaultHandler(faultHandler).
                 setNodeId(-1).

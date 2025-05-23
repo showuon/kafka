@@ -1275,7 +1275,11 @@ public class Selector implements Selectable, AutoCloseable {
 
             metricName = metrics.metricName("connection-count", metricGrpName, "The current number of active connections.", metricTags);
             topLevelMetricNames.add(metricName);
-            this.metrics.addMetric(metricName, (config, now) -> channels.size());
+            try {
+                this.metrics.addMetric(metricName, (config, now) -> channels.size());
+            } catch (Exception e) {
+
+            }
         }
 
         private Meter createMeter(Metrics metrics, String groupName, Map<String, String> metricTags,

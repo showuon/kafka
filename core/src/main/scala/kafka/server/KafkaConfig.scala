@@ -323,6 +323,7 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
   def usesSelfManagedQuorum: Boolean = processRoles.nonEmpty
 
   val migrationEnabled: Boolean = getBoolean(KRaftConfigs.MIGRATION_ENABLED_CONFIG)
+  val observerOnly: Boolean = getBoolean(KRaftConfigs.OBSERVER_ONLY_CONFIG)
   val migrationMetadataMinBatchSize: Int = getInt(KRaftConfigs.MIGRATION_METADATA_MIN_BATCH_SIZE_CONFIG)
 
   val elrEnabled: Boolean = getBoolean(KRaftConfigs.ELR_ENABLED_CONFIG)
@@ -672,6 +673,7 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
 
   /** ********* Raft Quorum Configuration *********/
   val quorumVoters = getList(QuorumConfig.QUORUM_VOTERS_CONFIG)
+  val quorumRemoteVoters = getList(QuorumConfig.QUORUM_REMOTE_VOTERS_CONFIG)
   val quorumBootstrapServers = getList(QuorumConfig.QUORUM_BOOTSTRAP_SERVERS_CONFIG)
   val quorumElectionTimeoutMs = getInt(QuorumConfig.QUORUM_ELECTION_TIMEOUT_MS_CONFIG)
   val quorumFetchTimeoutMs = getInt(QuorumConfig.QUORUM_FETCH_TIMEOUT_MS_CONFIG)
@@ -720,6 +722,15 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
 
   def controllerListenerNames: Seq[String] = {
     val value = Option(getString(KRaftConfigs.CONTROLLER_LISTENER_NAMES_CONFIG)).getOrElse("")
+    if (value.isEmpty) {
+      Seq.empty
+    } else {
+      value.split(",")
+    }
+  }
+
+  def controllerRemoteListenerNames: Seq[String] = {
+    val value = Option(getString(KRaftConfigs.CONTROLLER_LISTENER_REMOTE_NAMES_CONFIG)).getOrElse("")
     if (value.isEmpty) {
       Seq.empty
     } else {

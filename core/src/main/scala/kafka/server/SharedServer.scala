@@ -32,8 +32,9 @@ import org.apache.kafka.image.publisher.metrics.SnapshotEmitterMetrics
 import org.apache.kafka.image.publisher.{SnapshotEmitter, SnapshotGenerator}
 import org.apache.kafka.metadata.ListenerInfo
 import org.apache.kafka.metadata.MetadataRecordSerde
+import org.apache.kafka.metadata.migration.RemoteRecordConsumer
 import org.apache.kafka.metadata.properties.MetaPropertiesEnsemble
-import org.apache.kafka.raft.Endpoints
+import org.apache.kafka.raft.{Endpoints, FileQuorumStateStore}
 import org.apache.kafka.server.ProcessRole
 import org.apache.kafka.server.common.ApiMessageAndVersion
 import org.apache.kafka.server.fault.{FaultHandler, LoggingFaultHandler, ProcessTerminatingFaultHandler}
@@ -99,6 +100,7 @@ class SharedServer(
   private val _metrics: Metrics,
   val controllerQuorumVotersFuture: CompletableFuture[JMap[Integer, InetSocketAddress]],
   val bootstrapServers: JCollection[InetSocketAddress],
+  val controllerQuorumRemoteVotersFuture: CompletableFuture[JMap[Integer, InetSocketAddress]],
   val faultHandlerFactory: FaultHandlerFactory
 ) extends Logging {
   private val logContext: LogContext = new LogContext(s"[SharedServer id=${sharedServerConfig.nodeId}] ")
@@ -110,9 +112,11 @@ class SharedServer(
   val controllerConfig = new KafkaConfig(sharedServerConfig.props, false)
   @volatile var metrics: Metrics = _metrics
   @volatile var raftManager: KafkaRaftManager[ApiMessageAndVersion] = _
+  @volatile var observerOnlyRaftManager: KafkaRaftManager[ApiMessageAndVersion] = _
   @volatile var brokerMetrics: BrokerServerMetrics = _
   @volatile var controllerServerMetrics: ControllerMetadataMetrics = _
   @volatile var loader: MetadataLoader = _
+  @volatile var remoteLoader: MetadataLoader = _
   private val snapshotsDisabledReason = new AtomicReference[String](null)
   @volatile var snapshotEmitter: SnapshotEmitter = _
   @volatile private var snapshotGenerator: SnapshotGenerator = _
@@ -253,6 +257,71 @@ class SharedServer(
       // Note: snapshot generation does not need to be disabled for a publishing fault.
     })
 
+  def maybeStartObserverKRaftManager(remoteRecordConsumer: RemoteRecordConsumer): Unit = {
+    if (sharedServerConfig.observerOnly) {
+      val observerMetric = Server.initializeMetrics(
+        sharedServerConfig,
+        time,
+        metaPropsEnsemble.clusterId().get()
+      )
+      val _observerOnlyRaftManager = new KafkaRaftManager[ApiMessageAndVersion](
+        "2h1-GuHnQZizGPwv5rSJlQ",
+        sharedServerConfig,
+        metaPropsEnsemble.logDirProps.get(metaPropsEnsemble.metadataLogDir.get).directoryId.get,
+        new MetadataRecordSerde,
+        KafkaRaftServer.MetadataRemotePartition,
+        KafkaRaftServer.MetadataRemoteTopicId,
+        time,
+        observerMetric,
+        Some(s"kafka-${sharedServerConfig.nodeId}-observer-only-raft"), // No dash expected at the end
+        controllerQuorumRemoteVotersFuture,
+        bootstrapServers,
+        Endpoints.empty(),
+        raftManagerFaultHandler,
+        true,
+        remoteRecordConsumer
+      )
+      observerOnlyRaftManager = _observerOnlyRaftManager
+      _observerOnlyRaftManager.startup(FileQuorumStateStore.DEFAULT_OBSERVER_FILE_NAME)
+
+
+      val loaderBuilder = new MetadataLoader.Builder().
+        setNodeId(nodeId).
+        setTime(time).
+        setThreadNamePrefix(s"kafka-${sharedServerConfig.nodeId}-").
+        setFaultHandler(metadataLoaderFaultHandler).
+        setHighWaterMarkAccessor(() => _observerOnlyRaftManager.client.highWatermark()).
+        setMetrics(metadataLoaderMetrics)
+      remoteLoader = loaderBuilder.build()
+      snapshotEmitter = new SnapshotEmitter.Builder().
+        setNodeId(nodeId).
+        setRaftClient(_observerOnlyRaftManager.client).
+        setMetrics(new SnapshotEmitterMetrics(
+          Optional.of(KafkaYammerMetrics.defaultRegistry()), time)).
+        build()
+      val snapshotGenerator = new SnapshotGenerator.Builder(snapshotEmitter).
+        setNodeId(nodeId).
+        setTime(time).
+        setFaultHandler(metadataPublishingFaultHandler).
+        setMaxBytesSinceLastSnapshot(sharedServerConfig.metadataSnapshotMaxNewRecordBytes).
+        setMaxTimeSinceLastSnapshotNs(TimeUnit.MILLISECONDS.toNanos(sharedServerConfig.metadataSnapshotMaxIntervalMs)).
+        setDisabledReason(snapshotsDisabledReason).
+        setThreadNamePrefix(s"kafka-${sharedServerConfig.nodeId}-").
+        build()
+      try {
+        remoteLoader.installPublishers(Arrays.asList(snapshotGenerator)).get()
+      } catch {
+        case t: Throwable => {
+          error("Unable to install metadata publishers", t)
+          throw new RuntimeException("Unable to install metadata publishers.", t)
+        }
+      }
+      _observerOnlyRaftManager.register(remoteLoader)
+    }
+
+
+  }
+
   private def start(listenerEndpoints: Endpoints): Unit = synchronized {
     if (started) {
       debug("SharedServer has already been started.")
@@ -286,10 +355,11 @@ class SharedServer(
           controllerQuorumVotersFuture,
           bootstrapServers,
           listenerEndpoints,
-          raftManagerFaultHandler
+          raftManagerFaultHandler,
+          false
         )
         raftManager = _raftManager
-        _raftManager.startup()
+        _raftManager.startup(FileQuorumStateStore.DEFAULT_FILE_NAME)
 
         metadataLoaderMetrics = if (brokerMetrics != null) {
           new MetadataLoaderMetrics(Optional.of(KafkaYammerMetrics.defaultRegistry()),

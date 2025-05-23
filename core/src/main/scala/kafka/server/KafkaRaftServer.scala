@@ -72,6 +72,7 @@ class KafkaRaftServer(
     metrics,
     CompletableFuture.completedFuture(QuorumConfig.parseVoterConnections(config.quorumVoters)),
     QuorumConfig.parseBootstrapServers(config.quorumBootstrapServers),
+    CompletableFuture.completedFuture(QuorumConfig.parseVoterConnections(config.quorumRemoteVoters)),
     new StandardFaultHandlerFactory(),
   )
 
@@ -119,7 +120,9 @@ class KafkaRaftServer(
 object KafkaRaftServer {
   val MetadataTopic = Topic.CLUSTER_METADATA_TOPIC_NAME
   val MetadataPartition = Topic.CLUSTER_METADATA_TOPIC_PARTITION
+  val MetadataRemotePartition = Topic.CLUSTER_METADATA_REMOTE_TOPIC_PARTITION
   val MetadataTopicId = Uuid.METADATA_TOPIC_ID
+  val MetadataRemoteTopicId = Uuid.METADATA_REMOTE_TOPIC_ID
 
   /**
    * Initialize the configured log directories, including both [[KRaftConfigs.MetadataLogDirProp]]

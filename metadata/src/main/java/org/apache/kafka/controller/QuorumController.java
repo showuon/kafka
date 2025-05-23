@@ -103,6 +103,7 @@ import org.apache.kafka.metadata.FinalizedControllerFeatures;
 import org.apache.kafka.metadata.KafkaConfigSchema;
 import org.apache.kafka.metadata.VersionRange;
 import org.apache.kafka.metadata.bootstrap.BootstrapMetadata;
+import org.apache.kafka.metadata.migration.RemoteRecordConsumer;
 import org.apache.kafka.metadata.migration.ZkMigrationState;
 import org.apache.kafka.metadata.migration.ZkRecordConsumer;
 import org.apache.kafka.metadata.placement.ReplicaPlacer;
@@ -678,6 +679,10 @@ public final class QuorumController implements Controller {
         return zkRecordConsumer;
     }
 
+    public RemoteRecordConsumer remoteRecordConsumer() {
+        return remoteRecordConsumer;
+    }
+
     <T> CompletableFuture<T> appendReadEvent(
         String name,
         OptionalLong deadlineNs,
@@ -979,6 +984,35 @@ public final class QuorumController implements Controller {
             queue.append(event);
         }
         return event.future();
+    }
+
+    class RemoteRecordsConsumer implements RemoteRecordConsumer {
+
+        class RemoteWriteOperation implements ControllerWriteOperation<Void> {
+            private final List<ApiMessageAndVersion> batch;
+
+            RemoteWriteOperation(List<ApiMessageAndVersion> batch) {
+                this.batch = batch;
+            }
+            @Override
+            public ControllerResult<Void> generateRecordsAndResult() {
+                return ControllerResult.of(batch, null);
+            }
+
+        }
+
+        @Override
+        public CompletableFuture<?> acceptBatch(List<ApiMessageAndVersion> recordBatch) {
+            if (recordBatch.isEmpty()) {
+                return CompletableFuture.completedFuture(null);
+            }
+            log.info("!!! acceptBatch:" + recordBatch);
+            ControllerWriteEvent<Void> batchEvent = new ControllerWriteEvent<>(
+                    "append remote records",
+                    new RemoteRecordsConsumer.RemoteWriteOperation(recordBatch), EnumSet.noneOf(ControllerOperationFlag.class));
+            queue.append(batchEvent);
+            return batchEvent.future;
+        }
     }
 
     class MigrationRecordConsumer implements ZkRecordConsumer {
@@ -1824,6 +1858,7 @@ public final class QuorumController implements Controller {
     private final BootstrapMetadata bootstrapMetadata;
 
     private final ZkRecordConsumer zkRecordConsumer;
+    private final RemoteRecordConsumer remoteRecordConsumer;
 
     private final boolean zkMigrationEnabled;
 
@@ -1979,6 +2014,7 @@ public final class QuorumController implements Controller {
         this.metaLogListener = new QuorumMetaLogListener();
         this.curClaimEpoch = -1;
         this.zkRecordConsumer = new MigrationRecordConsumer();
+        this.remoteRecordConsumer = new RemoteRecordsConsumer();
         this.zkMigrationEnabled = zkMigrationEnabled;
         this.recordRedactor = new RecordRedactor(configSchema);
         this.eligibleLeaderReplicasEnabled = eligibleLeaderReplicasEnabled;

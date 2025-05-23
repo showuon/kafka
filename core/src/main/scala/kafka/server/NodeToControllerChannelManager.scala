@@ -101,6 +101,23 @@ object RaftControllerNodeProvider {
   }
 }
 
+object RemoteRaftControllerNodeProvider {
+  def apply(
+             raftManager: RaftManager[ApiMessageAndVersion],
+             config: KafkaConfig,
+           ): RaftControllerNodeProvider = {
+    val controllerListenerName = new ListenerName(config.controllerRemoteListenerNames.head)
+    val controllerSecurityProtocol = config.effectiveListenerSecurityProtocolMap.getOrElse(controllerListenerName, SecurityProtocol.forName(controllerListenerName.value()))
+    val controllerSaslMechanism = config.saslMechanismControllerProtocol
+    new RaftControllerNodeProvider(
+      raftManager,
+      controllerListenerName,
+      controllerSecurityProtocol,
+      controllerSaslMechanism
+    )
+  }
+}
+
 /**
  * Finds the controller node by checking the metadata log manager.
  * This provider is used when we are using a Raft-based metadata quorum.

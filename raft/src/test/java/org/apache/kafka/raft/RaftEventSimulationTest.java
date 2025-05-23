@@ -796,7 +796,8 @@ public class RaftEventSimulationTest {
                 Features.KRAFT_VERSION.supportedVersionRange(),
                 logContext,
                 random,
-                quorumConfig
+                quorumConfig,
+                    null
             );
             RaftNode node = new RaftNode(
                 nodeId,

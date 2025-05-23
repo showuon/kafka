@@ -51,9 +51,13 @@ import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.network.ListenerName;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ApiMessage;
+import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.DefaultRecordBatch;
+import org.apache.kafka.common.record.FileLogInputStream;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.MutableRecordBatch;
+import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.record.UnalignedMemoryRecords;
 import org.apache.kafka.common.record.UnalignedRecords;
@@ -83,6 +87,7 @@ import org.apache.kafka.raft.internals.RecordsBatchReader;
 import org.apache.kafka.raft.internals.RemoveVoterHandler;
 import org.apache.kafka.raft.internals.ThresholdPurgatory;
 import org.apache.kafka.raft.internals.UpdateVoterHandler;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.KRaftVersion;
 import org.apache.kafka.server.common.serialization.RecordSerde;
 import org.apache.kafka.snapshot.NotifyingRawSnapshotWriter;
@@ -97,6 +102,8 @@ import org.slf4j.Logger;
 
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -194,6 +201,7 @@ public final class KafkaRaftClient<T> implements RaftClient<T> {
 
     private final Map<Listener<T>, ListenerContext> listenerContexts = new IdentityHashMap<>();
     private final ConcurrentLinkedQueue<Registration<T>> pendingRegistrations = new ConcurrentLinkedQueue<>();
+    private final Function<List<ApiMessageAndVersion>, CompletableFuture<?>> remoteRecordConsumerFunc;
 
     // These components need to be initialized by the method initialize() because they depend on
     // the voter set
@@ -262,7 +270,48 @@ public final class KafkaRaftClient<T> implements RaftClient<T> {
             localSupportedKRaftVersion,
             logContext,
             new Random(),
-            quorumConfig
+            quorumConfig,
+            null
+        );
+    }
+
+    public KafkaRaftClient(
+            OptionalInt nodeId,
+            Uuid nodeDirectoryId,
+            RecordSerde<T> serde,
+            NetworkChannel channel,
+            ReplicatedLog log,
+            Time time,
+            ExpirationService expirationService,
+            LogContext logContext,
+            boolean followersAlwaysFlush,
+            String clusterId,
+            Collection<InetSocketAddress> bootstrapServers,
+            Endpoints localListeners,
+            SupportedVersionRange localSupportedKRaftVersion,
+            QuorumConfig quorumConfig,
+            Function<List<ApiMessageAndVersion>, CompletableFuture<?>> remoteRecordConsumerFunc
+    ) {
+        this(
+                nodeId,
+                nodeDirectoryId,
+                serde,
+                channel,
+                new BlockingMessageQueue(),
+                log,
+                new BatchMemoryPool(5, MAX_BATCH_SIZE_BYTES),
+                time,
+                expirationService,
+                MAX_FETCH_WAIT_MS,
+                followersAlwaysFlush,
+                clusterId,
+                bootstrapServers,
+                localListeners,
+                localSupportedKRaftVersion,
+                logContext,
+                new Random(),
+                quorumConfig,
+                remoteRecordConsumerFunc
         );
     }
 
@@ -284,7 +333,8 @@ public final class KafkaRaftClient<T> implements RaftClient<T> {
         SupportedVersionRange localSupportedKRaftVersion,
         LogContext logContext,
         Random random,
-        QuorumConfig quorumConfig
+        QuorumConfig quorumConfig,
+        Function<List<ApiMessageAndVersion>, CompletableFuture<?>> remoteRecordConsumerFunc
     ) {
         if (nodeDirectoryId.equals(Uuid.ZERO_UUID)) {
             throw new IllegalArgumentException("The node directory id must be set and not be the zero uuid");
@@ -310,6 +360,7 @@ public final class KafkaRaftClient<T> implements RaftClient<T> {
         this.random = random;
         this.quorumConfig = quorumConfig;
         this.snapshotCleaner = new RaftMetadataLogCleanerManager(logger, time, 60000, log::maybeClean);
+        this.remoteRecordConsumerFunc = remoteRecordConsumerFunc;
 
         if (!bootstrapServers.isEmpty()) {
             // generate Node objects from network addresses by using decreasing negative ids
@@ -472,6 +523,7 @@ public final class KafkaRaftClient<T> implements RaftClient<T> {
         QuorumStateStore quorumStateStore,
         Metrics metrics
     ) {
+        logger.info("!!! kafka raft client init:" + voterAddresses);
         VoterSet staticVoters = voterAddresses.isEmpty() ?
             VoterSet.empty() :
             VoterSet.fromInetSocketAddresses(channel.listenerName(), voterAddresses);
@@ -486,7 +538,11 @@ public final class KafkaRaftClient<T> implements RaftClient<T> {
         );
         // Read the entire log
         logger.info("Reading KRaft snapshot and log as part of the initialization");
-        partitionState.updateState();
+        if (voterAddresses.containsKey(1)) {
+            partitionState.setNextOffset();
+        } else {
+            partitionState.updateState();
+        }
         logger.info("Starting voters are {}", partitionState.lastVoterSet());
 
         if (requestManager == null) {
@@ -1383,6 +1439,7 @@ public final class KafkaRaftClient<T> implements RaftClient<T> {
         }
         // If the ID is valid, we can set the topic name.
         request.topics().get(0).setTopic(log.topicPartition().topic());
+        request.topics().get(0).setTopic(log.topicPartition().topic());
 
         FetchRequestData.FetchPartition fetchPartition = request.topics().get(0).partitions().get(0);
         if (request.maxWaitMs() < 0
@@ -1501,13 +1558,14 @@ public final class KafkaRaftClient<T> implements RaftClient<T> {
 
             Optional<OffsetAndEpoch> latestSnapshotId = log.latestSnapshotId();
             final ValidOffsetAndEpoch validOffsetAndEpoch;
-            if (fetchOffset == 0 && latestSnapshotId.isPresent() && !latestSnapshotId.get().equals(BOOTSTRAP_SNAPSHOT_ID)) {
-                // If the follower has an empty log and a non-bootstrap snapshot exists, it is always more efficient
-                // to reply with a snapshot id (FETCH_SNAPSHOT) instead of fetching from the log segments.
-                validOffsetAndEpoch = ValidOffsetAndEpoch.snapshot(latestSnapshotId.get());
-            } else {
-                validOffsetAndEpoch = log.validateOffsetAndEpoch(fetchOffset, lastFetchedEpoch);
-            }
+//            if (fetchOffset == 0 && latestSnapshotId.isPresent() && !latestSnapshotId.get().equals(BOOTSTRAP_SNAPSHOT_ID)) {
+//                // If the follower has an empty log and a non-bootstrap snapshot exists, it is always more efficient
+//                // to reply with a snapshot id (FETCH_SNAPSHOT) instead of fetching from the log segments.
+//                validOffsetAndEpoch = ValidOffsetAndEpoch.snapshot(latestSnapshotId.get());
+//            } else {
+//                validOffsetAndEpoch = log.validateOffsetAndEpoch(fetchOffset, lastFetchedEpoch);
+//            }
+            validOffsetAndEpoch = log.validateOffsetAndEpoch(fetchOffset, lastFetchedEpoch);
 
             final Records records;
             if (validOffsetAndEpoch.kind() == ValidOffsetAndEpoch.Kind.VALID) {
@@ -1679,6 +1737,38 @@ public final class KafkaRaftClient<T> implements RaftClient<T> {
                 }
             } else {
                 appendAsFollower(FetchResponse.recordsOrFail(partitionResponse));
+                if (!response.responses().get(0).topic().equals("__cluster_metadata")) {
+                    // reappend to kfrat leader
+                    MemoryRecords records = (MemoryRecords) partitionResponse.records();
+                    Iterator<MutableRecordBatch> ite = records.batchIterator();
+                    List<ApiMessageAndVersion> apiMessages = new ArrayList<>();
+                    while (ite.hasNext()) {
+                        MutableRecordBatch batch = ite.next();
+                        if (!batch.isControlBatch()) {
+                            for (Record record : batch) {
+//                            ApiMessageAndVersion messageAndVersion = serde.read(accessor, record.valueSize());
+                                T messageAndVersion = serde.read(new ByteBufferAccessor(record.value()), record.valueSize());
+                                if (messageAndVersion instanceof ApiMessageAndVersion) {
+                                    short key = ((ApiMessageAndVersion) messageAndVersion).message().apiKey();
+                                    if (key == 2 || key == 3) {
+                                        // luke - write to kraft leader
+                                        apiMessages.add((ApiMessageAndVersion) messageAndVersion);
+                                    }
+                                }
+
+
+                            }
+                        }
+                        try {
+                            remoteRecordConsumerFunc.apply(apiMessages).get();
+                        } catch (InterruptedException e) {
+                            throw new RuntimeException(e);
+                        } catch (ExecutionException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
+
+                }
 
                 OptionalLong highWatermark = partitionResponse.highWatermark() < 0 ?
                     OptionalLong.empty() : OptionalLong.of(partitionResponse.highWatermark());

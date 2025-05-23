@@ -129,6 +129,7 @@ class KRaftQuorumImplementation(
       new Metrics(),
       controllerQuorumVotersFuture,
       controllerQuorumVotersFuture.get().values(),
+      controllerQuorumVotersFuture,
       faultHandlerFactory
     )
     var broker: BrokerServer = null
@@ -365,6 +366,7 @@ abstract class QuorumTestHarness extends Logging {
       new Metrics(),
       controllerQuorumVotersFuture,
       Collections.emptyList(),
+      controllerQuorumVotersFuture,
       faultHandlerFactory
     )
     var controllerServer: ControllerServer = null

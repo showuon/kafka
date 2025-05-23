@@ -78,6 +78,7 @@ public class FileQuorumStateStore implements QuorumStateStore {
     static final short HIGHEST_SUPPORTED_VERSION = 1;
 
     public static final String DEFAULT_FILE_NAME = "quorum-state";
+    public static final String DEFAULT_OBSERVER_FILE_NAME = "observer-quorum-state";
 
     private final File stateFile;
 

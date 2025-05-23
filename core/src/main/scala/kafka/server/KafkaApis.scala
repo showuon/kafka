@@ -783,8 +783,8 @@ class KafkaApis(val requestChannel: RequestChannel,
         fetchContext.foreachPartition { (topicIdPartition, data) =>
           if (topicIdPartition.topic == null)
             erroneous += topicIdPartition -> FetchResponse.partitionResponse(topicIdPartition, Errors.UNKNOWN_TOPIC_ID)
-          else if (!metadataCache.contains(topicIdPartition.topicPartition))
-            erroneous += topicIdPartition -> FetchResponse.partitionResponse(topicIdPartition, Errors.UNKNOWN_TOPIC_OR_PARTITION)
+//          else if (!metadataCache.contains(topicIdPartition.topicPartition))
+//            erroneous += topicIdPartition -> FetchResponse.partitionResponse(topicIdPartition, Errors.UNKNOWN_TOPIC_OR_PARTITION)
           else
             interesting += topicIdPartition -> data
         }

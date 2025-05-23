@@ -474,7 +474,7 @@ class BrokerLifecycleManager(
       setWantShutDown(_state == BrokerState.PENDING_CONTROLLED_SHUTDOWN).
       setOfflineLogDirs(offlineDirs.keys.toSeq.asJava)
     if (isTraceEnabled) {
-      trace(s"Sending broker heartbeat $data")
+      info(s"Sending broker heartbeat $data")
     }
     val handler = new BrokerHeartbeatResponseHandler(offlineDirs.keys)
     _channelManager.sendRequest(new BrokerHeartbeatRequest.Builder(data), handler)

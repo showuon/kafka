@@ -43,6 +43,7 @@ import org.apache.kafka.common.requests.RequestHeader
 import org.apache.kafka.common.security.JaasContext
 import org.apache.kafka.common.security.auth.SecurityProtocol
 import org.apache.kafka.common.utils.{LogContext, Time, Utils}
+import org.apache.kafka.metadata.migration.RemoteRecordConsumer
 import org.apache.kafka.raft.{Endpoints, FileQuorumStateStore, KafkaNetworkChannel, KafkaRaftClient, KafkaRaftClientDriver, LeaderAndEpoch, QuorumConfig, RaftClient, ReplicatedLog}
 import org.apache.kafka.server.ProcessRole
 import org.apache.kafka.server.common.Features
@@ -155,7 +156,9 @@ class KafkaRaftManager[T](
   val controllerQuorumVotersFuture: CompletableFuture[JMap[Integer, InetSocketAddress]],
   bootstrapServers: JCollection[InetSocketAddress],
   localListeners: Endpoints,
-  fatalFaultHandler: FaultHandler
+  fatalFaultHandler: FaultHandler,
+  observer: Boolean = false,
+  remoteRecordConsumer: RemoteRecordConsumer = null
 ) extends RaftManager[T] with Logging {
 
   val apiVersions = new ApiVersions()
@@ -176,7 +179,7 @@ class KafkaRaftManager[T](
     // Or this node is only a controller
     val isOnlyController = config.processRoles == Set(ProcessRole.ControllerRole)
 
-    if (differentMetadataLogDir || isOnlyController) {
+    if (!observer && (differentMetadataLogDir || isOnlyController)) {
       Some(KafkaRaftManager.lockDataDir(new File(config.metadataLogDir)))
     } else {
       None
@@ -190,10 +193,10 @@ class KafkaRaftManager[T](
   override val client: KafkaRaftClient[T] = buildRaftClient()
   private val clientDriver = new KafkaRaftClientDriver[T](client, threadNamePrefix, fatalFaultHandler, logContext)
 
-  def startup(): Unit = {
+  def startup(fileName: String = FileQuorumStateStore.DEFAULT_FILE_NAME): Unit = {
     client.initialize(
       controllerQuorumVotersFuture.get(),
-      new FileQuorumStateStore(new File(dataDir, FileQuorumStateStore.DEFAULT_FILE_NAME)),
+      new FileQuorumStateStore(new File(dataDir, fileName)),
       metrics
     )
     netChannel.start()
@@ -241,7 +244,12 @@ class KafkaRaftManager[T](
       bootstrapServers,
       localListeners,
       Features.KRAFT_VERSION.supportedVersionRange(),
-      raftConfig
+      raftConfig,
+      if (remoteRecordConsumer == null) b => {
+        val c = new CompletableFuture[Unit]()
+        c.complete()
+        c
+      } else batches => remoteRecordConsumer.acceptBatch(batches)
     )
   }
 
@@ -267,7 +275,7 @@ class KafkaRaftManager[T](
   }
 
   private def buildNetworkClient(): (ListenerName, NetworkClient) = {
-    val controllerListenerName = new ListenerName(config.controllerListenerNames.head)
+    val controllerListenerName = if (observer) new ListenerName(config.controllerRemoteListenerNames.head) else new ListenerName(config.controllerListenerNames.head)
     val controllerSecurityProtocol = config.effectiveListenerSecurityProtocolMap.getOrElse(
       controllerListenerName,
       SecurityProtocol.forName(controllerListenerName.value())
@@ -325,6 +333,8 @@ class KafkaRaftManager[T](
 
     (controllerListenerName, networkClient)
   }
+
+
 
   override def leaderAndEpoch: LeaderAndEpoch = {
     client.leaderAndEpoch

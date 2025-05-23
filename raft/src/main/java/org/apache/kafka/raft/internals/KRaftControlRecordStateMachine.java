@@ -105,6 +105,10 @@ public final class KRaftControlRecordStateMachine {
         maybeLoadLog();
     }
 
+    public void setNextOffset() {
+        nextOffset = SMALLEST_LOG_OFFSET;
+    }
+
     /**
      * Remove the head of the log until the given offset.
      *
