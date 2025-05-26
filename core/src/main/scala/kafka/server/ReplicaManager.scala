@@ -2270,8 +2270,7 @@ class ReplicaManager(val config: KafkaConfig,
                             topicIds: String => Option[Uuid]) : Set[Partition] = {
     val traceLoggingEnabled = stateChangeLogger.isTraceEnabled
     partitionStates.forKeyValue { (partition, partitionState) =>
-      if (traceLoggingEnabled)
-        stateChangeLogger.trace(s"Handling LeaderAndIsr request correlationId $correlationId from controller $controllerId " +
+        stateChangeLogger.info(s"Handling LeaderAndIsr request correlationId $correlationId from controller $controllerId " +
           s"epoch $controllerEpoch starting the become-follower transition for partition ${partition.topicPartition} with leader " +
           s"${partitionState.leader}")
       responseMap.put(partition.topicPartition, Errors.NONE)
@@ -2281,6 +2280,7 @@ class ReplicaManager(val config: KafkaConfig,
     try {
       partitionStates.forKeyValue { (partition, partitionState) =>
         val newLeaderBrokerId = partitionState.leader
+        info("!!! newLeaderBrokerId:" + newLeaderBrokerId)
         try {
           if (metadataCache.hasAliveBroker(newLeaderBrokerId)) {
             // Only change partition state when the leader is available
@@ -2720,6 +2720,7 @@ class ReplicaManager(val config: KafkaConfig,
   def applyDelta(delta: TopicsDelta, newImage: MetadataImage): Unit = {
     // Before taking the lock, compute the local changes
     val localChanges = delta.localChanges(config.nodeId)
+    println("!!! delta:" + localChanges)
     val metadataVersion = newImage.features().metadataVersion()
 
     replicaStateChangeLock.synchronized {
@@ -2889,7 +2890,7 @@ class ReplicaManager(val config: KafkaConfig,
               initialFetchOffset(log)
             ))
           case None =>
-            stateChangeLogger.trace(s"Unable to start fetching $topicPartition with topic ID ${partition.topicId} " +
+            stateChangeLogger.info(s"Unable to start fetching $topicPartition with topic ID ${partition.topicId} " +
               s"from leader ${partition.leaderReplicaIdOpt} because it is not alive.")
         }
       }

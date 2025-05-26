@@ -53,6 +53,7 @@ public class BrokerRegistration {
         private boolean inControlledShutdown;
         private boolean isMigratingZkBroker;
         private List<Uuid> directories;
+        private boolean remoteBroker;
 
         public Builder() {
             this.id = 0;
@@ -65,6 +66,7 @@ public class BrokerRegistration {
             this.inControlledShutdown = false;
             this.isMigratingZkBroker = false;
             this.directories = Collections.emptyList();
+            this.remoteBroker = false;
         }
 
         public Builder setId(int id) {
@@ -127,6 +129,11 @@ public class BrokerRegistration {
             return this;
         }
 
+        public Builder setRemoteBroker(boolean remoteBroker) {
+            this.remoteBroker = remoteBroker;
+            return this;
+        }
+
         public BrokerRegistration build() {
             return new BrokerRegistration(
                 id,
@@ -138,7 +145,8 @@ public class BrokerRegistration {
                 fenced,
                 inControlledShutdown,
                 isMigratingZkBroker,
-                directories);
+                directories,
+                    remoteBroker);
         }
     }
 
@@ -160,6 +168,7 @@ public class BrokerRegistration {
     private final boolean inControlledShutdown;
     private final boolean isMigratingZkBroker;
     private final List<Uuid> directories;
+    private final boolean remoteBroker;
 
     private BrokerRegistration(
         int id,
@@ -171,7 +180,8 @@ public class BrokerRegistration {
         boolean fenced,
         boolean inControlledShutdown,
         boolean isMigratingZkBroker,
-        List<Uuid> directories
+        List<Uuid> directories,
+        boolean remoteBroker
     ) {
         this.id = id;
         this.epoch = epoch;
@@ -193,6 +203,7 @@ public class BrokerRegistration {
         directories = new ArrayList<>(directories);
         directories.sort(Uuid::compareTo);
         this.directories = Collections.unmodifiableList(directories);
+        this.remoteBroker = remoteBroker;
     }
 
     public static BrokerRegistration fromRecord(RegisterBrokerRecord record) {
@@ -217,7 +228,8 @@ public class BrokerRegistration {
             record.fenced(),
             record.inControlledShutdown(),
             record.isMigratingZkBroker(),
-            record.logDirs());
+            record.logDirs(),
+                record.remoteBroker());
     }
 
     public int id() {
@@ -234,6 +246,10 @@ public class BrokerRegistration {
 
     public Map<String, Endpoint> listeners() {
         return listeners;
+    }
+
+    public boolean remoteBroker() {
+        return remoteBroker;
     }
 
     public Optional<Node> node(String listenerName) {
@@ -298,7 +314,7 @@ public class BrokerRegistration {
             setRack(rack.orElse(null)).
             setBrokerEpoch(epoch).
             setIncarnationId(incarnationId).
-            setFenced(fenced);
+            setFenced(fenced).setRemoteBroker(remoteBroker);
 
         if (inControlledShutdown) {
             if (options.metadataVersion().isInControlledShutdownStateSupported()) {
@@ -408,7 +424,8 @@ public class BrokerRegistration {
             newFenced,
             newInControlledShutdownChange,
             isMigratingZkBroker,
-            newDirectories
+            newDirectories,
+                remoteBroker
         );
     }
 }

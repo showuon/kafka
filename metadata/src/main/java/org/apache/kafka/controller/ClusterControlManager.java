@@ -424,7 +424,8 @@ public class ClusterControlManager {
             setIsMigratingZkBroker(request.isMigratingZkBroker()).
             setIncarnationId(request.incarnationId()).
             setRack(request.rack()).
-            setEndPoints(listenerInfo.toBrokerRegistrationRecord());
+            setEndPoints(listenerInfo.toBrokerRegistrationRecord()).
+                setRemoteBroker(request.remoteBroker());
 
         // Track which finalized features we have not yet verified are supported by the broker.
         Map<String, Short> unverifiedFeatures = new HashMap<>(finalizedFeatures.featureMap());
@@ -480,6 +481,7 @@ public class ClusterControlManager {
             record.setFenced(existing.fenced());
             record.setInControlledShutdown(existing.inControlledShutdown());
             record.setBrokerEpoch(existing.epoch());
+            record.setRemoteBroker(existing.remoteBroker());
         }
         records.add(new ApiMessageAndVersion(record, featureControl.metadataVersion().
             registerBrokerRecordVersion()));
@@ -550,6 +552,10 @@ public class ClusterControlManager {
     }
 
     public void replay(RegisterBrokerRecord record, long offset) {
+        if (record.remoteBroker() && brokerRegistrations.keySet().contains(record.brokerId())) {
+            log.info("!!! no replay RegisterBrokerRecord:" + record);
+            return;
+        }
         registerBrokerRecordOffsets.put(record.brokerId(), offset);
         int brokerId = record.brokerId();
         ListenerInfo listenerInfo = ListenerInfo.fromBrokerRegistrationRecord(record.endPoints());
@@ -571,6 +577,7 @@ public class ClusterControlManager {
                 setInControlledShutdown(record.inControlledShutdown()).
                 setIsMigratingZkBroker(record.isMigratingZkBroker()).
                 setDirectories(record.logDirs()).
+                    setRemoteBroker(record.remoteBroker()).
                     build());
         updateDirectories(brokerId, prevRegistration == null ? null : prevRegistration.directories(), record.logDirs());
         if (heartbeatManager != null) {
@@ -629,6 +636,10 @@ public class ClusterControlManager {
     }
 
     public void replay(BrokerRegistrationChangeRecord record) {
+        if (record.remoteBroker() && !brokerRegistrations.keySet().contains(record.brokerId())) {
+            log.info("!!! no replay BrokerRegistrationChangeRecord:" + record);
+            return;
+        }
         BrokerRegistrationFencingChange fencingChange =
             BrokerRegistrationFencingChange.fromValue(record.fenced()).orElseThrow(
                 () -> new IllegalStateException(String.format("Unable to replay %s: unknown " +

@@ -222,7 +222,8 @@ class BrokerServer(
           s"broker-${config.nodeId}-",
           isZkBroker = false,
           logDirs = logManager.directoryIdsSet,
-          () => new Thread(() => shutdown(), "kafka-shutdown-thread").start())
+          () => new Thread(() => shutdown(), "kafka-shutdown-thread").start(),
+        true)
       }
 
       // Enable delegation token cache for all SCRAM mechanisms to simplify dynamic update.
@@ -247,9 +248,10 @@ class BrokerServer(
       )
       clientToControllerChannelManager.start()
 
-      sharedServer.maybeStartObserverKRaftManager(null)
-      val remoteControllerNodeProvider = RemoteRaftControllerNodeProvider(sharedServer.observerOnlyRaftManager, config)
+      var remoteControllerNodeProvider: RaftControllerNodeProvider = null
       if (config.observerOnly) {
+        sharedServer.maybeStartObserverKRaftManager(null)
+        remoteControllerNodeProvider = RemoteRaftControllerNodeProvider(sharedServer.observerOnlyRaftManager, config)
 
         clientToRemoteControllerChannelManager = new NodeToControllerChannelManagerImpl(
           remoteControllerNodeProvider,

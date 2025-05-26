@@ -106,6 +106,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -1750,7 +1751,7 @@ public final class KafkaRaftClient<T> implements RaftClient<T> {
                                 T messageAndVersion = serde.read(new ByteBufferAccessor(record.value()), record.valueSize());
                                 if (messageAndVersion instanceof ApiMessageAndVersion) {
                                     short key = ((ApiMessageAndVersion) messageAndVersion).message().apiKey();
-                                    if (key == 2 || key == 3) {
+                                    if (key != 20) {
                                         // luke - write to kraft leader
                                         apiMessages.add((ApiMessageAndVersion) messageAndVersion);
                                     }

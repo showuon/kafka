@@ -60,7 +60,8 @@ class BrokerLifecycleManager(
   val threadNamePrefix: String,
   val isZkBroker: Boolean,
   val logDirs: Set[Uuid],
-  val shutdownHook: () => Unit = () => {}
+  val shutdownHook: () => Unit = () => {},
+  val observerOnly: Boolean = false
 ) extends Logging {
 
   private def logPrefix(): String = {
@@ -400,10 +401,9 @@ class BrokerLifecycleManager(
         setListeners(_advertisedListeners).
         setRack(rack.orNull).
         setPreviousBrokerEpoch(previousBrokerEpoch.orElse(-1L)).
-        setLogDirs(sortedLogDirs)
-    if (isDebugEnabled) {
-      debug(s"Sending broker registration $data")
-    }
+        setLogDirs(sortedLogDirs).
+        setRemoteBroker(observerOnly)
+    info(s"!!! Sending broker registration $data")
     _channelManager.sendRequest(new BrokerRegistrationRequest.Builder(data),
       new BrokerRegistrationResponseHandler())
     communicationInFlight = true
@@ -454,6 +454,7 @@ class BrokerLifecycleManager(
           registered = true
           initialRegistrationSucceeded = true
           info(s"Successfully registered broker $nodeId with broker epoch ${_brokerEpoch}")
+//          if (!observerOnly)
           scheduleNextCommunicationImmediately() // Immediately send a heartbeat
         } else {
           info(s"Unable to register broker $nodeId because the controller returned " +

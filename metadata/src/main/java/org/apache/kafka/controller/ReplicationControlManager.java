@@ -1326,7 +1326,7 @@ public class ReplicationControlManager {
         if (featureControl.metadataVersion().isBrokerRegistrationChangeRecordSupported()) {
             records.add(new ApiMessageAndVersion(new BrokerRegistrationChangeRecord().
                     setBrokerId(brokerId).setBrokerEpoch(brokerRegistration.epoch()).
-                    setFenced(BrokerRegistrationFencingChange.FENCE.value()),
+                    setFenced(BrokerRegistrationFencingChange.FENCE.value()).setRemoteBroker(brokerRegistration.remoteBroker()),
                     (short) 0));
         } else {
             records.add(new ApiMessageAndVersion(new FenceBrokerRecord().
@@ -1368,10 +1368,14 @@ public class ReplicationControlManager {
      * @param records       The record list to append to.
      */
     void handleBrokerUnfenced(int brokerId, long brokerEpoch, List<ApiMessageAndVersion> records) {
+        BrokerRegistration brokerRegistration = clusterControl.brokerRegistrations().get(brokerId);
+        if (brokerRegistration == null) {
+            throw new RuntimeException("Can't find broker registration for broker " + brokerId);
+        }
         if (featureControl.metadataVersion().isBrokerRegistrationChangeRecordSupported()) {
             records.add(new ApiMessageAndVersion(new BrokerRegistrationChangeRecord().
                 setBrokerId(brokerId).setBrokerEpoch(brokerEpoch).
-                setFenced(BrokerRegistrationFencingChange.UNFENCE.value()),
+                setFenced(BrokerRegistrationFencingChange.UNFENCE.value()).setRemoteBroker(brokerRegistration.remoteBroker()),
                 (short) 0));
         } else {
             records.add(new ApiMessageAndVersion(new UnfenceBrokerRecord().setId(brokerId).

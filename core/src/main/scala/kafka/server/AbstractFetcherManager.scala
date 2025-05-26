@@ -126,6 +126,7 @@ abstract class AbstractFetcherManager[T <: AbstractFetcherThread](val name: Stri
   def createFetcherThread(fetcherId: Int, sourceBroker: BrokerEndPoint): T
 
   def addFetcherForPartitions(partitionAndOffsets: Map[TopicPartition, InitialFetchState]): Unit = {
+    info("!!! addFetcherForPartitions:" + partitionAndOffsets)
     lock synchronized {
       val partitionsPerFetcher = partitionAndOffsets.groupBy { case (topicPartition, brokerAndInitialFetchOffset) =>
         BrokerAndFetcherId(brokerAndInitialFetchOffset.leader, getFetcherId(topicPartition))
@@ -139,8 +140,10 @@ abstract class AbstractFetcherManager[T <: AbstractFetcherThread](val name: Stri
         fetcherThread
       }
 
+      info("!!! partitionsPerFetcher:" + partitionsPerFetcher)
       for ((brokerAndFetcherId, initialFetchOffsets) <- partitionsPerFetcher) {
         val brokerIdAndFetcherId = BrokerIdAndFetcherId(brokerAndFetcherId.broker.id, brokerAndFetcherId.fetcherId)
+        info("!!! brokerIdAndFetcherId:" + brokerIdAndFetcherId)
         val fetcherThread = fetcherThreadMap.get(brokerIdAndFetcherId) match {
           case Some(currentFetcherThread) if currentFetcherThread.leader.brokerEndPoint() == brokerAndFetcherId.broker =>
             // reuse the fetcher thread
