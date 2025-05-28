@@ -151,6 +151,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
@@ -992,7 +993,20 @@ public final class QuorumController implements Controller {
             private final List<ApiMessageAndVersion> batch;
 
             RemoteWriteOperation(List<ApiMessageAndVersion> batch) {
-                this.batch = batch;
+                this.batch = batch.stream().filter(api -> {
+                    if (api.message().apiKey() == 0 || api.message().apiKey() == 17) {
+                        if (api.message() instanceof RegisterBrokerRecord) {
+                            if (((RegisterBrokerRecord) api.message()).remoteBroker())
+                                log.info("!!! record to be filtered:" + api.message());
+                            return !((RegisterBrokerRecord) api.message()).remoteBroker();
+                        } else if (api.message() instanceof BrokerRegistrationChangeRecord) {
+                            if (((BrokerRegistrationChangeRecord) api.message()).remoteBroker())
+                                log.info("!!! BrokerRegistrationChangeRecord to be filtered:" + api.message());
+                            return !((BrokerRegistrationChangeRecord) api.message()).remoteBroker();
+                        }
+                    }
+                    return true;
+                }).collect(Collectors.toList());
             }
             @Override
             public ControllerResult<Void> generateRecordsAndResult() {

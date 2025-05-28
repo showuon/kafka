@@ -552,10 +552,10 @@ public class ClusterControlManager {
     }
 
     public void replay(RegisterBrokerRecord record, long offset) {
-        if (record.remoteBroker() && brokerRegistrations.keySet().contains(record.brokerId())) {
-            log.info("!!! no replay RegisterBrokerRecord:" + record);
-            return;
-        }
+//        if (record.remoteBroker() && brokerRegistrations.keySet().contains(record.brokerId())) {
+//            log.info("!!! no replay RegisterBrokerRecord:" + record);
+//            return;
+//        }
         registerBrokerRecordOffsets.put(record.brokerId(), offset);
         int brokerId = record.brokerId();
         ListenerInfo listenerInfo = ListenerInfo.fromBrokerRegistrationRecord(record.endPoints());
@@ -636,10 +636,10 @@ public class ClusterControlManager {
     }
 
     public void replay(BrokerRegistrationChangeRecord record) {
-        if (record.remoteBroker() && !brokerRegistrations.keySet().contains(record.brokerId())) {
-            log.info("!!! no replay BrokerRegistrationChangeRecord:" + record);
-            return;
-        }
+//        if (record.remoteBroker() && !brokerRegistrations.keySet().contains(record.brokerId())) {
+//            log.info("!!! no replay BrokerRegistrationChangeRecord:" + record);
+//            return;
+//        }
         BrokerRegistrationFencingChange fencingChange =
             BrokerRegistrationFencingChange.fromValue(record.fenced()).orElseThrow(
                 () -> new IllegalStateException(String.format("Unable to replay %s: unknown " +
