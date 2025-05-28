@@ -322,7 +322,7 @@ public class ClusterControlManager {
     public void activate() {
         heartbeatManager = new BrokerHeartbeatManager(logContext, time, sessionTimeoutNs);
         for (BrokerRegistration registration : brokerRegistrations.values()) {
-            heartbeatManager.register(registration.id(), registration.fenced());
+            heartbeatManager.register(registration.id(), registration.fenced(), registration.remoteBroker());
         }
     }
 
@@ -481,7 +481,6 @@ public class ClusterControlManager {
             record.setFenced(existing.fenced());
             record.setInControlledShutdown(existing.inControlledShutdown());
             record.setBrokerEpoch(existing.epoch());
-            record.setRemoteBroker(existing.remoteBroker());
         }
         records.add(new ApiMessageAndVersion(record, featureControl.metadataVersion().
             registerBrokerRecordVersion()));
@@ -490,7 +489,7 @@ public class ClusterControlManager {
             // Remove any existing session for the old broker incarnation.
             heartbeatManager.remove(brokerId);
         }
-        heartbeatManager.register(brokerId, record.fenced());
+        heartbeatManager.register(brokerId, record.fenced(), record.remoteBroker());
 
         return ControllerResult.atomicOf(records, new BrokerRegistrationReply(record.brokerEpoch()));
     }
@@ -582,7 +581,7 @@ public class ClusterControlManager {
         updateDirectories(brokerId, prevRegistration == null ? null : prevRegistration.directories(), record.logDirs());
         if (heartbeatManager != null) {
             if (prevRegistration != null) heartbeatManager.remove(brokerId);
-            heartbeatManager.register(brokerId, record.fenced());
+            heartbeatManager.register(brokerId, record.fenced(), record.remoteBroker());
         }
         if (prevRegistration == null) {
             log.info("Replayed initial RegisterBrokerRecord for broker {}: {}", record.brokerId(), record);
@@ -688,7 +687,7 @@ public class ClusterControlManager {
                 log.info("Ignoring no-op registration change for {}", curRegistration);
             }
             updateDirectories(brokerId, curRegistration.directories(), nextRegistration.directories());
-            if (heartbeatManager != null) heartbeatManager.register(brokerId, nextRegistration.fenced());
+            if (heartbeatManager != null) heartbeatManager.register(brokerId, nextRegistration.fenced(), nextRegistration.remoteBroker());
             if (readyBrokersFuture.isPresent()) {
                 if (readyBrokersFuture.get().check()) {
                     readyBrokersFuture.get().future.complete(null);

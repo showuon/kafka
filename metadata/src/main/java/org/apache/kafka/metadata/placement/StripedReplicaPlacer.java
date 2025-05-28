@@ -305,7 +305,7 @@ public class StripedReplicaPlacer implements ReplicaPlacer {
                     rack = new Rack();
                     racks.put(broker.rack(), rack);
                 }
-                if (broker.fenced()) {
+                if (broker.fenced() || broker.remoteBroker()) {
                     rack.fenced().add(broker.id());
                 } else {
                     numUnfencedBrokersCount++;

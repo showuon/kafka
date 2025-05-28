@@ -92,6 +92,8 @@ public class BrokerHeartbeatManager {
          */
         private BrokerHeartbeatState next;
 
+        private boolean remoteBroker;
+
         BrokerHeartbeatState(int id) {
             this.id = id;
             this.lastContactNs = 0;
@@ -99,6 +101,17 @@ public class BrokerHeartbeatManager {
             this.next = null;
             this.metadataOffset = -1;
             this.controlledShutdownOffset = -1;
+            this.remoteBroker = false;
+        }
+
+        BrokerHeartbeatState(int id, boolean remoteBroker) {
+            this.id = id;
+            this.lastContactNs = 0;
+            this.prev = null;
+            this.next = null;
+            this.metadataOffset = -1;
+            this.controlledShutdownOffset = -1;
+            this.remoteBroker = remoteBroker;
         }
 
         /**
@@ -106,6 +119,10 @@ public class BrokerHeartbeatManager {
          */
         int id() {
             return id;
+        }
+
+        boolean isRemoteBroker() {
+            return remoteBroker;
         }
 
         /**
@@ -362,16 +379,20 @@ public class BrokerHeartbeatManager {
      * @param brokerId          The broker ID.
      * @param fenced            True only if the broker is currently fenced.
      */
-    void register(int brokerId, boolean fenced) {
+    void register(int brokerId, boolean fenced, boolean remoteBroker) {
         BrokerHeartbeatState broker = brokers.get(brokerId);
         long metadataOffset = -1L;
         if (broker == null) {
-            broker = new BrokerHeartbeatState(brokerId);
+            broker = new BrokerHeartbeatState(brokerId, remoteBroker);
             brokers.put(brokerId, broker);
         } else if (broker.fenced() != fenced) {
             metadataOffset = broker.metadataOffset;
         }
         touch(brokerId, fenced, metadataOffset);
+    }
+
+    void register(int brokerId, boolean fenced) {
+        register(brokerId, fenced, false);
     }
 
     /**
@@ -466,7 +487,7 @@ public class BrokerHeartbeatManager {
     Iterator<UsableBroker> usableBrokers(
         Function<Integer, Optional<String>> idToRack
     ) {
-        return new UsableBrokerIterator(brokers.values().iterator(),
+        return new UsableBrokerIterator(brokers.values().stream().iterator(),
             idToRack);
     }
 
@@ -495,7 +516,7 @@ public class BrokerHeartbeatManager {
                 result = iterator.next();
             } while (result.shuttingDown());
             Optional<String> rack = idToRack.apply(result.id());
-            next = new UsableBroker(result.id(), rack, result.fenced());
+            next = new UsableBroker(result.id(), rack, result.fenced(), result.remoteBroker);
             return true;
         }
 

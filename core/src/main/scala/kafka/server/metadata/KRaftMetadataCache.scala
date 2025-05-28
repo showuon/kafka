@@ -367,17 +367,17 @@ class KRaftMetadataCache(
   override def getAliveBrokers(): Iterable[BrokerMetadata] = getAliveBrokers(_currentImage)
 
   private def getAliveBrokers(image: MetadataImage): Iterable[BrokerMetadata] = {
-    image.cluster().brokers().values().asScala.filterNot(_.fenced()).
+    image.cluster().brokers().values().asScala.filterNot(_.fenced()).filterNot(_.remoteBroker()).
       map(b => new BrokerMetadata(b.id, b.rack))
   }
 
   override def getAliveBrokerNode(brokerId: Int, listenerName: ListenerName): Option[Node] = {
-    Option(_currentImage.cluster().broker(brokerId)).filterNot(_.fenced()).
+    Option(_currentImage.cluster().broker(brokerId)).filterNot(_.fenced()).filterNot(_.remoteBroker()).
       flatMap(_.node(listenerName.value()).asScala)
   }
 
   override def getAliveBrokerNodes(listenerName: ListenerName): Seq[Node] = {
-    _currentImage.cluster().brokers().values().asScala.filterNot(_.fenced()).
+    _currentImage.cluster().brokers().values().asScala.filterNot(_.fenced()).filterNot(_.remoteBroker()).
       flatMap(_.node(listenerName.value()).asScala).toSeq
   }
 

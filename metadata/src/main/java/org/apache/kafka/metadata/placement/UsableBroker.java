@@ -33,15 +33,25 @@ public class UsableBroker {
     private final Optional<String> rack;
 
     private final boolean fenced;
+    private final boolean remoteBroker;
 
     public UsableBroker(int id, Optional<String> rack, boolean fenced) {
+        this(id, rack, fenced, false);
+    }
+
+    public UsableBroker(int id, Optional<String> rack, boolean fenced, boolean remoteBroker) {
         this.id = id;
         this.rack = rack;
         this.fenced = fenced;
+        this.remoteBroker = remoteBroker;
     }
 
     public int id() {
         return id;
+    }
+
+    public boolean remoteBroker() {
+        return remoteBroker;
     }
 
     public Optional<String> rack() {
