@@ -1760,13 +1760,14 @@ public final class KafkaRaftClient<T> implements RaftClient<T> {
 
                             }
                         }
-                        try {
-                            remoteRecordConsumerFunc.apply(apiMessages).get();
-                        } catch (InterruptedException e) {
-                            throw new RuntimeException(e);
-                        } catch (ExecutionException e) {
-                            throw new RuntimeException(e);
-                        }
+
+                    }
+                    try {
+                        remoteRecordConsumerFunc.apply(apiMessages).get();
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    } catch (ExecutionException e) {
+                        throw new RuntimeException(e);
                     }
 
                 }

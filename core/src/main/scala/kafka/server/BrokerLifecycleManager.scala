@@ -550,6 +550,9 @@ class BrokerLifecycleManager(
             case BrokerState.RUNNING =>
               debug(s"The broker is RUNNING. Processing heartbeat response.")
               scheduleNextCommunicationAfterSuccess()
+              if (observerOnly) {
+                close()
+              }
             case BrokerState.PENDING_CONTROLLED_SHUTDOWN =>
               if (!responseData.shouldShutDown()) {
                 info(s"The broker is in PENDING_CONTROLLED_SHUTDOWN state, still waiting " +

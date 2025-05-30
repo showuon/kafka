@@ -744,7 +744,7 @@ public class ReassignPartitionsCommand {
         Set<Integer> brokers = new HashSet<>();
         proposedParts.values().forEach(brokers::addAll);
 
-        verifyBrokerIds(adminClient, brokers);
+//        verifyBrokerIds(adminClient, brokers);
         Map<TopicPartition, List<Integer>> currentParts = getReplicaAssignmentForPartitions(adminClient, proposedParts.keySet());
         System.out.println(currentPartitionReplicaAssignmentToString(proposedParts, currentParts));
 
