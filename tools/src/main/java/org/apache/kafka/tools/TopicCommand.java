@@ -680,9 +680,28 @@ public abstract class TopicCommand {
         public void deleteTopic(TopicCommandOptions opts) throws ExecutionException, InterruptedException {
             List<String> topics = getTopics(opts.topic(), opts.excludeInternalTopics());
             ensureTopicExists(topics, opts.topic(), !opts.ifExists());
+            ensureTopicIsNotReadOnly(topics);
             adminClient.deleteTopics(List.copyOf(topics),
                 new DeleteTopicsOptions().retryOnQuotaViolation(false)
             ).all().get();
+        }
+
+        private void ensureTopicIsNotReadOnly(List<String> topics) throws ExecutionException, InterruptedException {
+            if (topics.isEmpty()) {
+                return;
+            }
+            Map<ConfigResource, KafkaFuture<Config>> allConfigs = adminClient.describeConfigs(
+                topics.stream()
+                    .map(name -> new ConfigResource(ConfigResource.Type.TOPIC, name))
+                    .collect(Collectors.toList())
+            ).values();
+            for (String topicName : topics) {
+                Config config = allConfigs.get(new ConfigResource(ConfigResource.Type.TOPIC, topicName)).get();
+                if (config.get(TopicConfig.READ_ONLY_CONFIG) != null &&
+                    config.get(TopicConfig.READ_ONLY_CONFIG).value().equals("true")) {
+                    throw new IllegalArgumentException("Topic '" + topicName + "' is a read-only topic and cannot be deleted.");
+                }
+            }
         }
 
         public List<String> getTopics(Optional<String> topicIncludeList, boolean excludeInternalTopics) throws ExecutionException, InterruptedException {
