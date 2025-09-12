@@ -24,7 +24,7 @@ import static org.apache.kafka.common.config.ConfigDef.Range.atLeast;
 import static org.apache.kafka.common.config.ConfigDef.Type.INT;
 import static org.apache.kafka.common.config.ConfigDef.Type.SHORT;
 
-public class ClusterLinksConfig {
+public class ClusterLinkConfig {
 
     public static final String CLUSTER_LINK_TOPIC_NUM_PARTITIONS_CONFIG = "cluster.link.topic.num.partitions";
     public static final int CLUSTER_LINK_TOPIC_NUM_PARTITIONS_DEFAULT = 50;
@@ -42,7 +42,7 @@ public class ClusterLinksConfig {
     private final int clusterLinkTopicNumPartitions;
     private final short clusterLinkTopicReplicationFactor;
 
-    public ClusterLinksConfig(AbstractConfig config) {
+    public ClusterLinkConfig(AbstractConfig config) {
         clusterLinkTopicNumPartitions = config.getInt(CLUSTER_LINK_TOPIC_NUM_PARTITIONS_CONFIG);
         clusterLinkTopicReplicationFactor = config.getShort(CLUSTER_LINK_TOPIC_REPLICATION_FACTOR_CONFIG);
     }
