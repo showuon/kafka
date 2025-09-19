@@ -56,8 +56,8 @@
         { "name": "Value", "type": "string", "versions": "0+", "nullableVersions": "0+",
           "about": "The configuration value." }
       ]},
-      { "name": "remoteBootstrapServer", "type": "string", "versions": "7+", "ignorable": true,
-        "about": "If true, check that the topics can be created as specified, but don't create anything." },
+      { "name": "clusterLinkName", "type": "string", "versions": "7+", "ignorable": true,
+        "about": "cluster link name" },
       { "name": "TopicId", "type": "uuid", "versions": "7+", "ignorable": true, "about": "The unique topic ID."}
     ]},
     { "name": "timeoutMs", "type": "int32", "versions": "0+", "default": "60000",

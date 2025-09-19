@@ -22,7 +22,7 @@ import kafka.coordinator.transaction.TransactionCoordinator
 import kafka.log.LogManager
 import kafka.network.SocketServer
 import kafka.raft.KafkaRaftManager
-import kafka.server.coordinator.TopicMirrorLinkCoordinator
+import kafka.server.coordinator.{RemoteClusterMetadataManager, TopicMirrorLinkCoordinator}
 import kafka.server.metadata._
 import kafka.server.share.{ShareCoordinatorMetadataCacheHelperImpl, SharePartitionManager}
 import kafka.utils.CoreUtils
@@ -346,7 +346,6 @@ class BrokerServer(
         kafkaScheduler,
         clientToControllerChannelManager
       )
-      kafkaScheduler.schedule("remote-cluster-metadata-refresh", () => remoteClusterMetadataManager.refreshRemoteMetadata(), 5000L, 30000L)
 
       this._replicaManager = new ReplicaManager(
         config = config,
@@ -399,7 +398,7 @@ class BrokerServer(
         producerIdManagerSupplier, metrics, metadataCache, Time.SYSTEM)
 
       topicMirrorLinkCoordinator = new TopicMirrorLinkCoordinator(config, replicaManager,
-        new KafkaScheduler(1, true, "topic-mirror-link-manager-"), metrics, metadataCache, Time.SYSTEM, clientToControllerChannelManager)
+        new KafkaScheduler(1, true, "topic-mirror-link-manager-"), metrics, metadataCache, Time.SYSTEM, RemoteClusterMetadataManager)
 
       autoTopicCreationManager = new DefaultAutoTopicCreationManager(
         config, clientToControllerChannelManager, groupCoordinator,

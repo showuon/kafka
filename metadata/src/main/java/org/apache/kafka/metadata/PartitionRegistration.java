@@ -53,7 +53,6 @@ public class PartitionRegistration {
         private LeaderRecoveryState leaderRecoveryState;
         private Integer leaderEpoch;
         private Integer partitionEpoch;
-        private String remoteBootstrapServers;
 
         public Builder setReplicas(int[] replicas) {
             this.replicas = replicas;
@@ -110,11 +109,6 @@ public class PartitionRegistration {
             return this;
         }
 
-        public Builder setRemoteBootstrapServers(String remoteBootstrapServers) {
-            this.remoteBootstrapServers = remoteBootstrapServers;
-            return this;
-        }
-
         public PartitionRegistration build() {
             if (replicas == null) {
                 throw new IllegalStateException("You must set replicas.");
@@ -153,8 +147,7 @@ public class PartitionRegistration {
                 leaderEpoch,
                 partitionEpoch,
                 elr,
-                lastKnownElr,
-                remoteBootstrapServers
+                lastKnownElr
             );
         }
     }
@@ -170,7 +163,6 @@ public class PartitionRegistration {
     public final LeaderRecoveryState leaderRecoveryState;
     public final int leaderEpoch;
     public final int partitionEpoch;
-    public final String remoteBootstrapServers;
 
     public static boolean electionWasUnclean(byte leaderRecoveryState) {
         return leaderRecoveryState == LeaderRecoveryState.RECOVERING.value();
@@ -220,13 +212,12 @@ public class PartitionRegistration {
             record.leaderEpoch(),
             record.partitionEpoch(),
             Replicas.toArray(record.eligibleLeaderReplicas()),
-            Replicas.toArray(record.lastKnownElr()),
-            record.remoteBootstrapServer());
+            Replicas.toArray(record.lastKnownElr()));
     }
 
     private PartitionRegistration(int[] replicas, Uuid[] directories, int[] isr, int[] removingReplicas,
                                   int[] addingReplicas, int leader, LeaderRecoveryState leaderRecoveryState,
-                                  int leaderEpoch, int partitionEpoch, int[] elr, int[] lastKnownElr, String remoteBootstrapServers) {
+                                  int leaderEpoch, int partitionEpoch, int[] elr, int[] lastKnownElr) {
         Objects.requireNonNull(directories);
         if (directories.length > 0 && directories.length != replicas.length) {
             throw new IllegalArgumentException("The lengths for replicas and directories do not match.");
@@ -244,7 +235,6 @@ public class PartitionRegistration {
         // We could parse a lower version record without elr/lastKnownElr.
         this.elr = elr == null ? new int[0] : elr;
         this.lastKnownElr = lastKnownElr == null ? new int[0] : lastKnownElr;
-        this.remoteBootstrapServers = remoteBootstrapServers;
     }
 
     public PartitionRegistration merge(PartitionChangeRecord record) {
@@ -285,8 +275,7 @@ public class PartitionRegistration {
             newLeaderEpoch,
             partitionEpoch + 1,
             newElr,
-            newLastKnownElr,
-            record.remoteBootstrapServer().isBlank() ? remoteBootstrapServers : record.remoteBootstrapServer());
+            newLastKnownElr);
     }
 
     public String diff(PartitionRegistration prev) {
@@ -396,8 +385,7 @@ public class PartitionRegistration {
             setLeader(leader).
             setLeaderRecoveryState(leaderRecoveryState.value()).
             setLeaderEpoch(leaderEpoch).
-            setPartitionEpoch(partitionEpoch).
-            setRemoteBootstrapServer(remoteBootstrapServers);
+            setPartitionEpoch(partitionEpoch);
         if (options.isEligibleLeaderReplicasEnabled()) {
             // The following are tagged fields, we should only set them when there are some contents, in order to save
             // spaces.

@@ -144,7 +144,7 @@ public class NewTopic {
             setNumPartitions(numPartitions.orElse(CreateTopicsRequest.NO_NUM_PARTITIONS)).
             setReplicationFactor(replicationFactor.orElse(CreateTopicsRequest.NO_REPLICATION_FACTOR));
         if (remoteBootstrapServer.isPresent()) {
-            creatableTopic.setRemoteBootstrapServer(remoteBootstrapServer.get());
+            creatableTopic.setClusterLinkName(remoteBootstrapServer.get());
         }
         if (topicId.isPresent()) {
             creatableTopic.setTopicId(Uuid.fromString(topicId.get()));

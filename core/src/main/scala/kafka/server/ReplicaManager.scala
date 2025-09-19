@@ -23,6 +23,7 @@ import kafka.log.LogManager
 import kafka.server.HostedPartition.Online
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.ReplicaManager.{AtMinIsrPartitionCountMetricName, FailedIsrUpdatesPerSecMetricName, IsrExpandsPerSecMetricName, IsrShrinksPerSecMetricName, LeaderCountMetricName, OfflineReplicaCountMetricName, PartitionCountMetricName, PartitionsWithLateTransactionsCountMetricName, ProducerIdCountMetricName, ReassigningPartitionsMetricName, UnderMinIsrPartitionCountMetricName, UnderReplicatedPartitionsMetricName, createLogReadResult, isListOffsetsTimestampUnsupported}
+import kafka.server.coordinator.RemoteClusterMetadataManager
 import kafka.server.share.DelayedShareFetch
 import kafka.utils._
 import org.apache.kafka.common.config.{ConfigResource, TopicConfig}
@@ -2314,13 +2315,8 @@ class ReplicaManager(val config: KafkaConfig,
           stateChangeLogger.info(s"Creating new partition $tp with topic id " + s"$topicId." +
             s"A topic with the same name but different id exists but it resides in an offline log " +
             s"directory.")
-          val remoteBootstrapServer = if (localChanges.readOnlyLeaders().containsKey(tp)) {
-            delta.changedTopics().get(topicId).partitionChanges().get(tp.partition()).remoteBootstrapServers
-          } else {
-            ""
-          }
-          logger.info("!!! create new partition: " + tp + " " + topicId + " " + remoteBootstrapServer)
-          val partition = Partition(new TopicIdPartition(topicId, tp), time, this, remoteBootstrapServer)
+//          logger.info("!!! create new partition: " + tp + " " + topicId + " " + remoteBootstrapServer)
+          val partition = Partition(new TopicIdPartition(topicId, tp), time, this)
           allPartitions.put(tp, HostedPartition.Online(partition))
           Some(partition, true)
         }
@@ -2343,13 +2339,13 @@ class ReplicaManager(val config: KafkaConfig,
             s"$topicId.")
         }
         // it's a partition that we don't know about yet, so create it and mark it online
-        val remoteBootstrapServer = if (localChanges.readOnlyLeaders().containsKey(tp)) {
-          delta.changedTopics().get(topicId).partitionChanges().get(tp.partition()).remoteBootstrapServers
-        } else {
-          ""
-        }
-        logger.info("!!! create new partition: " + tp + " " + topicId + " " + remoteBootstrapServer)
-        val partition = Partition(new TopicIdPartition(topicId, tp), time, this, remoteBootstrapServer)
+//        val remoteBootstrapServer = if (localChanges.readOnlyLeaders().containsKey(tp)) {
+//          delta.changedTopics().get(topicId).partitionChanges().get(tp.partition()).remoteBootstrapServers
+//        } else {
+//          ""
+//        }
+//        logger.info("!!! create new partition: " + tp + " " + topicId + " " + remoteBootstrapServer)
+        val partition = Partition(new TopicIdPartition(topicId, tp), time, this)
         allPartitions.put(tp, HostedPartition.Online(partition))
         Some(partition, true)
     }
@@ -2365,6 +2361,7 @@ class ReplicaManager(val config: KafkaConfig,
     // Before taking the lock, compute the local changes
     val localChanges = delta.localChanges(config.nodeId)
     val metadataVersion = newImage.features().metadataVersionOrThrow()
+
 
     replicaStateChangeLock.synchronized {
       // Handle deleted partitions. We need to do this first because we might subsequently
@@ -2480,7 +2477,7 @@ class ReplicaManager(val config: KafkaConfig,
             // When a broker restarts, it brings up partition as follower first.
             // We don't set remote bootstrap server when a partition is follower.
             // If it becomes remote leader later, we need to set remote bootstrap server here.
-            partition.setRemoteBootstrapServer(info.partition.remoteBootstrapServers)
+//            partition.setRemoteBootstrapServer(info.partition.remoteBootstrapServers)
           }
           followerTopicSet.add(tp.topic)
 
@@ -2546,7 +2543,7 @@ class ReplicaManager(val config: KafkaConfig,
             .flatMap(leaderId => Option(newImage.cluster.broker(leaderId)))
             .flatMap(_.node(listenerName).toScala)
         else {
-          Some(remoteClusterMetadataManager.get.getRemotePartitionLeader(partition.remoteBootstrapServer, partition.topicPartition))
+          Some(remoteClusterMetadataManager.get.getRemotePartitionLeader(partition.toString, partition.topicPartition))
         }
 
         nodeOpt match {

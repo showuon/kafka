@@ -20,9 +20,9 @@ package kafka.server.metadata
 import java.util.OptionalInt
 import kafka.coordinator.transaction.TransactionCoordinator
 import kafka.log.LogManager
-import kafka.server.coordinator.TopicMirrorLinkCoordinator
+import kafka.server.coordinator.{RemoteClusterMetadataManager, TopicMirrorLinkCoordinator}
 import kafka.server.share.SharePartitionManager
-import kafka.server.{KafkaConfig, RemoteClusterMetadataManager, ReplicaManager}
+import kafka.server.{KafkaConfig, ReplicaManager}
 import kafka.utils.Logging
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.errors.TimeoutException

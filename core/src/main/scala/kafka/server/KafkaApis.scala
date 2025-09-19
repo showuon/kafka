@@ -268,6 +268,13 @@ class KafkaApis(val requestChannel: RequestChannel,
     }
   }
 
+  def handleCreateTopicRequest(request: RequestChannel.Request): Unit = {
+    val topicsRequest = request.body[CreateTopicsRequest]
+//    if (topicsRequest.data().topics().) {}
+    topicMirrorLinkCoordinator.addTopics(topicsRequest.data().topics().stream().map(t => t.name()).collect(Collectors.toSet()));
+    forwardToController(request)
+  }
+
   def handleGetReplicaLogInfo(request: RequestChannel.Request): Unit = {
     var partitionCount = 0
     def processPartitions(topicLogInfo: GetReplicaLogInfoResponseData.TopicPartitionLogInfo,

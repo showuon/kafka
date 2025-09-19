@@ -49,7 +49,6 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.apache.kafka.common.utils.Utils.require;
@@ -66,8 +65,7 @@ public class TopicMirrorLinkCoordinator {
     private final Time time;
     private volatile int numPartitions = -1;
     private final Map<String, RemoteBrokerBlockingSender> remoteBrokers = new HashMap<>();
-    // cluster-link name(or id) map to all subscribed topics
-    private final Map<String, Set<String>> mirroredTopicsInLink = new HashMap<>();
+    private final RemoteClusterMetadataManager remoteClusterMetadataManager;
 
     public TopicMirrorLinkCoordinator(
             KafkaConfig config,
@@ -76,7 +74,7 @@ public class TopicMirrorLinkCoordinator {
             Metrics metrics,
             MetadataCache metadataCache,
             Time time,
-            NodeToControllerChannelManager nodeToControllerChannelManager
+            RemoteClusterMetadataManager remoteClusterMetadataManager
     ) {
         this.config = config;
         this.replicaManager = replicaManager;
@@ -84,6 +82,7 @@ public class TopicMirrorLinkCoordinator {
         this.metrics = metrics;
         this.metadataCache = metadataCache;
         this.time = time;
+        this.remoteClusterMetadataManager = remoteClusterMetadataManager;
     }
 
     public void startup() {
@@ -103,24 +102,8 @@ public class TopicMirrorLinkCoordinator {
 
     }
 
-    private String readClusterLinkRecordKey(ByteBuffer buffer) {
-        short version = buffer.getShort();
-        if (version != CoordinatorRecordType.CLUSTER_LINK_MIRROR_TOPICS.id()) {
-            throw new IllegalArgumentException("Unknown cluster link log key version " + version);
-        }
-        return new ClusterLinkMirrorTopicsKey(new ByteBufferAccessor(buffer), version).clusterLinkId();
-    }
+    public void addTopics(Set<String> topics) {
 
-    private Set<String> readClusterLinkRecordValue(ByteBuffer buffer) {
-        Set<String> topics = new HashSet<>();
-        short version = buffer.getShort();
-        if (version >= ClusterLinkMirrorTopicsValue.LOWEST_SUPPORTED_VERSION && version <= ClusterLinkMirrorTopicsValue.HIGHEST_SUPPORTED_VERSION) {
-            ClusterLinkMirrorTopicsValue value = new ClusterLinkMirrorTopicsValue(new ByteBufferAccessor(buffer), version);
-            value.topics().forEach(t -> topics.add(t.name()));
-        } else {
-            throw new IllegalStateException("Unknown version {} from the cluster link message value");
-        }
-        return topics;
     }
 
     private void loadClusterLinkData(TopicPartition topicPartition) {
@@ -169,14 +152,9 @@ public class TopicMirrorLinkCoordinator {
                     Iterator<MutableRecordBatch> itr = memRecords.batches().iterator();
                     while (itr.hasNext()) {
                         MutableRecordBatch batch = itr.next();
-                        batch.iterator().forEachRemaining(record -> {
-                            require(record.hasKey(), "cluster link log's key should not be null");
-                            String clusterName = readClusterLinkRecordKey(record.key());
-                            Set<String> topics = readClusterLinkRecordValue(record.value());
-                            mirroredTopicsInLink.put(clusterName, topics);
-                        });
+                        batch.iterator().forEachRemaining(remoteClusterMetadataManager::storeLinkTopics);
                         currOffset = batch.nextOffset();
-                    };
+                    }
                 }
             } catch (Throwable t) {
                 logger.error("Error loading transactions from transaction log P{}", topicPartition, t);
@@ -206,7 +184,7 @@ public class TopicMirrorLinkCoordinator {
 
     private void clear() {
         remoteBrokers.clear();
-        mirroredTopicsInLink.clear();
+        remoteClusterMetadataManager.clear();
     }
 
     public void shutdown() {

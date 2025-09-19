@@ -14,19 +14,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package kafka.server;
+package kafka.server.coordinator;
 
+import kafka.server.KafkaConfig;
+import kafka.server.RemoteBrokerBlockingSender;
 import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.clients.ClientUtils;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.CreatePartitionsRequestData;
 import org.apache.kafka.common.metrics.Metrics;
+import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.coordinator.clusterlink.generated.ClusterLinkMirrorTopicsKey;
+import org.apache.kafka.coordinator.clusterlink.generated.ClusterLinkMirrorTopicsValue;
+import org.apache.kafka.coordinator.clusterlink.generated.CoordinatorRecordType;
 import org.apache.kafka.image.LocalReplicaChanges;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
@@ -38,12 +44,15 @@ import org.apache.kafka.server.util.Scheduler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+
+import static org.apache.kafka.common.utils.Utils.require;
 
 /**
  * A manager to handle metadata related to remote clusters. It watches topic leader changes,
@@ -65,6 +74,8 @@ public class RemoteClusterMetadataManager implements AutoCloseable {
     private final NodeToControllerChannelManager channelManager;
     private final Random random;
     private MetadataImage metadataImage;
+    // cluster-link name(or id) map to all subscribed topics
+    private final Map<String, Set<String>> mirroredTopicsInLink = new HashMap<>();
 
     public RemoteClusterMetadataManager(
         KafkaConfig config,
@@ -86,6 +97,17 @@ public class RemoteClusterMetadataManager implements AutoCloseable {
         this.random = new Random();
     }
 
+    public void storeLinkTopics(org.apache.kafka.common.record.Record record) {
+        require(record.hasKey(), "cluster link log's key should not be null");
+        String clusterName = readClusterLinkRecordKey(record.key());
+        Set<String> topics = readClusterLinkRecordValue(record.value());
+        mirroredTopicsInLink.put(clusterName, topics);
+    }
+
+    public void clear() {
+        mirroredTopicsInLink.clear();
+    }
+
     public void onMetadataUpdate(MetadataDelta delta, MetadataImage newImage) {
         // TODO: Use ClusterLinkDelta to manage remote brokers / topics.
         metadataImage = newImage;
@@ -101,6 +123,28 @@ public class RemoteClusterMetadataManager implements AutoCloseable {
         }
     }
 
+    private String readClusterLinkRecordKey(ByteBuffer buffer) {
+        short version = buffer.getShort();
+        if (version != CoordinatorRecordType.CLUSTER_LINK_MIRROR_TOPICS.id()) {
+            throw new IllegalArgumentException("Unknown cluster link log key version " + version);
+        }
+        return new ClusterLinkMirrorTopicsKey(new ByteBufferAccessor(buffer), version).clusterLinkId();
+    }
+
+    private Set<String> readClusterLinkRecordValue(ByteBuffer buffer) {
+        Set<String> topics = new HashSet<>();
+        short version = buffer.getShort();
+        if (version >= ClusterLinkMirrorTopicsValue.LOWEST_SUPPORTED_VERSION && version <= ClusterLinkMirrorTopicsValue.HIGHEST_SUPPORTED_VERSION) {
+            ClusterLinkMirrorTopicsValue value = new ClusterLinkMirrorTopicsValue(new ByteBufferAccessor(buffer), version);
+            value.topics().forEach(t -> topics.add(t.name()));
+        } else {
+            throw new IllegalStateException("Unknown version {} from the cluster link message value");
+        }
+        return topics;
+    }
+
+
+
     @Override
     public void close() throws Exception {
 
@@ -108,15 +152,15 @@ public class RemoteClusterMetadataManager implements AutoCloseable {
 
     private void handleFollowerChanges(Map<TopicPartition, LocalReplicaChanges.PartitionInfo> followers) {
         followers.forEach((tp, info) -> {
-            var remoteBrokerTopics = topics.get(info.partition().remoteBootstrapServers);
+            var remoteBrokerTopics = topics.get(info.partition().toString());
             if (remoteBrokerTopics != null) {
                 remoteBrokerTopics.remove(tp.topic());
                 if (remoteBrokerTopics.isEmpty()) {
-                    var sender = remoteBrokers.remove(info.partition().remoteBootstrapServers);
+                    var sender = remoteBrokers.remove(info.partition().toString());
                     if (sender != null) {
                         sender.close();
                     }
-                    topics.remove(info.partition().remoteBootstrapServers);
+                    topics.remove(info.partition().toString());
                 }
             }
         });
@@ -126,7 +170,7 @@ public class RemoteClusterMetadataManager implements AutoCloseable {
         var updateRemoteBootstrapServers = new HashSet<String>();
         readOnlyLeaders.forEach((tp, info) -> {
             remoteBrokers.computeIfAbsent(
-                info.partition().remoteBootstrapServers,
+                info.partition().toString(),
                 k -> {
                     var remoteBootstrapServers = Arrays.stream(k.split(",")).toList();
                     var addresses = ClientUtils.parseAndValidateAddresses(remoteBootstrapServers, "use_all_dns_ips");
@@ -144,8 +188,8 @@ public class RemoteClusterMetadataManager implements AutoCloseable {
                         logContext
                     );
                 });
-            updateRemoteBootstrapServers.add(info.partition().remoteBootstrapServers);
-            topics.computeIfAbsent(info.partition().remoteBootstrapServers, k -> new HashSet<>()).add(tp.topic());
+            updateRemoteBootstrapServers.add(info.partition().toString());
+            topics.computeIfAbsent(info.partition().toString(), k -> new HashSet<>()).add(tp.topic());
         });
 
         log.info("!!! Updating remote cluster metadata for bootstrap servers: {}", updateRemoteBootstrapServers);

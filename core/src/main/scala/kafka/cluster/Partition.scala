@@ -122,20 +122,17 @@ object Partition {
 
   def apply(topicIdPartition: TopicIdPartition,
             time: Time,
-            replicaManager: ReplicaManager,
-            remoteBootstrapServer: String): Partition = {
+            replicaManager: ReplicaManager): Partition = {
     Partition(
       topicPartition = topicIdPartition.topicPartition,
       topicId = Some(topicIdPartition.topicId),
       time = time,
-      replicaManager = replicaManager,
-      remoteBootstrapServer = remoteBootstrapServer)
+      replicaManager = replicaManager)
   }
   def apply(topicPartition: TopicPartition,
             time: Time,
             replicaManager: ReplicaManager,
-            topicId: Option[Uuid] = None,
-            remoteBootstrapServer: String = ""): Partition = {
+            topicId: Option[Uuid] = None): Partition = {
 
     val isrChangeListener = new AlterPartitionListener {
       override def markIsrExpand(): Unit = {
@@ -167,8 +164,7 @@ object Partition {
       delayedOperations = delayedOperations,
       metadataCache = replicaManager.metadataCache,
       logManager = replicaManager.logManager,
-      alterIsrManager = replicaManager.alterPartitionManager,
-      remoteBootstrapServer = remoteBootstrapServer)
+      alterIsrManager = replicaManager.alterPartitionManager)
   }
 
   def removeMetrics(topicPartition: TopicPartition): Unit = {
@@ -321,8 +317,7 @@ class Partition(val topicPartition: TopicPartition,
                 metadataCache: MetadataCache,
                 logManager: LogManager,
                 alterIsrManager: AlterPartitionManager,
-                @volatile private var _topicId: Option[Uuid] = None, // TODO: merge topicPartition and _topicId into TopicIdPartition once TopicId persist in most of the code by KAFKA-16212
-                @volatile var remoteBootstrapServer: String = ""
+                @volatile private var _topicId: Option[Uuid] = None // TODO: merge topicPartition and _topicId into TopicIdPartition once TopicId persist in most of the code by KAFKA-16212
                ) extends Logging with TopicPartitionLog {
 
   import Partition.metricsGroup
@@ -376,10 +371,6 @@ class Partition(val topicPartition: TopicPartition,
   metricsGroup.newGauge("AtMinIsr", () => if (isAtMinIsr) 1 else 0, tags)
   metricsGroup.newGauge("ReplicasCount", () => if (isLeader) assignmentState.replicationFactor else 0, tags)
   metricsGroup.newGauge("LastStableOffsetLag", () => log.map(_.lastStableOffsetLag).getOrElse(0), tags)
-
-  def setRemoteBootstrapServer(server: String): Unit = {
-    this.remoteBootstrapServer = server
-  }
 
   def unifiedLog(): Optional[UnifiedLog] = log.toJava
 
