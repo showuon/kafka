@@ -496,6 +496,7 @@ public abstract class TopicCommand {
                 if (topic.opts.hasCreateMirrorOption()) {
                     FindCoordinatorResult findCoordinatorResult = adminClient.findCoordinator(topic.opts.linkName().get());
                     coordinator = Optional.ofNullable(findCoordinatorResult.node().get());
+                    System.out.println("Found coordinator " + coordinator.map(Node::idString).orElse("none") + " for link " + topic.opts.linkName().get() + ".");
                     newTopic = new NewTopic(topic.name, topic.partitions, topic.replicationFactor.map(Integer::shortValue), topic.remoteBootstrapServers, topic.topicId, topic.opts.linkName());
                 } else if (topic.hasReplicaAssignment()) {
                     newTopic = new NewTopic(topic.name, topic.replicaAssignment);
@@ -511,7 +512,9 @@ public abstract class TopicCommand {
 
                 if (coordinator.isPresent()) {
                     Node node = coordinator.get();
+                    System.out.println("Node info: " + node);
                     String bootstrapServer = node.host() + ":" + node.port();
+                    System.out.println("Creating topic " + topic.name + " using bootstrap server " + bootstrapServer + ".");
                     try (Admin admin = createAdminClient(new Properties(), Optional.of(bootstrapServer))) {
                         newTopic.configs(configsMap);
                         CreateTopicsResult createResult = admin.createTopics(Set.of(newTopic),

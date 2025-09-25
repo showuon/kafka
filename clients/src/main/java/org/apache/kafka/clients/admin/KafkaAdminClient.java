@@ -159,6 +159,7 @@ import org.apache.kafka.common.message.DescribeUserScramCredentialsRequestData.U
 import org.apache.kafka.common.message.DescribeUserScramCredentialsResponseData;
 import org.apache.kafka.common.message.ExpireDelegationTokenRequestData;
 import org.apache.kafka.common.message.FindCoordinatorRequestData;
+import org.apache.kafka.common.message.FindCoordinatorResponseData;
 import org.apache.kafka.common.message.LeaveGroupRequestData.MemberIdentity;
 import org.apache.kafka.common.message.ListConfigResourcesRequestData;
 import org.apache.kafka.common.message.ListGroupsRequestData;
@@ -1810,7 +1811,10 @@ public class KafkaAdminClient extends AdminClient {
     }
 
     private Call getFindCoordinatorCall(KafkaFutureImpl<FindCoordinatorResult.CoordinatorInfo> future, String key) {
-        return new Call("findCoordinator", 5000, new LeastLoadedNodeProvider()) {
+        final long now = time.milliseconds();
+        final long deadline = calcDeadlineMs(now, 10000);
+
+        return new Call("findCoordinator", deadline, new LeastLoadedNodeProvider()) {
             @Override
             AbstractRequest.Builder<?> createRequest(int timeoutMs) {
                 return new FindCoordinatorRequest.Builder(
@@ -1824,12 +1828,15 @@ public class KafkaAdminClient extends AdminClient {
             @Override
             void handleResponse(AbstractResponse abstractResponse) {
                 final FindCoordinatorResponse response = (FindCoordinatorResponse) abstractResponse;
+                System.out.println("The findCoordinator response is: " + response);
                 ApiError error = new ApiError(response.data().errorCode(), response.data().errorMessage());
                 if (error.isFailure()) {
                     future.completeExceptionally(error.exception());
                 } else {
-                    Node node = new Node(response.data().nodeId(), response.data().host(),
-                        response.data().port());
+                    FindCoordinatorResponseData.Coordinator coordinator = response.coordinators()
+                            .stream().findFirst().orElseThrow();
+                    Node node = new Node(coordinator.nodeId(), coordinator.host(),
+                            coordinator.port());
                     future.complete(new FindCoordinatorResult.CoordinatorInfo(node, key));
                 }
             }
