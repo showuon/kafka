@@ -22,6 +22,7 @@ import kafka.network.RequestChannel
 import kafka.server.QuotaFactory.{QuotaManagers, UNBOUNDED_QUOTA}
 import kafka.server.coordinator.{ClusterLinkKey, TopicMirrorLinkCoordinator}
 import kafka.server.handlers.DescribeTopicPartitionsRequestHandler
+import kafka.server.metadata.KRaftMetadataCache
 import kafka.server.share.{ShareFetchUtils, SharePartitionManager}
 import kafka.utils.Logging
 import org.apache.kafka.clients.CommonClientConfigs
@@ -491,6 +492,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     val unauthorizedTopicResponses = mutable.Map[TopicIdPartition, PartitionResponse]()
     val nonExistingTopicResponses = mutable.Map[TopicIdPartition, PartitionResponse]()
     val invalidRequestResponses = mutable.Map[TopicIdPartition, PartitionResponse]()
+    val readOnlyTopicResponses = mutable.Map[TopicIdPartition, PartitionResponse]()
     val authorizedRequestInfo = mutable.Map[TopicIdPartition, MemoryRecords]()
     val topicIdToPartitionData = new mutable.ArrayBuffer[(TopicIdPartition, ProduceRequestData.PartitionProduceData)]
 
@@ -501,11 +503,13 @@ class KafkaApis(val requestChannel: RequestChannel,
         } else {
           (metadataCache.getTopicName(topic.topicId).orElse(topic.name), topic.topicId())
         }
-
         val topicPartition = new TopicPartition(topicName, partition.index())
+
         // To be compatible with the old version, only return UNKNOWN_TOPIC_ID if request version uses topicId, but the corresponding topic name can't be found.
         if (topicName.isEmpty && request.header.apiVersion > 12)
           nonExistingTopicResponses += new TopicIdPartition(topicId, topicPartition) -> new PartitionResponse(Errors.UNKNOWN_TOPIC_ID)
+        else if (!metadataCache.asInstanceOf[KRaftMetadataCache].getImage().topics().getTopic(topic.topicId()).partitions().get(partition.index()).clusterLinkName.isEmpty())
+          readOnlyTopicResponses += new TopicIdPartition(topicId, topicPartition) -> new PartitionResponse(Errors.INVALID_REQUEST)
         else
           topicIdToPartitionData += new TopicIdPartition(topicId, topicPartition) -> partition
       }
@@ -538,7 +542,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     // https://issues.apache.org/jira/browse/KAFKA-10730
     @nowarn("cat=deprecation")
     def sendResponseCallback(responseStatus: Map[TopicIdPartition, PartitionResponse]): Unit = {
-      val mergedResponseStatus = responseStatus ++ unauthorizedTopicResponses ++ nonExistingTopicResponses ++ invalidRequestResponses
+      val mergedResponseStatus = responseStatus ++ unauthorizedTopicResponses ++ nonExistingTopicResponses ++ invalidRequestResponses ++ readOnlyTopicResponses
       var errorInResponse = false
 
       val nodeEndpoints = new mutable.HashMap[Int, Node]

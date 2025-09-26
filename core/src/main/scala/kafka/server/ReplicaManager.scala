@@ -2300,6 +2300,11 @@ class ReplicaManager(val config: KafkaConfig,
                                           delta: TopicsDelta,
                                           topicId: Uuid): Option[(Partition, Boolean)] = {
     val localChanges = delta.localChanges(config.nodeId)
+    val clusterLinkName = if (localChanges.readOnlyLeaders().containsKey(tp)) {
+      delta.changedTopics().get(topicId).partitionChanges().get(tp.partition()).clusterLinkName
+    } else {
+      ""
+    }
     getPartition(tp) match {
       case HostedPartition.Offline(offlinePartition) =>
         if (offlinePartition.flatMap(p => p.topicId).contains(topicId)) {
@@ -2311,11 +2316,7 @@ class ReplicaManager(val config: KafkaConfig,
           stateChangeLogger.info(s"Creating new partition $tp with topic id " + s"$topicId." +
             s"A topic with the same name but different id exists but it resides in an offline log " +
             s"directory.")
-          val clusterLinkName = if (localChanges.readOnlyLeaders().containsKey(tp)) {
-            delta.changedTopics().get(topicId).partitionChanges().get(tp.partition()).clusterLinkName
-          } else {
-            ""
-          }
+
           logger.info("!!! create new partition: " + tp + " " + topicId + " " + clusterLinkName)
           val partition = Partition(new TopicIdPartition(topicId, tp), time, this, clusterLinkName)
           allPartitions.put(tp, HostedPartition.Online(partition))
@@ -2329,6 +2330,8 @@ class ReplicaManager(val config: KafkaConfig,
           throw new IllegalStateException(s"Topic $tp exists, but its ID is " +
             s"${partition.topicId.get}, not $topicId as expected")
         }
+        logger.info("!!! update partition: " + tp + " " + topicId + " " + clusterLinkName + ";;" + partition.clusterLinkName)
+        partition.setClusterLinkName(clusterLinkName)
         Some(partition, false)
 
       case HostedPartition.None =>
@@ -2340,11 +2343,6 @@ class ReplicaManager(val config: KafkaConfig,
             s"$topicId.")
         }
         // it's a partition that we don't know about yet, so create it and mark it online
-        val clusterLinkName = if (localChanges.readOnlyLeaders().containsKey(tp)) {
-          delta.changedTopics().get(topicId).partitionChanges().get(tp.partition()).clusterLinkName
-        } else {
-          ""
-        }
         logger.info("!!! create new partition: " + tp + " " + topicId + " " + clusterLinkName)
         val partition = Partition(new TopicIdPartition(topicId, tp), time, this, clusterLinkName)
         allPartitions.put(tp, HostedPartition.Online(partition))
@@ -2468,17 +2466,7 @@ class ReplicaManager(val config: KafkaConfig,
       getOrCreatePartition(tp, delta, info.topicId).foreach { case (partition, isNew) =>
         try {
           val readonly: Boolean = newImage.configs().configProperties(new ConfigResource(ConfigResource.Type.TOPIC, tp.topic)).getOrDefault(TopicConfig.READ_ONLY_CONFIG, "false").asInstanceOf[String].toBoolean
-          logger.info("!!! tp = " + tp + ", remoteLeader = " + remoteLeader + ", readonly = " + readonly)
-          if (remoteLeader) {
-            if (!readonly) {
-              // skip remote leader with read.only=false topic
-              return
-            }
-            // When a broker restarts, it brings up partition as follower first.
-            // We don't set remote bootstrap server when a partition is follower.
-            // If it becomes remote leader later, we need to set remote bootstrap server here.
-            partition.setClusterLinkName(info.partition.clusterLinkName)
-          }
+          logger.info("!!! tp = " + tp + ", remoteLeader = " + remoteLeader + ", readonly = " + readonly + ";;" + partition.clusterLinkName)
           followerTopicSet.add(tp.topic)
 
           // We always update the follower state.

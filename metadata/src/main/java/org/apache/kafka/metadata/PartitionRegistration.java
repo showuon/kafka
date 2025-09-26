@@ -286,7 +286,7 @@ public class PartitionRegistration {
             partitionEpoch + 1,
             newElr,
             newLastKnownElr,
-            record.clusterLinkName().isBlank() ? clusterLinkName : record.clusterLinkName());
+            record.clusterLinkName());
     }
 
     public String diff(PartitionRegistration prev) {

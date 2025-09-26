@@ -17,6 +17,7 @@
 
 package org.apache.kafka.tools;
 
+import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.Config;
@@ -114,7 +115,7 @@ public abstract class TopicCommand {
                 topicService.describeTopic(opts);
             } else if (opts.hasDeleteOption()) {
                 topicService.deleteTopic(opts);
-            } else if (opts.hasCreateMirrorOption()) {
+            } else if (opts.hasCreateMirrorOption() || opts.hasDeleteMirrorOption()) {
                 topicService.createMirrorTopic(opts);
             } else if (opts.hasCreateLinkOption()) {
                 topicService.createLink(opts);
@@ -546,6 +547,12 @@ public abstract class TopicCommand {
 
         // luke
         public void createLink(TopicCommandOptions opts) throws ExecutionException, InterruptedException {
+            // add "bootstrap.server" config if it is provided via CLI
+            if (!linkConfigs.containsKey(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG)) {
+                if (opts.remoteBootstrapServer().isPresent()) {
+                    linkConfigs.put(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, opts.remoteBootstrapServer().get());
+                }
+            }
             CreateClusterLinkResult result = adminClient.createClusterLink(opts.linkName().orElse(""), linkConfigs, new CreateClusterLinkOptions());
             result.all().get();
         }
@@ -758,6 +765,8 @@ public abstract class TopicCommand {
 
         private final OptionSpecBuilder createLinkOpt;
 
+        private final OptionSpecBuilder deleteMirrorOpt;
+
         private final ArgumentAcceptingOptionSpec<String> topicOpt;
 
         private final ArgumentAcceptingOptionSpec<String> linkNameOpt;
@@ -833,6 +842,7 @@ public abstract class TopicCommand {
             describeOpt = parser.accepts("describe", "List details for the given topics.");
             createMirrorOpt = parser.accepts("createMirror", "Create a new mirror topic.");
             createLinkOpt = parser.accepts("createLink", "Create a new link for mirroring remote topics.");
+            deleteMirrorOpt = parser.accepts("deleteMirror", "Delete a new link for mirroring remote topics.");
             topicOpt = parser.accepts("topic", "The topic to create, alter, describe or delete. It also accepts a regular " +
                             "expression, except for --create option. Put topic name in double quotes and use the '\\' prefix " +
                             "to escape regular expression symbols; e.g. \"test\\.topic\".")
@@ -937,6 +947,10 @@ public abstract class TopicCommand {
 
         public boolean hasCreateMirrorOption() {
             return has(createMirrorOpt);
+        }
+
+        public boolean hasDeleteMirrorOption() {
+            return has(deleteMirrorOpt);
         }
 
         public boolean hasCreateLinkOption() {
@@ -1059,7 +1073,7 @@ public abstract class TopicCommand {
 
             // should have exactly one action
             long actions =
-                Stream.of(createOpt, listOpt, alterOpt, describeOpt, deleteOpt, createMirrorOpt, createLinkOpt).filter(options::has)
+                Stream.of(createOpt, listOpt, alterOpt, describeOpt, deleteOpt, createMirrorOpt, createLinkOpt, deleteMirrorOpt).filter(options::has)
                     .count();
             if (actions != 1)
                 CommandLineUtils.printUsageAndExit(parser, "Command must include exactly one action: --list, --describe, --create, --alter or --delete");

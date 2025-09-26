@@ -618,12 +618,18 @@ public class ReplicationControlManager {
         return numRemoved;
     }
 
+    private boolean hasDifferentClusterLink(String topicName, String clusterLink) {
+        return !topics.get(topicsByName.get(topicName)).parts.get(0).clusterLinkName.equals(clusterLink);
+    }
+
     ControllerResult<CreateTopicsResponseData> createTopics(
         ControllerRequestContext context,
         CreateTopicsRequestData request,
         Set<String> describable
     ) {
+        log.info("!!! createTopics:" + request);
         Map<String, ApiError> topicErrors = new HashMap<>();
+        Map<String, String> attachedTopicsClusterLink = new HashMap<>();
         List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
 
         validateTotalNumberOfPartitions(request, defaultNumPartitions);
@@ -633,8 +639,14 @@ public class ReplicationControlManager {
 
         // Identify topics that already exist and mark them with the appropriate error
         request.topics().stream().filter(creatableTopic -> topicsByName.containsKey(creatableTopic.name()))
-                .forEach(t -> topicErrors.put(t.name(), new ApiError(Errors.TOPIC_ALREADY_EXISTS,
-                    "Topic '" + t.name() + "' already exists.")));
+                .forEach(t -> {
+                    if (!hasDifferentClusterLink(t.name(), t.clusterLink())) {
+                        topicErrors.put(t.name(), new ApiError(Errors.TOPIC_ALREADY_EXISTS,
+                                "Topic '" + t.name() + "' already exists."));
+                    } else {
+                        attachedTopicsClusterLink.put(t.name(), t.clusterLink());
+                    }
+                });
 
         // Verify that the configurations for the new topics are OK, and figure out what
         // configurations should be created.
@@ -644,7 +656,7 @@ public class ReplicationControlManager {
         // Try to create whatever topics are needed.
         Map<String, CreatableTopicResult> successes = new HashMap<>();
         for (CreatableTopic topic : request.topics()) {
-            if (topicErrors.containsKey(topic.name())) continue;
+            if (topicErrors.containsKey(topic.name()) || attachedTopicsClusterLink.containsKey(topic.name())) continue;
             // Figure out what ConfigRecords should be created, if any.
             ConfigResource configResource = new ConfigResource(TOPIC, topic.name());
             Map<String, Entry<OpType, String>> keyToOps = configChanges.get(configResource);
@@ -670,6 +682,41 @@ public class ReplicationControlManager {
             if (error.isFailure()) {
                 topicErrors.put(topic.name(), error);
             }
+        }
+
+        // luke
+        // handle attached mirror topics
+        log.info("!!! attachedTopic:" + attachedTopicsClusterLink + ";;" + topicErrors);
+        for (Entry<String, String> attachedTopic : attachedTopicsClusterLink.entrySet()) {
+            String topicName = attachedTopic.getKey();
+            String clusterLink = attachedTopic.getValue();
+            TopicControlInfo info = topics.get(topicsByName.get(topicName));
+            for (int partitionId : info.parts.keySet()) {
+                PartitionRegistration partition = info.parts.get(partitionId);
+                PartitionChangeBuilder builder = new PartitionChangeBuilder(
+                        partition,
+                        info.topicId(),
+                        partitionId,
+                        new LeaderAcceptor(clusterControl, partition),
+                        featureControl.metadataVersionOrThrow(),
+                        getTopicEffectiveMinIsr(topicName)
+                )
+                        .setClusterLink(clusterLink)
+                        .setEligibleLeaderReplicasEnabled(featureControl.isElrFeatureEnabled())
+                        .setDefaultDirProvider(clusterDescriber);
+                builder.build().ifPresent(records::add);
+                log.info("!!! update partition {} for topic {} with cluster link {}: {}", partitionId, topicName, clusterLink, records);
+
+            }
+            CreatableTopicResult result = new CreatableTopicResult().
+                    setName(topicName).
+                    setTopicId(topicsByName.get(topicName)).
+                    setErrorCode(NONE.code()).
+                    setErrorMessage(null);
+            result.setNumPartitions(info.parts.size());
+            result.setReplicationFactor((short) info.parts.values().iterator().next().replicas.length);
+            result.setTopicConfigErrorCode(NONE.code());
+            successes.put(topicName, result);
         }
 
         // Create responses for all topics.
@@ -1136,7 +1183,8 @@ public class ReplicationControlManager {
                     featureControl.metadataVersionOrThrow(),
                     getTopicEffectiveMinIsr(topic.name)
                 )
-                    .setEligibleLeaderReplicasEnabled(featureControl.isElrFeatureEnabled());
+                    .setEligibleLeaderReplicasEnabled(featureControl.isElrFeatureEnabled())
+                    .setClusterLink(partition.clusterLinkName);
                 if (configurationControl.uncleanLeaderElectionEnabledForTopic(topic.name())) {
                     builder.setElection(PartitionChangeBuilder.Election.UNCLEAN);
                 }
@@ -1600,6 +1648,7 @@ public class ReplicationControlManager {
             .setElection(election)
             .setEligibleLeaderReplicasEnabled(featureControl.isElrFeatureEnabled())
             .setDefaultDirProvider(clusterDescriber)
+            .setClusterLink(partition.clusterLinkName)
             .build();
         if (record.isEmpty()) {
             if (electionType == ElectionType.PREFERRED) {
@@ -1764,6 +1813,7 @@ public class ReplicationControlManager {
                 .setElection(PartitionChangeBuilder.Election.PREFERRED)
                 .setEligibleLeaderReplicasEnabled(featureControl.isElrFeatureEnabled())
                 .setDefaultDirProvider(clusterDescriber)
+                .setClusterLink(partition.clusterLinkName)
                 .build().ifPresent(records::add);
         }
     }
@@ -2032,6 +2082,7 @@ public class ReplicationControlManager {
                 getTopicEffectiveMinIsr(topic.name)
             );
             builder.setEligibleLeaderReplicasEnabled(featureControl.isElrFeatureEnabled());
+            builder.setClusterLink(partition.clusterLinkName);
             if (configurationControl.uncleanLeaderElectionEnabledForTopic(topic.name)) {
                 builder.setElection(PartitionChangeBuilder.Election.UNCLEAN);
             }
@@ -2161,6 +2212,7 @@ public class ReplicationControlManager {
             setTargetRemoving(List.of()).
             setTargetAdding(List.of()).
             setDefaultDirProvider(clusterDescriber).
+            setClusterLink(part.clusterLinkName).
             build();
     }
 
@@ -2218,6 +2270,7 @@ public class ReplicationControlManager {
             getTopicEffectiveMinIsr(topics.get(tp.topicId()).name)
         );
         builder.setEligibleLeaderReplicasEnabled(featureControl.isElrFeatureEnabled());
+        builder.setClusterLink(part.clusterLinkName);
         if (!reassignment.replicas().equals(currentReplicas)) {
             builder.setTargetReplicas(reassignment.replicas());
         }
@@ -2302,6 +2355,7 @@ public class ReplicationControlManager {
                             )
                                     .setDirectory(brokerId, dirId)
                                     .setDefaultDirProvider(clusterDescriber)
+                                    .setClusterLink(partitionRegistration.clusterLinkName)
                                     .build();
                             partitionChangeRecord.ifPresent(records::add);
                             if (directoryIsOffline) {
