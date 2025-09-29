@@ -106,11 +106,11 @@ public class TopicMirrorLinkCoordinator {
         logger.info("Starting up.");
         scheduler.startup();
         // periodically query source cluster to get the metadata
-//        scheduler.schedule("topic-mirror-link-query",
-//                remoteClusterMetadataManager::refreshRemoteMetadata,
-//                10000,
-//                10000
-//        );
+        scheduler.schedule("topic-mirror-link-query",
+                remoteClusterMetadataManager::refreshRemoteMetadata,
+                300000,
+                300000
+        );
         numPartitions = config.clusterLinksConfig().clusterLinkTopicNumPartitions();
     }
 
