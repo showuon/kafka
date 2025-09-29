@@ -134,6 +134,7 @@ public class RemoteClusterMetadataManager implements AutoCloseable {
         this.topics.put(clusterName, topics);
     }
 
+    // TODO: When mirror deleted, we should write a record in internal topic and remove topics from the list
     public void refreshRemoteMetadata() {
         log.info("!!! Refreshing remote cluster metadata:" + topics);
         // make sure all clusterLinkNames has at least one connections ready
