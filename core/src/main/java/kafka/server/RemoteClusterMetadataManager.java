@@ -293,7 +293,7 @@ public class RemoteClusterMetadataManager implements AutoCloseable {
         log.info("!!! periodic topicMetadataResp: {}", topicMetadataResp);
         List<String> deletedTopics = new ArrayList<>();
         // deleted topics if needed
-        topics.values().stream().flatMap(Collection::stream).forEach(name -> {
+        topics.get(clusterLinkName).forEach(name -> {
             List<String> remoteTopicNamesDeleted = topicMetadataResp.stream()
                     .filter(topicMetadata -> topicMetadata.error() == Errors.UNKNOWN_TOPIC_OR_PARTITION)
                     .map(MetadataResponse.TopicMetadata::topic).toList();
