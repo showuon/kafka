@@ -28,6 +28,7 @@ import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.message.CreatePartitionsRequestData;
+import org.apache.kafka.common.message.DeleteTopicsRequestData;
 import org.apache.kafka.common.message.DescribeConfigsRequestData;
 import org.apache.kafka.common.message.IncrementalAlterConfigsRequestData;
 import org.apache.kafka.common.message.ListGroupsRequestData;
@@ -37,7 +38,9 @@ import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.network.ClientInformation;
 import org.apache.kafka.common.network.ListenerName;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
+import org.apache.kafka.common.requests.DeleteTopicsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.kafka.common.requests.IncrementalAlterConfigsRequest;
@@ -199,7 +202,8 @@ public class RemoteClusterMetadataManager implements AutoCloseable {
                 });
 
                 var createPartitionsTopics = new CreatePartitionsRequestData.CreatePartitionsTopicCollection();
-                metadataResponse.topicMetadata().forEach(topicMetadata -> {
+                Collection<MetadataResponse.TopicMetadata> topicMetadataResp = metadataResponse.topicMetadata();
+                topicMetadataResp.forEach(topicMetadata -> {
                     var partitionLeaders = remotePartitionLeaders.computeIfAbsent(clusterLinkName, k -> new HashMap<>());
                     topicMetadata.partitionMetadata().forEach(partitionMetadata -> {
                         partitionLeaders.put(partitionMetadata.topicPartition, remoteClusterNodes.get(clusterLinkName).get(partitionMetadata.leaderId.get()));
@@ -212,8 +216,11 @@ public class RemoteClusterMetadataManager implements AutoCloseable {
                             .setCount(partitionLeaders.size())
                             .setAssignments(null)
                         );
+
                     }
                 });
+
+                maybeDeleteTopic(clusterLinkName, topicMetadataResp);
 
                 if (!createPartitionsTopics.isEmpty()) {
                     log.info("!!! Detected partition count change, sending CreatePartitionsRequest: {}", createPartitionsTopics);
@@ -291,6 +298,30 @@ public class RemoteClusterMetadataManager implements AutoCloseable {
 
         });
         updateConsumerGroupOffsets();
+    }
+
+    private void maybeDeleteTopic(String clusterLinkName, Collection<MetadataResponse.TopicMetadata> topicMetadataResp) {
+        log.info("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+        log.info("!!! periodic topicMetadataResp: {}", topicMetadataResp);
+        List<String> deletedTopics = new ArrayList<>();
+        // deleted topics if needed
+        topics.values().stream().flatMap(Collection::stream).forEach(name -> {
+            List<String> remoteTopicNamesDeleted = topicMetadataResp.stream()
+                    .filter(topicMetadata -> topicMetadata.error() == Errors.UNKNOWN_TOPIC_OR_PARTITION)
+                    .map(MetadataResponse.TopicMetadata::topic).toList();
+
+            if (!topics.get(clusterLinkName).contains(name) || remoteTopicNamesDeleted.contains(name)) {
+                log.info("!!! Detected topic {} deleted in remote cluster {}, removing it locally too", name, clusterLinkName);
+                // send a delete topic request to the controller
+                channelManager.sendRequest(new DeleteTopicsRequest.Builder(
+                        new DeleteTopicsRequestData()
+                                .setTopicNames(List.of(name))
+                                .setTimeoutMs(10000)), new TimeoutHandler());
+                log.info("!!! Sent delete topic request for {}", name);
+                deletedTopics.add(name);
+            }
+        });
+        deletedTopics.forEach(name -> topics.get(clusterLinkName).remove(name));
     }
 
     private void updateConsumerGroupOffsets() {
