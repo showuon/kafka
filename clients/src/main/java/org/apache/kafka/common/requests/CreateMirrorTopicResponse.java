@@ -18,6 +18,7 @@
 package org.apache.kafka.common.requests;
 
 import org.apache.kafka.common.message.CreateClusterLinkResponseData;
+import org.apache.kafka.common.message.CreateMirrorTopicResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.Readable;
@@ -25,16 +26,16 @@ import org.apache.kafka.common.protocol.Readable;
 import java.util.HashMap;
 import java.util.Map;
 
-public class CreateClusterLinkResponse extends AbstractResponse {
-    private final CreateClusterLinkResponseData data;
+public class CreateMirrorTopicResponse extends AbstractResponse {
+    private final CreateMirrorTopicResponseData data;
 
-    public CreateClusterLinkResponse(CreateClusterLinkResponseData data) {
-        super(ApiKeys.CREATE_CLUSTER_LINK);
+    public CreateMirrorTopicResponse(CreateMirrorTopicResponseData data) {
+        super(ApiKeys.DELETE_MIRROR_TOPIC);
         this.data = data;
     }
 
     @Override
-    public CreateClusterLinkResponseData data() {
+    public CreateMirrorTopicResponseData data() {
         return data;
     }
 
@@ -55,7 +56,7 @@ public class CreateClusterLinkResponse extends AbstractResponse {
         return errorCounts;
     }
 
-    public static CreateClusterLinkResponse parse(Readable readable, short version) {
-        return new CreateClusterLinkResponse(new CreateClusterLinkResponseData(readable, version));
+    public static CreateMirrorTopicResponse parse(Readable readable, short version) {
+        return new CreateMirrorTopicResponse(new CreateMirrorTopicResponseData(readable, version));
     }
 }

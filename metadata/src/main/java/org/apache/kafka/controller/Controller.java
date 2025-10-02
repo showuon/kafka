@@ -32,6 +32,7 @@ import org.apache.kafka.common.message.AssignReplicasToDirsRequestData;
 import org.apache.kafka.common.message.AssignReplicasToDirsResponseData;
 import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.message.BrokerRegistrationRequestData;
+import org.apache.kafka.common.message.BumpLeaderEpochResponseData;
 import org.apache.kafka.common.message.ControllerRegistrationRequestData;
 import org.apache.kafka.common.message.CreateClusterLinkResponseData;
 import org.apache.kafka.common.message.CreateDelegationTokenRequestData;
@@ -148,6 +149,11 @@ public interface Controller extends AclMutator, AutoCloseable {
     CompletableFuture<CreateClusterLinkResponseData> createClusterLink(
             ControllerRequestContext context,
             Map<ConfigResource, Map<String, Map.Entry<AlterConfigOp.OpType, String>>> configChanges
+    );
+
+    CompletableFuture<BumpLeaderEpochResponseData> bumpLeaderEpoch(
+            ControllerRequestContext context,
+            int leaderEpoch
     );
 
     /**

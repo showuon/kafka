@@ -53,6 +53,8 @@
       "versions": "2+", "nullableVersions": "2+", "taggedVersions": "2+", "tag": 7,
       "about": "null if the LastKnownElr didn't change; the last known eligible leader replicas otherwise." },
     { "name": "clusterLinkName", "type": "string", "versions": "2+", "default": "",
-      "about": "clusterLinkName." }
+      "about": "clusterLinkName." },
+    { "name": "LeaderEpoch", "type": "int32", "versions": "2+", "default": "-1",
+      "about": "The epoch of the partition leader." }
   ]
 }

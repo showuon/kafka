@@ -17,6 +17,7 @@
 package org.apache.kafka.common.requests;
 
 import org.apache.kafka.common.errors.UnsupportedVersionException;
+import org.apache.kafka.common.message.CreateMirrorTopicRequestData;
 import org.apache.kafka.common.network.Send;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
@@ -357,6 +358,12 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
             case GET_REPLICA_LOG_INFO:
                 return GetReplicaLogInfoRequest.parse(readable, apiVersion);
             case CREATE_CLUSTER_LINK:
+                return CreateClusterLinkRequest.parse(readable, apiVersion);
+            case CREATE_MIRROR_TOPIC:
+                return CreateClusterLinkRequest.parse(readable, apiVersion);
+            case DELETE_MIRROR_TOPIC:
+                return CreateClusterLinkRequest.parse(readable, apiVersion);
+            case BUMP_LEADER_EPOCH:
                 return CreateClusterLinkRequest.parse(readable, apiVersion);
             default:
                 throw new AssertionError(String.format("ApiKey %s is not currently handled in `parseRequest`, the " +

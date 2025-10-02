@@ -50,6 +50,8 @@ import org.apache.kafka.common.message.AlterPartitionResponseData;
 import org.apache.kafka.common.message.AssignReplicasToDirsRequestData;
 import org.apache.kafka.common.message.AssignReplicasToDirsResponseData;
 import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
+import org.apache.kafka.common.message.BumpLeaderEpochResponseData;
+import org.apache.kafka.common.message.CreateClusterLinkResponseData;
 import org.apache.kafka.common.message.CreatePartitionsRequestData.CreatePartitionsTopic;
 import org.apache.kafka.common.message.CreatePartitionsResponseData.CreatePartitionsTopicResult;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
@@ -1715,6 +1717,16 @@ public class ReplicationControlManager {
                 request.currentMetadataOffset());
         log.error("processExpiredBrokerHeartbeat: controller event queue overloaded. Timed out " +
                 "heartbeat from broker {}.", brokerId);
+    }
+
+    public ControllerResult<BumpLeaderEpochResponseData> bumpLeaderEpoch(int leaderEpoch) {
+//        BrokerRegistration registration = clusterControl.brokerRegistrations().get(brokerId);
+//        if (registration == null) {
+//            throw new BrokerIdNotRegisteredException("Broker ID " + brokerId +
+//                    " is not currently registered");
+//        }
+        List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
+        return ControllerResult.of(records, null);
     }
 
     public ControllerResult<Void> unregisterBroker(int brokerId) {
