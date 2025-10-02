@@ -34,6 +34,7 @@ import org.apache.kafka.common.errors._
 import org.apache.kafka.common.internals.Topic.{CLUSTER_LINK_TOPIC_NAME, GROUP_METADATA_TOPIC_NAME, SHARE_GROUP_STATE_TOPIC_NAME, TRANSACTION_STATE_TOPIC_NAME, isInternal}
 import org.apache.kafka.common.internals.{FatalExitError, Plugin, Topic}
 import org.apache.kafka.common.message.AddPartitionsToTxnResponseData.{AddPartitionsToTxnResult, AddPartitionsToTxnResultCollection}
+import org.apache.kafka.common.message.BumpLeaderEpochRequestData.LeaderEpochState
 import org.apache.kafka.common.message.DeleteRecordsResponseData.{DeleteRecordsPartitionResult, DeleteRecordsTopicResult}
 import org.apache.kafka.common.message.DeleteShareGroupOffsetsRequestData.DeleteShareGroupOffsetsRequestTopic
 import org.apache.kafka.common.message.DeleteShareGroupOffsetsResponseData.DeleteShareGroupOffsetsResponseTopic
@@ -269,6 +270,32 @@ class KafkaApis(val requestChannel: RequestChannel,
       if (request.apiLocalCompleteTimeNanos < 0)
         request.apiLocalCompleteTimeNanos = time.nanoseconds
     }
+  }
+
+  def handleDeleteMirrorTopic(request: RequestChannel.Request): Unit = {
+    val deleteMirrorTopicRequest = request.body[DeleteMirrorTopicRequest]
+    logger.info(s"!!! Handling delete mirror topics request")
+    // get the leader epoch to bump from each partition
+
+    val topicIds = deleteMirrorTopicRequest.data().topics().stream().map(t => t.topicId()).toList
+    val bumpLeaderEpochs = new BumpLeaderEpochRequestData()
+    topicIds.forEach( tid => {
+      val leaderEpochStates = new util.ArrayList[LeaderEpochState]()
+      metadataCache.asInstanceOf[KRaftMetadataCache].getImage().topics().getTopic(tid).partitions().keySet().forEach(par => {
+        val leaderEpoch: Int = replicaManager.getLog(new TopicPartition(metadataCache.getTopicName(tid).get(), par)).map(log => log.latestEpochFromLog().orElse(-1)).get
+        leaderEpochStates.add(new LeaderEpochState().setPartitionIndex(par).setLeaderEpoch(leaderEpoch))
+      })
+      bumpLeaderEpochs.topics().add(new BumpLeaderEpochRequestData.TopicState().setTopicId(tid).setPartitions(leaderEpochStates))
+    })
+
+
+
+//    val clusterLinkTopic = createTopicsRequest.data.topics.stream().filter(t => t.clusterLink() != null && !t.clusterLink().isEmpty).findFirst()
+//    if (clusterLinkTopic.isPresent) {
+//      logger.info(s"!!! Handling create mirror topics request: ${clusterLinkTopic.get().clusterLink()}")
+//      topicMirrorLinkCoordinator.addTopicsInCoordinator(clusterLinkTopic.get().clusterLink(), util.Set.of(clusterLinkTopic.get().name()));
+//    }
+    forwardToController(request)
   }
 
   def handleCreateTopics(request: RequestChannel.Request): Unit = {
