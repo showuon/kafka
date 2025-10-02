@@ -298,7 +298,7 @@ public class RemoteClusterMetadataManager implements AutoCloseable {
                     .filter(topicMetadata -> topicMetadata.error() == Errors.UNKNOWN_TOPIC_OR_PARTITION)
                     .map(MetadataResponse.TopicMetadata::topic).toList();
 
-            if (!topics.get(clusterLinkName).contains(name) || remoteTopicNamesDeleted.contains(name)) {
+            if (remoteTopicNamesDeleted.contains(name)) {
                 log.info("!!! Detected topic {} deleted in remote cluster {}, removing it locally too", name, clusterLinkName);
                 // send a delete topic request to the controller
                 channelManager.sendRequest(new DeleteTopicsRequest.Builder(
