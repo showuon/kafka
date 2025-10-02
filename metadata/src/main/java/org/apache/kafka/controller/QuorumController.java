@@ -41,6 +41,7 @@ import org.apache.kafka.common.message.AssignReplicasToDirsRequestData;
 import org.apache.kafka.common.message.AssignReplicasToDirsResponseData;
 import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.message.BrokerRegistrationRequestData;
+import org.apache.kafka.common.message.BumpLeaderEpochResponseData;
 import org.apache.kafka.common.message.ControllerRegistrationRequestData;
 import org.apache.kafka.common.message.CreateClusterLinkResponseData;
 import org.apache.kafka.common.message.CreateDelegationTokenRequestData;
@@ -1777,6 +1778,17 @@ public final class QuorumController implements Controller {
             return result;
         });
     }
+
+    @Override
+    public CompletableFuture<BumpLeaderEpochResponseData> bumpLeaderEpoch(
+            ControllerRequestContext context,
+            int leaderEpoch
+    ) {
+        return appendWriteEvent("bumpLeaderEpoch", context.deadlineNs(),
+                () -> replicationControl.bumpLeaderEpoch(leaderEpoch));
+    }
+
+
 
     @Override
     public CompletableFuture<Void> unregisterBroker(

@@ -36,6 +36,7 @@ import org.apache.kafka.common.message.AssignReplicasToDirsRequestData;
 import org.apache.kafka.common.message.AssignReplicasToDirsResponseData;
 import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.message.BrokerRegistrationRequestData;
+import org.apache.kafka.common.message.BumpLeaderEpochResponseData;
 import org.apache.kafka.common.message.ControllerRegistrationRequestData;
 import org.apache.kafka.common.message.CreateClusterLinkResponseData;
 import org.apache.kafka.common.message.CreateDelegationTokenRequestData;
@@ -103,6 +104,11 @@ public class MockController implements Controller {
             ControllerRequestContext context,
             Map<ConfigResource, Map<String, Map.Entry<AlterConfigOp.OpType, String>>> configChanges
     ) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<BumpLeaderEpochResponseData> bumpLeaderEpoch(ControllerRequestContext context, int leaderEpoch) {
         throw new UnsupportedOperationException();
     }
 

@@ -583,6 +583,12 @@ public class RequestConvertToJson {
                 return GetReplicaLogInfoRequestDataJsonConverter.write(((GetReplicaLogInfoRequest) request).data(), request.version());
             case CREATE_CLUSTER_LINK:
                 return CreateClusterLinkRequestDataJsonConverter.write(((CreateClusterLinkRequest) request).data(), request.version());
+            case CREATE_MIRROR_TOPIC:
+                return CreateClusterLinkRequestDataJsonConverter.write(((CreateClusterLinkRequest) request).data(), request.version());
+            case DELETE_MIRROR_TOPIC:
+                return CreateClusterLinkRequestDataJsonConverter.write(((CreateClusterLinkRequest) request).data(), request.version());
+            case BUMP_LEADER_EPOCH:
+                return CreateClusterLinkRequestDataJsonConverter.write(((CreateClusterLinkRequest) request).data(), request.version());
             default:
                 throw new IllegalStateException("ApiKey " + request.apiKey() + " is not currently handled in `request`, the " +
                     "code should be updated to do so.");
@@ -772,6 +778,12 @@ public class RequestConvertToJson {
             case GET_REPLICA_LOG_INFO:
                 return GetReplicaLogInfoResponseDataJsonConverter.write(((GetReplicaLogInfoResponse) response).data(), version);
             case CREATE_CLUSTER_LINK:
+                return CreateClusterLinkResponseDataJsonConverter.write(((CreateClusterLinkResponse) response).data(), version);
+            case CREATE_MIRROR_TOPIC:
+                return CreateClusterLinkResponseDataJsonConverter.write(((CreateClusterLinkResponse) response).data(), version);
+            case DELETE_MIRROR_TOPIC:
+                return CreateClusterLinkResponseDataJsonConverter.write(((CreateClusterLinkResponse) response).data(), version);
+            case BUMP_LEADER_EPOCH:
                 return CreateClusterLinkResponseDataJsonConverter.write(((CreateClusterLinkResponse) response).data(), version);
             default:
                 throw new IllegalStateException("ApiKey " + response.apiKey() + " is not currently handled in `response`, the " +

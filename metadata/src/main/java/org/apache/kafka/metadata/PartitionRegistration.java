@@ -33,6 +33,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
+import static org.apache.kafka.common.record.RecordBatch.NO_PARTITION_LEADER_EPOCH;
 import static org.apache.kafka.metadata.LeaderConstants.NO_LEADER_CHANGE;
 
 
@@ -263,13 +264,18 @@ public class PartitionRegistration {
 
         int newLeader;
         int newLeaderEpoch;
-        if (record.leader() == NO_LEADER_CHANGE) {
+        // we should bump the leader epoch when leaderEpoch is assiged (bump_leader_epoch request), even if no_leader_change
+        if (record.leader() == NO_LEADER_CHANGE && record.leaderEpoch() == NO_PARTITION_LEADER_EPOCH) {
             newLeader = leader;
             newLeaderEpoch = leaderEpoch;
         } else {
             newLeader = record.leader();
             newLeaderEpoch = leaderEpoch + 1;
         }
+        if (record.leaderEpoch() != NO_PARTITION_LEADER_EPOCH && record.leaderEpoch() < newLeaderEpoch ) {
+            newLeaderEpoch = record.leaderEpoch();
+        }
+
 
         LeaderRecoveryState newLeaderRecoveryState = leaderRecoveryState.changeTo(record.leaderRecoveryState());
 

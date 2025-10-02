@@ -137,6 +137,9 @@ class ControllerApis(
         case ApiKeys.REMOVE_RAFT_VOTER => handleRemoveRaftVoter(request)
         case ApiKeys.UPDATE_RAFT_VOTER => handleUpdateRaftVoter(request)
         case ApiKeys.CREATE_CLUSTER_LINK => handleCreateClusterLink(request)
+        case ApiKeys.CREATE_MIRROR_TOPIC => handleCreateClusterLink(request)
+        case ApiKeys.DELETE_MIRROR_TOPIC => handleCreateClusterLink(request)
+        case ApiKeys.BUMP_LEADER_EPOCH => handleBumpLeaderEpoch(request)
         case _ => throw new ApiException(s"Unsupported ApiKey ${request.context.header.apiKey}")
       }
 
@@ -166,7 +169,6 @@ class ControllerApis(
   }
 
   def handleCreateClusterLink(request: RequestChannel.Request): CompletableFuture[Unit] = {
-    // test
     authHelper.authorizeClusterOperation(request, CLUSTER_ACTION)
     val createClusterLinkRequest = request.body[CreateClusterLinkRequest]
     info("!!! create cluster link request: " + createClusterLinkRequest)
@@ -224,6 +226,28 @@ class ControllerApis(
         names => authHelper.filterByAuthorized(request.context, CREATE, TOPIC, names)(identity),
         names => authHelper.filterByAuthorized(request.context, DESCRIBE_CONFIGS, TOPIC, names, logIfDenied = false)(identity))
     }
+
+    CompletableFuture.completedFuture[Unit](())
+
+  }
+
+  def handleBumpLeaderEpoch(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    // luke
+    authHelper.authorizeClusterOperation(request, CLUSTER_ACTION)
+    val bumpLeaderEpochRequest = request.body[BumpLeaderEpochRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.bumpLeaderEpoch(context, bumpLeaderEpochRequest.data().apiKey().toInt)
+      .handle[Unit] { (response, exception) =>
+        logger.info("!!! bump leader epoch response: " + response + " exception: " + exception)
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else {
+
+          requestHelper.sendResponseMaybeThrottle(request, throttleMs =>
+            new BumpLeaderEpochResponse(response.setThrottleTimeMs(throttleMs)))
+        }
+      }
 
     CompletableFuture.completedFuture[Unit](())
 
