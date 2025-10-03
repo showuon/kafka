@@ -277,14 +277,14 @@ class KafkaApis(val requestChannel: RequestChannel,
     // get the leader epoch to bump from each partition
 
     val updatedDeleteMirrorTopicRequestData = new DeleteMirrorTopicRequestData()
-    val topicIds = deleteMirrorTopicRequest.data().topics().stream().map(t => t.topicId()).toList
-    topicIds.forEach( tid => {
+    val topicNames = deleteMirrorTopicRequest.data().topics().stream().map(t => t.name()).toList
+    topicNames.forEach( name => {
       val leaderEpochStates = new util.ArrayList[DeleteMirrorTopicRequestData.LeaderEpochState]()
-      metadataCache.asInstanceOf[KRaftMetadataCache].getImage().topics().getTopic(tid).partitions().keySet().forEach(par => {
-        val leaderEpoch: Int = replicaManager.getLog(new TopicPartition(metadataCache.getTopicName(tid).get(), par)).map(log => log.latestEpochFromLog().orElse(-1)).get
+      metadataCache.asInstanceOf[KRaftMetadataCache].getImage().topics().getTopic(name).partitions().keySet().forEach(par => {
+        val leaderEpoch: Int = replicaManager.getLog(new TopicPartition(name, par)).map(log => log.latestEpochFromLog().orElse(-1)).get
         leaderEpochStates.add(new DeleteMirrorTopicRequestData.LeaderEpochState().setPartitionIndex(par).setLeaderEpoch(leaderEpoch))
       })
-      updatedDeleteMirrorTopicRequestData.topics().add(new DeleteMirrorTopicRequestData.TopicState().setTopicId(tid).setPartitions(leaderEpochStates))
+      updatedDeleteMirrorTopicRequestData.topics().add(new DeleteMirrorTopicRequestData.TopicState().setTopicId(metadataCache.getTopicId(name)).setPartitions(leaderEpochStates))
     })
 
     val updatedDeleteMirrorTopicRequest = new DeleteMirrorTopicRequest(updatedDeleteMirrorTopicRequestData, deleteMirrorTopicRequest.version())

@@ -17,6 +17,7 @@
 
 package org.apache.kafka.common.requests;
 
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.message.CreateClusterLinkResponseData;
 import org.apache.kafka.common.message.CreateMirrorTopicRequestData;
 import org.apache.kafka.common.message.DeleteMirrorTopicRequestData;
@@ -26,6 +27,7 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.Readable;
 
 import java.util.Map;
+import java.util.Set;
 
 public class DeleteMirrorTopicRequest extends AbstractRequest {
     public static class Builder extends AbstractRequest.Builder<DeleteMirrorTopicRequest> {
@@ -37,10 +39,12 @@ public class DeleteMirrorTopicRequest extends AbstractRequest {
             this.data = data;
         }
 
-        public Builder(String name, Map<String, String> configs) {
+        public Builder(String name, Set<String> topics) {
             super(ApiKeys.DELETE_MIRROR_TOPIC, ApiKeys.DELETE_MIRROR_TOPIC.oldestVersion(),
                   ApiKeys.DELETE_MIRROR_TOPIC.latestVersion());
             DeleteMirrorTopicRequestData data = new DeleteMirrorTopicRequestData();
+            data.setClusterLink(name);
+            topics.forEach(topic -> data.topics().add(new DeleteMirrorTopicRequestData.TopicState().setName(topic)));
             this.data = data;
         }
 
