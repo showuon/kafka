@@ -253,7 +253,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.GET_REPLICA_LOG_INFO => handleGetReplicaLogInfo(request)
         case ApiKeys.CREATE_CLUSTER_LINK => forwardToController(request)
         case ApiKeys.CREATE_MIRROR_TOPIC => forwardToController(request)
-        case ApiKeys.DELETE_MIRROR_TOPIC => forwardToController(request)
+        case ApiKeys.DELETE_MIRROR_TOPIC => handleDeleteMirrorTopic(request)
         case _ => throw new IllegalStateException(s"No handler for request api key ${request.header.apiKey}")
       }
     } catch {
@@ -289,7 +289,9 @@ class KafkaApis(val requestChannel: RequestChannel,
 
     val updatedDeleteMirrorTopicRequest = new DeleteMirrorTopicRequest(updatedDeleteMirrorTopicRequestData, deleteMirrorTopicRequest.version())
 
-    forwardToController(updatedDeleteMirrorTopicRequest.asInstanceOf[RequestChannel.Request])
+//    request.body
+
+//    requestChannel
   }
 
   def handleCreateTopics(request: RequestChannel.Request): Unit = {

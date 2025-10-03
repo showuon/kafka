@@ -362,7 +362,7 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
             case CREATE_MIRROR_TOPIC:
                 return CreateClusterLinkRequest.parse(readable, apiVersion);
             case DELETE_MIRROR_TOPIC:
-                return CreateClusterLinkRequest.parse(readable, apiVersion);
+                return DeleteMirrorTopicRequest.parse(readable, apiVersion);
             case BUMP_LEADER_EPOCH:
                 return CreateClusterLinkRequest.parse(readable, apiVersion);
             default:

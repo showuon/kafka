@@ -100,7 +100,7 @@ public class PartitionChangeBuilder {
     private boolean eligibleLeaderReplicasEnabled;
     private DefaultDirProvider defaultDirProvider;
     private String clusterLink;
-    private int minLeaderEpoch;
+    private int minLeaderEpoch = -1;
 
     // Whether allow electing last known leader in a Balanced recovery. Note, the last known leader will be stored in the
     // lastKnownElr field if enabled.
