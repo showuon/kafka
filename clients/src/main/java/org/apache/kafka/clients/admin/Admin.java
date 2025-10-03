@@ -1668,6 +1668,8 @@ public interface Admin extends AutoCloseable {
 
     CreateClusterLinkResult createClusterLink(String clusterLinkName, Map<String, String> configs, CreateClusterLinkOptions options);
 
+    DeleteMirrorTopicResult deleteMirrorTopic(String clusterLinkName, Set<String> topics, DeleteMirrorTopicOptions options);
+
     /**
      * Describe producer state on a set of topic partitions. See
      * {@link #describeProducers(Collection, DescribeProducersOptions)} for more details.

@@ -27,6 +27,8 @@ import org.apache.kafka.clients.admin.CreateClusterLinkResult;
 import org.apache.kafka.clients.admin.CreatePartitionsOptions;
 import org.apache.kafka.clients.admin.CreateTopicsOptions;
 import org.apache.kafka.clients.admin.CreateTopicsResult;
+import org.apache.kafka.clients.admin.DeleteMirrorTopicOptions;
+import org.apache.kafka.clients.admin.DeleteMirrorTopicResult;
 import org.apache.kafka.clients.admin.DeleteTopicsOptions;
 import org.apache.kafka.clients.admin.DescribeTopicsOptions;
 import org.apache.kafka.clients.admin.FindCoordinatorResult;
@@ -486,6 +488,57 @@ public abstract class TopicCommand {
                         "collide. To avoid issues it is best to use either, but not both.");
             }
             createTopic(topic);
+        }
+
+        public void deleteMirrorTopic(TopicCommandOptions opts) throws Exception {
+            CommandTopicPartition topic = new CommandTopicPartition(opts);
+            if (Topic.hasCollisionChars(topic.name)) {
+                System.out.println("WARNING: Due to limitations in metric names, topics with a period ('.') or underscore ('_') could " +
+                        "collide. To avoid issues it is best to use either, but not both.");
+            }
+
+            try {
+                NewTopic newTopic;
+                Optional<Node> coordinator = Optional.empty();
+                if (topic.opts.hasCreateMirrorOption()) {
+                    FindCoordinatorResult findCoordinatorResult = adminClient.findCoordinator(topic.opts.linkName().get());
+                    coordinator = Optional.ofNullable(findCoordinatorResult.node().get());
+                    System.out.println("Found coordinator " + coordinator.map(Node::idString).orElse("none") + " for link " + topic.opts.linkName().get() + ".");
+                    newTopic = new NewTopic(topic.name, topic.partitions, topic.replicationFactor.map(Integer::shortValue), topic.remoteBootstrapServers, topic.topicId, topic.opts.linkName());
+                } else if (topic.hasReplicaAssignment()) {
+                    newTopic = new NewTopic(topic.name, topic.replicaAssignment);
+                } else {
+                    newTopic = new NewTopic(topic.name, topic.partitions, topic.replicationFactor.map(Integer::shortValue));
+                }
+
+                Map<String, String> configsMap = topic.configsToAdd.stringPropertyNames().stream()
+                        .collect(Collectors.toMap(name -> name, topic.configsToAdd::getProperty));
+                if (topic.opts.hasCreateMirrorOption()) {
+                    configsMap.put(TopicConfig.READ_ONLY_CONFIG, "true");
+                }
+
+                if (coordinator.isPresent()) {
+                    Node node = coordinator.get();
+                    System.out.println("Node info: " + node);
+                    String bootstrapServer = node.host() + ":" + node.port();
+                    System.out.println("Creating topic " + topic.name + " using bootstrap server " + bootstrapServer + ".");
+                    try (Admin admin = createAdminClient(new Properties(), Optional.of(bootstrapServer))) {
+                        newTopic.configs(configsMap);
+                        DeleteMirrorTopicResult deleteMirrorTopicResult = admin.deleteMirrorTopic(topic.opts.linkName().orElse(""), Set.of(topic.name), new DeleteMirrorTopicOptions());
+                        deleteMirrorTopicResult.all().get();
+                        System.out.println("Delete mirror topic topic " + topic.name + ".");
+                    }
+                } else {
+                    System.out.println("error when delete mirror topic " + topic.name + ".");
+                }
+            } catch (ExecutionException e) {
+                if (e.getCause() == null) {
+                    throw e;
+                }
+                if (!(e.getCause() instanceof TopicExistsException && topic.ifTopicDoesntExist())) {
+                    throw (Exception) e.getCause();
+                }
+            }
         }
 
         public void createTopic(CommandTopicPartition topic) throws Exception {
