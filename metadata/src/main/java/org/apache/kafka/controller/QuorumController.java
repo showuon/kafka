@@ -50,6 +50,7 @@ import org.apache.kafka.common.message.CreatePartitionsRequestData.CreatePartiti
 import org.apache.kafka.common.message.CreatePartitionsResponseData.CreatePartitionsTopicResult;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.CreateTopicsResponseData;
+import org.apache.kafka.common.message.DeleteMirrorTopicResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
 import org.apache.kafka.common.message.ExpireDelegationTokenRequestData;
@@ -1780,12 +1781,12 @@ public final class QuorumController implements Controller {
     }
 
     @Override
-    public CompletableFuture<BumpLeaderEpochResponseData> bumpLeaderEpoch(
+    public CompletableFuture<DeleteMirrorTopicResponseData> deleteMirrorTopic(
             ControllerRequestContext context,
-            int leaderEpoch
+            Map<Uuid, Map<Integer, Integer>> partitionLeaderEpochs
     ) {
-        return appendWriteEvent("bumpLeaderEpoch", context.deadlineNs(),
-                () -> replicationControl.bumpLeaderEpoch(leaderEpoch));
+        return appendWriteEvent("deleteMirrorTopic", context.deadlineNs(),
+                () -> replicationControl.deleteMirrorTopic(partitionLeaderEpochs));
     }
 
 

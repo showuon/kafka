@@ -138,8 +138,8 @@ class ControllerApis(
         case ApiKeys.UPDATE_RAFT_VOTER => handleUpdateRaftVoter(request)
         case ApiKeys.CREATE_CLUSTER_LINK => handleCreateClusterLink(request)
         case ApiKeys.CREATE_MIRROR_TOPIC => handleCreateClusterLink(request)
-        case ApiKeys.DELETE_MIRROR_TOPIC => handleCreateClusterLink(request)
-        case ApiKeys.BUMP_LEADER_EPOCH => handleBumpLeaderEpoch(request)
+        case ApiKeys.DELETE_MIRROR_TOPIC => handleDeleteMirrorTopic(request)
+        case ApiKeys.BUMP_LEADER_EPOCH => handleDeleteMirrorTopic(request)
         case _ => throw new ApiException(s"Unsupported ApiKey ${request.context.header.apiKey}")
       }
 
@@ -231,21 +231,29 @@ class ControllerApis(
 
   }
 
-  def handleBumpLeaderEpoch(request: RequestChannel.Request): CompletableFuture[Unit] = {
+  def handleDeleteMirrorTopic(request: RequestChannel.Request): CompletableFuture[Unit] = {
     // luke
     authHelper.authorizeClusterOperation(request, CLUSTER_ACTION)
-    val bumpLeaderEpochRequest = request.body[BumpLeaderEpochRequest]
+    val deleteMirrorTopicRequest = request.body[DeleteMirrorTopicRequest]
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
-    controller.bumpLeaderEpoch(context, bumpLeaderEpochRequest.data().apiKey().toInt)
+    val partitionLeaderEpochs: util.Map[Uuid, util.Map[Integer, Integer]] = new util.HashMap[Uuid, util.Map[Integer, Integer]]()
+    deleteMirrorTopicRequest.data().topics().forEach( topic => {
+      val map = new util.HashMap[Integer, Integer]()
+      topic.partitions().forEach(par => {
+        map.put(par.partitionIndex(), par.leaderEpoch())
+      })
+      partitionLeaderEpochs.put(topic.topicId(), map)
+    })
+    controller.deleteMirrorTopic(context, partitionLeaderEpochs)
       .handle[Unit] { (response, exception) =>
-        logger.info("!!! bump leader epoch response: " + response + " exception: " + exception)
+        logger.info("!!! delete mirror topic response: " + response + " exception: " + exception)
         if (exception != null) {
           requestHelper.handleError(request, exception)
         } else {
 
           requestHelper.sendResponseMaybeThrottle(request, throttleMs =>
-            new BumpLeaderEpochResponse(response.setThrottleTimeMs(throttleMs)))
+            new DeleteMirrorTopicResponse(response.setThrottleTimeMs(throttleMs)))
         }
       }
 
