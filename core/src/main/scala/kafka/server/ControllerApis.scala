@@ -235,6 +235,7 @@ class ControllerApis(
     // luke
     authHelper.authorizeClusterOperation(request, CLUSTER_ACTION)
     val deleteMirrorTopicRequest = request.body[DeleteMirrorTopicRequest]
+    info("!!! delete mirror topic request: " + deleteMirrorTopicRequest)
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
     val partitionLeaderEpochs: util.Map[Uuid, util.Map[Integer, Integer]] = new util.HashMap[Uuid, util.Map[Integer, Integer]]()

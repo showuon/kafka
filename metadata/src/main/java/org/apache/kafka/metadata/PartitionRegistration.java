@@ -272,6 +272,7 @@ public class PartitionRegistration {
             newLeader = record.leader();
             newLeaderEpoch = leaderEpoch + 1;
         }
+        System.out.println("!!! newLeaderEpoch:" + newLeaderEpoch + ";;" + leaderEpoch + ";;" + record.leaderEpoch() + ";;" + record.leader());
         if (record.leaderEpoch() != NO_PARTITION_LEADER_EPOCH && record.leaderEpoch() < newLeaderEpoch ) {
             newLeaderEpoch = record.leaderEpoch();
         }

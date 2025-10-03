@@ -117,8 +117,10 @@ public abstract class TopicCommand {
                 topicService.describeTopic(opts);
             } else if (opts.hasDeleteOption()) {
                 topicService.deleteTopic(opts);
-            } else if (opts.hasCreateMirrorOption() || opts.hasDeleteMirrorOption()) {
+            } else if (opts.hasCreateMirrorOption()) {
                 topicService.createMirrorTopic(opts);
+            } else if (opts.hasDeleteMirrorOption()) {
+                topicService.deleteMirrorTopic(opts);
             } else if (opts.hasCreateLinkOption()) {
                 topicService.createLink(opts);
             }
@@ -493,23 +495,11 @@ public abstract class TopicCommand {
             }
 
             try {
-                NewTopic newTopic;
                 Optional<Node> coordinator = Optional.empty();
-                if (topic.opts.hasCreateMirrorOption()) {
+                if (topic.opts.hasDeleteMirrorOption()) {
                     FindCoordinatorResult findCoordinatorResult = adminClient.findCoordinator(topic.opts.linkName().get());
                     coordinator = Optional.ofNullable(findCoordinatorResult.node().get());
                     System.out.println("Found coordinator " + coordinator.map(Node::idString).orElse("none") + " for link " + topic.opts.linkName().get() + ".");
-                    newTopic = new NewTopic(topic.name, topic.partitions, topic.replicationFactor.map(Integer::shortValue), topic.remoteBootstrapServers, topic.topicId, topic.opts.linkName());
-                } else if (topic.hasReplicaAssignment()) {
-                    newTopic = new NewTopic(topic.name, topic.replicaAssignment);
-                } else {
-                    newTopic = new NewTopic(topic.name, topic.partitions, topic.replicationFactor.map(Integer::shortValue));
-                }
-
-                Map<String, String> configsMap = topic.configsToAdd.stringPropertyNames().stream()
-                        .collect(Collectors.toMap(name -> name, topic.configsToAdd::getProperty));
-                if (topic.opts.hasCreateMirrorOption()) {
-                    configsMap.put(TopicConfig.READ_ONLY_CONFIG, "true");
                 }
 
                 if (coordinator.isPresent()) {
@@ -518,7 +508,6 @@ public abstract class TopicCommand {
                     String bootstrapServer = node.host() + ":" + node.port();
                     System.out.println("Creating topic " + topic.name + " using bootstrap server " + bootstrapServer + ".");
                     try (Admin admin = createAdminClient(new Properties(), Optional.of(bootstrapServer))) {
-                        newTopic.configs(configsMap);
                         DeleteMirrorTopicResult deleteMirrorTopicResult = admin.deleteMirrorTopic(topic.opts.linkName().orElse(""), Set.of(topic.name), new DeleteMirrorTopicOptions());
                         deleteMirrorTopicResult.all().get();
                         System.out.println("Delete mirror topic topic " + topic.name + ".");

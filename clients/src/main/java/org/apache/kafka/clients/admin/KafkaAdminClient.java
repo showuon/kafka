@@ -4867,9 +4867,10 @@ public class KafkaAdminClient extends AdminClient {
 
     @Override
     public DeleteMirrorTopicResult deleteMirrorTopic(String clusterLinkName, Set<String> topics, DeleteMirrorTopicOptions options) {
+        log.info("!!! deleteMirrorTopic");
         final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
         final long now = time.milliseconds();
-        final Call call = new Call("createClusterLink", calcDeadlineMs(now, options.timeoutMs()),
+        final Call call = new Call("deleteMirrorTopic", calcDeadlineMs(now, options.timeoutMs()),
                 new LeastLoadedBrokerOrActiveKController()) {
 
             @Override
@@ -4881,6 +4882,7 @@ public class KafkaAdminClient extends AdminClient {
             void handleResponse(AbstractResponse abstractResponse) {
                 final DeleteMirrorTopicResponse response =
                         (DeleteMirrorTopicResponse) abstractResponse;
+                log.error("delete mirror topic:" + response);
                 Errors error = Errors.forCode(response.data().errorCode());
                 switch (error) {
                     case NONE:
