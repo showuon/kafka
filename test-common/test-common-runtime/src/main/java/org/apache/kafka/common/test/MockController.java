@@ -47,6 +47,7 @@ import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.CreateTopicsRequestData.CreatableTopic;
 import org.apache.kafka.common.message.CreateTopicsResponseData;
 import org.apache.kafka.common.message.CreateTopicsResponseData.CreatableTopicResult;
+import org.apache.kafka.common.message.DeleteMirrorTopicResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
 import org.apache.kafka.common.message.ExpireDelegationTokenRequestData;
@@ -108,7 +109,9 @@ public class MockController implements Controller {
     }
 
     @Override
-    public CompletableFuture<BumpLeaderEpochResponseData> bumpLeaderEpoch(ControllerRequestContext context, int leaderEpoch) {
+    public CompletableFuture<DeleteMirrorTopicResponseData> deleteMirrorTopic(
+            ControllerRequestContext context,
+            Map<Uuid, Map<Integer, Integer>> partitionLeaderEpochs) {
         throw new UnsupportedOperationException();
     }
 

@@ -100,6 +100,7 @@ public class PartitionChangeBuilder {
     private boolean eligibleLeaderReplicasEnabled;
     private DefaultDirProvider defaultDirProvider;
     private String clusterLink;
+    private int minLeaderEpoch;
 
     // Whether allow electing last known leader in a Balanced recovery. Note, the last known leader will be stored in the
     // lastKnownElr field if enabled.
@@ -200,6 +201,11 @@ public class PartitionChangeBuilder {
 
     public PartitionChangeBuilder setClusterLink(String clusterLink) {
         this.clusterLink = clusterLink;
+        return this;
+    }
+
+    public PartitionChangeBuilder setMinLeaderEpoch(int leaderEpoch) {
+        this.minLeaderEpoch = leaderEpoch;
         return this;
     }
 
@@ -438,7 +444,8 @@ public class PartitionChangeBuilder {
         PartitionChangeRecord record = new PartitionChangeRecord().
             setTopicId(topicId).
             setPartitionId(partitionId).
-            setClusterLinkName(clusterLink);
+            setClusterLinkName(clusterLink).
+            setLeaderEpoch(minLeaderEpoch);
 
         completeReassignmentIfNeeded();
 

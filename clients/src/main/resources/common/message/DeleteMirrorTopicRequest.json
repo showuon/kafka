@@ -21,12 +21,14 @@
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
-    { "name": "Topics", "type": "[]DeleteMirrorTopicState", "versions": "0+", "about": "The name or topic ID of the topic.",
+    { "name": "Topics", "type": "[]TopicState", "versions": "0+", "about": "The name or topic ID of the topic.",
       "fields": [
-        {"name": "name", "type": "string", "versions": "0+", "about": "The unique topic ID."},
-        {"name": "TopicId", "type": "uuid", "versions": "0+", "about": "The unique topic ID."}
-      ]},
-    { "name": "TimeoutMs", "type": "int32", "versions": "0+",
-      "about": "The length of time in milliseconds to wait for the deletions to complete." }
+        {"name": "TopicId", "type": "uuid", "versions": "0+", "about": "The unique topic ID."},
+        { "name": "Partitions", "type": "[]LeaderEpochState", "versions": "0+", "ignorable": true ,"about": "The name or topic ID of the topic.",
+          "fields": [
+            {"name": "partitionIndex", "type": "int32", "versions": "0+", "about": "The topic name."},
+            {"name": "leaderEpoch", "type": "int32", "versions": "0+", "default": -1, "about": "The topic name."}
+          ]}
+      ]}
   ]
 }

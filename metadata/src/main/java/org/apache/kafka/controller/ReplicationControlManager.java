@@ -61,6 +61,7 @@ import org.apache.kafka.common.message.CreateTopicsRequestData.CreatableTopicCol
 import org.apache.kafka.common.message.CreateTopicsRequestData.CreatableTopicConfigCollection;
 import org.apache.kafka.common.message.CreateTopicsResponseData;
 import org.apache.kafka.common.message.CreateTopicsResponseData.CreatableTopicResult;
+import org.apache.kafka.common.message.DeleteMirrorTopicResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersRequestData.TopicPartitions;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
@@ -1719,14 +1720,34 @@ public class ReplicationControlManager {
                 "heartbeat from broker {}.", brokerId);
     }
 
-    public ControllerResult<BumpLeaderEpochResponseData> bumpLeaderEpoch(int leaderEpoch) {
-//        BrokerRegistration registration = clusterControl.brokerRegistrations().get(brokerId);
-//        if (registration == null) {
-//            throw new BrokerIdNotRegisteredException("Broker ID " + brokerId +
-//                    " is not currently registered");
-//        }
+    public ControllerResult<DeleteMirrorTopicResponseData> deleteMirrorTopic(Map<Uuid, Map<Integer, Integer>> partitionLeaderEpochs) {
         List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
-        return ControllerResult.of(records, null);
+        for (Entry<Uuid, Map<Integer, Integer>> partitionLeaderEpoch : partitionLeaderEpochs.entrySet()) {
+            Uuid topicId = partitionLeaderEpoch.getKey();
+            Map<Integer, Integer> leaderEpochs = partitionLeaderEpoch.getValue();
+            TopicControlInfo info = topics.get(topicId);
+            String topicName = info.name;
+            for (int partitionId : info.parts.keySet()) {
+                PartitionRegistration partition = info.parts.get(partitionId);
+                PartitionChangeBuilder builder = new PartitionChangeBuilder(
+                        partition,
+                        info.topicId(),
+                        partitionId,
+                        new LeaderAcceptor(clusterControl, partition),
+                        featureControl.metadataVersionOrThrow(),
+                        getTopicEffectiveMinIsr(topicName)
+                )
+                        .setClusterLink("")
+                        .setMinLeaderEpoch(leaderEpochs.getOrDefault(partitionId, -1))
+                        .setEligibleLeaderReplicasEnabled(featureControl.isElrFeatureEnabled())
+                        .setDefaultDirProvider(clusterDescriber);
+
+                builder.build().ifPresent(records::add);
+                log.info("!!! update partition {} for topic {} with empty cluster link: {}", partitionId, topicName, records);
+            }
+        }
+
+        return ControllerResult.of(records, new DeleteMirrorTopicResponseData().setErrorCode((short) 0));
     }
 
     public ControllerResult<Void> unregisterBroker(int brokerId) {
