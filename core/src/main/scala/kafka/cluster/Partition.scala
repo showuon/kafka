@@ -737,6 +737,22 @@ class Partition(val topicPartition: TopicPartition,
   def getPartitionEpoch: Int = this.partitionEpoch
 
   /**
+   * Update the leader epoch for remote leaders (cluster linking).
+   * This prevents the leaderEpoch from remaining at initialization value (-1).
+   *
+   * @param newLeaderEpoch The new leader epoch to set
+   */
+  def updateLeaderEpochForRemoteLeader(newLeaderEpoch: Int): Unit = {
+    inWriteLock(leaderIsrUpdateLock) {
+      if (newLeaderEpoch > leaderEpoch) {
+        stateChangeLogger.info(s"Updating leader epoch for remote leader partition $topicPartition " +
+          s"from $leaderEpoch to $newLeaderEpoch")
+        leaderEpoch = newLeaderEpoch
+      }
+    }
+  }
+
+  /**
    * Make the local replica the leader by resetting LogEndOffset for remote replicas (there could be old LogEndOffset
    * from the time when this broker was the leader last time) and setting the new leader and ISR.
    * If the leader replica id does not change, return false to indicate the replica manager.
