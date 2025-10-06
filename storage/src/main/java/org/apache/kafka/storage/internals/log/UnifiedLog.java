@@ -1467,6 +1467,11 @@ public class UnifiedLog implements AutoCloseable {
                         "be 0, but it is " + batch.baseOffset());
             }
 
+            // validate if the new appended leader epoch is lower than the leader epoch in previous message
+            if (hasLowerPartitionLeaderEpochThanBefore(leaderEpoch)) {
+                throw new InvalidRecordException("leader epoch " + leaderEpoch + " is lower than previous one:" + leaderEpochCache.latestEpoch());
+            }
+
             /* During replication of uncommitted data it is possible for the remote replica to send record batches after it lost
              * leadership. This can happen if sending FETCH responses is slow. There is a race between sending the FETCH
              * response and the replica truncating and appending to the log. The replicating replica resolves this issue by only
@@ -1558,6 +1563,12 @@ public class UnifiedLog implements AutoCloseable {
         return origin == AppendOrigin.REPLICATION
                 && batch.partitionLeaderEpoch() != RecordBatch.NO_PARTITION_LEADER_EPOCH
                 && batch.partitionLeaderEpoch() > leaderEpoch;
+    }
+
+    private boolean hasLowerPartitionLeaderEpochThanBefore(int leaderEpoch) {
+        return leaderEpochCache.latestEpoch().isPresent()
+                && leaderEpochCache.latestEpoch().get() != RecordBatch.NO_PARTITION_LEADER_EPOCH
+                && leaderEpochCache.latestEpoch().get() > leaderEpoch;
     }
 
     /**

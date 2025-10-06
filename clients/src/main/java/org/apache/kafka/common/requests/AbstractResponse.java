@@ -300,7 +300,7 @@ public abstract class AbstractResponse implements AbstractRequestResponse {
             case DELETE_MIRROR_TOPIC:
                 return DeleteMirrorTopicResponse.parse(readable, version);
             case BUMP_LEADER_EPOCH:
-                return CreateClusterLinkResponse.parse(readable, version);
+                return BumpLeaderEpochResponse.parse(readable, version);
             default:
                 throw new AssertionError(String.format("ApiKey %s is not currently handled in `parseResponse`, the " +
                         "code should be updated to do so.", apiKey));

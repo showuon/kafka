@@ -1768,7 +1768,6 @@ class ReplicaManager(val config: KafkaConfig,
     }
 
     def read(tp: TopicIdPartition, fetchInfo: PartitionData, limitBytes: Int, minOneMessage: Boolean): LogReadResult = {
-      info("!!! readFromLog:" + tp + " " + fetchInfo)
       val offset = fetchInfo.fetchOffset
       val partitionFetchSize = fetchInfo.maxBytes
       val followerLogStartOffset = fetchInfo.logStartOffset

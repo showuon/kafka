@@ -139,6 +139,7 @@ import static org.apache.kafka.common.protocol.Errors.NO_REASSIGNMENT_IN_PROGRES
 import static org.apache.kafka.common.protocol.Errors.TOPIC_AUTHORIZATION_FAILED;
 import static org.apache.kafka.common.protocol.Errors.UNKNOWN_TOPIC_ID;
 import static org.apache.kafka.common.protocol.Errors.UNKNOWN_TOPIC_OR_PARTITION;
+import static org.apache.kafka.common.record.RecordBatch.NO_PARTITION_LEADER_EPOCH;
 import static org.apache.kafka.controller.PartitionReassignmentReplicas.isReassignmentInProgress;
 import static org.apache.kafka.controller.QuorumController.MAX_RECORDS_PER_USER_OP;
 import static org.apache.kafka.metadata.LeaderConstants.NO_LEADER;
@@ -1720,7 +1721,35 @@ public class ReplicationControlManager {
                 "heartbeat from broker {}.", brokerId);
     }
 
-    public ControllerResult<DeleteMirrorTopicResponseData> deleteMirrorTopic(Map<Uuid, Map<Integer, Integer>> partitionLeaderEpochs) {
+    public ControllerResult<DeleteMirrorTopicResponseData> deleteMirrorTopic(Set<Uuid> topicIds) {
+        List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
+        for (Uuid topicId : topicIds) {
+            TopicControlInfo info = topics.get(topicId);
+            String topicName = info.name;
+            for (int partitionId : info.parts.keySet()) {
+                PartitionRegistration partition = info.parts.get(partitionId);
+                PartitionChangeBuilder builder = new PartitionChangeBuilder(
+                        partition,
+                        info.topicId(),
+                        partitionId,
+                        new LeaderAcceptor(clusterControl, partition),
+                        featureControl.metadataVersionOrThrow(),
+                        getTopicEffectiveMinIsr(topicName)
+                )
+                        // clear the cluster link name
+                        .setClusterLink("")
+                        .setEligibleLeaderReplicasEnabled(featureControl.isElrFeatureEnabled())
+                        .setDefaultDirProvider(clusterDescriber);
+
+                builder.build().ifPresent(records::add);
+                log.info("!!! update partition {} for topic {} with empty cluster link: {}", partitionId, topicName, records);
+            }
+        }
+
+        return ControllerResult.of(records, new DeleteMirrorTopicResponseData().setErrorCode((short) 0));
+    }
+
+    public ControllerResult<BumpLeaderEpochResponseData> bumpLeaderEpochs(Map<Uuid, Map<Integer, Integer>> partitionLeaderEpochs) {
         List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
         for (Entry<Uuid, Map<Integer, Integer>> partitionLeaderEpoch : partitionLeaderEpochs.entrySet()) {
             Uuid topicId = partitionLeaderEpoch.getKey();
@@ -1737,17 +1766,18 @@ public class ReplicationControlManager {
                         featureControl.metadataVersionOrThrow(),
                         getTopicEffectiveMinIsr(topicName)
                 )
-                        .setClusterLink("")
-                        .setMinLeaderEpoch(leaderEpochs.getOrDefault(partitionId, -1))
+                        // set the min leader epoch for each partition
+                        .setMinLeaderEpoch(leaderEpochs.getOrDefault(partitionId, NO_PARTITION_LEADER_EPOCH))
+                        .setClusterLink(partition.clusterLinkName)
                         .setEligibleLeaderReplicasEnabled(featureControl.isElrFeatureEnabled())
                         .setDefaultDirProvider(clusterDescriber);
 
                 builder.build().ifPresent(records::add);
-                log.info("!!! update partition {} for topic {} with empty cluster link: {}", partitionId, topicName, records);
+                log.info("!!! update partition {} for topic {} with cluster link: {}", partitionId, topicName, records);
             }
         }
 
-        return ControllerResult.of(records, new DeleteMirrorTopicResponseData().setErrorCode((short) 0));
+        return ControllerResult.of(records, new BumpLeaderEpochResponseData().setErrorCode((short) 0));
     }
 
     public ControllerResult<Void> unregisterBroker(int brokerId) {

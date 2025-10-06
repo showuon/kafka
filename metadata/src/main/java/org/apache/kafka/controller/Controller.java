@@ -154,6 +154,11 @@ public interface Controller extends AclMutator, AutoCloseable {
 
     CompletableFuture<DeleteMirrorTopicResponseData> deleteMirrorTopic(
             ControllerRequestContext context,
+            Set<Uuid> topicIds
+    );
+
+    CompletableFuture<BumpLeaderEpochResponseData> bumpLeaderEpoch(
+            ControllerRequestContext context,
             Map<Uuid, Map<Integer, Integer>> partitionLeaderEpochs
     );
 
