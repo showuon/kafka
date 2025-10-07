@@ -253,7 +253,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.GET_REPLICA_LOG_INFO => handleGetReplicaLogInfo(request)
         case ApiKeys.CREATE_CLUSTER_LINK => forwardToController(request)
         case ApiKeys.CREATE_MIRROR_TOPIC => forwardToController(request)
-        case ApiKeys.DELETE_MIRROR_TOPIC => handleDeleteMirrorTopic(request)
+        case ApiKeys.DELETE_MIRROR_TOPIC => forwardToController(request)
         case _ => throw new IllegalStateException(s"No handler for request api key ${request.header.apiKey}")
       }
     } catch {
@@ -269,17 +269,6 @@ class KafkaApis(val requestChannel: RequestChannel,
       if (request.apiLocalCompleteTimeNanos < 0)
         request.apiLocalCompleteTimeNanos = time.nanoseconds
     }
-  }
-
-  def handleDeleteMirrorTopic(request: RequestChannel.Request): Unit = {
-    val deleteMirrorTopicRequest = request.body[DeleteMirrorTopicRequest]
-    logger.info(s"!!! Handling delete mirror topics request:" + request.sizeInBytes + ";;" + deleteMirrorTopicRequest)
-    val topicNames = deleteMirrorTopicRequest.data().topics().stream().map(t => t.name()).toList
-
-    // TODO: need to find a way to bump the leader epoch AFTER deleteMirrorTopic completed and the broker has stopped fetch,
-    // otherwise, the new appended records after leader epoch bump might be larger
-    replicaManager.remoteClusterMetadataManager.get.maybeUpdateLeaderEpoch(topicNames)
-    forwardToController(request)
   }
 
   def handleCreateTopics(request: RequestChannel.Request): Unit = {
