@@ -4867,7 +4867,6 @@ public class KafkaAdminClient extends AdminClient {
 
     @Override
     public DeleteMirrorTopicResult deleteMirrorTopic(String clusterLinkName, Set<String> topics, DeleteMirrorTopicOptions options) {
-        log.info("!!! deleteMirrorTopic");
         final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
         final long now = time.milliseconds();
         final Call call = new Call("deleteMirrorTopic", calcDeadlineMs(now, options.timeoutMs()),

@@ -2305,6 +2305,7 @@ class ReplicaManager(val config: KafkaConfig,
     } else {
       ""
     }
+
     getPartition(tp) match {
       case HostedPartition.Offline(offlinePartition) =>
         if (offlinePartition.flatMap(p => p.topicId).contains(topicId)) {
@@ -2330,7 +2331,7 @@ class ReplicaManager(val config: KafkaConfig,
           throw new IllegalStateException(s"Topic $tp exists, but its ID is " +
             s"${partition.topicId.get}, not $topicId as expected")
         }
-        logger.info("!!! update partition: " + tp + " " + topicId + " " + clusterLinkName + ";;" + partition.clusterLinkName)
+        // TODO: We should update the partition state in makeLeader/MakeFollower, not when getting it
         partition.setClusterLinkName(clusterLinkName)
         Some(partition, false)
 
@@ -2391,8 +2392,13 @@ class ReplicaManager(val config: KafkaConfig,
         val lazyOffsetCheckpoints = new LazyOffsetCheckpoints(this.highWatermarkCheckpoints.asJava)
         val leaderChangedPartitions = new mutable.HashSet[Partition]
         val followerChangedPartitions = new mutable.HashSet[Partition]
+        val deleteMirrorTopics = new mutable.HashSet[String]
         if (!localChanges.leaders.isEmpty) {
-          applyLocalLeadersDelta(leaderChangedPartitions, delta, lazyOffsetCheckpoints, localChanges.leaders.asScala, localChanges.directoryIds.asScala)
+          applyLocalLeadersDelta(leaderChangedPartitions, delta, lazyOffsetCheckpoints, localChanges.leaders.asScala, localChanges.directoryIds.asScala, deleteMirrorTopics)
+          if (deleteMirrorTopics.nonEmpty) {
+            info("!!! sent bumpLeaderEpoch:" + deleteMirrorTopics)
+            remoteClusterMetadataManager.get.maybeUpdateLeaderEpoch(deleteMirrorTopics.toList.asJava)
+          }
         }
         if (!localChanges.followers.isEmpty) {
           applyLocalFollowersDelta(followerChangedPartitions, newImage, delta, lazyOffsetCheckpoints, localChanges.followers.asScala, localChanges.directoryIds.asScala)
@@ -2421,16 +2427,24 @@ class ReplicaManager(val config: KafkaConfig,
     delta: TopicsDelta,
     offsetCheckpoints: OffsetCheckpoints,
     localLeaders: mutable.Map[TopicPartition, LocalReplicaChanges.PartitionInfo],
-    directoryIds: mutable.Map[TopicIdPartition, Uuid]
+    directoryIds: mutable.Map[TopicIdPartition, Uuid],
+    deleteMirrorTopics: mutable.Set[String]
   ): Unit = {
     stateChangeLogger.info(s"Transitioning ${localLeaders.size} partition(s) to " +
       "local leaders.")
     replicaFetcherManager.removeFetcherForPartitions(localLeaders.keySet)
+    var isDeleteMirrorTopic = false
     localLeaders.foreachEntry { (tp, info) =>
       getOrCreatePartition(tp, delta, info.topicId).foreach { case (partition, isNew) =>
         try {
           val state = info.partition.toLeaderAndIsrPartitionState(tp, isNew)
           val partitionAssignedDirectoryId = directoryIds.find(_._1.topicPartition() == tp).map(_._2)
+
+          val newClusterName = delta.changedTopics().get(info.topicId()).partitionChanges().get(tp.partition()).clusterLinkName
+          if (partition.clusterLinkName.nonEmpty && newClusterName.isEmpty && !isDeleteMirrorTopic) {
+            isDeleteMirrorTopic = true
+          }
+
           partition.makeLeader(state, offsetCheckpoints, Some(info.topicId), partitionAssignedDirectoryId)
 
           changedPartitions.add(partition)
@@ -2444,6 +2458,9 @@ class ReplicaManager(val config: KafkaConfig,
             // to an empty Partition object. We need to map this topic-partition to OfflinePartition instead.
             markPartitionOffline(tp)
         }
+      }
+      if (isDeleteMirrorTopic) {
+        deleteMirrorTopics.add(tp.topic())
       }
     }
   }
