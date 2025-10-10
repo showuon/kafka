@@ -4882,7 +4882,6 @@ public class KafkaAdminClient extends AdminClient {
             void handleResponse(AbstractResponse abstractResponse) {
                 final DeleteMirrorTopicResponse response =
                         (DeleteMirrorTopicResponse) abstractResponse;
-                log.error("delete mirror topic:" + response);
                 Errors error = Errors.forCode(response.data().errorCode());
                 switch (error) {
                     case NONE:

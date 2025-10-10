@@ -273,25 +273,13 @@ class KafkaApis(val requestChannel: RequestChannel,
 
   def handleDeleteMirrorTopic(request: RequestChannel.Request): Unit = {
     val deleteMirrorTopicRequest = request.body[DeleteMirrorTopicRequest]
-    logger.info(s"!!! Handling delete mirror topics request")
-    // get the leader epoch to bump from each partition
-
-    val updatedDeleteMirrorTopicRequestData = new DeleteMirrorTopicRequestData()
+    logger.info(s"!!! Handling delete mirror topics request:" + request.sizeInBytes + ";;" + deleteMirrorTopicRequest)
     val topicNames = deleteMirrorTopicRequest.data().topics().stream().map(t => t.name()).toList
-    topicNames.forEach( name => {
-      val leaderEpochStates = new util.ArrayList[DeleteMirrorTopicRequestData.LeaderEpochState]()
-      metadataCache.asInstanceOf[KRaftMetadataCache].getImage().topics().getTopic(name).partitions().keySet().forEach(par => {
-        val leaderEpoch: Int = replicaManager.getLog(new TopicPartition(name, par)).map(log => log.latestEpochFromLog().orElse(-1)).get
-        leaderEpochStates.add(new DeleteMirrorTopicRequestData.LeaderEpochState().setPartitionIndex(par).setLeaderEpoch(leaderEpoch))
-      })
-      updatedDeleteMirrorTopicRequestData.topics().add(new DeleteMirrorTopicRequestData.TopicState().setTopicId(metadataCache.getTopicId(name)).setPartitions(leaderEpochStates))
-    })
 
-    val updatedDeleteMirrorTopicRequest = new DeleteMirrorTopicRequest(updatedDeleteMirrorTopicRequestData, deleteMirrorTopicRequest.version())
-
-//    request.body
-
-//    requestChannel
+    // TODO: need to find a way to bump the leader epoch AFTER deleteMirrorTopic completed and the broker has stopped fetch,
+    // otherwise, the new appended records after leader epoch bump might be larger
+    replicaManager.remoteClusterMetadataManager.get.maybeUpdateLeaderEpoch(topicNames)
+    forwardToController(request)
   }
 
   def handleCreateTopics(request: RequestChannel.Request): Unit = {

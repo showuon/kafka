@@ -1783,12 +1783,20 @@ public final class QuorumController implements Controller {
     @Override
     public CompletableFuture<DeleteMirrorTopicResponseData> deleteMirrorTopic(
             ControllerRequestContext context,
-            Map<Uuid, Map<Integer, Integer>> partitionLeaderEpochs
+            Set<Uuid> topicIds
     ) {
         return appendWriteEvent("deleteMirrorTopic", context.deadlineNs(),
-                () -> replicationControl.deleteMirrorTopic(partitionLeaderEpochs));
+                () -> replicationControl.deleteMirrorTopic(topicIds));
     }
 
+    @Override
+    public CompletableFuture<BumpLeaderEpochResponseData> bumpLeaderEpoch(
+            ControllerRequestContext context,
+            Map<Uuid, Map<Integer, Integer>> partitionLeaderEpochs
+    ) {
+        return appendWriteEvent("bumpLeaderEpochs", context.deadlineNs(),
+                () -> replicationControl.bumpLeaderEpochs(partitionLeaderEpochs));
+    }
 
 
     @Override

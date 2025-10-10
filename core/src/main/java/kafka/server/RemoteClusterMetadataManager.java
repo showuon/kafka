@@ -16,6 +16,8 @@
  */
 package kafka.server;
 
+import kafka.log.LogManager;
+import kafka.server.metadata.KRaftMetadataCache;
 import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.clients.ClientUtils;
 import org.apache.kafka.clients.admin.AlterConfigOp;
@@ -29,6 +31,7 @@ import org.apache.kafka.common.acl.AclBinding;
 import org.apache.kafka.common.acl.AclBindingFilter;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.message.CreateAclsRequestData;
+import org.apache.kafka.common.message.BumpLeaderEpochRequestData;
 import org.apache.kafka.common.message.CreatePartitionsRequestData;
 import org.apache.kafka.common.message.DeleteAclsRequestData;
 import org.apache.kafka.common.message.DeleteTopicsRequestData;
@@ -43,6 +46,7 @@ import org.apache.kafka.common.network.ListenerName;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.CreateAclsRequest;
+import org.apache.kafka.common.requests.BumpLeaderEpochRequest;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.DeleteAclsRequest;
 import org.apache.kafka.common.requests.DeleteTopicsRequest;
@@ -77,6 +81,8 @@ import org.apache.kafka.server.common.ControllerRequestCompletionHandler;
 import org.apache.kafka.server.common.NodeToControllerChannelManager;
 import org.apache.kafka.server.common.RequestLocal;
 import org.apache.kafka.server.network.BrokerEndPoint;
+import org.apache.kafka.server.util.KafkaScheduler;
+import org.apache.kafka.server.util.Scheduler;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -122,14 +128,18 @@ public class RemoteClusterMetadataManager implements MetadataPublisher, AutoClos
     private MetadataCache metadataCache;
     private NodeToControllerChannelManager channelManager;
     private final Supplier<GroupCoordinator> groupCoordinatorSupplier;
+    private LogManager logManager;
+    private Scheduler scheduler;
 
     public RemoteClusterMetadataManager(
         KafkaConfig config,
         Metrics metrics,
         Time time,
         MetadataCache metadataCache,
-        NodeToControllerChannelManager channelManager,
-        Supplier<GroupCoordinator> groupCoordinatorSupplier
+        Supplier<GroupCoordinator> groupCoordinatorSupplier,
+        LogManager logManager,
+        Scheduler scheduler,
+        NodeToControllerChannelManager channelManager
     ) {
         this.brokerConfig = config;
         this.nodeId = config.nodeId();
@@ -144,6 +154,16 @@ public class RemoteClusterMetadataManager implements MetadataPublisher, AutoClos
         this.metadataCache = metadataCache;
         this.channelManager = channelManager;
         this.groupCoordinatorSupplier = groupCoordinatorSupplier;
+        this.logManager = logManager;
+        this.scheduler = scheduler;
+
+        scheduler.startup();
+        // periodically query source cluster to get the metadata
+        scheduler.schedule("query",
+                this::refreshRemoteMetadata,
+                300000,
+                300000
+        );
     }
 
     @Override
@@ -180,6 +200,29 @@ public class RemoteClusterMetadataManager implements MetadataPublisher, AutoClos
 
     public void updateMirroredTopics(String clusterName, Set<String> topics) {
         this.topics.put(clusterName, topics);
+    }
+
+    public void maybeUpdateLeaderEpoch(List<String> topics) {
+        // sent in another thread to avoid to block the api handling thread
+        scheduler.scheduleOnce("bump-leader-epoch", () -> sendBumpLeaderEpoch(topics));
+    }
+
+    private void sendBumpLeaderEpoch(List<String> topics) {
+        List<BumpLeaderEpochRequestData.TopicState> topicStates = new ArrayList<>();
+        topics.forEach(topic -> {
+            BumpLeaderEpochRequestData.TopicState topicState = new BumpLeaderEpochRequestData.TopicState();
+            List<BumpLeaderEpochRequestData.LeaderEpochState> topicLeaderEpoch = new ArrayList<>();
+            ((KRaftMetadataCache) metadataCache).getImage().topics().getTopic(topic).partitions().keySet().forEach(partitionId -> {
+                int epoch = logManager.getLog(new TopicPartition(topic, partitionId), false).get().latestEpochFromLog().orElse(-1);
+                topicLeaderEpoch.add(new BumpLeaderEpochRequestData.LeaderEpochState().setLeaderEpoch(epoch).setPartitionIndex(partitionId));
+            });
+            topicState.setTopicId(metadataCache.getTopicId(topic)).setPartitions(topicLeaderEpoch);
+            topicStates.add(topicState);
+        });
+
+        channelManager.sendRequest(new BumpLeaderEpochRequest.Builder(
+                new BumpLeaderEpochRequestData().setTopics(topicStates)
+        ), new TimeoutHandler());
     }
 
     // TODO: When mirror deleted, we should write a record in internal topic and remove topics from the list

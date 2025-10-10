@@ -511,7 +511,7 @@ public abstract class TopicCommand {
                     Node node = coordinator.get();
                     System.out.println("Node info: " + node);
                     String bootstrapServer = node.host() + ":" + node.port();
-                    System.out.println("Creating topic " + topic.name + " using bootstrap server " + bootstrapServer + ".");
+                    System.out.println("Deleting mirror topic " + topic.name + " using bootstrap server " + bootstrapServer + ".");
                     try (Admin admin = createAdminClient(new Properties(), Optional.of(bootstrapServer))) {
                         DeleteMirrorTopicResult deleteMirrorTopicResult = admin.deleteMirrorTopic(topic.opts.linkName().orElse(""), Set.of(topic.name), new DeleteMirrorTopicOptions());
                         deleteMirrorTopicResult.all().get();

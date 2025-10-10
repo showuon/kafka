@@ -111,6 +111,12 @@ public class MockController implements Controller {
     @Override
     public CompletableFuture<DeleteMirrorTopicResponseData> deleteMirrorTopic(
             ControllerRequestContext context,
+            Set<Uuid> topicIds) {
+        throw new UnsupportedOperationException();
+    }
+
+    public CompletableFuture<BumpLeaderEpochResponseData> bumpLeaderEpoch(
+            ControllerRequestContext context,
             Map<Uuid, Map<Integer, Integer>> partitionLeaderEpochs) {
         throw new UnsupportedOperationException();
     }

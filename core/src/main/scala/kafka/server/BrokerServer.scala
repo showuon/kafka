@@ -344,8 +344,10 @@ class BrokerServer(
         metrics,
         time,
         metadataCache,
-        clientToControllerChannelManager,
-        () => groupCoordinator
+        () => groupCoordinator,
+        logManager,
+        new KafkaScheduler(1, true, "remote-cluster-metadata-manager-"),
+        clientToControllerChannelManager
       )
 
       this._replicaManager = new ReplicaManager(
@@ -399,7 +401,7 @@ class BrokerServer(
         producerIdManagerSupplier, metrics, metadataCache, Time.SYSTEM)
 
       topicMirrorLinkCoordinator = new TopicMirrorLinkCoordinator(config, replicaManager,
-        new KafkaScheduler(1, true, "topic-mirror-link-manager-"), metrics, metadataCache, Time.SYSTEM, remoteClusterMetadataManager)
+        metrics, metadataCache, Time.SYSTEM, remoteClusterMetadataManager)
 
       autoTopicCreationManager = new DefaultAutoTopicCreationManager(
         config, clientToControllerChannelManager, groupCoordinator,

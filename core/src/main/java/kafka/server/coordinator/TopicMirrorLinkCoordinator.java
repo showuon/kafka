@@ -41,7 +41,6 @@ import org.apache.kafka.metadata.MetadataCache;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.RequestLocal;
 import org.apache.kafka.server.storage.log.FetchIsolation;
-import org.apache.kafka.server.util.Scheduler;
 import org.apache.kafka.storage.internals.log.AppendOrigin;
 import org.apache.kafka.storage.internals.log.FetchDataInfo;
 
@@ -70,7 +69,6 @@ public class TopicMirrorLinkCoordinator {
     private final AtomicBoolean isActive = new AtomicBoolean(false);
     private final KafkaConfig config;
     private final ReplicaManager replicaManager;
-    private final Scheduler scheduler;
     private final Metrics metrics;
     private final MetadataCache metadataCache;
     private final Time time;
@@ -82,7 +80,6 @@ public class TopicMirrorLinkCoordinator {
     public TopicMirrorLinkCoordinator(
             KafkaConfig config,
             ReplicaManager replicaManager,
-            Scheduler scheduler,
             Metrics metrics,
             MetadataCache metadataCache,
             Time time,
@@ -90,7 +87,6 @@ public class TopicMirrorLinkCoordinator {
     ) {
         this.config = config;
         this.replicaManager = replicaManager;
-        this.scheduler = scheduler;
         this.metrics = metrics;
         this.metadataCache = metadataCache;
         this.time = time;
@@ -104,13 +100,6 @@ public class TopicMirrorLinkCoordinator {
         }
 
         logger.info("Starting up.");
-        scheduler.startup();
-        // periodically query source cluster to get the metadata
-        scheduler.schedule("topic-mirror-link-query",
-                remoteClusterMetadataManager::refreshRemoteMetadata,
-                300000,
-                300000
-        );
         numPartitions = config.clusterLinksConfig().clusterLinkTopicNumPartitions();
     }
 
