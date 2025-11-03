@@ -83,10 +83,10 @@ class MirrorReplicaFetcherManager(brokerConfig: KafkaConfig,
     }
 
     this.synchronized {
-      def addAndStartFetcherThread(remoteFetcherKey: BrokerAndFetcherIdWithMirror): ReplicaFetcherThread = {
-        val fetcherThread = createMirrorFetcherThread(remoteFetcherKey.fetcherId, remoteFetcherKey.sourceBroker,
-          remoteFetcherKey.mirrorName)
-        remoteFetcherThreadMap.put(remoteFetcherKey, fetcherThread)
+      def addAndStartFetcherThread(mirrorFetcherKey: BrokerAndFetcherIdWithMirror): ReplicaFetcherThread = {
+        val fetcherThread = createMirrorFetcherThread(mirrorFetcherKey.fetcherId, mirrorFetcherKey.sourceBroker,
+          mirrorFetcherKey.mirrorName)
+        remoteFetcherThreadMap.put(mirrorFetcherKey, fetcherThread)
         fetcherThread.start()
         fetcherThread
       }
@@ -94,12 +94,15 @@ class MirrorReplicaFetcherManager(brokerConfig: KafkaConfig,
       for ((remoteFetcherKey, initialFetchOffsets) <- partitionsPerFetcher) {
         val fetcherThread = remoteFetcherThreadMap.get(remoteFetcherKey) match {
           case Some(currentFetcherThread) if currentFetcherThread.leader.brokerEndPoint() == remoteFetcherKey.sourceBroker =>
+            logger.info("######### Reusing mirror fetcher")
             // reuse the fetcher thread
             currentFetcherThread
           case Some(f) =>
+            logger.info("######### Recreating mirror fetcher")
             f.shutdown()
             addAndStartFetcherThread(remoteFetcherKey)
           case None =>
+            logger.info("######### Creating new mirror fetcher")
             addAndStartFetcherThread(remoteFetcherKey)
         }
         // failed partitions are removed when added partitions to thread
@@ -109,17 +112,16 @@ class MirrorReplicaFetcherManager(brokerConfig: KafkaConfig,
   }
 
   def createMirrorFetcherThread(fetcherId: Int, sourceBroker: BrokerEndPoint, mirrorName: String): ReplicaFetcherThread = {
-    info(s"!!! createMirrorFetcherThread: sourceBroker = $sourceBroker fetcherId = $fetcherId mirrorName = $mirrorName")
-    val threadName = s"ReplicaFetcherThread-$fetcherId-${sourceBroker.id}-$mirrorName"
+    info(s"Creating mirror fetcher thread: fetcherId = $fetcherId, sourceBroker = $sourceBroker, mirrorName = $mirrorName")
+    val threadName = s"MirrorFetcherThread-$fetcherId-${sourceBroker.id}-$mirrorName"
     val logContext = new LogContext(s"[ReplicaFetcher replicaId=${brokerConfig.brokerId}, leaderId=${sourceBroker.id}, " +
-      s"fetcherId=$fetcherId, mirrorName=$mirrorName]")
+      s"fetcherId=$fetcherId, mirrorName=$mirrorName] ")
 
     val endpoint = if (mirrorName.nonEmpty) {
       val mirrorProperties = metadataCache.config(new ConfigResource(ConfigResource.Type.MIRROR, mirrorName))
-      info(s"Using mirror properties for $mirrorName: ${mirrorProperties.keySet()}")
       val mirrorConfig = MirrorConfig.fromProperties(mirrorProperties)
       new MirrorBrokerBlockingSender(sourceBroker, mirrorConfig, metrics, time, fetcherId,
-        s"broker-${brokerConfig.brokerId}-fetcher-$fetcherId-mirror-$mirrorName", logContext)
+        s"fetcher-$fetcherId-broker-${brokerConfig.brokerId}-mirror-$mirrorName", logContext)
     } else {
       throw new IllegalArgumentException("Mirror name must be provided for remote fetchers")
     }

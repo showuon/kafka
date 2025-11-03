@@ -2495,14 +2495,17 @@ class ReplicaManager(val config: KafkaConfig,
           //   high watermark in the checkpoint file (see KAFKA-1647).
           val state = info.partition.toLeaderAndIsrPartitionState(tp, isNew)
           val partitionAssignedDirectoryId = directoryIds.find(_._1.topicPartition() == tp).map(_._2)
-          val isNewLeaderEpoch = if (hasMirror) {
+
+          val isNewLeaderEpoch = !hasMirror && partition.makeFollower(state, offsetCheckpoints, Some(info.topicId), partitionAssignedDirectoryId)
+          logger.info("######### isNewLeaderEpoch: " + isNewLeaderEpoch)
+          /*val isNewLeaderEpoch = if (hasMirror) {
             // For remote leaders we skip makeFollower, but we still need to update the leader epoch
             val currentLeaderEpoch = partition.getLeaderEpoch
             partition.updateLeaderEpochForRemoteLeader(state.leaderEpoch)
             state.leaderEpoch > currentLeaderEpoch
           } else {
             partition.makeFollower(state, offsetCheckpoints, Some(info.topicId), partitionAssignedDirectoryId)
-          }
+          }*/
 
           if (isInControlledShutdown && (info.partition.leader == NO_LEADER ||
               !info.partition.isr.contains(config.brokerId))) {

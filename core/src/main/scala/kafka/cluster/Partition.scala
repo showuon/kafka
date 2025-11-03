@@ -737,7 +737,7 @@ class Partition(val topicPartition: TopicPartition,
   def getPartitionEpoch: Int = this.partitionEpoch
 
   /**
-   * Update the leader epoch for remote leaders (cluster linking).
+   * Update the leader epoch for remote leaders (cluster mirror).
    * This prevents the leaderEpoch from remaining at initialization value (-1).
    *
    * @param newLeaderEpoch The new leader epoch to set
