@@ -15,8 +15,9 @@
  * limitations under the License.
  */
 
-package kafka.server
+package kafka.server.mirror
 
+import kafka.server._
 import org.apache.kafka.clients.FetchSessionHandler
 import org.apache.kafka.common.config.ConfigResource
 import org.apache.kafka.common.metrics.Metrics
@@ -53,16 +54,16 @@ import scala.collection.{Map, mutable}
  * utilization. This design allows a single Kafka cluster to simultaneously mirror data from
  * multiple remote clusters without interference between their respective configurations.
  */
-class MirrorReplicaFetcherManager(brokerConfig: KafkaConfig,
-                                  protected val replicaManager: ReplicaManager,
-                                  metrics: Metrics,
-                                  time: Time,
-                                  quotaManager: ReplicationQuotaManager,
-                                  metadataVersionSupplier: () => MetadataVersion,
-                                  brokerEpochSupplier: () => Long,
-                                  metadataCache: MetadataCache)
+class MirrorFetcherManager(brokerConfig: KafkaConfig,
+                           protected val replicaManager: ReplicaManager,
+                           metrics: Metrics,
+                           time: Time,
+                           quotaManager: ReplicationQuotaManager,
+                           metadataVersionSupplier: () => MetadataVersion,
+                           brokerEpochSupplier: () => Long,
+                           metadataCache: MetadataCache)
     extends AbstractFetcherManager[ReplicaFetcherThread](
-      name = "MirrorReplicaFetcherManager on broker " + brokerConfig.brokerId,
+      name = "MirrorFetcherManager on broker " + brokerConfig.brokerId,
       clientId = "MirrorReplica",
       numFetchers = brokerConfig.numMirrorReplicaFetchers) {
   private val remoteFetcherThreadMap = new mutable.HashMap[BrokerAndFetcherIdWithMirror, ReplicaFetcherThread]
@@ -72,6 +73,7 @@ class MirrorReplicaFetcherManager(brokerConfig: KafkaConfig,
   }
 
   override def addFetcherForPartitions(partitionAndOffsets: Map[TopicPartition, InitialFetchState]): Unit = {
+    logger.info("#### remoteFetcherThreadMap: " + remoteFetcherThreadMap.keys)
     // Ensures partitions with different cluster mirrors get separate fetcher threads.
     // This is crucial because different cluster mirrors may require different authentication credentials.
     val partitionsPerFetcher = partitionAndOffsets.groupBy { case (topicPartition, brokerAndInitialFetchOffset) =>
@@ -94,15 +96,15 @@ class MirrorReplicaFetcherManager(brokerConfig: KafkaConfig,
       for ((remoteFetcherKey, initialFetchOffsets) <- partitionsPerFetcher) {
         val fetcherThread = remoteFetcherThreadMap.get(remoteFetcherKey) match {
           case Some(currentFetcherThread) if currentFetcherThread.leader.brokerEndPoint() == remoteFetcherKey.sourceBroker =>
-            logger.info("######### Reusing mirror fetcher")
+            logger.info("#### Reusing mirror fetcher")
             // reuse the fetcher thread
             currentFetcherThread
           case Some(f) =>
-            logger.info("######### Recreating mirror fetcher")
+            logger.info("#### Recreating mirror fetcher")
             f.shutdown()
             addAndStartFetcherThread(remoteFetcherKey)
           case None =>
-            logger.info("######### Creating new mirror fetcher")
+            logger.info("#### Creating new mirror fetcher")
             addAndStartFetcherThread(remoteFetcherKey)
         }
         // failed partitions are removed when added partitions to thread
@@ -111,7 +113,7 @@ class MirrorReplicaFetcherManager(brokerConfig: KafkaConfig,
     }
   }
 
-  def createMirrorFetcherThread(fetcherId: Int, sourceBroker: BrokerEndPoint, mirrorName: String): ReplicaFetcherThread = {
+  def createMirrorFetcherThread(fetcherId: Int, sourceBroker: BrokerEndPoint, mirrorName: String): MirrorFetcherThread = {
     info(s"Creating mirror fetcher thread: fetcherId = $fetcherId, sourceBroker = $sourceBroker, mirrorName = $mirrorName")
     val threadName = s"MirrorFetcherThread-$fetcherId-${sourceBroker.id}-$mirrorName"
     val logContext = new LogContext(s"[ReplicaFetcher replicaId=${brokerConfig.brokerId}, leaderId=${sourceBroker.id}, " +
@@ -120,7 +122,7 @@ class MirrorReplicaFetcherManager(brokerConfig: KafkaConfig,
     val endpoint = if (mirrorName.nonEmpty) {
       val mirrorProperties = metadataCache.config(new ConfigResource(ConfigResource.Type.MIRROR, mirrorName))
       val mirrorConfig = MirrorConfig.fromProperties(mirrorProperties)
-      new MirrorBrokerBlockingSender(sourceBroker, mirrorConfig, metrics, time, fetcherId,
+      new MirrorBlockingSender(sourceBroker, mirrorConfig, metrics, time, fetcherId,
         s"fetcher-$fetcherId-broker-${brokerConfig.brokerId}-mirror-$mirrorName", logContext)
     } else {
       throw new IllegalArgumentException("Mirror name must be provided for remote fetchers")
@@ -128,7 +130,7 @@ class MirrorReplicaFetcherManager(brokerConfig: KafkaConfig,
     val fetchSessionHandler = new FetchSessionHandler(logContext, sourceBroker.id)
     val leader: LeaderEndPoint = new RemoteLeaderEndPoint(logContext.logPrefix, endpoint, fetchSessionHandler, brokerConfig,
       replicaManager, quotaManager, metadataVersionSupplier, brokerEpochSupplier)
-    new ReplicaFetcherThread(threadName, leader, brokerConfig, failedPartitions, replicaManager,
+    new MirrorFetcherThread(threadName, leader, brokerConfig, failedPartitions, replicaManager,
       quotaManager, logContext.logPrefix, mirrorName)
   }
 
@@ -140,7 +142,7 @@ class MirrorReplicaFetcherManager(brokerConfig: KafkaConfig,
       failedPartitions.removeAll(partitions)
     }
     if (partitions.nonEmpty)
-      info(s"Removed mirror fetcher for partitions $partitions")
+      info(s"#### Removed mirror fetcher for partitions $partitions")
     fetchStates
   }
 
@@ -171,9 +173,9 @@ class MirrorReplicaFetcherManager(brokerConfig: KafkaConfig,
   }
 
   def shutdown(): Unit = {
-    info("Shutting down MirrorReplicaFetcherManager")
+    info("Shutting down MirrorFetcherManager")
     closeAllFetchers()
-    info("MirrorReplicaFetcherManager shutdown completed")
+    info("MirrorFetcherManager shutdown completed")
   }
 }
 

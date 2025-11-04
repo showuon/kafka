@@ -39,6 +39,7 @@ import scala.jdk.CollectionConverters._
 
 /**
  * Facilitates fetches from a local replica leader.
+ * This is used for local cluster replication (broker-to-broker in same cluster).
  *
  * @param sourceBroker The broker (host:port) that we want to connect to
  * @param brokerConfig A config file with broker related configurations

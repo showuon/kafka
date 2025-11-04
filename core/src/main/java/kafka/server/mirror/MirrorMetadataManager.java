@@ -17,7 +17,6 @@
 package kafka.server.mirror;
 
 import kafka.server.KafkaConfig;
-import kafka.server.MirrorBrokerBlockingSender;
 
 import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.clients.ClientUtils;
@@ -97,13 +96,15 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 import static java.util.Collections.singletonList;
 import static org.apache.kafka.clients.CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG;
 
 /**
- * Cluster Mirror component that provides synchronization of cluster state.
+ * Cluster Mirror component that provides synchronization of remote cluster state
+ * acting as the source cluster metadata cache.
  *
  * The synchronized state include:
  * - Topic metadata (leaders, partitions, configurations)
@@ -117,7 +118,7 @@ import static org.apache.kafka.clients.CommonClientConfigs.BOOTSTRAP_SERVERS_CON
  * local cluster state synchronized with remote cluster state.
  *
  * Key responsibilities:
- * - Establishes and manages connections to remote brokers using MirrorBrokerBlockingSender
+ * - Establishes and manages connections to remote brokers using MirrorBlockingSender
  * - Monitors remote cluster topology and partition leadership changes
  * - Synchronizes topic configurations between clusters
  * - Mirrors consumer group offsets to maintain consistency across clusters
@@ -139,7 +140,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private final int nodeId;
     // Mapping from remote bootstrap servers to its corresponding broker sender and topics.
     // TODO: A better key might be a cluster id or cluster-mirror. For now, we use remote bootstrap servers for demo.
-    private final Map<String, List<MirrorBrokerBlockingSender>> remoteBrokers;
+    private final Map<String, List<MirrorBlockingSender>> remoteBrokers;
     private final Map<String, Set<String>> topics;
     private final Map<String, Map<Integer, Node>> remoteClusterNodes;
     private final Map<String, Map<TopicPartition, Node>> remotePartitionLeaders;
@@ -192,22 +193,48 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     public Node getRemotePartitionLeader(String mirrorName, TopicPartition tp) {
         var partitionLeaders = remotePartitionLeaders.get(mirrorName);
         if (partitionLeaders != null) {
-            return partitionLeaders.get(tp);
+            Node leader = partitionLeaders.get(tp);
+            if (leader != null) {
+                return leader;
+            }
         }
-        // return a random node if no leader info
+
+        // No cached metadata.
+        // Refresh synchronously to get correct broker IDs before creating fetcher threads.
+        LOG.info("No cached metadata for mirror {} partition {}. Refreshing metadata from remote cluster.", mirrorName, tp);
+        topics.computeIfAbsent(mirrorName, k -> java.util.concurrent.ConcurrentHashMap.newKeySet()).add(tp.topic());
+        refreshMetadata();
+
+        // Try again after refreshing metadata.
+        partitionLeaders = remotePartitionLeaders.get(mirrorName);
+        if (partitionLeaders != null) {
+            Node leader = partitionLeaders.get(tp);
+            if (leader != null) {
+                LOG.info("Successfully fetched leader for {} from mirror {}: broker {}", tp, mirrorName, leader.id());
+                return leader;
+            }
+        }
+
+        // Metadata refresh failed or partition not found.
+        // Fall back to random bootstrap server.
+        // This should rarely happen and indicates a configuration or connectivity issue.
+        LOG.warn("Unable to fetch metadata for mirror {} partition {} after refresh. Falling back to random bootstrap server.", mirrorName, tp);
         Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.MIRROR, mirrorName));
         String bootstrapServers = Optional.ofNullable(props.get(BOOTSTRAP_SERVERS_CONFIG))
                 .map(Object::toString)
                 .orElseThrow(() -> new IllegalArgumentException("Remote bootstrap server not found for mirror " + mirrorName));
-        // get the 1st one bootstrap server
+
         var addresses = ClientUtils.parseAndValidateAddresses(Arrays.stream(bootstrapServers.split(",")).toList(), "use_all_dns_ips");
         int rand = random.nextInt(addresses.size());
+
         // Use random node id here because we don't know node id of remote brokers.
         return new Node(random.nextInt(), addresses.get(rand).getHostString(), addresses.get(rand).getPort());
     }
 
     public void updateMirroredTopics(String clusterName, Set<String> topics) {
-        this.topics.put(clusterName, topics);
+        Set<String> mutableTopics = ConcurrentHashMap.newKeySet();
+        mutableTopics.addAll(topics);
+        this.topics.put(clusterName, mutableTopics);
     }
 
     public void refreshMetadata() {
@@ -259,7 +286,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         var logContext = new LogContext("[" + MirrorMetadataManager.class.getName() + " replicaId=" + nodeId
                 + ", remoteBootstrapServers=" + mirrorName + ", " + "readOnly=true] ");
 
-        remoteBrokers.put(mirrorName, List.of(new MirrorBrokerBlockingSender(
+        remoteBrokers.put(mirrorName, List.of(new MirrorBlockingSender(
                 brokerEndpoint,
                 MirrorConfig.fromProperties(props),
                 metrics,
@@ -274,7 +301,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * Synchronizes topic metadata for a specific remote cluster.
      * This includes updating broker nodes, partition leaders, and handling partition scaling.
      */
-    private void syncTopicMetadata(String mirrorName, List<MirrorBrokerBlockingSender> senders) {
+    private void syncTopicMetadata(String mirrorName, List<MirrorBlockingSender> senders) {
         // get a random node in source cluster
         var response = getRandomSender(senders).sendRequest(
             MetadataRequest.Builder.forTopicNames(topics.get(mirrorName).stream().toList(), false)
@@ -292,7 +319,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     /**
      * Synchronizes topic configurations for a specific remote cluster.
      */
-    private void syncTopicConfigurations(String mirrorName, List<MirrorBrokerBlockingSender> senders) {
+    private void syncTopicConfigurations(String mirrorName, List<MirrorBlockingSender> senders) {
         LOG.info("!!! Describing topic configs for topics: {}", topics);
 
         List<DescribeConfigsRequestData.DescribeConfigsResource> describeConfigsResources =
@@ -442,7 +469,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     /**
      * Returns a random sender from the list of available senders.
      */
-    private MirrorBrokerBlockingSender getRandomSender(List<MirrorBrokerBlockingSender> senders) {
+    private MirrorBlockingSender getRandomSender(List<MirrorBlockingSender> senders) {
         return senders.get(random.nextInt(senders.size()));
     }
 
@@ -471,7 +498,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     /**
      * Synchronizes consumer group offsets for a specific remote cluster.
      */
-    private void syncConsumerGroupOffsets(List<MirrorBrokerBlockingSender> senders) {
+    private void syncConsumerGroupOffsets(List<MirrorBlockingSender> senders) {
         // 1. list group
         ListGroupsRequest.Builder builder = new ListGroupsRequest.Builder(new ListGroupsRequestData()
                 .setTypesFilter(List.of(GroupType.CLASSIC.name(), GroupType.CONSUMER.name()))
@@ -560,7 +587,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     /**
      * Synchronizes ACLs for a specific remote cluster.
      */
-    private void syncACLs(String mirrorName, List<MirrorBrokerBlockingSender> senders) {
+    private void syncACLs(String mirrorName, List<MirrorBlockingSender> senders) {
         // TODO: We currently mirror all ACLs from the source to the target.
         //       Any ACLs added/removed directly on the target will be overwritten
         //       on the next sync to match the source.

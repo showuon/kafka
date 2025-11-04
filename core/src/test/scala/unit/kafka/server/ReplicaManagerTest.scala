@@ -110,7 +110,6 @@ object ReplicaManagerTest {
 }
 
 class ReplicaManagerTest {
-
   private val topic = "test-topic"
   private val topic2 = "test-topic2"
   private val topicId = Uuid.fromString("YK2ed2GaTH2JpgzUaJ8tgg")
