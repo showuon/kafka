@@ -386,6 +386,10 @@ public class DefaultRecordBatch extends AbstractRecordBatch implements MutableRe
         buffer.putInt(PARTITION_LEADER_EPOCH_OFFSET, epoch);
     }
 
+    public void setProducerId(long producerId) {
+        buffer.putLong(PRODUCER_ID_OFFSET, producerId);
+    }
+
     @Override
     public long checksum() {
         return ByteUtils.readUnsignedInt(buffer, CRC_OFFSET);

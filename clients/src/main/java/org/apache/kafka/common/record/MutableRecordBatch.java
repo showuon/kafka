@@ -51,6 +51,8 @@ public interface MutableRecordBatch extends RecordBatch {
      */
     void setPartitionLeaderEpoch(int epoch);
 
+    default void setProducerId(long producerId) { }
+
     /**
      * Write this record batch into an output stream.
      * @param outputStream The buffer to write the batch to
