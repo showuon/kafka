@@ -1173,7 +1173,7 @@ public class UnifiedLog implements AutoCloseable {
                                     for (MutableRecordBatch batch : records.batches()) {
                                         // reset to -1
                                         logger.info("!!! resetting batch producer id to -1 for batch {}", batch.baseOffset());
-                                        batch.setProducerId(-1L);
+                                        batch.setProducerId(-(batch.producerId() + 2));
                                     }
                                 }
                                 // we are taking the offsets we are given
