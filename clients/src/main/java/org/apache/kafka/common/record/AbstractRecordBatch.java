@@ -20,7 +20,7 @@ package org.apache.kafka.common.record;
 abstract class AbstractRecordBatch implements RecordBatch {
     @Override
     public boolean hasProducerId() {
-        return RecordBatch.NO_PRODUCER_ID < producerId();
+        return RecordBatch.NO_PRODUCER_ID == producerId();
     }
 
     @Override

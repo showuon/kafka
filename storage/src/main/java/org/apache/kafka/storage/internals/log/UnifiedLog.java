@@ -1063,7 +1063,7 @@ public class UnifiedLog implements AutoCloseable {
                       VerificationGuard.SENTINEL,
                       true,
                       RecordBatch.CURRENT_MAGIC_VALUE,
-                mirroredTopic);
+                      mirroredTopic);
     }
 
     private LogAppendInfo append(MemoryRecords records,
@@ -1168,11 +1168,10 @@ public class UnifiedLog implements AutoCloseable {
                                     });
                                 }
                             } else {
-                                // luke
                                 if (mirroredTopic) {
                                     for (MutableRecordBatch batch : records.batches()) {
-                                        // reset to -1
-                                        logger.info("!!! resetting batch producer id to -1 for batch {}", batch.baseOffset());
+                                        // reset producer id for mirrored topic
+                                        logger.info("!!! resetting batch producer id to {} for batch {}", -(batch.producerId() + 2), batch.baseOffset());
                                         batch.setProducerId(-(batch.producerId() + 2));
                                     }
                                 }
