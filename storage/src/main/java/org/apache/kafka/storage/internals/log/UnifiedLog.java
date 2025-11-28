@@ -1054,7 +1054,7 @@ public class UnifiedLog implements AutoCloseable {
      * @throws KafkaStorageException If the append fails due to an I/O error.
      * @return Information about the appended messages including the first and last offset.
      */
-    public LogAppendInfo appendAsFollower(MemoryRecords records, int leaderEpoch, boolean mirroredTopic) {
+    public LogAppendInfo appendAsFollower(MemoryRecords records, int leaderEpoch, boolean isMirroredTopic) {
         return append(records,
                       AppendOrigin.REPLICATION,
                       false,
@@ -1063,7 +1063,7 @@ public class UnifiedLog implements AutoCloseable {
                       VerificationGuard.SENTINEL,
                       true,
                       RecordBatch.CURRENT_MAGIC_VALUE,
-                      mirroredTopic);
+                      isMirroredTopic);
     }
 
     private LogAppendInfo append(MemoryRecords records,
@@ -1102,7 +1102,7 @@ public class UnifiedLog implements AutoCloseable {
                                  VerificationGuard verificationGuard,
                                  boolean ignoreRecordSize,
                                  byte toMagic,
-                                 boolean mirroredTopic) {
+                                 boolean isMirroredTopic) {
         // We want to ensure the partition metadata file is written to the log dir before any log data is written to disk.
         // This will ensure that any log data can be recovered with the correct topic ID in the case of failure.
         maybeFlushMetadataFile();
@@ -1168,7 +1168,7 @@ public class UnifiedLog implements AutoCloseable {
                                     });
                                 }
                             } else {
-                                if (mirroredTopic) {
+                                if (isMirroredTopic) {
                                     for (MutableRecordBatch batch : records.batches()) {
                                         // reset producer id for mirrored topic
                                         logger.info("!!! resetting batch producer id to {} for batch {}", -(batch.producerId() + 2), batch.baseOffset());
