@@ -284,13 +284,13 @@ abstract class AbstractFetcherThread(name: String,
         val updatedFetchState = partitionToData.get(topicPartition) match {
           case Some(partitionData) =>
             // if we can't get the epoch from the log, assume it's starting from the beginning
-            val latestEpochInLog = latestEpochFromLog(topicPartition).orElse(0)
+//            val latestEpochInLog = latestEpochFromLog(topicPartition).orElse(0)
             // Update currentLeaderEpoch (for fetch validation) from the source cluster's leader epochs
             val sourceLeaderEpoch = partitionData.currentLeader().leaderEpoch()
             info(s"==== Discovered epoch: partition=$topicPartition, " +
-              s"currentLeaderEpoch: ${currentFetchState.currentLeaderEpoch} -> $sourceLeaderEpoch")
+              s"currentLeaderEpoch: ${currentFetchState.currentLeaderEpoch} -> $sourceLeaderEpoch, ${currentFetchState.lastFetchedEpoch()}")
             new PartitionFetchState(currentFetchState.topicId, currentFetchState.fetchOffset(), currentFetchState.lag,
-              sourceLeaderEpoch, currentFetchState.delay, currentFetchState.state(), Optional.of(latestEpochInLog),
+              sourceLeaderEpoch, currentFetchState.delay, currentFetchState.state(), Optional.empty(),
               currentFetchState.dueMs(), currentFetchState.isMirrorFetch(), defaultMirrorLeaderEpoch)
           case None => currentFetchState
         }
@@ -497,7 +497,7 @@ abstract class AbstractFetcherThread(name: String,
                         // ReplicaDirAlterThread may have removed topicPartition from the partitionStates after processing the partition data
                         if (partitionStates.contains(topicPartition) && shouldUpdateState) {
                           val lastFetchedEpoch =
-                            if (logAppendInfo.lastLeaderEpoch.isPresent) logAppendInfo.lastLeaderEpoch else currentFetchState.lastFetchedEpoch
+                            if (logAppendInfo.lastLeaderEpoch.isPresent && currentFetchState.lastFetchedEpoch.isPresent) logAppendInfo.lastLeaderEpoch else currentFetchState.lastFetchedEpoch
                           // For mirrored partitions, update mirror leader epoch from the fetch response
                           val mirrorLeaderEpoch = if (shouldUpdateMirrorLeaderEpoch(topicPartition)) partitionData.mirrorLeaderEpoch else defaultMirrorLeaderEpoch
                           // Update partitionStates only if there is no exception during processPartitionData
@@ -642,15 +642,21 @@ abstract class AbstractFetcherThread(name: String,
     } else if (leader.isTruncationOnFetchSupported) {
       // With old message format, `latestEpoch` will be empty and we use Truncating state
       // to truncate to high watermark.
-      val latestEpochInLog = latestEpochFromLog(tp)
-      // For mirrored partitions, use epochs from the local log (which contain source cluster epochs).
-      // For regular followers, use epochs from partition metadata (destination cluster epochs).
-      val lastFetchedEpoch: Optional[Integer] = if (initialFetchState.mirrorName.nonEmpty) {
-        if (latestEpochInLog.isPresent)
-          latestEpochInLog
-        else Optional.of(0) // this should only happen when no data in local log
-      } else latestEpoch(tp)
-      val state = if (lastFetchedEpoch.isPresent) ReplicaState.FETCHING else ReplicaState.TRUNCATING
+//      val latestEpochInLog = latestEpochFromLog(tp)
+//      // For mirrored partitions, use epochs from the local log (which contain source cluster epochs).
+//      // For regular followers, use epochs from partition metadata (destination cluster epochs).
+//      val lastFetchedEpoch: Optional[Integer] = if (initialFetchState.mirrorName.nonEmpty) {
+//        if (latestEpochInLog.isPresent)
+//          latestEpochInLog
+//        else Optional.of(0) // this should only happen when no data in local log
+//      } else latestEpoch(tp)
+//      val state = if (lastFetchedEpoch.isPresent) ReplicaState.FETCHING else ReplicaState.TRUNCATING
+      val lastFetchedEpoch: Optional[Integer] = if (initialFetchState.mirrorName.isEmpty) {
+        latestEpoch(tp)
+      } else {
+        Optional.empty()
+      }
+      val state = if (lastFetchedEpoch.isPresent || initialFetchState.mirrorName.nonEmpty) ReplicaState.FETCHING else ReplicaState.TRUNCATING
       new PartitionFetchState(initialFetchState.topicId.toJava, initialFetchState.initOffset, Optional.empty(), initialFetchState.currentLeaderEpoch,
         state, lastFetchedEpoch, initialFetchState.mirrorName.nonEmpty, 0, defaultMirrorLeaderEpoch)
     } else {

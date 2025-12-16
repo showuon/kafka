@@ -1170,7 +1170,7 @@ public class UnifiedLog implements AutoCloseable {
                                     });
                                 }
                             } else {
-                                maybeResetProducerIdForMirroredTopic(records, isMirrorLeader);
+                                maybeResetProducerIdAndLeaderEpochForMirroredLeader(records, isMirrorLeader);
                                 // we are taking the offsets we are given
                                 if (appendInfo.firstOrLastOffsetOfFirstBatch() < localLog.logEndOffset()) {
                                     // we may still be able to recover if the log is empty
@@ -1281,9 +1281,11 @@ public class UnifiedLog implements AutoCloseable {
      * @param records The records being appended
      * @param isMirrorLeader True if this is a read-only leader fetching from source cluster
      */
-    private void maybeResetProducerIdForMirroredTopic(MemoryRecords records, boolean isMirrorLeader) {
+    private void maybeResetProducerIdAndLeaderEpochForMirroredLeader(MemoryRecords records, boolean isMirrorLeader) {
         if (isMirrorLeader) {
             for (MutableRecordBatch batch : records.batches()) {
+                // Reset the leader epoch as the local leader epoch
+                batch.setPartitionLeaderEpoch(latestEpoch().orElse(0));
                 // Reset producer ID to avoid conflicts with local producers
                 // New producer ID = -(originalProducerId + 2)
                 batch.setProducerId(-(batch.producerId() + 2));
