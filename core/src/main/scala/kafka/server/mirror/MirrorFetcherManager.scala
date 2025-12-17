@@ -60,7 +60,8 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
                            quotaManager: ReplicationQuotaManager,
                            metadataVersionSupplier: () => MetadataVersion,
                            brokerEpochSupplier: () => Long,
-                           metadataCache: MetadataCache)
+                           metadataCache: MetadataCache,
+                           val mirrorMetadataManager: Option[MirrorMetadataManager] = None)
     extends AbstractFetcherManager[MirrorFetcherThread](
       name = "MirrorFetcherManager on broker " + brokerConfig.brokerId,
       clientId = "MirrorReplica",
@@ -131,7 +132,7 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
     val leader: LeaderEndPoint = new RemoteLeaderEndPoint(logContext.logPrefix, endpoint, fetchSessionHandler, brokerConfig,
       replicaManager, quotaManager, metadataVersionSupplier, brokerEpochSupplier, isCrossClusterMirror = true)
     new MirrorFetcherThread(threadName, leader, brokerConfig, failedPartitions, replicaManager,
-      quotaManager, logContext.logPrefix, mirrorName)
+      quotaManager, logContext.logPrefix, mirrorName, mirrorMetadataManager)
   }
 
   override def removeFetcherForPartitions(partitions: scala.collection.Set[TopicPartition]): scala.collection.Map[TopicPartition, PartitionFetchState] = {
