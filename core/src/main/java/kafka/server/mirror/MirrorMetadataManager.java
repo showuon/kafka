@@ -102,6 +102,9 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.function.Supplier;
 
 import static java.util.Collections.singletonList;
@@ -268,6 +271,38 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     public void maybeUpdateLeaderEpoch(List<String> topics) {
         // sent in another thread to avoid to block the api handling thread
         scheduler.scheduleOnce("bump-leader-epoch", () -> sendBumpLeaderEpoch(topics));
+    }
+
+    // send bump leader epoch request to the controller and wait for the result
+    public void sendBumpLeaderEpoch(TopicPartition topicPartition, int epoch) {
+        List<BumpLeaderEpochRequestData.TopicState> topicStates = new ArrayList<>();
+        BumpLeaderEpochRequestData.TopicState topicState = new BumpLeaderEpochRequestData.TopicState();
+        List<BumpLeaderEpochRequestData.LeaderEpochState> topicLeaderEpoch = new ArrayList<>();
+        topicLeaderEpoch.add(new BumpLeaderEpochRequestData.LeaderEpochState().setLeaderEpoch(epoch).setPartitionIndex(topicPartition.partition()));
+        topicState.setTopicId(metadataCache.getTopicId(topicPartition.topic())).setPartitions(topicLeaderEpoch);
+        topicStates.add(topicState);
+
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        channelManager.sendRequest(new BumpLeaderEpochRequest.Builder(
+                new BumpLeaderEpochRequestData().setTopics(topicStates)
+        ), new ControllerRequestCompletionHandler() {
+            @Override
+            public void onTimeout() {
+                LOG.info("!!! onTimeout");
+                future.completeExceptionally(new IllegalStateException("Timeout when sending bump leader epoch request"));
+            }
+
+            @Override
+            public void onComplete(ClientResponse response) {
+                LOG.info("!!! onComplete result: {}", response);
+                // should validate the result is completed without error
+                future.complete(null);
+            }
+        });
+
+        // wait until request complete before moving on, or throw exception for the future
+        // If it's exception, it'll be caught at AbstractFetcherThread#processFetchRequest and retry later
+        future.join();
     }
 
     private void sendBumpLeaderEpoch(List<String> topics) {

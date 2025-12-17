@@ -56,7 +56,8 @@ class MirrorFetcherThread(name: String,
                           replicaMgr: ReplicaManager,
                           quota: ReplicaQuota,
                           logPrefix: String,
-                          mirrorName: String)
+                          mirrorName: String,
+                          val mirrorMetadataManager: Option[MirrorMetadataManager] = None)
   extends AbstractFetcherThread(name = name,
                                 clientId = name,
                                 leader = leader,
@@ -100,6 +101,13 @@ class MirrorFetcherThread(name: String,
     if (logTrace)
       trace("Mirror follower has replica log end offset %d for partition %s. Received %d bytes of messages and leader hw %d"
         .format(log.logEndOffset, topicPartition, records.sizeInBytes, partitionData.highWatermark))
+
+    // find the leader epoch of the last batch from the source cluster, and bump the leader epoch locally
+    records.lastBatch().ifPresent(batch => {
+      val lastEpochInBatches =  batch.partitionLeaderEpoch()
+      println("!!! lastEpochInBatches:" + lastEpochInBatches)
+      mirrorMetadataManager.get.sendBumpLeaderEpoch(topicPartition, lastEpochInBatches)
+    })
 
     // Append batches from the source cluster to the destination partition's log, preserving
     // the original leader epochs from the source cluster.
