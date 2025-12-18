@@ -336,6 +336,10 @@ class AbstractFetcherManagerTest {
       brokerTopicStats = new BrokerTopicStats,
       mirrorName = "") {
 
+    override def maybeBumpLeaderEpoch(topicPartition: TopicPartition, epoch: Int): Boolean = {
+      false
+    }
+
     override protected def processPartitionData(
       topicPartition: TopicPartition,
       fetchOffset: Long,

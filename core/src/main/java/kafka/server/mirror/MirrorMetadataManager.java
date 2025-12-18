@@ -282,27 +282,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         topicState.setTopicId(metadataCache.getTopicId(topicPartition.topic())).setPartitions(topicLeaderEpoch);
         topicStates.add(topicState);
 
-        CompletableFuture<Void> future = new CompletableFuture<>();
         channelManager.sendRequest(new BumpLeaderEpochRequest.Builder(
                 new BumpLeaderEpochRequestData().setTopics(topicStates)
-        ), new ControllerRequestCompletionHandler() {
-            @Override
-            public void onTimeout() {
-                LOG.info("!!! onTimeout");
-                future.completeExceptionally(new IllegalStateException("Timeout when sending bump leader epoch request"));
-            }
-
-            @Override
-            public void onComplete(ClientResponse response) {
-                LOG.info("!!! onComplete result: {}", response);
-                // should validate the result is completed without error
-                future.complete(null);
-            }
-        });
-
-        // wait until request complete before moving on, or throw exception for the future
-        // If it's exception, it'll be caught at AbstractFetcherThread#processFetchRequest and retry later
-        future.join();
+        ), new TimeoutHandler());
     }
 
     private void sendBumpLeaderEpoch(List<String> topics) {

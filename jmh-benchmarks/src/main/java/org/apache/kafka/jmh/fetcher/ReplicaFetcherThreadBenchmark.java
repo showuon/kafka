@@ -338,5 +338,10 @@ public class ReplicaFetcherThreadBenchmark {
         ) {
             return Option.empty();
         }
+
+        @Override
+        public boolean maybeBumpLeaderEpoch(TopicPartition topicPartition, int epoch) {
+            return false;
+        }
     }
 }

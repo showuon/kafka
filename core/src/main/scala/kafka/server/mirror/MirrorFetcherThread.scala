@@ -68,6 +68,8 @@ class MirrorFetcherThread(name: String,
                                 replicaMgr.brokerTopicStats,
                                 mirrorName) {
   this.logIdent = logPrefix
+  // bump +5 to avoid leader epoch bumping loop
+  val ROOM_FOR_LEADER_EPOCH = 5
 
   override protected def removeFetcherForPartitions(partitions: Set[TopicPartition]): Map[TopicPartition, PartitionFetchState] = {
     replicaMgr.mirrorFetcherManager.removeFetcherForPartitions(partitions)
@@ -80,6 +82,19 @@ class MirrorFetcherThread(name: String,
   override def shouldUpdateMirrorLeaderEpoch(topicPartition: TopicPartition): Boolean = {
     // MirrorFetcherThread always processes mirrored partitions, so always update from batches
     true
+  }
+
+  override def maybeBumpLeaderEpoch(topicPartition: TopicPartition, epoch: Int): Boolean = {
+    replicaMgr.getPartition(topicPartition) match {
+      case HostedPartition.Online(partition) =>
+        logger.info("!!! maybeBumpLeaderEpoch:" + partition.getLeaderEpoch + ";;" + epoch)
+        if (partition.getLeaderEpoch < epoch) {
+          mirrorMetadataManager.get.sendBumpLeaderEpoch(topicPartition, epoch + ROOM_FOR_LEADER_EPOCH)
+          true
+        } else false
+      case _ =>
+        false
+    }
   }
 
   // process fetched data
@@ -101,13 +116,6 @@ class MirrorFetcherThread(name: String,
     if (logTrace)
       trace("Mirror follower has replica log end offset %d for partition %s. Received %d bytes of messages and leader hw %d"
         .format(log.logEndOffset, topicPartition, records.sizeInBytes, partitionData.highWatermark))
-
-    // find the leader epoch of the last batch from the source cluster, and bump the leader epoch locally
-    records.lastBatch().ifPresent(batch => {
-      val lastEpochInBatches =  batch.partitionLeaderEpoch()
-      println("!!! lastEpochInBatches:" + lastEpochInBatches)
-      mirrorMetadataManager.get.sendBumpLeaderEpoch(topicPartition, lastEpochInBatches)
-    })
 
     // Append batches from the source cluster to the destination partition's log, preserving
     // the original leader epochs from the source cluster.

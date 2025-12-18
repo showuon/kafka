@@ -790,12 +790,15 @@ class Partition(val topicPartition: TopicPartition,
           s"removing replicas ${removingReplicas.mkString("[", ",", "]")} ${if (isUnderMinIsr) "(under-min-isr)" else ""}. " +
           s"Previous leader $leaderReplicaIdOpt and previous leader epoch was $leaderEpoch.")
 
-        // In the case of successive leader elections in a short time period, a follower may have
-        // entries in its log from a later epoch than any entry in the new leader's log. In order
-        // to ensure that these followers can truncate to the right offset, we must cache the new
-        // leader epoch and the start offset since it should be larger than any epoch that a follower
-        // would try to query.
-        leaderLog.assignEpochStartOffset(partitionState.leaderEpoch, leaderEpochStartOffset)
+        // Don't update the leader epoch cache for mirrored leader because we'll update the leader epoch cache when receiving the batches
+        if (mirrorName.isEmpty) {
+          // In the case of successive leader elections in a short time period, a follower may have
+          // entries in its log from a later epoch than any entry in the new leader's log. In order
+          // to ensure that these followers can truncate to the right offset, we must cache the new
+          // leader epoch and the start offset since it should be larger than any epoch that a follower
+          // would try to query.
+          leaderLog.assignEpochStartOffset(partitionState.leaderEpoch, leaderEpochStartOffset)
+        }
 
         // Initialize lastCaughtUpTime of replicas as well as their lastFetchTimeMs and
         // lastFetchLeaderLogEndOffset.

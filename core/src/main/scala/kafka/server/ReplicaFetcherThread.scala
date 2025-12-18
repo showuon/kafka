@@ -120,6 +120,10 @@ class ReplicaFetcherThread(name: String,
     }
   }
 
+  override def maybeBumpLeaderEpoch(topicPartition: TopicPartition, epoch: Int): Boolean = {
+    false
+  }
+
   // process fetched data
   override def processPartitionData(
     topicPartition: TopicPartition,

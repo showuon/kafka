@@ -86,6 +86,10 @@ class ReplicaAlterLogDirsThread(name: String,
     false
   }
 
+  override def maybeBumpLeaderEpoch(topicPartition: TopicPartition, epoch: Int): Boolean = {
+    false
+  }
+
   override def processPartitionData(
     topicPartition: TopicPartition,
     fetchOffset: Long,

@@ -91,6 +91,9 @@ abstract class AbstractFetcherThread(name: String,
     partitionData: FetchData
   ): Option[LogAppendInfo]
 
+
+  protected def maybeBumpLeaderEpoch(topicPartition: TopicPartition, epoch: Int): Boolean
+
   /**
    * Check if fetch epoch should be updated from batch epochs for this partition.
    * This is needed for mirrored partitions where batches contain source cluster epochs.
@@ -543,9 +546,15 @@ abstract class AbstractFetcherThread(name: String,
                     if (onPartitionFenced(topicPartition, fetchPartitionData.currentLeaderEpoch))
                       partitionsWithError += topicPartition
                   } else {
-                    // cluster mirroring: outaded epoch due to initial fetch or source leader election
-                    mirrorPartitionsWithNewEpoch += topicPartition -> partitionData
-                    mirrorPartitionsWithNewLeader += topicPartition -> partitionData
+                    // We'll bump the local leader epoch when the source cluster leader epoch is greater than local one
+                    if (maybeBumpLeaderEpoch(topicPartition, partitionData.currentLeader().leaderEpoch())) {
+                      logger.info("!!! bumping the leader epoch, will wait for the new LeaderAndIsr state before resuming fetching")
+                      markPartitionFailed(topicPartition)
+                    } else {
+                      // cluster mirroring: outaded epoch due to initial fetch or source leader election
+                      mirrorPartitionsWithNewEpoch += topicPartition -> partitionData
+                      mirrorPartitionsWithNewLeader += topicPartition -> partitionData
+                    }
                   }
 
                 case Errors.OFFSET_MOVED_TO_TIERED_STORAGE =>
@@ -642,14 +651,7 @@ abstract class AbstractFetcherThread(name: String,
     } else if (leader.isTruncationOnFetchSupported) {
       // With old message format, `latestEpoch` will be empty and we use Truncating state
       // to truncate to high watermark.
-      val latestEpochInLog = latestEpochFromLog(tp)
-      // For mirrored partitions, use epochs from the local log (which contain source cluster epochs).
-      // For regular followers, use epochs from partition metadata (destination cluster epochs).
-      val lastFetchedEpoch: Optional[Integer] = if (initialFetchState.mirrorName.nonEmpty) {
-        if (latestEpochInLog.isPresent)
-          latestEpochInLog
-        else Optional.of(0) // this should only happen when no data in local log
-      } else latestEpoch(tp)
+      val lastFetchedEpoch = latestEpoch(tp)
       val state = if (lastFetchedEpoch.isPresent) ReplicaState.FETCHING else ReplicaState.TRUNCATING
       new PartitionFetchState(initialFetchState.topicId.toJava, initialFetchState.initOffset, Optional.empty(), initialFetchState.currentLeaderEpoch,
         state, lastFetchedEpoch, initialFetchState.mirrorName.nonEmpty, 0, defaultMirrorLeaderEpoch)

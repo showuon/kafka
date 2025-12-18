@@ -69,6 +69,10 @@ class MockFetcherThread(val mockLeader: MockLeaderEndPoint,
     partitions
   }
 
+  override def maybeBumpLeaderEpoch(topicPartition: TopicPartition, epoch: Int): Boolean = {
+    false
+  }
+
   override def processPartitionData(
     topicPartition: TopicPartition,
     fetchOffset: Long,
