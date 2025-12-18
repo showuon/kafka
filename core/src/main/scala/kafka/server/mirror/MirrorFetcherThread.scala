@@ -84,12 +84,13 @@ class MirrorFetcherThread(name: String,
     true
   }
 
-  override def maybeBumpLeaderEpoch(topicPartition: TopicPartition, epoch: Int): Boolean = {
+  override def maybeBumpLeaderEpoch(topicPartition: TopicPartition, sourceLeaderEpoch: Int): Boolean = {
     replicaMgr.getPartition(topicPartition) match {
       case HostedPartition.Online(partition) =>
-        logger.info("!!! maybeBumpLeaderEpoch:" + partition.getLeaderEpoch + ";;" + epoch)
-        if (partition.getLeaderEpoch < epoch) {
-          mirrorMetadataManager.get.sendBumpLeaderEpoch(topicPartition, epoch + ROOM_FOR_LEADER_EPOCH)
+        logger.info("!!! maybeBumpLeaderEpoch:" + partition.getLeaderEpoch + ";;" + sourceLeaderEpoch)
+        if (partition.getLeaderEpoch < sourceLeaderEpoch) {
+          // local LE:2 , source 4 -> bump to 4+5=9
+          mirrorMetadataManager.get.sendBumpLeaderEpoch(topicPartition, sourceLeaderEpoch + ROOM_FOR_LEADER_EPOCH)
           true
         } else false
       case _ =>

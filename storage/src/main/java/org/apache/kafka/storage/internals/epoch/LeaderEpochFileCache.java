@@ -103,7 +103,7 @@ public final class LeaderEpochFileCache {
     public void assign(int epoch, long startOffset) {
         EpochEntry entry = new EpochEntry(epoch, startOffset);
         if (assign(entry)) {
-            log.info("Appended new epoch entry {}. Cache now contains {} entries.", entry, epochs.size());
+            log.debug("Appended new epoch entry {}. Cache now contains {} entries.", entry, epochs.size());
             writeToFile();
         }
     }
@@ -111,7 +111,7 @@ public final class LeaderEpochFileCache {
     public void assign(List<EpochEntry> entries) {
         entries.forEach(entry -> {
             if (assign(entry)) {
-                log.info("Appended new epoch entry {}. Cache now contains {} entries.", entry, epochs.size());
+                log.debug("Appended new epoch entry {}. Cache now contains {} entries.", entry, epochs.size());
             }
         });
         if (!entries.isEmpty()) writeToFile();
