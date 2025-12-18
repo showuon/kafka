@@ -682,8 +682,24 @@ public class ReplicationControlManager {
         return ControllerResult.of(records, new RemoveTopicsFromMirrorResponseData().setErrorCode((short) 0));
     }
 
+    /**
+     * Bump the leader epochs for mirrored partitions to maintain the invariant that destination
+     * partition epochs remain strictly greater than source cluster leader epochs.
+     *
+     * This operation is invoked when the source cluster experiences a leader election. The controller
+     * calculates the new destination epoch using: max(sourceEpoch, currentDestEpoch), ensuring
+     * monotonicity and preventing epoch regression during concurrent bump requests.
+     *
+     * The epoch bump is critical for:
+     * - Handling unclean leader elections in the source cluster
+     * - Preventing split-brain during failover scenarios
+     * - Maintaining safe divergence detection between source and destination logs
+     *
+     * @param partitionLeaderEpochs Map of topic IDs to maps of partition IDs to source leader epochs.
+     *                              The source epoch is obtained from FetchResponse or DescribeTopics.
+     * @return ControllerResult containing PartitionChangeRecords for Raft replication
+     */
     public ControllerResult<BumpLeaderEpochResponseData> bumpLeaderEpochs(Map<Uuid, Map<Integer, Integer>> partitionLeaderEpochs) {
-
         List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
         for (Entry<Uuid, Map<Integer, Integer>> partitionLeaderEpoch : partitionLeaderEpochs.entrySet()) {
             Uuid topicId = partitionLeaderEpoch.getKey();

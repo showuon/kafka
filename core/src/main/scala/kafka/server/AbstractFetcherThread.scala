@@ -546,12 +546,13 @@ abstract class AbstractFetcherThread(name: String,
                     if (onPartitionFenced(topicPartition, fetchPartitionData.currentLeaderEpoch))
                       partitionsWithError += topicPartition
                   } else {
-                    // We'll bump the local leader epoch when the source cluster leader epoch is greater than local one
+                    // We bump the local leader epoch when there is a leader election in the source cluster
+                    // for a mirrored partition and the source leader epoch is greater than the local leader epoch
                     if (maybeBumpLeaderEpoch(topicPartition, partitionData.currentLeader().leaderEpoch())) {
                       logger.info("!!! bumping the leader epoch, will wait for the new LeaderAndIsr state before resuming fetching")
                       markPartitionFailed(topicPartition)
                     } else {
-                      // cluster mirroring: outaded epoch due to initial fetch or source leader election
+                      // Outaded epoch due to initial fetch or source leader election
                       mirrorPartitionsWithNewEpoch += topicPartition -> partitionData
                       mirrorPartitionsWithNewLeader += topicPartition -> partitionData
                     }
@@ -569,8 +570,8 @@ abstract class AbstractFetcherThread(name: String,
                       "that the partition is being moved")
                     partitionsWithError += topicPartition
                   } else {
-                    // cluster mirroring: source leader election
-                    // We'll bump the local leader epoch when the source cluster leader epoch is greater than local one
+                    // We bump the local leader epoch when there is a leader election in the source cluster
+                    // for a mirrored partition and the source leader epoch is greater than the local leader epoch
                     if (maybeBumpLeaderEpoch(topicPartition, partitionData.currentLeader().leaderEpoch())) {
                       logger.info("!!! bumping the leader epoch, will wait for the new LeaderAndIsr state before resuming fetching")
                       markPartitionFailed(topicPartition)

@@ -68,8 +68,19 @@ class MirrorFetcherThread(name: String,
                                 replicaMgr.brokerTopicStats,
                                 mirrorName) {
   this.logIdent = logPrefix
-  // bump +5 to avoid leader epoch bumping loop
-  val ROOM_FOR_LEADER_EPOCH = 5
+
+  /**
+   * Margin added to the source leader epoch when bumping the destination partition epoch.
+   *
+   * When the source cluster experiences a leader election (e.g., epoch 5 -> 6), we bump the
+   * destination partition epoch to sourceEpoch + LEADER_EPOCH_BUMP_MARGIN (e.g., 6 + 5 = 11).
+   * This provides headroom to absorb multiple consecutive source leader elections without
+   * requiring additional synchronous BumpLeaderEpoch RPC calls to the controller.
+   *
+   * A margin of 5 provides reasonable protection against common scenarios like rolling restarts
+   * or network-induced leader elections without creating excessively large epoch gaps.
+   */
+  val LEADER_EPOCH_BUMP_MARGIN = 5
 
   override protected def removeFetcherForPartitions(partitions: Set[TopicPartition]): Map[TopicPartition, PartitionFetchState] = {
     replicaMgr.mirrorFetcherManager.removeFetcherForPartitions(partitions)
@@ -89,7 +100,7 @@ class MirrorFetcherThread(name: String,
       case HostedPartition.Online(partition) =>
         logger.info("!!! maybeBumpLeaderEpoch:" + partition.getLeaderEpoch + ";;" + sourceLeaderEpoch)
         if (partition.getLeaderEpoch < sourceLeaderEpoch) {
-          mirrorMetadataManager.get.sendBumpLeaderEpoch(topicPartition, sourceLeaderEpoch + ROOM_FOR_LEADER_EPOCH)
+          mirrorMetadataManager.get.sendBumpLeaderEpoch(topicPartition, sourceLeaderEpoch + LEADER_EPOCH_BUMP_MARGIN)
           true
         } else false
       case _ =>
@@ -117,8 +128,8 @@ class MirrorFetcherThread(name: String,
       trace("Mirror follower has replica log end offset %d for partition %s. Received %d bytes of messages and leader hw %d"
         .format(log.logEndOffset, topicPartition, records.sizeInBytes, partitionData.highWatermark))
 
-    // Append batches from the source cluster to the destination partition's log, preserving
-    // the original leader epochs from the source cluster.
+    // Append batches from the source cluster to the destination partition's log,
+    // preserving the original leader epochs from the source cluster.
     val logAppendInfo = partition.appendRecordsToFollowerOrFutureReplica(records, isFuture = false, partitionLeaderEpoch)
 
     if (logTrace)
@@ -127,8 +138,9 @@ class MirrorFetcherThread(name: String,
 
     val leaderLogStartOffset = partitionData.logStartOffset
 
-    // This works as producer write with acks=1. The leader node will append data into log without HW incremented.
-    // The leader's HW will be incremented only when all ISR (at least minISR) are caught up.
+    // The destination leader does not update the HW from the source cluster.
+    // The HW will be incremented only when all destination ISR (at least minISR) are caught up.
+    // This mechanism works as producer sending messages with acks=1.
     if (!partition.maybeIncrementLeaderHWWithLock(log)) {
       trace(s"Mirror follower received high watermark ${partitionData.highWatermark} from the leader " +
         s"but did not update replica high watermark for partition $topicPartition")
@@ -136,7 +148,7 @@ class MirrorFetcherThread(name: String,
 
     log.maybeIncrementLogStartOffset(leaderLogStartOffset, LogStartOffsetIncrementReason.LeaderOffsetIncremented)
 
-    // Account for replication quota
+    // Account for replication quota.
     if (quota.isThrottled(topicPartition))
       quota.record(records.sizeInBytes)
 
