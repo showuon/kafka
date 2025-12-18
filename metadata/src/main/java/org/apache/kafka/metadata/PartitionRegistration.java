@@ -277,7 +277,7 @@ public class PartitionRegistration {
             // If it's coming from bump leader epoch request, we should bump to a leader epoch > record.leaderEpoch(), ex:
             // current leader epoch is 0, record.leaderEpoch is 2, we should bump to 3
             // current leader epoch is 2, record.leaderEpoch is 0, we should bump to 3
-            newLeaderEpoch = Math.max(record.leaderEpoch(), leaderEpoch);
+            newLeaderEpoch = Math.max(record.leaderEpoch(), leaderEpoch) + 1;
         }
         LeaderRecoveryState newLeaderRecoveryState = leaderRecoveryState.changeTo(record.leaderRecoveryState());
 

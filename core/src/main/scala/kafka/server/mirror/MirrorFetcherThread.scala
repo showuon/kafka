@@ -89,7 +89,6 @@ class MirrorFetcherThread(name: String,
       case HostedPartition.Online(partition) =>
         logger.info("!!! maybeBumpLeaderEpoch:" + partition.getLeaderEpoch + ";;" + sourceLeaderEpoch)
         if (partition.getLeaderEpoch < sourceLeaderEpoch) {
-          // local LE:2 , source 4 -> bump to 4+5=9
           mirrorMetadataManager.get.sendBumpLeaderEpoch(topicPartition, sourceLeaderEpoch + ROOM_FOR_LEADER_EPOCH)
           true
         } else false
