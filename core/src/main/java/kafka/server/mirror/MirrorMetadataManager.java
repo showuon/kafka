@@ -273,7 +273,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         scheduler.scheduleOnce("bump-leader-epoch", () -> sendBumpLeaderEpoch(topics));
     }
 
-    // send bump leader epoch request to the controller and wait for the result
     public void sendBumpLeaderEpoch(TopicPartition topicPartition, int epoch) {
         List<BumpLeaderEpochRequestData.TopicState> topicStates = new ArrayList<>();
         BumpLeaderEpochRequestData.TopicState topicState = new BumpLeaderEpochRequestData.TopicState();
