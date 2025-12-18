@@ -570,7 +570,13 @@ abstract class AbstractFetcherThread(name: String,
                     partitionsWithError += topicPartition
                   } else {
                     // cluster mirroring: source leader election
-                    mirrorPartitionsWithNewLeader += topicPartition -> partitionData
+                    // We'll bump the local leader epoch when the source cluster leader epoch is greater than local one
+                    if (maybeBumpLeaderEpoch(topicPartition, partitionData.currentLeader().leaderEpoch())) {
+                      logger.info("!!! bumping the leader epoch, will wait for the new LeaderAndIsr state before resuming fetching")
+                      markPartitionFailed(topicPartition)
+                    } else {
+                      mirrorPartitionsWithNewLeader += topicPartition -> partitionData
+                    }
                   }
 
                 case Errors.UNKNOWN_TOPIC_OR_PARTITION =>
