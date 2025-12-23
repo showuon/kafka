@@ -21,6 +21,7 @@ import kafka.coordinator.transaction.{InitProducerIdResult, TransactionCoordinat
 import kafka.network.RequestChannel
 import kafka.server.QuotaFactory.{QuotaManagers, UNBOUNDED_QUOTA}
 import kafka.server.handlers.DescribeTopicPartitionsRequestHandler
+import kafka.server.metadata.KRaftMetadataCache
 import kafka.server.mirror.MirrorCoordinator
 import kafka.server.share.{ShareFetchUtils, SharePartitionManager}
 import kafka.utils.Logging
@@ -30,7 +31,7 @@ import org.apache.kafka.common.acl.AclOperation
 import org.apache.kafka.common.acl.AclOperation._
 import org.apache.kafka.common.config.ConfigResource
 import org.apache.kafka.common.errors._
-import org.apache.kafka.common.internals.Topic.{MIRROR_STATE_TOPIC_NAME, GROUP_METADATA_TOPIC_NAME, SHARE_GROUP_STATE_TOPIC_NAME, TRANSACTION_STATE_TOPIC_NAME, isInternal}
+import org.apache.kafka.common.internals.Topic.{GROUP_METADATA_TOPIC_NAME, MIRROR_STATE_TOPIC_NAME, SHARE_GROUP_STATE_TOPIC_NAME, TRANSACTION_STATE_TOPIC_NAME, isInternal}
 import org.apache.kafka.common.internals.{FatalExitError, Plugin, Topic}
 import org.apache.kafka.common.message.AddPartitionsToTxnResponseData.{AddPartitionsToTxnResult, AddPartitionsToTxnResultCollection}
 import org.apache.kafka.common.message.DeleteRecordsResponseData.{DeleteRecordsPartitionResult, DeleteRecordsTopicResult}
@@ -272,15 +273,35 @@ class KafkaApis(val requestChannel: RequestChannel,
     }
   }
 
+  // luke
   def handleTruncation(request: RequestChannel.Request): Unit = {
-    val createTopicsRequest = request.body[CreateTopicsRequest]
-    // TODO: might need to have a better way to pass the cluster mirror
-    val mirrorTopic = createTopicsRequest.data.topics.stream().filter(t => t.mirrorName() != null && !t.mirrorName().isEmpty).findFirst()
-    if (mirrorTopic.isPresent) {
-      logger.info(s"!!! Handling create mirror topics request: ${mirrorTopic.get().mirrorName()}")
-      mirrorCoordinator.updateTopicsToCoordinator(mirrorTopic.get().mirrorName(), util.Set.of(mirrorTopic.get().name()), util.Set.of())
-    }
-    forwardToController(request)
+    val bumpLeaderEpochRequest = request.body[BumpLeaderEpochRequest]
+    val responseData = new BumpLeaderEpochResponseData()
+    val topicList = new util.ArrayList[BumpLeaderEpochResponseData.OffsetResponseTopic]()
+    bumpLeaderEpochRequest.data().topics().forEach(topic => {
+      val responseTopic = new BumpLeaderEpochResponseData.OffsetResponseTopic()
+      val partitionList = new util.ArrayList[BumpLeaderEpochResponseData.OffsetResponsePartition]()
+
+      metadataCache.asInstanceOf[KRaftMetadataCache].numPartitions(topic.topicName()).ifPresent(numPartitions => {
+        for(i <- 0 until numPartitions) {
+          val partition = new TopicPartition(topic.topicName(), i)
+          val offsetPartition = new BumpLeaderEpochResponseData.OffsetResponsePartition()
+          offsetPartition.setPartitionIndex(i)
+          replicaManager.getPartitionOrError(partition) match {
+            case Left(err) => logger.error(s"Failed to get partition $partition from mirror: ${err.message}")
+            // set the last mirrored offset as LSO in the target cluster since it could be the offset beyond LSO be truncated
+            // after leadership change in the target cluster
+            case Right(partition) => partition.log.foreach(log => offsetPartition.setCommittedOffset(log.lastStableOffset()))
+          }
+        }
+      })
+      responseTopic.setName(topic.topicName())
+      responseTopic.setPartitions(partitionList)
+      topicList.add(responseTopic)
+    })
+    responseData.setTopics(topicList)
+
+    requestHelper.sendMaybeThrottle(request, new BumpLeaderEpochResponse(responseData))
   }
 
   def handleCreateTopics(request: RequestChannel.Request): Unit = {
