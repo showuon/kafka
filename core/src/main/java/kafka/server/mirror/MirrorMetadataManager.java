@@ -271,21 +271,21 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     private void sendBumpLeaderEpoch(List<String> topics) {
-        List<BumpLeaderEpochRequestData.TopicState> topicStates = new ArrayList<>();
-        topics.forEach(topic -> {
-            BumpLeaderEpochRequestData.TopicState topicState = new BumpLeaderEpochRequestData.TopicState();
-            List<BumpLeaderEpochRequestData.LeaderEpochState> topicLeaderEpoch = new ArrayList<>();
-            ((KRaftMetadataCache) metadataCache).getImage().topics().getTopic(topic).partitions().keySet().forEach(partitionId -> {
-                int epoch = logManager.getLog(new TopicPartition(topic, partitionId), false).get().latestEpochFromLog().orElse(0);
-                topicLeaderEpoch.add(new BumpLeaderEpochRequestData.LeaderEpochState().setLeaderEpoch(epoch).setPartitionIndex(partitionId));
-            });
-            topicState.setTopicId(metadataCache.getTopicId(topic)).setPartitions(topicLeaderEpoch);
-            topicStates.add(topicState);
-        });
-
-        channelManager.sendRequest(new BumpLeaderEpochRequest.Builder(
-                new BumpLeaderEpochRequestData().setTopics(topicStates)
-        ), new TimeoutHandler());
+//        List<BumpLeaderEpochRequestData.TopicState> topicStates = new ArrayList<>();
+//        topics.forEach(topic -> {
+//            BumpLeaderEpochRequestData.TopicState topicState = new BumpLeaderEpochRequestData.TopicState();
+//            List<BumpLeaderEpochRequestData.LeaderEpochState> topicLeaderEpoch = new ArrayList<>();
+//            ((KRaftMetadataCache) metadataCache).getImage().topics().getTopic(topic).partitions().keySet().forEach(partitionId -> {
+//                int epoch = logManager.getLog(new TopicPartition(topic, partitionId), false).get().latestEpochFromLog().orElse(0);
+//                topicLeaderEpoch.add(new BumpLeaderEpochRequestData.LeaderEpochState().setLeaderEpoch(epoch).setPartitionIndex(partitionId));
+//            });
+//            topicState.setTopicId(metadataCache.getTopicId(topic)).setPartitions(topicLeaderEpoch);
+//            topicStates.add(topicState);
+//        });
+//
+//        channelManager.sendRequest(new BumpLeaderEpochRequest.Builder(
+//                new BumpLeaderEpochRequestData().setTopics(topicStates)
+//        ), new TimeoutHandler());
     }
 
     /**

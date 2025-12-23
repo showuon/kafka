@@ -254,6 +254,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.CREATE_MIRROR => forwardToController(request)
         case ApiKeys.ADD_TOPICS_TO_MIRROR => handleAddTopicsToMirror(request)
         case ApiKeys.REMOVE_TOPICS_FROM_MIRROR => handleRemoveTopicsFromMirror(request)
+        case ApiKeys.BUMP_LEADER_EPOCH => handleTruncation(request)
         case _ => throw new IllegalStateException(s"No handler for request api key ${request.header.apiKey}")
       }
     } catch {
@@ -269,6 +270,17 @@ class KafkaApis(val requestChannel: RequestChannel,
       if (request.apiLocalCompleteTimeNanos < 0)
         request.apiLocalCompleteTimeNanos = time.nanoseconds
     }
+  }
+
+  def handleTruncation(request: RequestChannel.Request): Unit = {
+    val createTopicsRequest = request.body[CreateTopicsRequest]
+    // TODO: might need to have a better way to pass the cluster mirror
+    val mirrorTopic = createTopicsRequest.data.topics.stream().filter(t => t.mirrorName() != null && !t.mirrorName().isEmpty).findFirst()
+    if (mirrorTopic.isPresent) {
+      logger.info(s"!!! Handling create mirror topics request: ${mirrorTopic.get().mirrorName()}")
+      mirrorCoordinator.updateTopicsToCoordinator(mirrorTopic.get().mirrorName(), util.Set.of(mirrorTopic.get().name()), util.Set.of())
+    }
+    forwardToController(request)
   }
 
   def handleCreateTopics(request: RequestChannel.Request): Unit = {

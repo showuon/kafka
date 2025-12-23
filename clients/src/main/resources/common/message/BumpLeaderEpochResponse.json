@@ -20,12 +20,23 @@
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
-    { "name": "ThrottleTimeMs", "type": "int32", "versions": "0+",
+    { "name": "ErrorCode", "type": "int16", "versions": "0", "default": "0", "ignorable": true,
+      "about": "The top-level error code, or 0 if there was no error." },
+    { "name": "ThrottleTimeMs", "type": "int32", "versions": "0", "ignorable": true,
       "about": "The duration in milliseconds for which the request was throttled due to a quota violation, or zero if the request did not violate any quota." },
-    { "name": "TopicId", "type": "uuid", "versions": "0+", "about": "The unique topic ID."},
-    { "name": "ErrorCode", "type": "int16", "versions": "0+",
-      "about": "The error code, or 0 if there was no error." },
-    { "name": "ErrorMessage", "type": "string", "versions": "0+", "nullableVersions": "0+", "ignorable": true,
-      "about": "The error message, or null if there was no error." }
+    { "name": "Topics", "type": "[]OffsetFetchResponseTopic", "versions": "0",
+      "about": "The responses per topic.", "fields": [
+      { "name": "Name", "type": "string", "versions": "0", "entityType": "topicName",
+        "about": "The topic name." },
+      { "name": "Partitions", "type": "[]OffsetFetchResponsePartition", "versions": "0",
+        "about": "The responses per partition.", "fields": [
+        { "name": "PartitionIndex", "type": "int32", "versions": "0",
+          "about": "The partition index." },
+        { "name": "CommittedOffset", "type": "int64", "versions": "0",
+          "about": "The committed message offset." },
+        { "name": "ErrorCode", "type": "int16", "versions": "0",
+          "about": "The error code, or 0 if there was no error." }
+      ]}
+    ]}
   ]
 }
