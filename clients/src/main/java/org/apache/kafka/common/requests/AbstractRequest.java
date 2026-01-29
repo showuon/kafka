@@ -368,6 +368,8 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
                 return WriteMirrorStatesRequest.parse(readable, apiVersion);
             case READ_MIRROR_STATES:
                 return ReadMirrorStatesRequest.parse(readable, apiVersion);
+            case REMOVE_MIRROR:
+                return RemoveMirrorRequest.parse(readable, apiVersion);
             default:
                 throw new AssertionError(String.format("ApiKey %s is not currently handled in `parseRequest`, the " +
                         "code should be updated to do so.", apiKey));

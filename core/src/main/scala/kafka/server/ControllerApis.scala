@@ -235,11 +235,11 @@ class ControllerApis(
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal, OptionalLong.empty())
     val altersByName = new util.HashMap[String, Entry[AlterConfigOp.OpType, String]]()
     val configChanges = new util.HashMap[ConfigResource, util.Map[String, Entry[AlterConfigOp.OpType, String]]]()
-    val resource = new ConfigResource(ConfigResource.Type.forId(64), createMirrorRequest.data().mirrorName())
+    val resource = new ConfigResource(ConfigResource.Type.MIRROR, createMirrorRequest.data().mirrorName())
     createMirrorRequest.data().config.forEach { config =>
       // TODO: currently assume always SET value
       altersByName.put(config.name, new util.AbstractMap.SimpleEntry[AlterConfigOp.OpType, String](
-        AlterConfigOp.OpType.forId(0), config.value))
+        AlterConfigOp.OpType.SET, config.value))
     }
     configChanges.put(resource, altersByName)
 
@@ -296,18 +296,20 @@ class ControllerApis(
         "Cluster mirroring requires mirror.version >= 1. Current version: " + mirrorVersionLevel)
     }
 
-    val createMirrorRequest = request.body[CreateMirrorRequest]
-    info("!!! Create mirror request: " + createMirrorRequest)
+    val removeMirrorRequest = request.body[RemoveMirrorRequest]
+    info("!!! Remove mirror request: " + removeMirrorRequest)
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal, OptionalLong.empty())
-    val altersByName = new util.HashMap[String, Entry[AlterConfigOp.OpType, String]]()
+
+
+//    val altersByName = new util.HashMap[String, Entry[AlterConfigOp.OpType, String]]()
     val configChanges = new util.HashMap[ConfigResource, util.Map[String, Entry[AlterConfigOp.OpType, String]]]()
-    val resource = new ConfigResource(ConfigResource.Type.forId(64), createMirrorRequest.data().mirrorName())
-    createMirrorRequest.data().config.forEach { config =>
-      // TODO: currently assume always SET value
-      altersByName.put(config.name, new util.AbstractMap.SimpleEntry[AlterConfigOp.OpType, String](
-        AlterConfigOp.OpType.forId(0), config.value))
-    }
-    configChanges.put(resource, altersByName)
+//    val resource = new ConfigResource(ConfigResource.Type.MIRROR, removeMirrorRequest.data().mirrorName())
+////    removeMirrorRequest.data().config.forEach { config =>
+////      // TODO: currently assume always SET value
+////      altersByName.put(config.name, new util.AbstractMap.SimpleEntry[AlterConfigOp.OpType, String](
+////        AlterConfigOp.OpType.SET, config.value))
+////    }
+//    configChanges.put(resource, altersByName)
 
     controller.createMirror(context, configChanges)
       .handle[Unit] { (response, exception) =>

@@ -48,12 +48,14 @@ import org.apache.kafka.common.message.OffsetFetchRequestData;
 import org.apache.kafka.common.message.OffsetFetchResponseData;
 import org.apache.kafka.common.message.ReadMirrorStatesRequestData;
 import org.apache.kafka.common.message.ReadMirrorStatesResponseData;
+import org.apache.kafka.common.message.RemoveTopicsFromMirrorRequestData;
 import org.apache.kafka.common.message.WriteMirrorStatesRequestData;
 import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.network.ClientInformation;
 import org.apache.kafka.common.network.ListenerName;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.CreateAclsRequest;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.DeleteAclsRequest;
@@ -73,6 +75,7 @@ import org.apache.kafka.common.requests.OffsetFetchRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.ReadMirrorStatesRequest;
 import org.apache.kafka.common.requests.ReadMirrorStatesResponse;
+import org.apache.kafka.common.requests.RemoveTopicsFromMirrorRequest;
 import org.apache.kafka.common.requests.RequestContext;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.WriteMirrorStatesRequest;
@@ -776,6 +779,17 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         }
         return mirrorPartitionState.get(new MirroredPartitionKey(updatedClusterName, topicPartition.topic(), topicPartition.partition()));
     }
+
+    // luke
+    public void removeMirror(Set<String> mirrorNames) {
+        Set<String> topicsToRemoveFromMirror = new HashSet<>();
+        mirrorNames.forEach(mirrorName -> topicsToRemoveFromMirror.addAll(topics.get(mirrorName)));
+
+        AbstractRequest.Builder<RemoveTopicsFromMirrorRequest> request = new RemoveTopicsFromMirrorRequest.Builder(topicsToRemoveFromMirror);
+
+        channelManager.sendRequest(request, new TimeoutHandler());
+    }
+
 
     /**
      * Refreshes metadata from all remote clusters.

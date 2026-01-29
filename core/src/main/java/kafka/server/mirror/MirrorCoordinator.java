@@ -215,6 +215,10 @@ public class MirrorCoordinator {
         });
     }
 
+    public void removeMirror(Set<String> mirrorNames) {
+        mirrorMetadataManager.removeMirror(mirrorNames);
+    }
+
     public void writeMirroredPartitionMetadataToInternalTopic(String mirrorName,
                                                               Map<String, Set<MirrorMetadataManager.MirroredPartitionMetadata>> topicMetadata,
                                                               Set<String> removedTopics,

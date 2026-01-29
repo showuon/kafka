@@ -53,6 +53,7 @@ import org.apache.kafka.common.message.ExpireDelegationTokenRequestData;
 import org.apache.kafka.common.message.ExpireDelegationTokenResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData;
+import org.apache.kafka.common.message.RemoveMirrorResponseData;
 import org.apache.kafka.common.message.RemoveTopicsFromMirrorResponseData;
 import org.apache.kafka.common.message.RenewDelegationTokenRequestData;
 import org.apache.kafka.common.message.RenewDelegationTokenResponseData;
@@ -101,6 +102,14 @@ public class MockController implements Controller {
 
     @Override
     public CompletableFuture<CreateMirrorResponseData> createMirror(
+            ControllerRequestContext context,
+            Map<ConfigResource, Map<String, Map.Entry<AlterConfigOp.OpType, String>>> configChanges
+    ) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<RemoveMirrorResponseData> removeMirror(
             ControllerRequestContext context,
             Map<ConfigResource, Map<String, Map.Entry<AlterConfigOp.OpType, String>>> configChanges
     ) {

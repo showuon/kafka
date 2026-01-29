@@ -139,6 +139,8 @@ import org.apache.kafka.common.message.LastMirroredOffsetsResponseDataJsonConver
 import org.apache.kafka.common.message.LeaveGroupRequestDataJsonConverter;
 import org.apache.kafka.common.message.ReadMirrorStatesRequestDataJsonConverter;
 import org.apache.kafka.common.message.ReadMirrorStatesResponseDataJsonConverter;
+import org.apache.kafka.common.message.RemoveMirrorRequestDataJsonConverter;
+import org.apache.kafka.common.message.RemoveMirrorResponseDataJsonConverter;
 import org.apache.kafka.common.message.WriteMirrorStatesRequestDataJsonConverter;
 import org.apache.kafka.common.message.WriteMirrorStatesResponseDataJsonConverter;
 import org.apache.kafka.common.message.LeaveGroupResponseDataJsonConverter;
@@ -335,6 +337,8 @@ import org.apache.kafka.common.requests.LastMirroredOffsetsResponse;
 import org.apache.kafka.common.requests.LeaveGroupRequest;
 import org.apache.kafka.common.requests.ReadMirrorStatesRequest;
 import org.apache.kafka.common.requests.ReadMirrorStatesResponse;
+import org.apache.kafka.common.requests.RemoveMirrorRequest;
+import org.apache.kafka.common.requests.RemoveMirrorResponse;
 import org.apache.kafka.common.requests.WriteMirrorStatesRequest;
 import org.apache.kafka.common.requests.WriteMirrorStatesResponse;
 import org.apache.kafka.common.requests.LeaveGroupResponse;
@@ -612,6 +616,8 @@ public class RequestConvertToJson {
                 return WriteMirrorStatesRequestDataJsonConverter.write(((WriteMirrorStatesRequest) request).data(), request.version());
             case READ_MIRROR_STATES:
                 return ReadMirrorStatesRequestDataJsonConverter.write(((ReadMirrorStatesRequest) request).data(), request.version());
+            case REMOVE_MIRROR:
+                return RemoveMirrorRequestDataJsonConverter.write(((RemoveMirrorRequest) request).data(), request.version());
             default:
                 throw new IllegalStateException("ApiKey " + request.apiKey() + " is not currently handled in `request`, the " +
                     "code should be updated to do so.");
@@ -812,6 +818,8 @@ public class RequestConvertToJson {
                 return WriteMirrorStatesResponseDataJsonConverter.write(((WriteMirrorStatesResponse) response).data(), version);
             case READ_MIRROR_STATES:
                 return ReadMirrorStatesResponseDataJsonConverter.write(((ReadMirrorStatesResponse) response).data(), version);
+            case REMOVE_MIRROR:
+                return RemoveMirrorResponseDataJsonConverter.write(((RemoveMirrorResponse) response).data(), version);
             default:
                 throw new IllegalStateException("ApiKey " + response.apiKey() + " is not currently handled in `response`, the " +
                     "code should be updated to do so.");

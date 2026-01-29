@@ -28,12 +28,14 @@ import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.config.types.Password;
 import org.apache.kafka.common.message.AddTopicsToMirrorResponseData;
 import org.apache.kafka.common.message.CreateMirrorResponseData;
+import org.apache.kafka.common.message.RemoveMirrorResponseData;
 import org.apache.kafka.common.message.RemoveTopicsFromMirrorRequestData;
 import org.apache.kafka.common.message.RemoveTopicsFromMirrorResponseData;
 import org.apache.kafka.common.metadata.ClearElrRecord;
 import org.apache.kafka.common.metadata.ConfigRecord;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ApiError;
+import org.apache.kafka.common.requests.RemoveMirrorResponse;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.metadata.KafkaConfigSchema;
 import org.apache.kafka.metadata.PartitionRegistration;
@@ -326,6 +328,39 @@ public class ConfigurationControlManager {
         outputRecords.addAll(createClearElrRecordsAsNeeded(outputRecords));
 
         data.setErrorCode((short) 0);
+
+        return ControllerResult.atomicOf(outputRecords, data);
+    }
+
+    ControllerResult<RemoveMirrorResponseData> removeMirrorConfig(
+            Map<ConfigResource, Map<String, Entry<OpType, String>>> configChanges,
+            boolean newlyCreatedResource
+    ) {
+        List<ApiMessageAndVersion> outputRecords = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
+        RemoveMirrorResponseData data = new RemoveMirrorResponseData();
+
+        List<RemoveMirrorResponseData.MirrorResponse> topicResList = new ArrayList<>();
+        for (Entry<ConfigResource, Map<String, Entry<OpType, String>>> resourceEntry :
+                configChanges.entrySet()) {
+            RemoveMirrorResponseData.MirrorResponse mirrorRes = new RemoveMirrorResponseData.MirrorResponse();
+            mirrorRes.setName(resourceEntry.getKey().name());
+            ApiError apiError = incrementalAlterConfigResource(resourceEntry.getKey(),
+                    resourceEntry.getValue(),
+                    newlyCreatedResource,
+                    outputRecords);
+            if (apiError.isSuccess()) {
+                mirrorRes.setErrorCode(Errors.NONE.code());
+            } else {
+                mirrorRes.setErrorCode(apiError.error().code());
+            }
+
+            topicResList.add(mirrorRes);
+            // TODO: Should handle the error here
+            log.info("!!! removeMirrorConfig apiError: {} for {}", apiError, resourceEntry);
+        }
+        outputRecords.addAll(createClearElrRecordsAsNeeded(outputRecords));
+
+        data.setMirrorResponse(topicResList).setErrorCode((short) 0);
 
         return ControllerResult.atomicOf(outputRecords, data);
     }
