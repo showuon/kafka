@@ -258,7 +258,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.LAST_MIRRORED_OFFSETS => handleLastMirroredOffset(request)
         case ApiKeys.WRITE_MIRROR_STATES => handleWriteMirrorStates(request)
         case ApiKeys.READ_MIRROR_STATES => handleReadMirrorStates(request)
-        case ApiKeys.REMOVE_MIRROR => handleRemoveMirror(request)
+        case ApiKeys.DELETE_MIRROR => handleRemoveMirror(request)
         case _ => throw new IllegalStateException(s"No handler for request api key ${request.header.apiKey}")
       }
     } catch {
@@ -346,8 +346,8 @@ class KafkaApis(val requestChannel: RequestChannel,
     requestHelper.sendMaybeThrottle(request, new LastMirroredOffsetsResponse(responseData))
   }
 
-  def handleRemoveMirror(request: RequestChannel.Request): Unit = {
-    val removeMirrorRequest = request.body[RemoveMirrorRequest]
+  def handleDeleteMirror(request: RequestChannel.Request): Unit = {
+    val removeMirrorRequest = request.body[DeleteMirrorRequest]
     if (isClusterMirroringEnabled) {
       logger.info(s"!!! Handling removing mirror request: ${removeMirrorRequest}")
 

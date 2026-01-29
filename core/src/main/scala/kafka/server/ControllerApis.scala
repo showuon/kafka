@@ -139,7 +139,7 @@ class ControllerApis(
         case ApiKeys.CREATE_MIRROR => handleCreateMirror(request)
         case ApiKeys.ADD_TOPICS_TO_MIRROR => handleAddTopicsToMirror(request)
         case ApiKeys.REMOVE_TOPICS_FROM_MIRROR => handleRemoveTopicsFromMirror(request)
-        case ApiKeys.REMOVE_MIRROR => handleRemoveMirror(request)
+        case ApiKeys.DELETE_MIRROR => handleRemoveMirror(request)
         case _ => throw new ApiException(s"Unsupported ApiKey ${request.context.header.apiKey}")
       }
 
@@ -296,7 +296,7 @@ class ControllerApis(
         "Cluster mirroring requires mirror.version >= 1. Current version: " + mirrorVersionLevel)
     }
 
-    val removeMirrorRequest = request.body[RemoveMirrorRequest]
+    val removeMirrorRequest = request.body[DeleteMirrorRequest]
     info("!!! Remove mirror request: " + removeMirrorRequest)
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal, OptionalLong.empty())
 

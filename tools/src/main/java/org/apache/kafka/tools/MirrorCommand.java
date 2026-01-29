@@ -268,6 +268,22 @@ public abstract class MirrorCommand {
             }
         }
 
+        public void removeMirror(MirrorCommandOptions opts) throws Exception {
+            String topicPattern = opts.topic().get();
+            String mirrorName = opts.mirror().get();
+
+            Node node = findCoordinator(mirrorName);
+            String bootstrapServer = node.host() + ":" + node.port();
+
+            try (Admin admin = createAdminClient(Optional.of(bootstrapServer), commandConfig)) {
+                // Remove all matching topics from the mirror
+                RemoveTopicsFromMirrorResult removeTopicsFromMirrorResult = admin.removeTopicsFromMirror(
+                        matchingTopics, new RemoveTopicsFromMirrorOptions());
+                removeTopicsFromMirrorResult.all().get();
+                System.out.printf("Successfully removed %d topic(s) from mirror %s%n", matchingTopics.size(), mirrorName);
+            }
+        }
+
         @Override
         public void close() throws Exception {
             adminClient.close();
@@ -281,6 +297,7 @@ public abstract class MirrorCommand {
         private final OptionSpecBuilder createOpt;
         private final OptionSpecBuilder addOpt;
         private final OptionSpecBuilder removeOpt;
+        private final OptionSpecBuilder deleteOpt;
         private final ArgumentAcceptingOptionSpec<String> mirrorOpt;
         private final ArgumentAcceptingOptionSpec<String> topicOpt;
         private final ArgumentAcceptingOptionSpec<Short> replicationFactorOpt;
@@ -304,6 +321,7 @@ public abstract class MirrorCommand {
                 .ofType(String.class);
 
             createOpt = parser.accepts("create", "Create a new cluster mirror from a source cluster.");
+            deleteOpt = parser.accepts("delete", "Delete a cluster mirror from a source cluster.");
             addOpt = parser.accepts("add", "Add topic(s) to an existing cluster mirror (supports regex).");
             removeOpt = parser.accepts("remove", "Remove topic(s) from an existing cluster mirror (supports regex).");
 
@@ -386,7 +404,7 @@ public abstract class MirrorCommand {
             CommandLineUtils.maybePrintHelpOrVersion(this, "This tool helps to create cluster mirrors and add topics to them.");
 
             // should have exactly one action
-            long actions = (has(createOpt) ? 1 : 0) + (has(addOpt) ? 1 : 0) + (has(removeOpt) ? 1 : 0);
+            long actions = (has(createOpt) ? 1 : 0) + (has(addOpt) ? 1 : 0) + (has(removeOpt) ? 1 : 0) + (has(deleteOpt) ? 1 : 0);
             if (actions != 1)
                 CommandLineUtils.printUsageAndExit(parser, "Command must include exactly one action: --create or --add");
 

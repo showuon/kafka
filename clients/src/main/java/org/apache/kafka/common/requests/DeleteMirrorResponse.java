@@ -25,11 +25,11 @@ import org.apache.kafka.common.protocol.Readable;
 import java.util.EnumMap;
 import java.util.Map;
 
-public class RemoveMirrorResponse extends AbstractResponse {
+public class DeleteMirrorResponse extends AbstractResponse {
     private final RemoveMirrorResponseData data;
 
-    public RemoveMirrorResponse(RemoveMirrorResponseData data) {
-        super(ApiKeys.REMOVE_MIRROR);
+    public DeleteMirrorResponse(RemoveMirrorResponseData data) {
+        super(ApiKeys.DELETE_MIRROR);
         this.data = data;
     }
 
@@ -57,7 +57,7 @@ public class RemoveMirrorResponse extends AbstractResponse {
         return counts;
     }
 
-    public static RemoveMirrorResponse parse(Readable readable, short version) {
-        return new RemoveMirrorResponse(new RemoveMirrorResponseData(readable, version));
+    public static DeleteMirrorResponse parse(Readable readable, short version) {
+        return new DeleteMirrorResponse(new RemoveMirrorResponseData(readable, version));
     }
 }

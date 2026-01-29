@@ -25,27 +25,27 @@ import org.apache.kafka.common.protocol.Readable;
 
 import java.util.List;
 
-public class RemoveMirrorRequest extends AbstractRequest {
-    public static class Builder extends AbstractRequest.Builder<RemoveMirrorRequest> {
+public class DeleteMirrorRequest extends AbstractRequest {
+    public static class Builder extends AbstractRequest.Builder<DeleteMirrorRequest> {
 
         private final RemoveMirrorRequestData data;
 
         public Builder(RemoveMirrorRequestData data) {
-            super(ApiKeys.REMOVE_MIRROR);
+            super(ApiKeys.DELETE_MIRROR);
             this.data = data;
         }
 
         public Builder(List<String> mirrorNames) {
-            super(ApiKeys.REMOVE_MIRROR, ApiKeys.REMOVE_MIRROR.oldestVersion(),
-                  ApiKeys.REMOVE_MIRROR.latestVersion());
+            super(ApiKeys.DELETE_MIRROR, ApiKeys.DELETE_MIRROR.oldestVersion(),
+                  ApiKeys.DELETE_MIRROR.latestVersion());
             RemoveMirrorRequestData data = new RemoveMirrorRequestData();
             mirrorNames.forEach(name -> data.mirrorName().add(name));
             this.data = data;
         }
 
         @Override
-        public RemoveMirrorRequest build(short version) {
-            return new RemoveMirrorRequest(data, version);
+        public DeleteMirrorRequest build(short version) {
+            return new DeleteMirrorRequest(data, version);
         }
 
         @Override
@@ -56,8 +56,8 @@ public class RemoveMirrorRequest extends AbstractRequest {
 
     private final RemoveMirrorRequestData data;
 
-    public RemoveMirrorRequest(RemoveMirrorRequestData data, short version) {
-        super(ApiKeys.REMOVE_MIRROR, version);
+    public DeleteMirrorRequest(RemoveMirrorRequestData data, short version) {
+        super(ApiKeys.DELETE_MIRROR, version);
         this.data = data;
     }
 
@@ -76,11 +76,11 @@ public class RemoveMirrorRequest extends AbstractRequest {
             new RemoveMirrorResponseData.MirrorResponse()
                 .setName(name)
                 .setErrorCode(error.code())));
-        return new RemoveMirrorResponse(responseData);
+        return new DeleteMirrorResponse(responseData);
     }
 
-    public static RemoveMirrorRequest parse(Readable readable, short version) {
-        return new RemoveMirrorRequest(
+    public static DeleteMirrorRequest parse(Readable readable, short version) {
+        return new DeleteMirrorRequest(
                 new RemoveMirrorRequestData(readable, version),
                 version
         );
