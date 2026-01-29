@@ -139,6 +139,7 @@ class ControllerApis(
         case ApiKeys.CREATE_MIRROR => handleCreateMirror(request)
         case ApiKeys.ADD_TOPICS_TO_MIRROR => handleAddTopicsToMirror(request)
         case ApiKeys.REMOVE_TOPICS_FROM_MIRROR => handleRemoveTopicsFromMirror(request)
+        case ApiKeys.REMOVE_MIRROR => handleRemoveMirror(request)
         case _ => throw new ApiException(s"Unsupported ApiKey ${request.context.header.apiKey}")
       }
 
@@ -220,6 +221,72 @@ class ControllerApis(
   }
 
   def handleCreateMirror(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    authHelper.authorizeClusterOperation(request, CLUSTER_ACTION)
+
+    // Check if cluster mirroring is supported by the mirror.version feature
+    val mirrorVersionLevel = apiVersionManager.features.finalizedFeatures.getOrDefault(MirrorVersion.FEATURE_NAME, 0.toShort)
+    if (mirrorVersionLevel == 0) {
+      throw new UnsupportedVersionException(
+        "Cluster mirroring requires mirror.version >= 1. Current version: " + mirrorVersionLevel)
+    }
+
+    val createMirrorRequest = request.body[CreateMirrorRequest]
+    info("!!! Create mirror request: " + createMirrorRequest)
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal, OptionalLong.empty())
+    val altersByName = new util.HashMap[String, Entry[AlterConfigOp.OpType, String]]()
+    val configChanges = new util.HashMap[ConfigResource, util.Map[String, Entry[AlterConfigOp.OpType, String]]]()
+    val resource = new ConfigResource(ConfigResource.Type.forId(64), createMirrorRequest.data().mirrorName())
+    createMirrorRequest.data().config.forEach { config =>
+      // TODO: currently assume always SET value
+      altersByName.put(config.name, new util.AbstractMap.SimpleEntry[AlterConfigOp.OpType, String](
+        AlterConfigOp.OpType.forId(0), config.value))
+    }
+    configChanges.put(resource, altersByName)
+
+    controller.createMirror(context, configChanges)
+      .handle[Unit] { (response, exception) =>
+        logger.info("!!! Create mirror response: " + response + " exception: " + exception)
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, throttleMs =>
+            new CreateMirrorResponse(response.setThrottleTimeMs(throttleMs)))
+        }
+      }
+    val topicMetadata = metadataCache.getTopicMetadata(Set(MIRROR_STATE_TOPIC_NAME).asJava, request.context.listenerName).asScala
+    if (topicMetadata.headOption.isEmpty) {
+      val properties = new Properties
+      properties.put(TopicConfig.CLEANUP_POLICY_CONFIG, TopicConfig.CLEANUP_POLICY_COMPACT)
+      properties.put(TopicConfig.COMPRESSION_TYPE_CONFIG, BrokerCompressionType.PRODUCER.name)
+      properties.put(TopicConfig.RETENTION_MS_CONFIG, -1)
+      val mirrorStateTopic = new CreatableTopic()
+        .setName(MIRROR_STATE_TOPIC_NAME)
+        .setNumPartitions(config.mirrorConfig.mirrorTopicNumPartitions())
+        .setReplicationFactor(config.mirrorConfig.mirrorTopicReplicationFactor())
+        .setConfigs(convertToTopicConfigCollections(properties))
+      val topicsToCreate = new CreateTopicsRequestData.CreatableTopicCollection(1)
+      topicsToCreate.add(mirrorStateTopic)
+
+      val createTopicsRequest = new CreateTopicsRequest.Builder(
+        new CreateTopicsRequestData()
+          .setTimeoutMs(config.requestTimeoutMs)
+          .setTopics(topicsToCreate)
+      ).build()
+      val controllerMutationQuota = quotas.controllerMutation.newQuotaFor(request.session, request.header, 6)
+      val context = new ControllerRequestContext(
+        request.context.header.data, request.context.principal,
+        requestTimeoutMsToDeadlineNs(time, createTopicsRequest.data.timeoutMs()),
+        controllerMutationQuotaRecorderFor(controllerMutationQuota))
+      createTopics(context, createTopicsRequest.data,
+        authHelper.authorize(request.context, CREATE, CLUSTER, CLUSTER_NAME, logIfDenied = false),
+        names => authHelper.filterByAuthorized(request.context, CREATE, TOPIC, names)(identity),
+        names => authHelper.filterByAuthorized(request.context, DESCRIBE_CONFIGS, TOPIC, names, logIfDenied = false)(identity))
+    }
+
+    CompletableFuture.completedFuture[Unit](())
+  }
+
+  def handleRemoveMirror(request: RequestChannel.Request): CompletableFuture[Unit] = {
     authHelper.authorizeClusterOperation(request, CLUSTER_ACTION)
 
     // Check if cluster mirroring is supported by the mirror.version feature
