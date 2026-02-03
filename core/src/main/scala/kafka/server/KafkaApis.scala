@@ -258,7 +258,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.LAST_MIRRORED_OFFSETS => handleLastMirroredOffset(request)
         case ApiKeys.WRITE_MIRROR_STATES => handleWriteMirrorStates(request)
         case ApiKeys.READ_MIRROR_STATES => handleReadMirrorStates(request)
-        case ApiKeys.DELETE_MIRROR => handleRemoveMirror(request)
+        case ApiKeys.DELETE_MIRROR => handleDeleteMirror(request)
         case _ => throw new IllegalStateException(s"No handler for request api key ${request.header.apiKey}")
       }
     } catch {
@@ -351,7 +351,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     if (isClusterMirroringEnabled) {
       logger.info(s"!!! Handling removing mirror request: ${removeMirrorRequest}")
 
-      mirrorCoordinator.removeMirror(new util.HashSet(removeMirrorRequest.data().mirrorName()))
+      mirrorCoordinator.removeMirror(new util.HashSet(removeMirrorRequest.data().mirrorNames()))
     } else {
       logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring mirror topic creation request")
     }

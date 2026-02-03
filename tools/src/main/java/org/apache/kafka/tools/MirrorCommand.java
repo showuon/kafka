@@ -275,13 +275,13 @@ public abstract class MirrorCommand {
             Node node = findCoordinator(mirrorName);
             String bootstrapServer = node.host() + ":" + node.port();
 
-            try (Admin admin = createAdminClient(Optional.of(bootstrapServer), commandConfig)) {
-                // Remove all matching topics from the mirror
-                RemoveTopicsFromMirrorResult removeTopicsFromMirrorResult = admin.removeTopicsFromMirror(
-                        matchingTopics, new RemoveTopicsFromMirrorOptions());
-                removeTopicsFromMirrorResult.all().get();
-                System.out.printf("Successfully removed %d topic(s) from mirror %s%n", matchingTopics.size(), mirrorName);
-            }
+//            try (Admin admin = createAdminClient(Optional.of(bootstrapServer), commandConfig)) {
+//                // Remove all matching topics from the mirror
+//                RemoveTopicsFromMirrorResult removeTopicsFromMirrorResult = admin.removeTopicsFromMirror(
+//                        matchingTopics, new RemoveTopicsFromMirrorOptions());
+//                removeTopicsFromMirrorResult.all().get();
+//                System.out.printf("Successfully removed %d topic(s) from mirror %s%n", matchingTopics.size(), mirrorName);
+//            }
         }
 
         @Override

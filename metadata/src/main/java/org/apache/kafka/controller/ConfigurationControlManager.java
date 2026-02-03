@@ -27,7 +27,7 @@ import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.config.types.Password;
 import org.apache.kafka.common.message.AddTopicsToMirrorResponseData;
 import org.apache.kafka.common.message.CreateMirrorResponseData;
-import org.apache.kafka.common.message.RemoveMirrorResponseData;
+import org.apache.kafka.common.message.DeleteMirrorResponseData;
 import org.apache.kafka.common.message.RemoveTopicsFromMirrorResponseData;
 import org.apache.kafka.common.metadata.ClearElrRecord;
 import org.apache.kafka.common.metadata.ConfigRecord;
@@ -328,18 +328,18 @@ public class ConfigurationControlManager {
         return ControllerResult.atomicOf(outputRecords, data);
     }
 
-    ControllerResult<RemoveMirrorResponseData> removeMirrorConfig(
+    ControllerResult<DeleteMirrorResponseData> removeMirrorConfig(
             Map<ConfigResource, Map<String, Entry<OpType, String>>> configChanges,
             boolean newlyCreatedResource
     ) {
         List<ApiMessageAndVersion> outputRecords = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
-        RemoveMirrorResponseData data = new RemoveMirrorResponseData();
+        DeleteMirrorResponseData data = new DeleteMirrorResponseData();
 
-        List<RemoveMirrorResponseData.MirrorResponse> topicResList = new ArrayList<>();
+        List<DeleteMirrorResponseData.DeleteResult> topicResList = new ArrayList<>();
         for (Entry<ConfigResource, Map<String, Entry<OpType, String>>> resourceEntry :
                 configChanges.entrySet()) {
-            RemoveMirrorResponseData.MirrorResponse mirrorRes = new RemoveMirrorResponseData.MirrorResponse();
-            mirrorRes.setName(resourceEntry.getKey().name());
+            DeleteMirrorResponseData.DeleteResult mirrorRes = new DeleteMirrorResponseData.DeleteResult();
+            mirrorRes.setMirrorName(resourceEntry.getKey().name());
             ApiError apiError = incrementalAlterConfigResource(resourceEntry.getKey(),
                     resourceEntry.getValue(),
                     newlyCreatedResource,
@@ -356,7 +356,7 @@ public class ConfigurationControlManager {
         }
         outputRecords.addAll(createClearElrRecordsAsNeeded(outputRecords));
 
-        data.setMirrorResponse(topicResList).setErrorCode((short) 0);
+        data.setDeleteResults(topicResList).setErrorCode((short) 0);
 
         return ControllerResult.atomicOf(outputRecords, data);
     }

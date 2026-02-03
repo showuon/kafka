@@ -50,13 +50,13 @@ import org.apache.kafka.common.message.CreatePartitionsRequestData.CreatePartiti
 import org.apache.kafka.common.message.CreatePartitionsResponseData.CreatePartitionsTopicResult;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.CreateTopicsResponseData;
+import org.apache.kafka.common.message.DeleteMirrorResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
 import org.apache.kafka.common.message.ExpireDelegationTokenRequestData;
 import org.apache.kafka.common.message.ExpireDelegationTokenResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData;
-import org.apache.kafka.common.message.RemoveMirrorResponseData;
 import org.apache.kafka.common.message.RemoveTopicsFromMirrorResponseData;
 import org.apache.kafka.common.message.RenewDelegationTokenRequestData;
 import org.apache.kafka.common.message.RenewDelegationTokenResponseData;
@@ -1781,12 +1781,12 @@ public final class QuorumController implements Controller {
     }
 
     @Override
-    public CompletableFuture<RemoveMirrorResponseData> removeMirror(
+    public CompletableFuture<DeleteMirrorResponseData> removeMirror(
             ControllerRequestContext context,
             Map<ConfigResource, Map<String, Map.Entry<AlterConfigOp.OpType, String>>> configChanges
     ) {
         return appendWriteEvent("createMirror", context.deadlineNs(), () -> {
-            ControllerResult<RemoveMirrorResponseData> result =
+            ControllerResult<DeleteMirrorResponseData> result =
                     configurationControl.removeMirrorConfig(configChanges, false);
             return result;
         });

@@ -17,7 +17,7 @@
 
 package org.apache.kafka.common.requests;
 
-import org.apache.kafka.common.message.RemoveMirrorResponseData;
+import org.apache.kafka.common.message.DeleteMirrorResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.Readable;
@@ -26,15 +26,15 @@ import java.util.EnumMap;
 import java.util.Map;
 
 public class DeleteMirrorResponse extends AbstractResponse {
-    private final RemoveMirrorResponseData data;
+    private final DeleteMirrorResponseData data;
 
-    public DeleteMirrorResponse(RemoveMirrorResponseData data) {
+    public DeleteMirrorResponse(DeleteMirrorResponseData data) {
         super(ApiKeys.DELETE_MIRROR);
         this.data = data;
     }
 
     @Override
-    public RemoveMirrorResponseData data() {
+    public DeleteMirrorResponseData data() {
         return data;
     }
 
@@ -51,13 +51,13 @@ public class DeleteMirrorResponse extends AbstractResponse {
     @Override
     public Map<Errors, Integer> errorCounts() {
         Map<Errors, Integer> counts = new EnumMap<>(Errors.class);
-        data.mirrorResponse().forEach(result ->
+        data.deleteResults().forEach(result ->
             updateErrorCounts(counts, Errors.forCode(result.errorCode()))
         );
         return counts;
     }
 
     public static DeleteMirrorResponse parse(Readable readable, short version) {
-        return new DeleteMirrorResponse(new RemoveMirrorResponseData(readable, version));
+        return new DeleteMirrorResponse(new DeleteMirrorResponseData(readable, version));
     }
 }

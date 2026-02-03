@@ -17,8 +17,8 @@
 
 package org.apache.kafka.common.requests;
 
-import org.apache.kafka.common.message.RemoveMirrorRequestData;
-import org.apache.kafka.common.message.RemoveMirrorResponseData;
+import org.apache.kafka.common.message.DeleteMirrorRequestData;
+import org.apache.kafka.common.message.DeleteMirrorResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.Readable;
@@ -28,9 +28,9 @@ import java.util.List;
 public class DeleteMirrorRequest extends AbstractRequest {
     public static class Builder extends AbstractRequest.Builder<DeleteMirrorRequest> {
 
-        private final RemoveMirrorRequestData data;
+        private final DeleteMirrorRequestData data;
 
-        public Builder(RemoveMirrorRequestData data) {
+        public Builder(DeleteMirrorRequestData data) {
             super(ApiKeys.DELETE_MIRROR);
             this.data = data;
         }
@@ -38,8 +38,8 @@ public class DeleteMirrorRequest extends AbstractRequest {
         public Builder(List<String> mirrorNames) {
             super(ApiKeys.DELETE_MIRROR, ApiKeys.DELETE_MIRROR.oldestVersion(),
                   ApiKeys.DELETE_MIRROR.latestVersion());
-            RemoveMirrorRequestData data = new RemoveMirrorRequestData();
-            mirrorNames.forEach(name -> data.mirrorName().add(name));
+            DeleteMirrorRequestData data = new DeleteMirrorRequestData();
+            data.setMirrorNames(mirrorNames);
             this.data = data;
         }
 
@@ -54,34 +54,34 @@ public class DeleteMirrorRequest extends AbstractRequest {
         }
     }
 
-    private final RemoveMirrorRequestData data;
+    private final DeleteMirrorRequestData data;
 
-    public DeleteMirrorRequest(RemoveMirrorRequestData data, short version) {
+    public DeleteMirrorRequest(DeleteMirrorRequestData data, short version) {
         super(ApiKeys.DELETE_MIRROR, version);
         this.data = data;
     }
 
     @Override
-    public RemoveMirrorRequestData data() {
+    public DeleteMirrorRequestData data() {
         return data;
     }
 
     @Override
     public AbstractResponse getErrorResponse(int throttleTimeMs, Throwable e) {
         Errors error = Errors.forException(e);
-        RemoveMirrorResponseData responseData = new RemoveMirrorResponseData();
+        DeleteMirrorResponseData responseData = new DeleteMirrorResponseData();
         responseData.setThrottleTimeMs(throttleTimeMs);
         responseData.setErrorCode(error.code());
-        data.mirrorName().forEach(name -> responseData.mirrorResponse().add(
-            new RemoveMirrorResponseData.MirrorResponse()
-                .setName(name)
+        data.mirrorNames().forEach(name -> responseData.deleteResults().add(
+            new DeleteMirrorResponseData.DeleteResult()
+                .setMirrorName(name)
                 .setErrorCode(error.code())));
         return new DeleteMirrorResponse(responseData);
     }
 
     public static DeleteMirrorRequest parse(Readable readable, short version) {
         return new DeleteMirrorRequest(
-                new RemoveMirrorRequestData(readable, version),
+                new DeleteMirrorRequestData(readable, version),
                 version
         );
     }
