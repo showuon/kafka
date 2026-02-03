@@ -1386,6 +1386,11 @@ public class MockAdminClient extends AdminClient {
     }
 
     @Override
+    public DeleteMirrorsResult deleteMirrors(int destinationNodeId, Set<String> mirrors, DeleteMirrorsOptions options) {
+        throw new UnsupportedOperationException("Not implemented yet");
+    }
+
+    @Override
     public DescribeProducersResult describeProducers(Collection<TopicPartition> partitions, DescribeProducersOptions options) {
         throw new UnsupportedOperationException("Not implemented yet");
     }

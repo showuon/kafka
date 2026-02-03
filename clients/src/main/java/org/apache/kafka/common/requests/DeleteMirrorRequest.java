@@ -24,6 +24,7 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.Readable;
 
 import java.util.List;
+import java.util.Set;
 
 public class DeleteMirrorRequest extends AbstractRequest {
     public static class Builder extends AbstractRequest.Builder<DeleteMirrorRequest> {
@@ -35,7 +36,7 @@ public class DeleteMirrorRequest extends AbstractRequest {
             this.data = data;
         }
 
-        public Builder(List<String> mirrorNames) {
+        public Builder(Set<String> mirrorNames) {
             super(ApiKeys.DELETE_MIRROR, ApiKeys.DELETE_MIRROR.oldestVersion(),
                   ApiKeys.DELETE_MIRROR.latestVersion());
             DeleteMirrorRequestData data = new DeleteMirrorRequestData();

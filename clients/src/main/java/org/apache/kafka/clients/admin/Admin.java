@@ -1704,8 +1704,7 @@ public interface Admin extends AutoCloseable {
      */
     RemoveTopicsFromMirrorResult removeTopicsFromMirror(Set<String> topics, RemoveTopicsFromMirrorOptions options);
 
-
-
+    DeleteMirrorsResult deleteMirrors(int destinationNodeId, Set<String> mirrors, DeleteMirrorsOptions options);
     /**
      * Describe producer state on a set of topic partitions. See
      * {@link #describeProducers(Collection, DescribeProducersOptions)} for more details.
