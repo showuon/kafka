@@ -781,13 +781,29 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     // luke
-    public void removeMirror(Set<String> mirrorNames) {
-        Set<String> topicsToRemoveFromMirror = new HashSet<>();
-        mirrorNames.forEach(mirrorName -> topicsToRemoveFromMirror.addAll(topics.get(mirrorName)));
+    public Optional<String> validateStatesInMirror(Set<String> mirrorNames, Set<MirrorPartitionState> states) {
+        Map<MirroredPartitionKey, MirrorPartitionState> wrongStatePartitions = new HashMap<>();
+        mirrorNames.forEach(mirrorName -> {
+            if (topics.containsKey(mirrorName)) {
+                topics.get(mirrorName).forEach(topic -> {
+                    metadataCache.numPartitions(topic).ifPresent(num -> {
+                        for (int i = 0; i < num; i++) {
+                            TopicPartition tp = new TopicPartition(topic, i);
+                            MirrorPartitionState partitionState = getMirrorPartitionState(mirrorName, tp);
+                            if (!states.contains(partitionState)) {
+                                wrongStatePartitions.put(new MirroredPartitionKey(mirrorName, topic, i), partitionState);
+                            }
+                        }
+                    });
+                });
+            }
+        });
 
-        AbstractRequest.Builder<RemoveTopicsFromMirrorRequest> request = new RemoveTopicsFromMirrorRequest.Builder(topicsToRemoveFromMirror);
-
-        channelManager.sendRequest(request, new TimeoutHandler());
+        if (!wrongStatePartitions.isEmpty()) {
+            LOG.error("validateStatesInMirror: wrongStatePartitions: {}", wrongStatePartitions);
+            return Optional.of("Not all partition states are in " + states + ", wrong partitions: " + wrongStatePartitions);
+        }
+        return Optional.empty();
     }
 
 

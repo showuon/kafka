@@ -51,8 +51,9 @@ public class DeleteMirrorResponse extends AbstractResponse {
     @Override
     public Map<Errors, Integer> errorCounts() {
         Map<Errors, Integer> counts = new EnumMap<>(Errors.class);
+        updateErrorCounts(counts, Errors.forCode(data.errorCode()));
         data.deleteResults().forEach(result ->
-            updateErrorCounts(counts, Errors.forCode(result.errorCode()))
+                updateErrorCounts(counts, Errors.forCode(result.errorCode()))
         );
         return counts;
     }

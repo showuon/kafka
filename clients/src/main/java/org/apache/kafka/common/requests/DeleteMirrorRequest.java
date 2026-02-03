@@ -72,10 +72,6 @@ public class DeleteMirrorRequest extends AbstractRequest {
         DeleteMirrorResponseData responseData = new DeleteMirrorResponseData();
         responseData.setThrottleTimeMs(throttleTimeMs);
         responseData.setErrorCode(error.code());
-        data.mirrorNames().forEach(name -> responseData.deleteResults().add(
-            new DeleteMirrorResponseData.DeleteResult()
-                .setMirrorName(name)
-                .setErrorCode(error.code())));
         return new DeleteMirrorResponse(responseData);
     }
 

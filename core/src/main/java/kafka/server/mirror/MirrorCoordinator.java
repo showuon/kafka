@@ -215,8 +215,8 @@ public class MirrorCoordinator {
         });
     }
 
-    public void removeMirror(Set<String> mirrorNames) {
-        mirrorMetadataManager.removeMirror(mirrorNames);
+    public Optional<String> validateStatesInMirror(Set<String> mirrorNames) {
+        return mirrorMetadataManager.validateStatesInMirror(mirrorNames, Set.of(MirrorPartitionState.STOPPED, MirrorPartitionState.FAILED));
     }
 
     public void writeMirroredPartitionMetadataToInternalTopic(String mirrorName,

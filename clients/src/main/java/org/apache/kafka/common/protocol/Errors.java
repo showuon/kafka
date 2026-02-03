@@ -61,6 +61,7 @@ import org.apache.kafka.common.errors.InvalidConfigurationException;
 import org.apache.kafka.common.errors.InvalidFetchSessionEpochException;
 import org.apache.kafka.common.errors.InvalidFetchSizeException;
 import org.apache.kafka.common.errors.InvalidGroupIdException;
+import org.apache.kafka.common.errors.InvalidMirrorPartitionStateException;
 import org.apache.kafka.common.errors.InvalidPartitionsException;
 import org.apache.kafka.common.errors.InvalidPidMappingException;
 import org.apache.kafka.common.errors.InvalidPrincipalTypeException;
@@ -420,7 +421,8 @@ public enum Errors {
     STREAMS_INVALID_TOPOLOGY_EPOCH(131, "The supplied topology epoch is invalid.", StreamsInvalidTopologyEpochException::new),
     STREAMS_TOPOLOGY_FENCED(132, "The supplied topology epoch is outdated.", StreamsTopologyFencedException::new),
     SHARE_SESSION_LIMIT_REACHED(133, "The limit of share sessions has been reached.", ShareSessionLimitReachedException::new),
-    READ_ONLY_TOPIC(134, "The topic is read-only.", ReadOnlyTopicException::new);
+    READ_ONLY_TOPIC(134, "The topic is read-only.", ReadOnlyTopicException::new),
+    INVALID_MIRROR_PARTITION_STATE(135, "The mirror partition state is invalid.", InvalidMirrorPartitionStateException::new);
 
     private static final Logger log = LoggerFactory.getLogger(Errors.class);
 
