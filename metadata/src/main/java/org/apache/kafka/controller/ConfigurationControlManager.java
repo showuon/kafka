@@ -328,35 +328,35 @@ public class ConfigurationControlManager {
         return ControllerResult.atomicOf(outputRecords, data);
     }
 
-    ControllerResult<DeleteMirrorResponseData> removeMirrorConfig(
-            Map<ConfigResource, Map<String, Entry<OpType, String>>> configChanges,
-            boolean newlyCreatedResource
-    ) {
+    // luke
+    ControllerResult<DeleteMirrorResponseData> deleteMirrorConfig(Set<String> mirrorNames) {
         List<ApiMessageAndVersion> outputRecords = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
         DeleteMirrorResponseData data = new DeleteMirrorResponseData();
 
-        List<DeleteMirrorResponseData.DeleteResult> topicResList = new ArrayList<>();
-        for (Entry<ConfigResource, Map<String, Entry<OpType, String>>> resourceEntry :
-                configChanges.entrySet()) {
-            DeleteMirrorResponseData.DeleteResult mirrorRes = new DeleteMirrorResponseData.DeleteResult();
-            mirrorRes.setMirrorName(resourceEntry.getKey().name());
-            ApiError apiError = incrementalAlterConfigResource(resourceEntry.getKey(),
-                    resourceEntry.getValue(),
-                    newlyCreatedResource,
-                    outputRecords);
-            if (apiError.isSuccess()) {
-                mirrorRes.setErrorCode(Errors.NONE.code());
-            } else {
-                mirrorRes.setErrorCode(apiError.error().code());
-            }
 
-            topicResList.add(mirrorRes);
-            // TODO: Should handle the error here
-            log.info("!!! removeMirrorConfig apiError: {} for {}", apiError, resourceEntry);
-        }
-        outputRecords.addAll(createClearElrRecordsAsNeeded(outputRecords));
-
-        data.setDeleteResults(topicResList).setErrorCode((short) 0);
+//        configData.remove(new ConfigResource(Type.MIRROR, name));
+//        List<DeleteMirrorResponseData.DeleteResult> topicResList = new ArrayList<>();
+//        for (Entry<ConfigResource, Map<String, Entry<OpType, String>>> resourceEntry :
+//                configChanges.entrySet()) {
+//            DeleteMirrorResponseData.DeleteResult mirrorRes = new DeleteMirrorResponseData.DeleteResult();
+//            mirrorRes.setMirrorName(resourceEntry.getKey().name());
+//            ApiError apiError = incrementalAlterConfigResource(resourceEntry.getKey(),
+//                    resourceEntry.getValue(),
+//                    newlyCreatedResource,
+//                    outputRecords);
+//            if (apiError.isSuccess()) {
+//                mirrorRes.setErrorCode(Errors.NONE.code());
+//            } else {
+//                mirrorRes.setErrorCode(apiError.error().code());
+//            }
+//
+//            topicResList.add(mirrorRes);
+//            // TODO: Should handle the error here
+//            log.info("!!! removeMirrorConfig apiError: {} for {}", apiError, resourceEntry);
+//        }
+//        outputRecords.addAll(createClearElrRecordsAsNeeded(outputRecords));
+//
+//        data.setDeleteResults(topicResList).setErrorCode((short) 0);
 
         return ControllerResult.atomicOf(outputRecords, data);
     }

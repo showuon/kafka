@@ -153,9 +153,9 @@ public interface Controller extends AclMutator, AutoCloseable {
             Map<ConfigResource, Map<String, Map.Entry<AlterConfigOp.OpType, String>>> configChanges
     );
 
-    CompletableFuture<DeleteMirrorResponseData> removeMirror(
+    CompletableFuture<DeleteMirrorResponseData> deleteMirror(
             ControllerRequestContext context,
-            Map<ConfigResource, Map<String, Map.Entry<AlterConfigOp.OpType, String>>> configChanges
+            Set<String> mirrorNames
     );
 
     /**

@@ -286,7 +286,7 @@ public class ForwardingAdmin implements Admin {
     }
 
     public DeleteMirrorsResult deleteMirrors(int destinationNodeId, Set<String> mirrors, DeleteMirrorsOptions options) {
-        return delegate.deleteMirrors(mirrors, options);
+        return delegate.deleteMirrors(destinationNodeId, mirrors, options);
     }
 
     @Override

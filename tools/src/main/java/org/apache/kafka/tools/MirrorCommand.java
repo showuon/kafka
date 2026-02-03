@@ -25,6 +25,8 @@ import org.apache.kafka.clients.admin.CreateMirrorOptions;
 import org.apache.kafka.clients.admin.CreateMirrorResult;
 import org.apache.kafka.clients.admin.CreateTopicsOptions;
 import org.apache.kafka.clients.admin.CreateTopicsResult;
+import org.apache.kafka.clients.admin.DeleteMirrorsOptions;
+import org.apache.kafka.clients.admin.DeleteMirrorsResult;
 import org.apache.kafka.clients.admin.FindCoordinatorResult;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.admin.RemoveTopicsFromMirrorOptions;
@@ -85,6 +87,8 @@ public abstract class MirrorCommand {
                 mirrorService.addTopicsToMirror(opts);
             } else if (opts.hasRemoveOption()) {
                 mirrorService.removeTopicsFromMirror(opts);
+            } else if (opts.hasDeleteOption()) {
+                mirrorService.deleteMirror(opts);
             }
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
@@ -268,20 +272,17 @@ public abstract class MirrorCommand {
             }
         }
 
-        public void removeMirror(MirrorCommandOptions opts) throws Exception {
-            String topicPattern = opts.topic().get();
+        public void deleteMirror(MirrorCommandOptions opts) throws Exception {
             String mirrorName = opts.mirror().get();
 
             Node node = findCoordinator(mirrorName);
             String bootstrapServer = node.host() + ":" + node.port();
 
-//            try (Admin admin = createAdminClient(Optional.of(bootstrapServer), commandConfig)) {
-//                // Remove all matching topics from the mirror
-//                RemoveTopicsFromMirrorResult removeTopicsFromMirrorResult = admin.removeTopicsFromMirror(
-//                        matchingTopics, new RemoveTopicsFromMirrorOptions());
-//                removeTopicsFromMirrorResult.all().get();
-//                System.out.printf("Successfully removed %d topic(s) from mirror %s%n", matchingTopics.size(), mirrorName);
-//            }
+            try (Admin admin = createAdminClient(Optional.of(bootstrapServer), commandConfig)) {
+                DeleteMirrorsResult result = admin.deleteMirrors(node.id(), Set.of(mirrorName), new DeleteMirrorsOptions());
+                result.all().get();
+                System.out.printf("Successfully deleted mirror %s%n", mirrorName);
+            }
         }
 
         @Override
@@ -362,6 +363,10 @@ public abstract class MirrorCommand {
 
         public boolean hasRemoveOption() {
             return has(removeOpt);
+        }
+
+        public boolean hasDeleteOption() {
+            return has(deleteOpt);
         }
 
         public Optional<String> bootstrapServer() {

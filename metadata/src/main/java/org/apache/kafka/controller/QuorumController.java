@@ -1781,13 +1781,13 @@ public final class QuorumController implements Controller {
     }
 
     @Override
-    public CompletableFuture<DeleteMirrorResponseData> removeMirror(
+    public CompletableFuture<DeleteMirrorResponseData> deleteMirror(
             ControllerRequestContext context,
-            Map<ConfigResource, Map<String, Map.Entry<AlterConfigOp.OpType, String>>> configChanges
+            Set<String> mirrorNames
     ) {
         return appendWriteEvent("createMirror", context.deadlineNs(), () -> {
             ControllerResult<DeleteMirrorResponseData> result =
-                    configurationControl.removeMirrorConfig(configChanges, false);
+                    configurationControl.deleteMirrorConfig(mirrorNames);
             return result;
         });
     }

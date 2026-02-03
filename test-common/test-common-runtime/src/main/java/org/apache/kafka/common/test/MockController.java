@@ -109,9 +109,9 @@ public class MockController implements Controller {
     }
 
     @Override
-    public CompletableFuture<DeleteMirrorResponseData> removeMirror(
+    public CompletableFuture<DeleteMirrorResponseData> deleteMirror(
             ControllerRequestContext context,
-            Map<ConfigResource, Map<String, Map.Entry<AlterConfigOp.OpType, String>>> configChanges
+            Set<String> mirrorNames
     ) {
         throw new UnsupportedOperationException();
     }

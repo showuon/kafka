@@ -349,13 +349,14 @@ class KafkaApis(val requestChannel: RequestChannel,
   def handleDeleteMirror(request: RequestChannel.Request): Unit = {
     val removeMirrorRequest = request.body[DeleteMirrorRequest]
     if (isClusterMirroringEnabled) {
-      logger.info(s"!!! Handling removing mirror request: ${removeMirrorRequest}")
+      logger.info(s"!!! Handling deleting mirror request: ${removeMirrorRequest}")
 
       val errorMsg = mirrorCoordinator.validateStatesInMirror(new util.HashSet(removeMirrorRequest.data().mirrorNames()))
       if (errorMsg.isPresent) {
         requestHelper.sendMaybeThrottle(request, new DeleteMirrorResponse(new DeleteMirrorResponseData().setErrorCode(Errors.INVALID_MIRROR_PARTITION_STATE.code()).setErrorMessage(errorMsg.get())))
+      } else {
+        forwardToController(request)
       }
-      forwardToController(request)
     } else {
       logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring mirror topic creation request")
       requestHelper.sendMaybeThrottle(request, new DeleteMirrorResponse(new DeleteMirrorResponseData().setErrorCode(Errors.INVALID_REQUEST.code()).setErrorMessage("Cluster Mirroring is disabled (mirror.version=0)")))

@@ -23,6 +23,7 @@ import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.Readable;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -40,7 +41,7 @@ public class DeleteMirrorRequest extends AbstractRequest {
             super(ApiKeys.DELETE_MIRROR, ApiKeys.DELETE_MIRROR.oldestVersion(),
                   ApiKeys.DELETE_MIRROR.latestVersion());
             DeleteMirrorRequestData data = new DeleteMirrorRequestData();
-            data.setMirrorNames(mirrorNames);
+            data.setMirrorNames(new ArrayList<>(mirrorNames));
             this.data = data;
         }
 

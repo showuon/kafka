@@ -139,7 +139,7 @@ class ControllerApis(
         case ApiKeys.CREATE_MIRROR => handleCreateMirror(request)
         case ApiKeys.ADD_TOPICS_TO_MIRROR => handleAddTopicsToMirror(request)
         case ApiKeys.REMOVE_TOPICS_FROM_MIRROR => handleRemoveTopicsFromMirror(request)
-        case ApiKeys.DELETE_MIRROR => handleRemoveMirror(request)
+        case ApiKeys.DELETE_MIRROR => handleDeleteMirror(request)
         case _ => throw new ApiException(s"Unsupported ApiKey ${request.context.header.apiKey}")
       }
 
@@ -286,7 +286,7 @@ class ControllerApis(
     CompletableFuture.completedFuture[Unit](())
   }
 
-  def handleRemoveMirror(request: RequestChannel.Request): CompletableFuture[Unit] = {
+  def handleDeleteMirror(request: RequestChannel.Request): CompletableFuture[Unit] = {
     authHelper.authorizeClusterOperation(request, CLUSTER_ACTION)
 
     // Check if cluster mirroring is supported by the mirror.version feature
@@ -296,24 +296,13 @@ class ControllerApis(
         "Cluster mirroring requires mirror.version >= 1. Current version: " + mirrorVersionLevel)
     }
 
-    val removeMirrorRequest = request.body[DeleteMirrorRequest]
-    info("!!! Remove mirror request: " + removeMirrorRequest)
+    val deleteMirrorRequest = request.body[DeleteMirrorRequest]
+    info("!!! delete mirror request: " + deleteMirrorRequest)
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal, OptionalLong.empty())
 
-
-//    val altersByName = new util.HashMap[String, Entry[AlterConfigOp.OpType, String]]()
-    val configChanges = new util.HashMap[ConfigResource, util.Map[String, Entry[AlterConfigOp.OpType, String]]]()
-//    val resource = new ConfigResource(ConfigResource.Type.MIRROR, removeMirrorRequest.data().mirrorName())
-////    removeMirrorRequest.data().config.forEach { config =>
-////      // TODO: currently assume always SET value
-////      altersByName.put(config.name, new util.AbstractMap.SimpleEntry[AlterConfigOp.OpType, String](
-////        AlterConfigOp.OpType.SET, config.value))
-////    }
-//    configChanges.put(resource, altersByName)
-
-    controller.createMirror(context, configChanges)
+    controller.deleteMirror(context, deleteMirrorRequest.data().mirrorNames())
       .handle[Unit] { (response, exception) =>
-        logger.info("!!! Create mirror response: " + response + " exception: " + exception)
+        logger.info("!!! delete mirror response: " + response + " exception: " + exception)
         if (exception != null) {
           requestHelper.handleError(request, exception)
         } else {
