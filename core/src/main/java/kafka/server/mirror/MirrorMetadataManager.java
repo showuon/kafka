@@ -203,6 +203,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private InterBrokerSender interBrokerSender;
     private Optional<StateTransitioner> stateTransitioner = Optional.empty();
     private Optional<Function<MirrorRecordKey, Integer>> coordinatingPartFinder = Optional.empty();
+    private Optional<Function<String, Integer>> coordinatingPartForMirrorNameFinder = Optional.empty();
 
     public MirrorMetadataManager(
         KafkaConfig config,
@@ -241,6 +242,15 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         if (coordinatingPartFinder.isPresent()) {
             int activeCoordinator = metadataImage.topics().getTopic(MIRROR_STATE_TOPIC_NAME)
                     .partitions().get(coordinatingPartFinder.get().apply(new MirrorRecordKey(mirrorName, topic, partition))).leader;
+            return activeCoordinator == brokerConfig.nodeId();
+        }
+        return false;
+    }
+
+    private boolean isMirrorMetadataSyncHandler(String mirrorName) {
+        if (coordinatingPartForMirrorNameFinder.isPresent()) {
+            int activeCoordinator = metadataImage.topics().getTopic(MIRROR_STATE_TOPIC_NAME)
+                    .partitions().get(coordinatingPartForMirrorNameFinder.get().apply(mirrorName)).leader;
             return activeCoordinator == brokerConfig.nodeId();
         }
         return false;
@@ -491,12 +501,21 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     /**
-     * Configure a function for getting the internal topic coordinating partition by mirror.
+     * Configure a function for getting the internal topic coordinating partition by mirrorName+topic+partition.
      *
      * @param function function
      */
     public void setCoordinatingPartitionFinder(Function<MirrorRecordKey, Integer> function) {
         this.coordinatingPartFinder = Optional.of(function);
+    }
+
+    /**
+     * Configure a function for getting the internal topic coordinating partition by mirrorName.
+     *
+     * @param function function
+     */
+    public void setCoordinatingPartitionForMirrorNameFinder(Function<String, Integer> function) {
+        this.coordinatingPartForMirrorNameFinder = Optional.of(function);
     }
 
     /**
@@ -832,7 +851,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             sets.add(tp.topic());
             return sets;
         });
-        refreshMetadata();
+        refreshMetadata(false);
 
         // Try again after refreshing metadata.
         partitionLeaders = remotePartitionLeaders.get(mirrorName);
@@ -1000,24 +1019,30 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * Synchronizes topic metadata, configurations, consumer group offsets, and ACLs.
      * Called periodically by the scheduler to keep clusters in sync.
      */
-    public void refreshMetadata() {
-        if (!mirrorTopics.isEmpty()) {
-            LOG.info("!!! Refreshing mirror metadata for topics:" + mirrorTopics);
-        }
-
+    public void refreshMetadata(boolean shouldSyncMetadata) {
         checkMirrorConnections();
 
         remoteBrokers.forEach((mirrorName, senders) -> {
             // Always sync topic metadata so all brokers can find partition leaders
             syncTopicMetadata(mirrorName, senders);
-
-            // Only coordinator syncs configurations, consumer groups, and ACLs
-//            if (isLocalCoordinator(mirrorName)) {
-//                syncTopicConfigurations(mirrorName, senders);
-//                syncConsumerGroupOffsets(senders);
-//                syncACLs(mirrorName, senders);
-//            }
         });
+
+        if (shouldSyncMetadata) {
+            Set<String> mirrorNames = getConfiguredMirrors();
+            mirrorNames.forEach(mirrorName -> {
+                // Only mirror name handled coordinator syncs configurations, consumer groups, and ACLs
+                if (isMirrorMetadataSyncHandler(mirrorName)) {
+                    if (!remoteBrokers.containsKey(mirrorName)) {
+                        createMirrorConnection(mirrorName);
+                    }
+                    List<MirrorBlockingSender> senders = remoteBrokers.get(mirrorName);
+                    syncTopicConfigurations(mirrorName, senders);
+                    syncConsumerGroupOffsets(senders);
+                    syncACLs(mirrorName, senders);
+                }
+            });
+
+        }
     }
 
     private void checkMirrorConnections() {
@@ -1080,10 +1105,12 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     private void syncTopicConfigurations(String mirrorName, List<MirrorBlockingSender> senders) {
-        LOG.info("!!! Describing topic configs for topics: {}", mirrorTopics);
+        // sync all mirrored topics
+        Set<String> topics = getConfiguredTopics(mirrorName);
+        LOG.info("!!! Describing topic configs for topics: {}", topics);
 
         List<DescribeConfigsRequestData.DescribeConfigsResource> describeConfigsResources =
-            mirrorTopics.get(mirrorName).stream()
+            topics.stream()
                 .map(topic -> new DescribeConfigsRequestData.DescribeConfigsResource()
                     .setResourceType(ConfigResource.Type.TOPIC.id())
                     .setResourceName(topic))

@@ -426,14 +426,15 @@ public class MirrorCoordinator {
         LOG.info("Starting up.");
         mirrorMetadataManager.setStateTransitioner((mirrorName, tp, state) -> transitionTo(mirrorName, Set.of(tp), state));
         mirrorMetadataManager.setCoordinatingPartitionFinder(key -> getCoordinatingPartitionByKey(key));
+        mirrorMetadataManager.setCoordinatingPartitionForMirrorNameFinder(mirrorName -> getCoordinatingPartitionByMirrorName(mirrorName));
         scheduler.startup();
         // periodically query source cluster to get the metadata
         long metadataRefreshIntervalMs = kafkaConfig.mirrorConfig().metadataRefreshIntervalMs();
-//        scheduler.schedule("mirror-metadata-refresh",
-//                mirrorMetadataManager::refreshMetadata,
-//                metadataRefreshIntervalMs,
-//                metadataRefreshIntervalMs
-//        );
+        scheduler.schedule("mirror-metadata-refresh",
+                () -> mirrorMetadataManager.refreshMetadata(true),
+                metadataRefreshIntervalMs,
+                metadataRefreshIntervalMs
+        );
         numPartitions = kafkaConfig.mirrorConfig().mirrorTopicNumPartitions();
     }
 
@@ -805,6 +806,18 @@ public class MirrorCoordinator {
     public int getCoordinatingPartitionByKey(MirrorRecordKey key) {
         throwIfNotActive();
         return Utils.abs(key.asCoordinatorKey().hashCode()) % numPartitions;
+    }
+
+    /**
+     * Returns the partition index for the given mirror record key.
+     * Used to determine which partition in the mirror state topic should handle metadata syncup.
+     *
+     * @param mirrorName the mirror name
+     * @return the partition index
+     */
+    public int getCoordinatingPartitionByMirrorName(String mirrorName) {
+        throwIfNotActive();
+        return Utils.abs(mirrorName.hashCode()) % numPartitions;
     }
 
     private void throwIfNotActive() {
