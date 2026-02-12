@@ -23,8 +23,12 @@ import kafka.server.ReplicaManager;
 import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.clients.ClientUtils;
 import org.apache.kafka.clients.KafkaClient;
+import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AlterConfigOp;
 import org.apache.kafka.clients.admin.ConfigEntry;
+import org.apache.kafka.clients.admin.ListConsumerGroupOffsetsOptions;
+import org.apache.kafka.clients.admin.ListConsumerGroupOffsetsSpec;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.GroupState;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
@@ -120,6 +124,7 @@ import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
+import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -1072,15 +1077,18 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             mirrorTopics.get(mirrorName).stream()
                 .map(topic -> new DescribeConfigsRequestData.DescribeConfigsResource()
                     .setResourceType(ConfigResource.Type.TOPIC.id())
-                    .setResourceName(topic))
+                    .setResourceName(topic)
+                    .setConfigurationKeys(null))
                 .toList();
 
         DescribeConfigsRequest.Builder describeConfigsRequest =
-            new DescribeConfigsRequest.Builder(new DescribeConfigsRequestData().setResources(describeConfigsResources));
+            new DescribeConfigsRequest.Builder(new DescribeConfigsRequestData().setIncludeSynonyms(true).setResources(describeConfigsResources));
+
+        LOG.info("!!! Periodic request: {}", describeConfigsRequest.build());
 
         var describeConfigResponse = getRandomSender(senders).sendRequest(describeConfigsRequest);
         if (describeConfigResponse.responseBody() instanceof DescribeConfigsResponse describeConfigsRes) {
-            LOG.debug("!!! Periodic describeConfigResponse: {}", describeConfigsRes);
+            LOG.info("!!! Periodic describeConfigResponse: {}", describeConfigsRes);
             checkUncleanLeaderElection(mirrorName, describeConfigsRes);
             Map<String, Map<String, String>> configsToChange = detectConfigurationChanges(mirrorName, describeConfigsRes, mirrorConfig);
             applyConfigurationChanges(configsToChange);
@@ -1255,10 +1263,10 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         Pattern groupsIncludePattern = mirrorConfig.groupsIncludePattern();
 
         // 1. list group
-        ListGroupsRequest.Builder builder = new ListGroupsRequest.Builder(new ListGroupsRequestData()
+        ListGroupsRequest.Builder builder = new ListGroupsRequest.Builder(new ListGroupsRequestData());
                 // TODO: if the source cluster is in old version, it won't support types filter
-                .setTypesFilter(List.of(Group.GroupType.CLASSIC.name(), Group.GroupType.CONSUMER.name()))
-                .setStatesFilter(singletonList(GroupState.STABLE.name())));
+//                .setTypesFilter(List.of(Group.GroupType.CLASSIC.name(), Group.GroupType.CONSUMER.name()))
+//                .setStatesFilter(singletonList(GroupState.STABLE.name())));
         var listGroupResponse = getRandomSender(senders).sendRequest(builder);
         if (listGroupResponse.responseBody() instanceof ListGroupsResponse listGroupsRes) {
             LOG.info("!!! listGroupsRes for mirror {}: {}", mirrorName, listGroupsRes);
@@ -1273,24 +1281,80 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             }
 
             // 2. get committed offsets for each group
-            OffsetFetchRequest.Builder offsetFetchBuilder = OffsetFetchRequest.Builder.forTopicNames(
-                    new OffsetFetchRequestData()
-                            .setRequireStable(false)
-                            .setGroups(matchingGroups.stream().map(group -> new OffsetFetchRequestData.OffsetFetchRequestGroup()
-                                    .setGroupId(group.groupId())
-                                    .setTopics(null)).toList()), false);
-            var offsetFetchResponse = getRandomSender(senders).sendRequest(offsetFetchBuilder);
-            if (offsetFetchResponse.responseBody() instanceof OffsetFetchResponse offsetFetchRes) {
-                LOG.info("!!! Periodic offset fetch: {}", offsetFetchRes);
+//            OffsetFetchRequest.Builder offsetFetchBuilder = OffsetFetchRequest.Builder.forTopicNames(
+//                    new OffsetFetchRequestData()
+//                            .setRequireStable(false)
+//                            .setGroups(matchingGroups.stream().map(group -> new OffsetFetchRequestData.OffsetFetchRequestGroup()
+//                                    .setGroupId(group.groupId())
+//                                    .setTopics(null)).toList()), false);
 
-                // 3. commit offsets to consumer group coordinator
-                // TODO: need to find the current group coordinator for each group
-                offsetFetchRes.data().groups().forEach(group -> {
-                    List<OffsetCommitRequestData.OffsetCommitRequestTopic> topicList = buildOffsetCommitTopicList(group);
-                    commitOffsetsToGroupCoordinator(group.groupId(), topicList);
+            Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.MIRROR, mirrorName));
+            try (Admin adminClient = Admin.create(props)) {
+
+                Map<String, ListConsumerGroupOffsetsSpec> consumerGroupOffsets = new HashMap<>();
+                matchingGroups.forEach(group -> {
+                    consumerGroupOffsets.put(group.groupId(), new ListConsumerGroupOffsetsSpec());
                 });
+
+                var offsetFetchResponse = adminClient.listConsumerGroupOffsets(consumerGroupOffsets);
+                try {
+                    var results = offsetFetchResponse.all().get();
+
+                    LOG.info("!!! Periodic offset fetch: {}", results);
+
+                    // 3. commit offsets to consumer group coordinator
+                    // TODO: need to find the current group coordinator for each group
+                    results.entrySet().stream().forEach(entry -> {
+                        String groupId = entry.getKey();
+                        Map<TopicPartition, OffsetAndMetadata> map = entry.getValue();
+                        List<OffsetCommitRequestData.OffsetCommitRequestTopic> topicList = buildOffsetCommitTopicListWithResult(map);
+                        commitOffsetsToGroupCoordinator(groupId, topicList);
+                    });
+//                        .groups().forEach(group -> {
+//                    List<OffsetCommitRequestData.OffsetCommitRequestTopic> topicList = buildOffsetCommitTopicList(group);
+//                    commitOffsetsToGroupCoordinator(group.groupId(), topicList);
+//                });
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                } catch (ExecutionException e) {
+                    throw new RuntimeException(e);
+                }
             }
+//            var offsetFetchResponse = getRandomSender(senders).sendRequest(offsetFetchBuilder);
+//            if (offsetFetchResponse.responseBody() instanceof OffsetFetchResponse offsetFetchRes) {
+
         }
+    }
+
+    private List<OffsetCommitRequestData.OffsetCommitRequestTopic> buildOffsetCommitTopicListWithResult(Map<TopicPartition, OffsetAndMetadata> group) {
+        Map<String, Set<Integer>> topicPar = new HashMap<>();
+        group.forEach((tp, om) -> topicPar.compute(tp.topic(), (key, preV) -> {
+            if (preV == null) {
+                Set<Integer> set = new HashSet<>();
+                set.add(tp.partition());
+                return set;
+            }
+            preV.add(tp.partition());
+            return preV;
+        }));
+
+        List<OffsetCommitRequestData.OffsetCommitRequestTopic> topicList = new ArrayList<>();
+        topicPar.forEach((t, partitions) -> {
+            List<OffsetCommitRequestData.OffsetCommitRequestPartition> parList = new ArrayList<>();
+            partitions.forEach(p -> {
+                OffsetAndMetadata par = group.get(new TopicPartition(t, p));
+                parList.add(new OffsetCommitRequestData.OffsetCommitRequestPartition()
+                        .setPartitionIndex(p)
+                        .setCommittedOffset(par.offset())
+                        .setCommittedLeaderEpoch(par.leaderEpoch().orElse(-1))
+                        .setCommittedMetadata(par.metadata()));
+            });
+            topicList.add(new OffsetCommitRequestData.OffsetCommitRequestTopic()
+                    .setName(t)
+                    .setPartitions(parList));
+        });
+        LOG.info("!!! buildOffsetCommitTopicListWithResult: {} ;;  {} ;; {}", group, topicPar, topicList);
+        return topicList;
     }
 
     private List<OffsetCommitRequestData.OffsetCommitRequestTopic> buildOffsetCommitTopicList(OffsetFetchResponseData.OffsetFetchResponseGroup group) {

@@ -431,8 +431,8 @@ public class MirrorCoordinator {
         long metadataRefreshIntervalMs = kafkaConfig.mirrorConfig().metadataRefreshIntervalMs();
         scheduler.schedule("mirror-metadata-refresh",
                 mirrorMetadataManager::refreshMetadata,
-                metadataRefreshIntervalMs,
-                metadataRefreshIntervalMs
+                10000,
+                10000
         );
         numPartitions = kafkaConfig.mirrorConfig().topicNumPartitions();
     }
