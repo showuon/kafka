@@ -27,6 +27,7 @@ import kafka.server.mirror.{MirrorFetcherManager, MirrorLagInfo, MirrorMetadataM
 import kafka.server.share.DelayedShareFetch
 import kafka.utils._
 import org.apache.kafka.common.{IsolationLevel, Node, TopicIdPartition, TopicPartition, Uuid}
+import org.apache.kafka.common.config.TopicConfig
 import org.apache.kafka.common.errors._
 import org.apache.kafka.common.internals.{Plugin, Topic}
 import org.apache.kafka.common.message.DeleteRecordsResponseData.DeleteRecordsPartitionResult
@@ -1411,11 +1412,14 @@ class ReplicaManager(val config: KafkaConfig,
 
     def validateReadOnlyTopic(partition: Partition): Unit = {
       // if it's mirrored topic, it will become writable only when in STOPPED state
-      val mirrorName = partition.getMirrorName()
-      if (mirrorMetadataManager.isDefined && mirrorName.nonEmpty &&
-        mirrorMetadataManager.get.getMirrorPartitionState(mirrorName, partition.topicPartition) != MirrorPartitionState.STOPPED) {
-        throw new ReadOnlyTopicException("Cannot append to read-only partition %s on broker %d (mirrorName=%s)"
-          .format(partition.topicPartition, localBrokerId, mirrorName))
+      val mirrorIdStr = partition.getMirrorId()
+      if (mirrorMetadataManager.isDefined && mirrorIdStr.nonEmpty && !mirrorIdStr.endsWith(TopicConfig.MIRROR_REMOVED_SUFFIX)) {
+        val mirrorId = org.apache.kafka.common.Uuid.fromString(mirrorIdStr)
+        val state = mirrorMetadataManager.get.getMirrorPartitionStateByMirrorId(mirrorId, partition.topicPartition)
+        if (state != null && state != MirrorPartitionState.STOPPED) {
+          throw new ReadOnlyTopicException("Cannot append to read-only partition %s on broker %d (mirrorId=%s)"
+            .format(partition.topicPartition, localBrokerId, mirrorIdStr))
+        }
       }
     }
 

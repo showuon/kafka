@@ -4835,7 +4835,7 @@ public class KafkaAdminClient extends AdminClient {
 
     @Override
     public CreateMirrorResult createMirror(String mirrorName, Map<String, String> configs, CreateMirrorOptions options) {
-        final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
+        final KafkaFutureImpl<Uuid> future = new KafkaFutureImpl<>();
         final long now = time.milliseconds();
         final Call call = new Call("createMirror", calcDeadlineMs(now, options.timeoutMs()),
                 new LeastLoadedBrokerOrActiveKController()) {
@@ -4852,7 +4852,7 @@ public class KafkaAdminClient extends AdminClient {
                 Errors error = Errors.forCode(response.data().errorCode());
                 switch (error) {
                     case NONE:
-                        future.complete(null);
+                        future.complete(response.data().mirrorId());
                         break;
                     case REQUEST_TIMED_OUT:
                         throw error.exception(response.data().errorMessage());
@@ -4977,6 +4977,7 @@ public class KafkaAdminClient extends AdminClient {
                     for (ListMirrorsResponseData.ListedMirror mirror : response.data().mirrors()) {
                         listings.add(new MirrorListing(
                                 mirror.mirrorName(),
+                                mirror.mirrorId(),
                                 mirror.sourceBootstrap(),
                                 mirror.topicCount()
                         ));
@@ -5134,6 +5135,7 @@ public class KafkaAdminClient extends AdminClient {
         // Accumulated MirrorDescription data from all brokers
         private static class PartialMirrorDescription {
             final String mirrorName;
+            Uuid mirrorId = Uuid.ZERO_UUID;
             final Map<String, Set<MirrorDescription.LeaderState>> topicPartitions;
             final Set<Integer> authorizedOps;
             Throwable error;
@@ -5152,6 +5154,11 @@ public class KafkaAdminClient extends AdminClient {
                         this.error = errorCode.exception();
                     }
                     return;
+                }
+
+                // Capture mirrorId from first response that has it
+                if (!mirror.mirrorId().equals(Uuid.ZERO_UUID)) {
+                    this.mirrorId = mirror.mirrorId();
                 }
 
                 // Merge topic partitions
@@ -5182,6 +5189,7 @@ public class KafkaAdminClient extends AdminClient {
             MirrorDescription toMirrorDescription() {
                 return new MirrorDescription(
                         mirrorName,
+                        mirrorId,
                         topicPartitions,
                         authorizedOps.isEmpty() ? Collections.emptySet() : authorizedOps
                 );

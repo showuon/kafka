@@ -227,6 +227,14 @@ class ControllerApis(
 
     val createMirrorRequest = request.body[CreateMirrorRequest]
     info("!!! Create mirror request: " + createMirrorRequest)
+
+    // Validate mirror name: only alphanumeric, dash, underscore, and dot allowed
+    val mirrorNameStr = createMirrorRequest.data().mirrorName()
+    if (!mirrorNameStr.matches("[a-zA-Z0-9._-]+")) {
+      throw new InvalidRequestException(
+        s"Mirror name '$mirrorNameStr' is invalid. Mirror names may only contain alphanumeric characters, dots, dashes, and underscores.")
+    }
+
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal, OptionalLong.empty())
     val altersByName = new util.HashMap[String, Entry[AlterConfigOp.OpType, String]]()
     val configChanges = new util.HashMap[ConfigResource, util.Map[String, Entry[AlterConfigOp.OpType, String]]]()

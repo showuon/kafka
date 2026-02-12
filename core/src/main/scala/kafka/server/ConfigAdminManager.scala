@@ -144,9 +144,10 @@ class ConfigAdminManager(nodeId: Int,
               }
               validateBrokerConfigChange(resource, configResource)
             case TOPIC =>
-                // mirror.name check
-                if (resource.configs().stream().anyMatch(config => TopicConfig.MIRROR_NAME_CONFIG.equals(config.name()))) {
-                  throw new InvalidRequestException("The 'mirror.name' configuration can only be modified through dedicated mirror management APIs.")
+                // mirror.name / mirror.id check
+                if (resource.configs().stream().anyMatch(config =>
+                    TopicConfig.MIRROR_NAME_CONFIG.equals(config.name()) || TopicConfig.MIRROR_ID_CONFIG.equals(config.name()))) {
+                  throw new InvalidRequestException("The 'mirror.name' and 'mirror.id' configurations can only be modified through dedicated mirror management APIs.")
                 }
             case CLIENT_METRICS | GROUP | ConfigResource.Type.MIRROR =>
             // Nothing to do.

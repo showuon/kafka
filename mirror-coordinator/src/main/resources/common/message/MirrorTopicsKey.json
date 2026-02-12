@@ -24,7 +24,7 @@
   "validVersions": "0",
   "flexibleVersions": "none",
   "fields": [
-    { "name": "MirrorName", "type": "string", "versions": "0",
-      "about": "The cluster mirror name."}
+    { "name": "MirrorId", "type": "uuid", "versions": "0",
+      "about": "The system-generated mirror ID."}
   ]
 }

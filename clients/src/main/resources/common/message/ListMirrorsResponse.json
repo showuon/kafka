@@ -29,6 +29,8 @@
       "about": "Each mirror in the response.", "fields": [
       { "name": "MirrorName", "type": "string", "versions": "0+",
         "about": "The mirror name." },
+      { "name": "MirrorId", "type": "uuid", "versions": "0+",
+        "about": "The system-generated mirror ID." },
       { "name": "SourceBootstrap", "type": "string", "versions": "0+",
         "about": "The source cluster bootstrap servers." },
       { "name": "TopicCount", "type": "int32", "versions": "0+", "default": "0",

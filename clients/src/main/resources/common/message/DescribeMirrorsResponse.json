@@ -29,6 +29,8 @@
         "about": "The error code, or 0 if there was no error." },
       { "name": "MirrorName", "type": "string", "versions": "0+",
         "about": "The mirror name." },
+      { "name": "MirrorId", "type": "uuid", "versions": "0+",
+        "about": "The system-generated mirror ID." },
       { "name": "Topics", "type": "[]TopicPartitions", "versions": "0+",
         "about": "Each topic in the mirror.", "fields": [
         { "name": "TopicName", "type": "string", "versions": "0+",

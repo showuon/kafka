@@ -20,6 +20,7 @@ package org.apache.kafka.controller;
 import org.apache.kafka.clients.admin.AlterConfigOp.OpType;
 import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.clients.admin.FeatureUpdate;
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.config.ConfigResource.Type;
@@ -69,7 +70,6 @@ import static org.apache.kafka.controller.QuorumController.MAX_RECORDS_PER_USER_
 
 public class ConfigurationControlManager {
     public static final ConfigResource DEFAULT_NODE = new ConfigResource(Type.BROKER, "");
-    public static final String REMOVED_TOPIC_SUFFIX = ".removed";
 
     private final Logger log;
     private final SnapshotRegistry snapshotRegistry;
@@ -225,8 +225,6 @@ public class ConfigurationControlManager {
         RemoveTopicsFromMirrorResponseData data = new RemoveTopicsFromMirrorResponseData();
         List<RemoveTopicsFromMirrorResponseData.TopicResponse> topicResList = new ArrayList<>();
         for (String topic : topics) {
-            String mirrorNameConfig = TopicConfig.MIRROR_NAME_CONFIG;
-
             RemoveTopicsFromMirrorResponseData.TopicResponse topicRes = new RemoveTopicsFromMirrorResponseData.TopicResponse();
 
             ConfigResource configResource = new ConfigResource(Type.TOPIC, topic);
@@ -236,7 +234,7 @@ public class ConfigurationControlManager {
             if (currentConfigs == null) {
                 topicRes.setErrorCode(Errors.INVALID_REQUEST.code());
             } else {
-                curVal = currentConfigs.get(mirrorNameConfig);
+                curVal = currentConfigs.get(TopicConfig.MIRROR_ID_CONFIG);
                 log.info("!!! curVal: {} for topic: {}", curVal, topic);
                 // Verify the current value should not be empty
                 if (curVal == null || curVal.isBlank()) {
@@ -245,9 +243,9 @@ public class ConfigurationControlManager {
                     continue;
                 }
 
-                // decide if we should clear the mirror name or append a stopped symbol
-                String newMirrorName = curVal.endsWith(REMOVED_TOPIC_SUFFIX) ? "" : curVal + REMOVED_TOPIC_SUFFIX;
-                Map<String, Entry<OpType, String>> keyToOps = Map.of(mirrorNameConfig, new AbstractMap.SimpleImmutableEntry<>(SET, newMirrorName));
+                // decide if we should clear the mirror id or append a stopped symbol
+                String newMirrorId = curVal.endsWith(TopicConfig.MIRROR_REMOVED_SUFFIX) ? "" : curVal + TopicConfig.MIRROR_REMOVED_SUFFIX;
+                Map<String, Entry<OpType, String>> keyToOps = Map.of(TopicConfig.MIRROR_ID_CONFIG, new AbstractMap.SimpleImmutableEntry<>(SET, newMirrorId));
 
                 ControllerResult<ApiError> configResult = incrementalAlterConfig(configResource, keyToOps, true);
                 if (configResult.response().isFailure()) {
@@ -277,19 +275,28 @@ public class ConfigurationControlManager {
             AddTopicsToMirrorResponseData.TopicResponse topicRes = new AddTopicsToMirrorResponseData.TopicResponse();
             ConfigResource configResource = new ConfigResource(Type.TOPIC, topic);
 
+            // Resolve mirrorName -> mirrorId
+            Uuid mirrorId = getMirrorId(mirrorName);
+            if (mirrorId == null) {
+                log.error("Mirror '{}' not found or has no mirror.id", mirrorName);
+                topicRes.setErrorCode(Errors.INVALID_REQUEST.code()).setName(topic);
+                topicResList.add(topicRes);
+                continue;
+            }
+
             TimelineHashMap<String, String> currentConfigs = configData.get(configResource);
             if (currentConfigs != null) {
-                String currMirrorNameValue = currentConfigs.get(TopicConfig.MIRROR_NAME_CONFIG);
-                log.info("!!! currMirrorNameValue: {} for topic: {}", currMirrorNameValue, topic);
+                String currMirrorIdValue = currentConfigs.get(TopicConfig.MIRROR_ID_CONFIG);
+                log.info("!!! currMirrorIdValue: {} for topic: {}", currMirrorIdValue, topic);
                 // Verify the current value should be empty or ends with removed suffix
-                if (currMirrorNameValue != null && (currMirrorNameValue.isBlank() || !currMirrorNameValue.endsWith(REMOVED_TOPIC_SUFFIX))) {
+                if (currMirrorIdValue != null && !currMirrorIdValue.isBlank() && !currMirrorIdValue.endsWith(TopicConfig.MIRROR_REMOVED_SUFFIX)) {
                     topicRes.setErrorCode(Errors.INVALID_REQUEST.code()).setName(topic);
                     topicResList.add(topicRes);
                     continue;
                 }
             }
 
-            Map<String, Entry<OpType, String>> keyToOps = Map.of(TopicConfig.MIRROR_NAME_CONFIG, new AbstractMap.SimpleImmutableEntry<>(SET, mirrorName));
+            Map<String, Entry<OpType, String>> keyToOps = Map.of(TopicConfig.MIRROR_ID_CONFIG, new AbstractMap.SimpleImmutableEntry<>(SET, mirrorId.toString()));
 
             ControllerResult<ApiError> configResult = incrementalAlterConfig(configResource, keyToOps, true);
             if (configResult.response().isFailure()) {
@@ -307,6 +314,24 @@ public class ConfigurationControlManager {
         return ControllerResult.of(records, data);
     }
 
+    /**
+     * Resolves a mirror name to its system-generated mirror ID by reading the mirror's ConfigResource.
+     *
+     * @param mirrorName the user-provided mirror name
+     * @return the mirror ID, or null if the mirror doesn't exist or has no mirror.id configured
+     */
+    private Uuid getMirrorId(String mirrorName) {
+        ConfigResource resource = new ConfigResource(ConfigResource.Type.MIRROR, mirrorName);
+        TimelineHashMap<String, String> configs = configData.get(resource);
+        if (configs != null) {
+            String mirrorIdStr = configs.get(TopicConfig.MIRROR_ID_CONFIG);
+            if (mirrorIdStr != null && !mirrorIdStr.isBlank()) {
+                return Uuid.fromString(mirrorIdStr);
+            }
+        }
+        return null;
+    }
+
     ControllerResult<CreateMirrorResponseData> addMirrorConfig(
             Map<ConfigResource, Map<String, Entry<OpType, String>>> configChanges,
             boolean newlyCreatedResource
@@ -314,10 +339,18 @@ public class ConfigurationControlManager {
         List<ApiMessageAndVersion> outputRecords = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
         CreateMirrorResponseData data = new CreateMirrorResponseData();
 
+        // Generate a system-managed mirror ID
+        Uuid mirrorId = Uuid.randomUuid();
+
         for (Entry<ConfigResource, Map<String, Entry<OpType, String>>> resourceEntry :
                 configChanges.entrySet()) {
+            // Add the system-generated mirror.id config before processing user configs
+            Map<String, Entry<OpType, String>> configsWithMirrorId = new HashMap<>(resourceEntry.getValue());
+            configsWithMirrorId.put(TopicConfig.MIRROR_ID_CONFIG,
+                    new AbstractMap.SimpleImmutableEntry<>(SET, mirrorId.toString()));
+
             ApiError apiError = incrementalAlterConfigResource(resourceEntry.getKey(),
-                    resourceEntry.getValue(),
+                    configsWithMirrorId,
                     newlyCreatedResource,
                     outputRecords);
             // TODO: Should handle the error here
@@ -326,6 +359,7 @@ public class ConfigurationControlManager {
         outputRecords.addAll(createClearElrRecordsAsNeeded(outputRecords));
 
         data.setErrorCode((short) 0);
+        data.setMirrorId(mirrorId);
 
         return ControllerResult.atomicOf(outputRecords, data);
     }

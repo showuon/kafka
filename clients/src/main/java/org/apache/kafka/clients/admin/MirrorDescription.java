@@ -18,6 +18,7 @@
 package org.apache.kafka.clients.admin;
 
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.annotation.InterfaceStability;
 
 import java.util.Collections;
@@ -31,19 +32,32 @@ import java.util.Set;
 @InterfaceStability.Evolving
 public class MirrorDescription {
     private final String mirrorName;
+    private final Uuid mirrorId;
     private final Map<String, Set<LeaderState>> topics;
     private final Set<Integer> authorizedOperations;
 
     public MirrorDescription(String mirrorName,
+                             Uuid mirrorId,
                              Map<String, Set<LeaderState>> topics,
                              Set<Integer> authorizedOperations) {
         this.mirrorName = mirrorName;
+        this.mirrorId = mirrorId;
         this.topics = Collections.unmodifiableMap(topics);
         this.authorizedOperations = authorizedOperations;
     }
 
+    public MirrorDescription(String mirrorName,
+                             Map<String, Set<LeaderState>> topics,
+                             Set<Integer> authorizedOperations) {
+        this(mirrorName, Uuid.ZERO_UUID, topics, authorizedOperations);
+    }
+
     public String mirrorName() {
         return mirrorName;
+    }
+
+    public Uuid mirrorId() {
+        return mirrorId;
     }
 
     public Map<String, Set<LeaderState>> topics() {
@@ -60,19 +74,21 @@ public class MirrorDescription {
         if (o == null || getClass() != o.getClass()) return false;
         MirrorDescription that = (MirrorDescription) o;
         return Objects.equals(mirrorName, that.mirrorName) &&
+               Objects.equals(mirrorId, that.mirrorId) &&
                Objects.equals(topics, that.topics) &&
                Objects.equals(authorizedOperations, that.authorizedOperations);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(mirrorName, topics, authorizedOperations);
+        return Objects.hash(mirrorName, mirrorId, topics, authorizedOperations);
     }
 
     @Override
     public String toString() {
         return "MirrorDescription{" +
                "mirrorName='" + mirrorName + '\'' +
+               ", mirrorId=" + mirrorId +
                ", topics=" + topics +
                ", authorizedOperations=" + authorizedOperations +
                '}';

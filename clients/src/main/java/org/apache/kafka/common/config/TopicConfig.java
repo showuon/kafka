@@ -223,6 +223,12 @@ public class TopicConfig {
     public static final String MIRROR_NAME_DOC = "Identifies the mirror that manages this topic. " +
             "Topics with this configuration set are read-only and can only be modified through mirror management APIs.";
 
+    public static final String MIRROR_ID_CONFIG = "mirror.id";
+    public static final String MIRROR_ID_DOC = "System-generated UUID that uniquely identifies the mirror managing this topic. " +
+            "Topics with this configuration set are read-only and can only be modified through mirror management APIs.";
+
+    public static final String MIRROR_REMOVED_SUFFIX = ".removed";
+
     /**
      * @deprecated down-conversion is not possible in Apache Kafka 4.0 and newer, hence this configuration is a no-op,
      *             and it is deprecated for removal in Apache Kafka 5.0.

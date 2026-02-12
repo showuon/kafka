@@ -1384,9 +1384,9 @@ class Partition(val topicPartition: TopicPartition,
     }
   }
 
-  def getMirrorName(): String = {
-    val mirrorName = metadataCache.config(new ConfigResource(ConfigResource.Type.TOPIC, topic)).get(TopicConfig.MIRROR_NAME_CONFIG).asInstanceOf[String]
-    if (mirrorName == null) "" else mirrorName
+  def getMirrorId(): String = {
+    val mirrorId = metadataCache.config(new ConfigResource(ConfigResource.Type.TOPIC, topic)).get(TopicConfig.MIRROR_ID_CONFIG).asInstanceOf[String]
+    if (mirrorId == null) "" else mirrorId
   }
 
   private def doAppendRecordsToFollowerOrFutureReplica(
@@ -1400,13 +1400,13 @@ class Partition(val topicPartition: TopicPartition,
       inReadLock(leaderIsrUpdateLock) {
         // Note the replica may be undefined if it is removed by a non-ReplicaAlterLogDirsThread before
         // this method is called
-        futureLog.map { _.appendAsFollower(records, partitionLeaderEpoch, getMirrorName().nonEmpty && isLeader) }
+        futureLog.map { _.appendAsFollower(records, partitionLeaderEpoch, getMirrorId().nonEmpty && isLeader) }
       }
     } else {
       // The lock is needed to prevent the follower replica from being updated while ReplicaAlterDirThread
       // is executing maybeReplaceCurrentWithFutureReplica() to replace follower replica with the future replica.
       futureLogLock.synchronized {
-        Some(localLogOrException.appendAsFollower(records, partitionLeaderEpoch, getMirrorName().nonEmpty && isLeader))
+        Some(localLogOrException.appendAsFollower(records, partitionLeaderEpoch, getMirrorId().nonEmpty && isLeader))
       }
     }
   }

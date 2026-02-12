@@ -280,11 +280,12 @@ class KafkaApis(val requestChannel: RequestChannel,
   def handleCreateTopics(request: RequestChannel.Request): Unit = {
     val createTopicsRequest = request.body[CreateTopicsRequest]
 
-    // mirror.name check
+    // mirror.name / mirror.id check
     createTopicsRequest.data().topics().stream().forEach(creatableTopic => {
       if (creatableTopic.configs().stream().anyMatch(creatableTopicConfig =>
-        TopicConfig.MIRROR_NAME_CONFIG.equals(creatableTopicConfig.name())))
-        throw new InvalidRequestException("The 'mirror.name' configuration can only be modified through dedicated mirror management APIs.")
+        TopicConfig.MIRROR_NAME_CONFIG.equals(creatableTopicConfig.name()) ||
+        TopicConfig.MIRROR_ID_CONFIG.equals(creatableTopicConfig.name())))
+        throw new InvalidRequestException("The 'mirror.name' and 'mirror.id' configurations can only be modified through dedicated mirror management APIs.")
     })
 
     forwardToController(request)
@@ -294,7 +295,8 @@ class KafkaApis(val requestChannel: RequestChannel,
     if (isClusterMirroringEnabled) {
       val writeMirrorStatesRequest = request.body[WriteMirrorStatesRequest]
       info("!!! writeMirrorStatesRequest:" + writeMirrorStatesRequest)
-      val mirrorName = writeMirrorStatesRequest.data().mirrorName()
+      val mirrorId = writeMirrorStatesRequest.data().mirrorId()
+      val mirrorName = mirrorCoordinator.getMirrorName(mirrorId)
       val partitionMetadata = new util.HashMap[String, util.Set[MirrorPartitionMetadata]]()
       writeMirrorStatesRequest.data().topicsUpdated().forEach(topic => {
         val partMetadata = new util.HashSet[MirrorPartitionMetadata]()
@@ -303,7 +305,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         })
         partitionMetadata.put(topic.name(), partMetadata)
       })
-      mirrorCoordinator.writeMirrorPartitionMetadata(mirrorName, partitionMetadata, res => requestHelper.sendMaybeThrottle(request, res))
+      mirrorCoordinator.writeMirrorPartitionMetadata(mirrorName, mirrorId, partitionMetadata, res => requestHelper.sendMaybeThrottle(request, res))
     } else {
       logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring write mirror states request")
       requestHelper.sendMaybeThrottle(request, new WriteMirrorStatesResponse(new WriteMirrorStatesResponseData().setErrorCode(Errors.UNSUPPORTED_VERSION.code)))
@@ -314,7 +316,8 @@ class KafkaApis(val requestChannel: RequestChannel,
     if (isClusterMirroringEnabled) {
       val readMirrorStatesRequest = request.body[ReadMirrorStatesRequest]
       info("!!! readMirrorStatesRequest:" + readMirrorStatesRequest)
-      val mirrorName = readMirrorStatesRequest.data().mirrorName()
+      val mirrorId = readMirrorStatesRequest.data().mirrorId()
+      val mirrorName = mirrorCoordinator.getMirrorName(mirrorId)
       val partitionMetadata = new util.HashMap[String, util.Set[Integer]]()
       readMirrorStatesRequest.data().topics().forEach(topic => {
         val parts = new util.HashSet[Integer]()
@@ -323,7 +326,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         })
         partitionMetadata.put(topic.name(), parts)
       })
-      mirrorCoordinator.readMirrorPartitionMetadataFromCache(mirrorName, partitionMetadata,
+      mirrorCoordinator.readMirrorPartitionMetadataFromCache(mirrorName, mirrorId, partitionMetadata,
         res => requestHelper.sendMaybeThrottle(request, res))
     } else {
       logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring read mirror states request")
@@ -391,8 +394,10 @@ class KafkaApis(val requestChannel: RequestChannel,
       if (authHelper.authorize(request.context, DESCRIBE, CLUSTER, CLUSTER_NAME, logIfDenied = false)) {
         val mirrors = new util.ArrayList[ListMirrorsResponseData.ListedMirror]()
         mirrorCoordinator.getConfiguredMirrors().forEach(mirrorName => {
+          val mirrorId = mirrorCoordinator.getMirrorId(mirrorName)
           mirrors.add(new ListMirrorsResponseData.ListedMirror()
             .setMirrorName(mirrorName)
+            .setMirrorId(if (mirrorId != null) mirrorId else org.apache.kafka.common.Uuid.ZERO_UUID)
             .setSourceBootstrap(if (mirrorCoordinator.getSourceBootstrap(mirrorName) != null)
               mirrorCoordinator.getSourceBootstrap(mirrorName) else "")
             .setTopicCount(mirrorCoordinator.getConfiguredTopics(mirrorName).size()))
@@ -433,8 +438,10 @@ class KafkaApis(val requestChannel: RequestChannel,
           }).toSeq
 
           if (partitionsToReport.nonEmpty) {
+            val mirrorId = mirrorCoordinator.getMirrorId(mirrorName)
             val describedMirror = new DescribeMirrorsResponseData.DescribedMirror()
               .setMirrorName(mirrorName)
+              .setMirrorId(if (mirrorId != null) mirrorId else org.apache.kafka.common.Uuid.ZERO_UUID)
               .setErrorCode(Errors.NONE.code)
 
             // Group partitions by topic

@@ -159,16 +159,17 @@ public abstract class MirrorCommand {
         }
 
         public void createMirror(MirrorCommandOptions opts) throws ExecutionException, InterruptedException {
+            String mirrorName = opts.mirror().get();
             Map<String, String> configMap = new HashMap<>();
             mirrorConfigs.forEach((k, v) -> configMap.put(k.toString(), v.toString()));
 
             CreateMirrorResult result = adminClient.createMirror(
-                opts.mirror().get(),
+                mirrorName,
                 configMap,
                 new CreateMirrorOptions()
             );
-            result.all().get();
-            System.out.printf("Created mirror %s%n", opts.mirror().get());
+            var mirrorId = result.all().get();
+            System.out.printf("Created mirror %s (id: %s)%n", mirrorName, mirrorId);
         }
 
         public void addTopicsToMirror(MirrorCommandOptions opts) throws Exception {
@@ -279,15 +280,17 @@ public abstract class MirrorCommand {
             listings.sort(Comparator.comparing(MirrorListing::mirrorName));
 
             // Print header
-            System.out.printf("%-30s %-10s %-50s%n", "MIRROR", "TOPICS", "SOURCE-BOOTSTRAP");
+            System.out.printf("%-30s %-38s %-10s %-50s%n", "MIRROR", "MIRROR-ID", "TOPICS", "SOURCE-BOOTSTRAP");
 
             // Print each mirror
             for (MirrorListing listing : listings) {
                 String sourceBootstrap = listing.sourceBootstrap() != null && !listing.sourceBootstrap().isEmpty()
                     ? listing.sourceBootstrap()
                     : "-";
-                System.out.printf("%-30s %-10d %-50s%n",
+                String mirrorIdStr = listing.mirrorId() != null ? listing.mirrorId().toString() : "-";
+                System.out.printf("%-30s %-38s %-10d %-50s%n",
                     truncateLeft(listing.mirrorName(), 30),
+                    mirrorIdStr,
                     listing.topicCount(),
                     truncateLeft(sourceBootstrap, 50));
             }

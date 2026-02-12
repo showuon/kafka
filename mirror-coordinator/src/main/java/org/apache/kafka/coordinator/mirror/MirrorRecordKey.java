@@ -17,36 +17,37 @@
 package org.apache.kafka.coordinator.mirror;
 
 import org.apache.kafka.common.Uuid;
-import org.apache.kafka.server.share.SharePartitionKey;
 
 import java.util.Objects;
 
 /**
- * This key is used to uniquely identify a cluster mirror by its name.
+ * This key is used to uniquely identify a cluster mirror by its system-generated ID.
+ * The key format is {@code mirrorId:topicId:partition} where all segments are UUID/int,
+ * eliminating the colon-ambiguity problem that existed with user-provided mirror names.
  */
-public record MirrorRecordKey(String mirrorName, Uuid topicId, int partition) {
-    public MirrorRecordKey(String mirrorName, Uuid topicId, int partition) {
-        this.mirrorName = Objects.requireNonNull(mirrorName, "Mirror name cannot be null");
+public record MirrorRecordKey(Uuid mirrorId, Uuid topicId, int partition) {
+    public MirrorRecordKey(Uuid mirrorId, Uuid topicId, int partition) {
+        this.mirrorId = Objects.requireNonNull(mirrorId, "Mirror ID cannot be null");
         this.topicId = Objects.requireNonNull(topicId, "topicId cannot be null");
-        this.partition = Objects.requireNonNull(partition, "partition cannot be null");
+        this.partition = partition;
     }
 
     public static MirrorRecordKey getInstance(String key) {
         validate(key);
         String[] tokens = key.split(":");
         return new MirrorRecordKey(
-                tokens[0].trim(),
+                Uuid.fromString(tokens[0].trim()),
                 Uuid.fromString(tokens[1]),
                 Integer.parseInt(tokens[2])
         );
     }
 
     public String asCoordinatorKey() {
-        return asCoordinatorKey(mirrorName, topicId, partition);
+        return asCoordinatorKey(mirrorId, topicId, partition);
     }
 
-    public static String asCoordinatorKey(String mirrorName, Uuid topicId, int partition) {
-        return String.format("%s:%s:%d", mirrorName, topicId, partition);
+    public static String asCoordinatorKey(Uuid mirrorId, Uuid topicId, int partition) {
+        return String.format("%s:%s:%d", mirrorId, topicId, partition);
     }
 
     public static void validate(String key) {
@@ -57,11 +58,13 @@ public record MirrorRecordKey(String mirrorName, Uuid topicId, int partition) {
 
         String[] tokens = key.split(":");
         if (tokens.length != 3) {
-            throw new IllegalArgumentException("Invalid key format: expected - mirrorName:topic:partition, found -  " + key);
+            throw new IllegalArgumentException("Invalid key format: expected - mirrorId:topicId:partition, found -  " + key);
         }
 
-        if (tokens[0].trim().isEmpty()) {
-            throw new IllegalArgumentException("mirror name must be alphanumeric string");
+        try {
+            Uuid.fromString(tokens[0].trim());
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid mirror ID: " + tokens[0], e);
         }
 
         try {

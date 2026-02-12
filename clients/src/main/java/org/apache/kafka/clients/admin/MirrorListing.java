@@ -17,6 +17,7 @@
 
 package org.apache.kafka.clients.admin;
 
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.annotation.InterfaceStability;
 
 import java.util.Objects;
@@ -27,6 +28,7 @@ import java.util.Objects;
 @InterfaceStability.Evolving
 public class MirrorListing {
     private final String mirrorName;
+    private final Uuid mirrorId;
     private final String sourceBootstrap;
     private final int topicCount;
 
@@ -34,11 +36,13 @@ public class MirrorListing {
      * Create an instance with the specified parameters.
      *
      * @param mirrorName Mirror name
+     * @param mirrorId System-generated mirror ID
      * @param sourceBootstrap Source cluster bootstrap servers
      * @param topicCount Number of topics configured for this mirror
      */
-    public MirrorListing(String mirrorName, String sourceBootstrap, int topicCount) {
+    public MirrorListing(String mirrorName, Uuid mirrorId, String sourceBootstrap, int topicCount) {
         this.mirrorName = mirrorName;
+        this.mirrorId = mirrorId;
         this.sourceBootstrap = sourceBootstrap;
         this.topicCount = topicCount;
     }
@@ -48,9 +52,20 @@ public class MirrorListing {
      *
      * @param mirrorName Mirror name
      * @param sourceBootstrap Source cluster bootstrap servers
+     * @param topicCount Number of topics configured for this mirror
+     */
+    public MirrorListing(String mirrorName, String sourceBootstrap, int topicCount) {
+        this(mirrorName, Uuid.ZERO_UUID, sourceBootstrap, topicCount);
+    }
+
+    /**
+     * Create an instance with the specified parameters (backwards compatibility).
+     *
+     * @param mirrorName Mirror name
+     * @param sourceBootstrap Source cluster bootstrap servers
      */
     public MirrorListing(String mirrorName, String sourceBootstrap) {
-        this(mirrorName, sourceBootstrap, 0);
+        this(mirrorName, Uuid.ZERO_UUID, sourceBootstrap, 0);
     }
 
     /**
@@ -60,6 +75,15 @@ public class MirrorListing {
      */
     public String mirrorName() {
         return mirrorName;
+    }
+
+    /**
+     * The system-generated mirror ID.
+     *
+     * @return Mirror ID
+     */
+    public Uuid mirrorId() {
+        return mirrorId;
     }
 
     /**
@@ -82,12 +106,12 @@ public class MirrorListing {
 
     @Override
     public String toString() {
-        return "MirrorListing(mirrorName='" + mirrorName + "', sourceBootstrap='" + sourceBootstrap + "', topicCount=" + topicCount + ")";
+        return "MirrorListing(mirrorName='" + mirrorName + "', mirrorId=" + mirrorId + ", sourceBootstrap='" + sourceBootstrap + "', topicCount=" + topicCount + ")";
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(mirrorName, sourceBootstrap, topicCount);
+        return Objects.hash(mirrorName, mirrorId, sourceBootstrap, topicCount);
     }
 
     @Override
@@ -97,6 +121,7 @@ public class MirrorListing {
         MirrorListing that = (MirrorListing) o;
         return topicCount == that.topicCount &&
                Objects.equals(mirrorName, that.mirrorName) &&
+               Objects.equals(mirrorId, that.mirrorId) &&
                Objects.equals(sourceBootstrap, that.sourceBootstrap);
     }
 }

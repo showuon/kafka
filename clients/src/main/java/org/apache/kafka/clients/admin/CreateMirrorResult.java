@@ -18,6 +18,7 @@
 package org.apache.kafka.clients.admin;
 
 import org.apache.kafka.common.KafkaFuture;
+import org.apache.kafka.common.Uuid;
 
 import java.util.Map;
 
@@ -27,16 +28,16 @@ import java.util.Map;
  * The API of this class is evolving, see {@link Admin} for details.
  */
 public class CreateMirrorResult {
-    private final KafkaFuture<Void> future;
+    private final KafkaFuture<Uuid> future;
 
-    CreateMirrorResult(final KafkaFuture<Void> future) {
+    CreateMirrorResult(final KafkaFuture<Uuid> future) {
         this.future = future;
     }
 
     /**
-     * Return a future which succeeds if the operation is successful.
+     * Return a future which succeeds with the system-generated mirror ID if the operation is successful.
      */
-    public KafkaFuture<Void> all() {
+    public KafkaFuture<Uuid> all() {
         return future;
     }
 }
