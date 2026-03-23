@@ -79,6 +79,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ScheduledFuture;
@@ -1043,7 +1044,7 @@ public class UnifiedLog implements AutoCloseable {
     }
 
     public LogAppendInfo appendAsFollower(MemoryRecords records, int leaderEpoch) {
-        return appendAsFollower(records, leaderEpoch, false);
+        return appendAsFollower(records, leaderEpoch, null);
     }
 
     /**
@@ -1051,10 +1052,11 @@ public class UnifiedLog implements AutoCloseable {
      *
      * @param records The records to append
      * @param leaderEpoch the epoch of the replica appending
+     * @param sourceClusterId The source cluster UUID for mirror leaders, or null if not mirroring
      * @throws KafkaStorageException If the append fails due to an I/O error.
      * @return Information about the appended messages including the first and last offset.
      */
-    public LogAppendInfo appendAsFollower(MemoryRecords records, int leaderEpoch, boolean isMirroredTopic) {
+    public LogAppendInfo appendAsFollower(MemoryRecords records, int leaderEpoch, Uuid sourceClusterId) {
         return append(records,
                       AppendOrigin.REPLICATION,
                       false,
@@ -1063,7 +1065,7 @@ public class UnifiedLog implements AutoCloseable {
                       VerificationGuard.SENTINEL,
                       true,
                       RecordBatch.CURRENT_MAGIC_VALUE,
-                      isMirroredTopic);
+                      sourceClusterId);
     }
 
     private LogAppendInfo append(MemoryRecords records,
@@ -1074,7 +1076,7 @@ public class UnifiedLog implements AutoCloseable {
                                  VerificationGuard verificationGuard,
                                  boolean ignoreRecordSize,
                                  byte toMagic) {
-        return append(records, origin, validateAndAssignOffsets, leaderEpoch, requestLocal, verificationGuard, ignoreRecordSize, toMagic, false);
+        return append(records, origin, validateAndAssignOffsets, leaderEpoch, requestLocal, verificationGuard, ignoreRecordSize, toMagic, null);
     }
 
     /**
@@ -1090,7 +1092,7 @@ public class UnifiedLog implements AutoCloseable {
      * @param requestLocal The request local instance if validateAndAssignOffsets is true
      * @param ignoreRecordSize True to skip validation of record size
      * @param toMagic Current Magic value
-     * @param isMirrorLeader True if this is a read-only leader fetching from source cluster
+     * @param sourceClusterId The source cluster UUID for mirror leaders, or null if not mirroring
      * @throws KafkaStorageException If the append fails due to an I/O error.
      * @throws OffsetsOutOfOrderException If out of order offsets found in 'records'
      * @throws UnexpectedAppendOffsetException If the first or last offset in append is less than next offset
@@ -1104,7 +1106,7 @@ public class UnifiedLog implements AutoCloseable {
                                  VerificationGuard verificationGuard,
                                  boolean ignoreRecordSize,
                                  byte toMagic,
-                                 boolean isMirrorLeader) {
+                                 Uuid sourceClusterId) {
         // We want to ensure the partition metadata file is written to the log dir before any log data is written to disk.
         // This will ensure that any log data can be recovered with the correct topic ID in the case of failure.
         maybeFlushMetadataFile();
@@ -1170,7 +1172,7 @@ public class UnifiedLog implements AutoCloseable {
                                     });
                                 }
                             } else {
-                                maybeOverrideProducerIdAndLeaderEpoch(records, isMirrorLeader);
+                                maybeOverrideProducerIdAndLeaderEpoch(records, sourceClusterId);
                                 // we are taking the offsets we are given
                                 if (appendInfo.firstOrLastOffsetOfFirstBatch() < localLog.logEndOffset()) {
                                     // we may still be able to recover if the log is empty
@@ -1246,6 +1248,7 @@ public class UnifiedLog implements AutoCloseable {
 
                                 // update the producer state
                                 result.updatedProducers.values().forEach(producerStateManager::update);
+                                maybeTagMirroredProducers(result.updatedProducers.keySet(), sourceClusterId);
 
                                 // update the transaction index with the true last stable offset. The last offset visible
                                 // to consumers using READ_COMMITTED will be limited by this value and the high watermark.
@@ -1274,21 +1277,76 @@ public class UnifiedLog implements AutoCloseable {
     }
 
     /**
-     * Override producer IDs and leader epochs for records being mirrored from a source cluster.
-     * This is only applied to read-only leaders (partition leader with mirrorName set)
-     * to ensure producer IDs from source cluster don't conflict with local producer IDs,
-     * and local epoch-based partition replication can work without changes.
+     * Rewrites leader epochs and producer IDs for mirrored records. Leader epochs are set to
+     * the local epoch. Producer IDs are mapped into the negative space using a bit-field layout
+     * that encodes the source cluster identity, making the transformation idempotent and safe
+     * for chained mirroring (A -> B -> C). Each source cluster gets its own region of the
+     * negative ID space (~2 billion IDs per region, ~4 billion regions), so producer IDs from
+     * different source clusters never collide. Already-transformed IDs (negative) and
+     * non-transactional batches (pid -1) are left unchanged.
      *
-     * @param records The records being appended
-     * @param isMirrorLeader True if this is a read-only leader fetching from source cluster
+     * <pre>
+     * Bit 63:     1 (sign bit, marks as mirrored)
+     * Bits 62-31: 32-bit hash of source cluster ID (region selector)
+     * Bits 30-0:  31 bits of original producer ID (producer identity within region)
+     * </pre>
+     *
+     * Collision detection: if the computed mapped PID already exists in the producer state
+     * with a different source cluster ID, the hash is rehashed with an incrementing salt
+     * until a free slot is found. A PSM snapshot is forced after collision resolution.
      */
-    private void maybeOverrideProducerIdAndLeaderEpoch(MemoryRecords records, boolean isMirrorLeader) {
-        if (isMirrorLeader) {
+    private void maybeOverrideProducerIdAndLeaderEpoch(MemoryRecords records, Uuid sourceClusterId) {
+        if (sourceClusterId != null) {
+            long clusterHash = (sourceClusterId.getMostSignificantBits() ^ sourceClusterId.getLeastSignificantBits()) & 0xFFFFFFFFL;
+            String sourceClusterIdStr = sourceClusterId.toString();
+            boolean collisionDetected = false;
             for (MutableRecordBatch batch : records.batches()) {
-                // Keep using local leader epochs
                 batch.setPartitionLeaderEpoch(latestEpoch().orElse(0));
-                // Mirrored producer IDs occupy the negative space to avoid any conflict
-                batch.setProducerId(-(batch.producerId() + 2));
+                long pid = batch.producerId();
+                if (pid >= 0) {
+                    // map the producer into the source cluster's region
+                    long mappedPid = Long.MIN_VALUE | (clusterHash << 31) | (pid & 0x7FFFFFFFL);
+                    Optional<ProducerStateEntry> existing = producerStateManager.lastEntry(mappedPid);
+                    if (existing.isPresent()) {
+                        String existingClusterId = existing.get().sourceClusterId();
+                        if (existingClusterId != null && !existingClusterId.equals(sourceClusterIdStr)) {
+                            long salt = 1;
+                            while (salt <= 0xFFFFFFFFL) {
+                                // shift the producer into a different region
+                                long rehashed = ((clusterHash + salt) & 0xFFFFFFFFL);
+                                mappedPid = Long.MIN_VALUE | (rehashed << 31) | (pid & 0x7FFFFFFFL);
+                                Optional<ProducerStateEntry> recheck = producerStateManager.lastEntry(mappedPid);
+                                if (recheck.isEmpty() || sourceClusterIdStr.equals(recheck.get().sourceClusterId())) {
+                                    break;
+                                }
+                                salt++;
+                            }
+                            collisionDetected = true;
+                            logger.warn("PID collision detected for producer {} from cluster {} (existing cluster: {}). " +
+                                "Rehashed with salt {} to mapped PID {}", pid, sourceClusterIdStr, existingClusterId, salt, mappedPid);
+                        }
+                    }
+                    batch.setProducerId(mappedPid);
+                }
+            }
+            if (collisionDetected) {
+                try {
+                    producerStateManager.takeSnapshot();
+                } catch (IOException e) {
+                    logger.error("Failed to force PSM snapshot after collision resolution", e);
+                }
+            }
+        }
+    }
+
+    private void maybeTagMirroredProducers(Set<Long> producerIds, Uuid sourceClusterId) {
+        if (sourceClusterId != null) {
+            String sourceClusterIdStr = sourceClusterId.toString();
+            for (long pid : producerIds) {
+                if (pid < 0) {
+                    producerStateManager.lastEntry(pid).ifPresent(
+                        entry -> entry.setSourceClusterId(sourceClusterIdStr));
+                }
             }
         }
     }

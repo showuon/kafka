@@ -651,7 +651,11 @@ public class ProducerStateManager {
             OptionalLong currentTxnFirstOffsetVal = currentTxnFirstOffset >= 0 ? OptionalLong.of(currentTxnFirstOffset) : OptionalLong.empty();
             Optional<BatchMetadata> batchMetadata =
                     (lastOffset >= 0) ? Optional.of(new BatchMetadata(lastSequence, lastOffset, offsetDelta, timestamp)) : Optional.empty();
-            entries.add(new ProducerStateEntry(producerId, producerEpoch, coordinatorEpoch, timestamp, currentTxnFirstOffsetVal, batchMetadata));
+            ProducerStateEntry entry = new ProducerStateEntry(producerId, producerEpoch, coordinatorEpoch, timestamp, currentTxnFirstOffsetVal, batchMetadata);
+            if (version >= 2) {
+                entry.setSourceClusterId(producerEntry.sourceClusterId());
+            }
+            entries.add(entry);
         }
 
         return entries;
@@ -659,6 +663,9 @@ public class ProducerStateManager {
 
     // visible for testing
     public static void writeSnapshot(File file, Map<Long, ProducerStateEntry> entries, boolean sync) throws IOException {
+        boolean hasMirroredEntries = entries.values().stream().anyMatch(e -> e.sourceClusterId() != null);
+        short snapshotVersion = hasMirroredEntries ? (short) 2 : (short) 1;
+
         ProducerSnapshot producerSnapshot = new ProducerSnapshot();
         List<ProducerSnapshot.ProducerEntry> producerEntries = new ArrayList<>(entries.size());
         for (Map.Entry<Long, ProducerStateEntry> producerIdEntry : entries.entrySet()) {
@@ -673,11 +680,14 @@ public class ProducerStateManager {
                     .setTimestamp(entry.lastTimestamp())
                     .setCoordinatorEpoch(entry.coordinatorEpoch())
                     .setCurrentTxnFirstOffset(entry.currentTxnFirstOffset().orElse(-1L));
+            if (snapshotVersion >= 2) {
+                producerEntry.setSourceClusterId(entry.sourceClusterId());
+            }
             producerEntries.add(producerEntry);
         }
 
         producerSnapshot.setProducerEntries(producerEntries);
-        ByteBuffer buffer = MessageUtil.toVersionPrefixedByteBuffer(ProducerSnapshot.HIGHEST_SUPPORTED_VERSION, producerSnapshot);
+        ByteBuffer buffer = MessageUtil.toVersionPrefixedByteBuffer(snapshotVersion, producerSnapshot);
 
         // now fill in the CRC
         long crc = Crc32C.compute(buffer, PRODUCER_ENTRIES_OFFSET, buffer.limit() - PRODUCER_ENTRIES_OFFSET);

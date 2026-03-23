@@ -94,9 +94,9 @@ class MirrorFetcherThread(name: String,
       trace("Mirror follower has replica log end offset %d for partition %s. Received %d bytes of messages and leader hw %d"
         .format(log.logEndOffset, topicPartition, records.sizeInBytes, partitionData.highWatermark))
 
-    // Append batches from the source cluster to the destination partition's log. Leader epochs
-    // are rewritten to the destination's local epoch and producer IDs to negative space before append.
-    val logAppendInfo = partition.appendRecordsToFollowerOrFutureReplica(records, isFuture = false, partitionLeaderEpoch)
+    // Append batches from the source cluster to the destination partition's log.
+    val sourceClusterId = replicaMgr.mirrorMetadataManager.map(_.getSourceClusterId(mirrorName)).orNull
+    val logAppendInfo = partition.appendRecordsToFollowerOrFutureReplica(records, isFuture = false, partitionLeaderEpoch, sourceClusterId)
 
     if (logTrace)
       trace("Mirror follower has replica log end offset %d after appending %d bytes of messages for partition %s"

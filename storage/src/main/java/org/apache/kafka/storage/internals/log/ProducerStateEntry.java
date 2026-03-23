@@ -41,6 +41,7 @@ public class ProducerStateEntry {
     private int coordinatorEpoch;
     private long lastTimestamp;
     private OptionalLong currentTxnFirstOffset;
+    private String sourceClusterId;
 
     public static ProducerStateEntry empty(long producerId) {
         return new ProducerStateEntry(producerId, RecordBatch.NO_PRODUCER_EPOCH, -1, RecordBatch.NO_TIMESTAMP, OptionalLong.empty(), Optional.empty());
@@ -110,21 +111,22 @@ public class ProducerStateEntry {
     }
 
     public void update(ProducerStateEntry nextEntry) {
-        update(nextEntry.producerEpoch, nextEntry.coordinatorEpoch, nextEntry.lastTimestamp, nextEntry.batchMetadata, nextEntry.currentTxnFirstOffset);
+        update(nextEntry.producerEpoch, nextEntry.coordinatorEpoch, nextEntry.lastTimestamp, nextEntry.batchMetadata, nextEntry.currentTxnFirstOffset, nextEntry.sourceClusterId);
     }
 
     public void update(short producerEpoch, int coordinatorEpoch, long lastTimestamp) {
-        update(producerEpoch, coordinatorEpoch, lastTimestamp, new ArrayDeque<>(0), OptionalLong.empty());
+        update(producerEpoch, coordinatorEpoch, lastTimestamp, new ArrayDeque<>(0), OptionalLong.empty(), null);
     }
 
     private void update(short producerEpoch, int coordinatorEpoch, long lastTimestamp, Deque<BatchMetadata> batchMetadata,
-                        OptionalLong currentTxnFirstOffset) {
+                        OptionalLong currentTxnFirstOffset, String sourceClusterId) {
         maybeUpdateProducerEpoch(producerEpoch);
         while (!batchMetadata.isEmpty())
             addBatchMetadata(batchMetadata.removeFirst());
         this.coordinatorEpoch = coordinatorEpoch;
         this.currentTxnFirstOffset = currentTxnFirstOffset;
         this.lastTimestamp = lastTimestamp;
+        this.sourceClusterId = sourceClusterId;
     }
 
     public void setCurrentTxnFirstOffset(long firstOffset) {
@@ -166,6 +168,14 @@ public class ProducerStateEntry {
         return currentTxnFirstOffset;
     }
 
+    public String sourceClusterId() {
+        return sourceClusterId;
+    }
+
+    public void setSourceClusterId(String sourceClusterId) {
+        this.sourceClusterId = sourceClusterId;
+    }
+
     @Override
     public String toString() {
         return "ProducerStateEntry(" +
@@ -175,6 +185,7 @@ public class ProducerStateEntry {
                 ", coordinatorEpoch=" + coordinatorEpoch +
                 ", lastTimestamp=" + lastTimestamp +
                 ", batchMetadata=" + batchMetadata +
+                ", sourceClusterId=" + sourceClusterId +
                 ')';
     }
 }
