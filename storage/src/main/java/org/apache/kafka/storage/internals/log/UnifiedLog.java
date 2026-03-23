@@ -1297,6 +1297,7 @@ public class UnifiedLog implements AutoCloseable {
      */
     private void maybeOverrideProducerIdAndLeaderEpoch(MemoryRecords records, Uuid sourceClusterId) {
         if (sourceClusterId != null) {
+            // XOR-fold the source cluster UUID's most and least significant 64-bit halves, masked to 32 bits
             long clusterHash = (sourceClusterId.getMostSignificantBits() ^ sourceClusterId.getLeastSignificantBits()) & 0xFFFFFFFFL;
             String sourceClusterIdStr = sourceClusterId.toString();
             boolean collisionDetected = false;
