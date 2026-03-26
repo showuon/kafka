@@ -33,7 +33,9 @@
         { "name": "PartitionIndex", "type": "int32", "versions": "0+",
           "about": "The partition index." },
         { "name": "LastMirroredOffset", "type": "int64", "versions": "0+",
-          "about": "The last mirrored offset for this partition." }
+          "about": "The last mirrored offset for this partition." },
+        { "name": "LeaderEpoch", "type": "int32", "versions": "0+", "default": "-1",
+          "about": "The leader epoch of the last mirrored offset." }
       ]}
     ]}
   ]

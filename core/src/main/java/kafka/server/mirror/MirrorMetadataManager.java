@@ -98,6 +98,7 @@ import org.apache.kafka.metadata.MetadataCache;
 import org.apache.kafka.metadata.authorizer.StandardAcl;
 import org.apache.kafka.server.common.ControllerRequestCompletionHandler;
 import org.apache.kafka.server.common.NodeToControllerChannelManager;
+import org.apache.kafka.server.common.OffsetAndEpoch;
 import org.apache.kafka.server.common.RequestLocal;
 import org.apache.kafka.server.config.MirrorConfig;
 import org.apache.kafka.server.metrics.KafkaMetricsGroup;
@@ -178,7 +179,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private final Map<String, Map<TopicPartition, Node>> sourceLeaders = new ConcurrentHashMap<>();
     private final Map<MirrorUtils.PartitionKey, MirrorPartitionState> partitionStates = new ConcurrentHashMap<>();
     private final Map<MirrorPartitionState, AtomicLong> partitionStateCounts = new ConcurrentHashMap<>();
-    private final Map<MirrorUtils.PartitionKey, Long> lastMirroredOffsets = new ConcurrentHashMap<>();
+    private final Map<MirrorUtils.PartitionKey, OffsetAndEpoch> lastMirroredOffsets = new ConcurrentHashMap<>();
 
     // metrics
     private KafkaMetricsGroup metricsGroup;
@@ -539,6 +540,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 WriteMirrorStatesRequestData.PartitionData partitionData = new WriteMirrorStatesRequestData.PartitionData();
                 partitionData.setState(m.state() == null ? MirrorPartitionState.UNKNOWN.value() : m.state().value());
                 partitionData.setLastMirroredOffset(m.offset());
+                partitionData.setLeaderEpoch(m.leaderEpoch());
                 partitionData.setPartitionIndex(m.partition());
 
                 nodeToTopicPartitions
@@ -631,7 +633,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                             topic.partitions().forEach(partition -> {
                                 if (partition.lastMirroredOffset() != -1) {
                                     lastMirroredOffsets.put(new MirrorUtils.PartitionKey(mirrorName, topic.name(), partition.partitionIndex()),
-                                            partition.lastMirroredOffset());
+                                            new OffsetAndEpoch(partition.lastMirroredOffset(), partition.leaderEpoch()));
                                 }
                                 if (partition.state() != -1) {
                                     partitionStates.put(new MirrorUtils.PartitionKey(mirrorName, topic.name(), partition.partitionIndex()),
@@ -659,7 +661,10 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             parts.forEach(part -> {
                 ReadMirrorStatesResponseData.PartitionResult partitionResult = new ReadMirrorStatesResponseData.PartitionResult();
                 partitionResult.setPartitionIndex(part);
-                partitionResult.setLastMirroredOffset(lastMirroredOffsets.getOrDefault(new MirrorUtils.PartitionKey(mirrorName, tp, part), -1L));
+                OffsetAndEpoch offsetAndEpoch = lastMirroredOffsets.getOrDefault(
+                        new MirrorUtils.PartitionKey(mirrorName, tp, part), new OffsetAndEpoch(-1L, -1));
+                partitionResult.setLastMirroredOffset(offsetAndEpoch.offset());
+                partitionResult.setLeaderEpoch(offsetAndEpoch.epoch());
                 partitionResult.setState(partitionStates.getOrDefault(
                         new MirrorUtils.PartitionKey(mirrorName, tp, part), MirrorPartitionState.UNKNOWN).value());
                 partitionResults.add(partitionResult);
@@ -829,25 +834,22 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         });
     }
 
-    long getLastMirroredOffset(String clusterName, TopicPartition topicPartition) {
+    OffsetAndEpoch getLastMirroredOffset(String clusterName, TopicPartition topicPartition) {
         MirrorUtils.PartitionKey key = new MirrorUtils.PartitionKey(clusterName, topicPartition.topic(), topicPartition.partition());
-        if (lastMirroredOffsets.containsKey(key)) {
-            return lastMirroredOffsets.get(key);
-        }
-        return 0L;
+        return lastMirroredOffsets.getOrDefault(key, new OffsetAndEpoch(0L, -1));
     }
 
-    Map<MirrorUtils.PartitionKey, Long> updateLastMirroredOffsets(String clusterName,
-                                                                  Map<String, Map<Integer, Long>> addedOffsets,
-                                                                  Map<String, Map<Integer, Long>> removedOffsets) {
+    Map<MirrorUtils.PartitionKey, OffsetAndEpoch> updateLastMirroredOffsets(String clusterName,
+                                                                            Map<String, Map<Integer, OffsetAndEpoch>> addedOffsets,
+                                                                            Map<String, Map<Integer, OffsetAndEpoch>> removedOffsets) {
         removedOffsets.forEach((topic, partitionOffsets) -> {
-            partitionOffsets.forEach((partition, offset) -> {
+            partitionOffsets.forEach((partition, offsetAndEpoch) -> {
                 lastMirroredOffsets.remove(new MirrorUtils.PartitionKey(clusterName, topic, partition));
             });
         });
         addedOffsets.forEach((topic, partitionOffsets) -> {
-            partitionOffsets.forEach((partition, offset) -> {
-                lastMirroredOffsets.put(new MirrorUtils.PartitionKey(clusterName, topic, partition), offset);
+            partitionOffsets.forEach((partition, offsetAndEpoch) -> {
+                lastMirroredOffsets.put(new MirrorUtils.PartitionKey(clusterName, topic, partition), offsetAndEpoch);
             });
         });
         return lastMirroredOffsets;

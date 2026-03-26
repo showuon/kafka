@@ -300,7 +300,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       writeMirrorStatesRequest.data().topics().forEach(topic => {
         val partMetadata = new util.HashSet[PartitionStateInfo]()
         topic.partitions().forEach(part => {
-          partMetadata.add(new PartitionStateInfo(part.partitionIndex(), MirrorPartitionState.fromValue(part.state()), part.lastMirroredOffset()))
+          partMetadata.add(new PartitionStateInfo(part.partitionIndex(), MirrorPartitionState.fromValue(part.state()), part.lastMirroredOffset(), part.leaderEpoch()))
         })
         partitionMetadata.put(topic.name(), partMetadata)
       })
@@ -343,8 +343,10 @@ class KafkaApis(val requestChannel: RequestChannel,
         topic.partitions().forEach(par => {
           val partition = new TopicPartition(topic.name(), par.partitionIndex())
           val partitionResult = new LastMirroredOffsetsResponseData.PartitionResult()
+          val offsetAndEpoch = mirrorCoordinator.getLastMirroredOffset(mirrorName, partition)
           partitionResult.setPartitionIndex(par.partitionIndex())
-            .setLastMirroredOffset(mirrorCoordinator.getLastMirroredOffset(mirrorName, partition))
+            .setLastMirroredOffset(offsetAndEpoch.offset())
+            .setLeaderEpoch(offsetAndEpoch.epoch())
           partitionResults.add(partitionResult)
         })
         topicResult.setName(topic.name())
