@@ -74,7 +74,7 @@ public class ProducerPerformance {
                 payload = new byte[config.recordSize];
             }
             // not thread-safe, do not share with other threads
-            SplittableRandom random = new SplittableRandom(0);
+            SplittableRandom random = new SplittableRandom(System.currentTimeMillis());
             ProducerRecord<byte[], byte[]> record;
 
             if (config.warmupRecords > 0) {
@@ -109,7 +109,13 @@ public class ProducerPerformance {
 
                 currentTransactionSize++;
                 if (config.transactionsEnabled && config.transactionDurationMs <= (sendStartMs - transactionStartTime)) {
-                    producer.commitTransaction();
+                    if (!config.pending) {
+                        if (config.abort) {
+                            producer.abortTransaction();
+                        } else {
+                            producer.commitTransaction();
+                        }
+                    }
                     currentTransactionSize = 0;
                 }
 
@@ -118,11 +124,28 @@ public class ProducerPerformance {
                 }
             }
 
-            if (config.transactionsEnabled && currentTransactionSize != 0)
-                producer.commitTransaction();
+            if (config.transactionsEnabled && currentTransactionSize != 0) {
+                if (!config.pending) {
+                    if (config.waiting) {
+                        Thread.sleep(5000);
+                    }
+                    if (config.abort) {
+                        Thread.sleep(500);
+                        producer.abortTransaction();
+                    } else {
+                        producer.commitTransaction();
+                    }
+                }
+            }
 
             if (!config.shouldPrintMetrics) {
-                producer.close();
+                // don't close the producer here to cause pending txn
+                if (!config.pending) {
+                    producer.close();
+                } else {
+                    producer.flush();
+                    System.out.println("Pending transactions, not closing the producer.");
+                }
 
                 /* print final results */
                 stats.printTotal();
@@ -145,7 +168,13 @@ public class ProducerPerformance {
 
                 /* print out metrics */
                 ToolsUtils.printMetrics(producer.metrics());
-                producer.close();
+
+                // don't close the producer here to cause pending txn
+                if (!config.pending) {
+                    producer.close();
+                } else {
+                    System.out.println("Pending transactions, not closing the producer.");
+                }
             }
         } catch (ArgumentParserException e) {
             if (args.length == 0) {
@@ -155,6 +184,8 @@ public class ProducerPerformance {
                 parser.handleError(e);
                 Exit.exit(1);
             }
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
         }
 
     }
@@ -336,6 +367,24 @@ public class ProducerPerformance {
                        "specified via --producer.config or --producer-props. Note that if the transactional id " +
                        "is not specified while --transaction-duration-ms is provided, the default value for the " +
                        "transactional id will be performance-producer- followed by a random uuid.");
+
+        parser.addArgument("--abort")
+                .action(storeTrue())
+                .type(Boolean.class)
+                .metavar("ABORT")
+                .dest("abort");
+
+        parser.addArgument("--pending")
+                .action(storeTrue())
+                .type(Boolean.class)
+                .metavar("PENDING")
+                .dest("pending");
+
+        parser.addArgument("--waiting")
+                .action(storeTrue())
+                .type(Boolean.class)
+                .metavar("WAITING")
+                .dest("waiting");
 
         parser.addArgument("--transaction-duration-ms")
                .action(store())
@@ -540,6 +589,9 @@ public class ProducerPerformance {
         final Long transactionDurationMs;
         final boolean transactionsEnabled;
         final List<byte[]> payloadByteList;
+        final boolean abort;
+        final boolean pending;
+        final boolean waiting;
 
         public ConfigPostProcessor(ArgumentParser parser, String[] args) throws IOException, ArgumentParserException {
             Namespace namespace = parser.parseArgs(args);
@@ -577,6 +629,10 @@ public class ProducerPerformance {
                     ? "\n" : namespace.getString("payloadDelimiter");
             this.payloadByteList = readPayloadFile(payloadFilePath, payloadDelimiter);
             this.producerProps = readProps(producerConfigs, producerConfigFile);
+
+            this.abort = namespace.getBoolean("abort");
+            this.pending = namespace.getBoolean("pending");
+            this.waiting = namespace.getBoolean("waiting");
             // setup transaction related configs
             this.transactionsEnabled = transactionDurationMsArg != null
                     || transactionIdArg != null
