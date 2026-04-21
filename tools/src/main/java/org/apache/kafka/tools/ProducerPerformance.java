@@ -74,7 +74,7 @@ public class ProducerPerformance {
                 payload = new byte[config.recordSize];
             }
             // not thread-safe, do not share with other threads
-            SplittableRandom random = new SplittableRandom(System.currentTimeMillis());
+            SplittableRandom random = new SplittableRandom(0);
             ProducerRecord<byte[], byte[]> record;
 
             if (config.warmupRecords > 0) {
