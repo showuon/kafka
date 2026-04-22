@@ -427,13 +427,15 @@ class ClusterMirroringTest(Test):
                     count += 1
             return count
 
+        # checking raw number of records
         source_count = run_consumer(self.source_kafka, topic)
         dest_count = run_consumer(self.dest_kafka, topic)
         assert dest_count == source_count + 2, \
-            "Expected dest to have exactly 2 more committed records than source, " \
+            "Expected dest to have exactly 2 more records than source, " \
             "got source=%d, dest=%d" % (source_count, dest_count)
 
+        # checking read_committed consumer can make progress
+        # 4 aborted data records are filtered out: txn-b, txn-c, txn-d fenced, txn-d pending
         dest_committed = run_consumer(self.dest_kafka, topic, "read_committed")
-        # 4 aborted data records: txn-b, txn-c, txn-d fenced, txn-d pending
         assert dest_committed == dest_count - 4, \
             "Expected dest_committed=%d, got %d" % (dest_count - 4, dest_committed)
