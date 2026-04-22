@@ -413,16 +413,27 @@ class ClusterMirroringTest(Test):
         run_producer(self.dest_kafka, topic, topic + "-b", "commit")
         run_producer(self.dest_kafka, topic, topic + "-d", "commit")
 
-        node = self.dest_kafka.nodes[0]
-        cmd = self.dest_kafka.path.script("kafka-console-consumer.sh", node)
-        cmd += " --bootstrap-server %s" % self.dest_kafka.bootstrap_servers(
-            self.dest_kafka.security_protocol)
-        cmd += " --topic %s --from-beginning" % topic
-        cmd += " --isolation-level read_committed"
-        cmd += " --timeout-ms 10000"
-        count = 0
-        for line in node.account.ssh_capture(cmd, allow_fail=True):
-            if line.strip():
-                count += 1
-        assert count >= 2, \
-            "Expected at least 2 committed records from destination, got %d" % count
+        def run_consumer(kafka, topic, isolation_level="read_uncommitted"):
+            """Run console consumer and return the record count."""
+            node = kafka.nodes[0]
+            cmd = kafka.path.script("kafka-console-consumer.sh", node)
+            cmd += " --bootstrap-server %s" % kafka.bootstrap_servers(kafka.security_protocol)
+            cmd += " --topic %s --from-beginning" % topic
+            cmd += " --isolation-level %s" % isolation_level
+            cmd += " --timeout-ms 10000"
+            count = 0
+            for line in node.account.ssh_capture(cmd, allow_fail=True):
+                if line.strip():
+                    count += 1
+            return count
+
+        source_count = run_consumer(self.source_kafka, topic)
+        dest_count = run_consumer(self.dest_kafka, topic)
+        assert dest_count == source_count + 2, \
+            "Expected dest to have exactly 2 more committed records than source, " \
+            "got source=%d, dest=%d" % (source_count, dest_count)
+
+        dest_committed = run_consumer(self.dest_kafka, topic, "read_committed")
+        # 4 aborted data records: txn-b, txn-c, txn-d fenced, txn-d pending
+        assert dest_committed == dest_count - 4, \
+            "Expected dest_committed=%d, got %d" % (dest_count - 4, dest_committed)
