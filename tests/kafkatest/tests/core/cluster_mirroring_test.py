@@ -240,7 +240,7 @@ class ClusterMirroringTest(Test):
         def log_segment_hashes(kafka, topic, partition=0):
             """Return a dict mapping segment file names to their MD5 hashes."""
             leader_node = kafka.leader(topic, partition)
-            cmd = "md5sum %s*/%s-%d/*.log 2>/dev/null | sort -k2" % (
+            cmd = "md5sum %s*/%s-%d/*.log 2>/dev/null" % (
                 KafkaService.DATA_LOG_DIR_PREFIX, topic, partition)
             hashes = {}
             for line in leader_node.account.ssh_capture(cmd, allow_fail=True):
@@ -254,13 +254,14 @@ class ClusterMirroringTest(Test):
             for partition in range(cfg["partitions"]):
                 source_hashes = log_segment_hashes(self.source_kafka, topic, partition)
                 dest_hashes = log_segment_hashes(self.dest_kafka, topic, partition)
-                all_segments = sorted(set(source_hashes.keys()) | set(dest_hashes.keys()))
+                assert source_hashes.keys() == dest_hashes.keys(), \
+                    "Segment files differ for %s-%d: source=%s, dest=%s" % (
+                        topic, partition, sorted(source_hashes.keys()), sorted(dest_hashes.keys()))
                 mismatches = []
-                for seg in all_segments:
-                    src = source_hashes.get(seg)
-                    dst = dest_hashes.get(seg)
-                    if src != dst:
-                        mismatches.append("%s: source=%s, dest=%s" % (seg, src, dst))
+                for seg in source_hashes:
+                    if source_hashes[seg] != dest_hashes[seg]:
+                        mismatches.append("%s: source=%s, dest=%s" % (
+                            seg, source_hashes[seg], dest_hashes[seg]))
                 assert not mismatches, \
                     "Log segment mismatch for %s-%d:\n  %s" % (topic, partition, "\n  ".join(mismatches))
 
