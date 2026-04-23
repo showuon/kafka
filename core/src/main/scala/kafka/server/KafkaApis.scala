@@ -62,6 +62,7 @@ import org.apache.kafka.common.{Node, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.coordinator.group.{Group, GroupConfig, GroupConfigManager, GroupCoordinator}
 import org.apache.kafka.coordinator.mirror.MirrorRecordKey
 import org.apache.kafka.coordinator.share.ShareCoordinator
+import org.apache.kafka.controller.ConfigurationControlManager
 import org.apache.kafka.metadata.{ConfigRepository, MetadataCache}
 import org.apache.kafka.server.{ApiVersionManager, ClientMetricsManager, DelegationTokenManager, ProcessRole}
 import org.apache.kafka.server.authorizer._
@@ -623,6 +624,11 @@ class KafkaApis(val requestChannel: RequestChannel,
 
           topic.partitions.forEach { partition =>
             if (metadataCache.getLeaderAndIsr(topic.name, partition.partitionIndex).isPresent) {
+              if (isTopicActivelyMirrored(topic.name)) {
+                // Strip committed leader epoch for actively mirrored partitions. Source cluster epochs
+                // would poison the consumer's metadata cache on restart (see fixupMirrorLeaderEpochs).
+                partition.setCommittedLeaderEpoch(-1)
+              }
               topicWithValidPartitions.partitions.add(partition)
             } else {
               responseBuilder.addPartition(
@@ -659,6 +665,34 @@ class KafkaApis(val requestChannel: RequestChannel,
             requestHelper.sendMaybeThrottle(request, offsetCommitRequest.getErrorResponse(exception))
           } else {
             requestHelper.sendMaybeThrottle(request, responseBuilder.merge(results).build())
+          }
+        }
+      }
+    }
+  }
+
+  private def isTopicActivelyMirrored(topicName: String): Boolean = {
+    val mirrorName = metadataCache.topicConfig(topicName).getProperty(TopicConfig.MIRROR_NAME_CONFIG)
+    mirrorName != null && mirrorName.nonEmpty &&
+      !mirrorName.endsWith(ConfigurationControlManager.REMOVED_TOPIC_SUFFIX)
+  }
+
+  private def isTopicStoppedMirror(topicName: String): Boolean = {
+    val mirrorName = metadataCache.topicConfig(topicName).getProperty(TopicConfig.MIRROR_NAME_CONFIG)
+    mirrorName != null && mirrorName.endsWith(ConfigurationControlManager.REMOVED_TOPIC_SUFFIX)
+  }
+
+  // For stopped-mirror topics, committed leader epochs were stripped to -1 during mirroring
+  // (see handleOffsetCommitRequest). After failover the topic is writable, so we restore the
+  // local leader epoch in the OffsetFetch response to re-enable truncation detection.
+  private def fixupMirrorLeaderEpochs(topics: java.util.List[OffsetFetchResponseData.OffsetFetchResponseTopics]): Unit = {
+    topics.forEach { topic =>
+      if (isTopicStoppedMirror(topic.name)) {
+        topic.partitions.forEach { partition =>
+          if (partition.committedLeaderEpoch == -1 && partition.committedOffset >= 0) {
+            metadataCache.getLeaderAndIsr(topic.name, partition.partitionIndex).ifPresent { lai =>
+              partition.setCommittedLeaderEpoch(lai.leaderEpoch)
+            }
           }
         }
       }
@@ -1402,6 +1436,7 @@ class KafkaApis(val requestChannel: RequestChannel,
             }
           }
         }
+        fixupMirrorLeaderEpochs(topics.asJava)
         groupFetchResponse.setTopics(topics.asJava)
       }
     }
@@ -1482,6 +1517,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         )
         topics.addAll(groupFetchResponse.topics)
         topics.addAll(errorTopics.asJava)
+        fixupMirrorLeaderEpochs(topics)
         groupFetchResponse.setTopics(topics)
       }
     }
