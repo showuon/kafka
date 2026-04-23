@@ -163,7 +163,7 @@ public class MirrorCoordinator {
                 replicaManager.mirrorFetcherManager().removeFetcherForPartitions(CollectionConverters.asScala(topicPartitions));
 
                 collectAndUpdateLastMirrorEpochs(mirrorName, topicPartitions)
-                    .thenCompose(v -> metadataManager.sendBumpLeaderEpoch(replicaManager.logManager(), topicPartitions))
+                    .thenCompose(v -> metadataManager.sendBumpLeaderEpoch(metadataManager.buildBumpLeaderEpochRequestData(replicaManager.logManager(), topicPartitions)))
                     .thenCompose(v -> abortOngoingTransactions(topicPartitions))
                     .thenAccept(v -> writeMirrorPidResetAndStop(mirrorName, topicPartitions))
                     .exceptionally(ex -> {

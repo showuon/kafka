@@ -985,28 +985,62 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         metadataRefreshError.incrementAndGet();
     }
 
-    public CompletableFuture<Void> sendBumpLeaderEpoch(LogManager logManager, Set<TopicPartition> topicPartitions) {
+    public Map<TopicPartition, Integer> buildBumpLeaderEpochRequestData(LogManager logManager, Set<TopicPartition> topicPartitions) {
+        Map<TopicPartition, Integer> partitionMinEpochs = new HashMap<>();
+        topicPartitions.forEach(tp -> {
+            int epoch = logManager.getLog(tp, false).get().latestEpoch().orElse(-1);
+            partitionMinEpochs.put(tp, epoch);
+        });
+
+        return partitionMinEpochs;
+    }
+
+    /**
+     * Resolves the leader epoch from a metadata response for each requested partition
+     * (same field brokers return in MetadataResponse partition entries).
+     */
+    private Map<TopicPartition, Integer> buildBumpLeaderEpochRequestData(String mirrorName, MetadataResponse metadataResponse) {
+        Set<String> mirrorTopics = getConfiguredTopics(mirrorName);
+
+
+        Map<TopicPartition, Integer> leaderEpochFromMetadata = new HashMap<>();
+        for (MetadataResponse.TopicMetadata topicMetadata : metadataResponse.topicMetadata()) {
+            if (topicMetadata.error() != Errors.NONE) {
+                continue;
+            }
+            if (!mirrorTopics.contains(topicMetadata.topic())) {
+                continue;
+            }
+            for (MetadataResponse.PartitionMetadata partitionMetadata : topicMetadata.partitionMetadata()) {
+                TopicPartition tp = partitionMetadata.topicPartition;
+                int epoch = partitionMetadata.leaderEpoch.orElse(-1);
+                leaderEpochFromMetadata.put(tp, epoch);
+            }
+        }
+        return leaderEpochFromMetadata;
+    }
+
+    public CompletableFuture<Void> sendBumpLeaderEpoch(Map<TopicPartition, Integer> partitionMinEpochs) {
+        log.info("Sending bump leader epoch request: {}", partitionMinEpochs);
         CompletableFuture<Void> future = new CompletableFuture<>();
-        Map<TopicPartition, Integer> partitionEpochs = new HashMap<>();
 
         List<BumpLeaderEpochsRequestData.TopicState> topicStates = new ArrayList<>();
         Map<String, Set<Integer>> partitions = new HashMap<>();
-        topicPartitions.forEach(tp -> {
+        partitionMinEpochs.keySet().forEach(tp -> {
             partitions.computeIfAbsent(tp.topic(), key -> new HashSet<>()).add(tp.partition());
         });
         partitions.forEach((topic, parts) -> {
             BumpLeaderEpochsRequestData.TopicState topicState = new BumpLeaderEpochsRequestData.TopicState();
             List<BumpLeaderEpochsRequestData.LeaderEpochState> topicLeaderEpoch = new ArrayList<>();
             parts.forEach(partitionId -> {
-                int epoch = logManager.getLog(new TopicPartition(topic, partitionId), false).get().latestEpoch().orElse(-1);
-                partitionEpochs.put(new TopicPartition(topic, partitionId), epoch);
-                topicLeaderEpoch.add(new BumpLeaderEpochsRequestData.LeaderEpochState().setMinLeaderEpoch(epoch).setPartitionIndex(partitionId));
+                TopicPartition tp = new TopicPartition(topic, partitionId);
+                topicLeaderEpoch.add(new BumpLeaderEpochsRequestData.LeaderEpochState().setMinLeaderEpoch(partitionMinEpochs.get(tp)).setPartitionIndex(partitionId));
             });
             topicState.setTopicId(metadataCache.getTopicId(topic)).setPartitions(topicLeaderEpoch);
             topicStates.add(topicState);
         });
 
-        pendingLeaderEpochBumps.add(new MirrorUtils.LeaderEpochBump(future, Collections.unmodifiableMap(partitionEpochs)));
+        pendingLeaderEpochBumps.add(new MirrorUtils.LeaderEpochBump(future, Collections.unmodifiableMap(partitionMinEpochs)));
 
         channelManager.sendRequest(new BumpLeaderEpochsRequest.Builder(
                 new BumpLeaderEpochsRequestData().setTopics(topicStates)
@@ -1105,12 +1139,14 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         );
 
         if (response.responseBody() instanceof MetadataResponse metadataResponse) {
-            log.debug("Periodic metadata response: {}", metadataResponse);
+            log.info("Periodic metadata response: {}", metadataResponse);
             Map<Integer, Node> brokerNodes = new HashMap<>();
             metadataResponse.brokers().forEach(broker -> brokerNodes.put(broker.id(), broker));
             var createPartitionsTopics = processTopicMetadata(mirrorName, metadataResponse.topicMetadata(), brokerNodes);
             maybeStopDeletedTopics(mirrorName, metadataResponse.topicMetadata());
             handlePartitionScaling(createPartitionsTopics);
+
+            sendBumpLeaderEpoch(buildBumpLeaderEpochRequestData(mirrorName, metadataResponse));
         }
     }
 
