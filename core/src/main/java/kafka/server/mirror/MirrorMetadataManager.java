@@ -270,6 +270,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         }
 
         maybeRecreateConnection(delta, newImage);
+        syncMetadataForNewMirrorTopics(delta, newImage);
 
         // get all mirror partition leaders on this node based on the delta
         Set<TopicPartition> mirrorLeaders = getMirrorLeadersAndClearFollowerStates(delta, newImage);
@@ -384,6 +385,10 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         this.coordinatorPartitionByNameFinder = Optional.of(coordinatorPartitionByNameFinder);
 
         initialized = true;
+    }
+
+    public void transitionTo(String mirrorName, TopicPartition topicPartition, MirrorPartitionState state) {
+        stateTransitioner.ifPresent(st -> st.transitionTo(mirrorName, topicPartition, state));
     }
 
     private void maybeRecreateConnection(MetadataDelta delta, MetadataImage newImage) {
@@ -589,22 +594,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             log.warn("Exception while getting mirror coordinator", e);
         }
         return Node.noNode();
-    }
-
-    void setStateTransitioner(MirrorUtils.StateTransitioner function) {
-        this.stateTransitioner = Optional.of(function);
-    }
-
-    void setMirrorDeletionHandler(Consumer<String> handler) {
-        this.mirrorDeletionHandler = Optional.of(handler);
-    }
-
-    void setCoordinatorPartitionByKeyFinder(Function<MirrorRecordKey, Integer> function) {
-        this.coordinatorPartitionFinder = Optional.of(function);
-    }
-
-    void setCoordinatorPartitionByNameFinder(Function<String, Integer> function) {
-        this.coordinatorPartitionByNameFinder = Optional.of(function);
     }
 
     /** Writes partition states to remote coordinators, batching requests per coordinator node. */
@@ -985,13 +974,22 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         metadataRefreshError.incrementAndGet();
     }
 
+    public CompletableFuture<Void> bumpLeaderEpoch(String mirrorName, Set<TopicPartition> topicPartitions) {
+        ensureConnection(mirrorName);
+        discoverSourceBrokers(mirrorName);
+        Optional<MetadataResponse> metadataResponse = syncTopicMetadata(mirrorName);
+        if (metadataResponse.isPresent()) {
+            return sendBumpLeaderEpoch(buildBumpLeaderEpochRequestData(metadataResponse.get(), topicPartitions));
+        }
+        return CompletableFuture.completedFuture(null);
+    }
+
     public Map<TopicPartition, Integer> buildBumpLeaderEpochRequestData(LogManager logManager, Set<TopicPartition> topicPartitions) {
         Map<TopicPartition, Integer> partitionMinEpochs = new HashMap<>();
         topicPartitions.forEach(tp -> {
             int epoch = logManager.getLog(tp, false).get().latestEpoch().orElse(-1);
             partitionMinEpochs.put(tp, epoch);
         });
-
         return partitionMinEpochs;
     }
 
@@ -999,28 +997,33 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * Resolves the leader epoch from a metadata response for each requested partition
      * (same field brokers return in MetadataResponse partition entries).
      */
-    private Map<TopicPartition, Integer> buildBumpLeaderEpochRequestData(String mirrorName, MetadataResponse metadataResponse) {
-        Set<String> mirrorTopics = getConfiguredTopics(mirrorName);
-
-
+    private Map<TopicPartition, Integer> buildBumpLeaderEpochRequestData(MetadataResponse metadataResponse, Set<TopicPartition> topicPartitions) {
         Map<TopicPartition, Integer> leaderEpochFromMetadata = new HashMap<>();
         for (MetadataResponse.TopicMetadata topicMetadata : metadataResponse.topicMetadata()) {
             if (topicMetadata.error() != Errors.NONE) {
                 continue;
             }
-            if (!mirrorTopics.contains(topicMetadata.topic())) {
-                continue;
-            }
             for (MetadataResponse.PartitionMetadata partitionMetadata : topicMetadata.partitionMetadata()) {
                 TopicPartition tp = partitionMetadata.topicPartition;
+                if (!topicPartitions.contains(tp)) {
+                    continue;
+                }
                 int epoch = partitionMetadata.leaderEpoch.orElse(-1);
-                leaderEpochFromMetadata.put(tp, epoch);
+                int localEpoch = metadataImage.topics().getTopic(tp.topic()).partitions().get(tp.partition()).leaderEpoch;
+                if (epoch > localEpoch - 3) {
+                    leaderEpochFromMetadata.put(tp, epoch + 10);
+                }
             }
         }
+        log.info("Bumping leader epoch for partitions {} to {}", topicPartitions, leaderEpochFromMetadata);
         return leaderEpochFromMetadata;
     }
 
     public CompletableFuture<Void> sendBumpLeaderEpoch(Map<TopicPartition, Integer> partitionMinEpochs) {
+        if (partitionMinEpochs.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
+
         log.info("Sending bump leader epoch request: {}", partitionMinEpochs);
         CompletableFuture<Void> future = new CompletableFuture<>();
 
@@ -1129,10 +1132,10 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     /** Fetches topic metadata from the source cluster and updates partition leaders, counts, and deletions. */
-    private void syncTopicMetadata(String mirrorName) {
+    private Optional<MetadataResponse> syncTopicMetadata(String mirrorName) {
         Set<String> topics = getConfiguredTopics(mirrorName);
         if (topics.isEmpty()) {
-            return;
+            return Optional.empty();
         }
         var response = trySendSourceClusterRequest(mirrorName,
                 MetadataRequest.Builder.forTopicNames(topics.stream().toList(), false)
@@ -1145,9 +1148,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             var createPartitionsTopics = processTopicMetadata(mirrorName, metadataResponse.topicMetadata(), brokerNodes);
             maybeStopDeletedTopics(mirrorName, metadataResponse.topicMetadata());
             handlePartitionScaling(createPartitionsTopics);
-
-            sendBumpLeaderEpoch(buildBumpLeaderEpochRequestData(mirrorName, metadataResponse));
+            return Optional.of(metadataResponse);
         }
+        return Optional.empty();
     }
 
     /**

@@ -16,9 +16,11 @@
  */
 package kafka.server.mirror
 
+import kafka.cluster.Partition
 import kafka.server._
 import org.apache.kafka.common.{Node, TopicPartition}
 import org.apache.kafka.common.message.FetchResponseData
+import org.apache.kafka.common.record.Records
 import org.apache.kafka.common.requests.FetchResponse
 import org.apache.kafka.server.{LeaderEndPoint, PartitionFetchState}
 import org.apache.kafka.server.common.OffsetAndEpoch
@@ -74,6 +76,24 @@ class MirrorFetcherThread(name: String,
     replicaMgr.maybeCreateMirrorFetchers(mirrorName, mirrorPartitions.asJava)
   }
 
+  def maybeBumpLeaderEpoch(topicPartition: TopicPartition, partition: Partition, records: Records): Unit = {
+    val localLeaderEpoch = partition.getLeaderEpoch
+    val highestBatchLeaderEpoch = if (records.lastBatch().isPresent)
+      records.lastBatch().get().partitionLeaderEpoch() else -1
+    if (highestBatchLeaderEpoch > localLeaderEpoch - 3) {
+      log.info(s"!!! Bumping leader epoch for partition $topicPartition from $localLeaderEpoch to $highestBatchLeaderEpoch")
+      // since we're in mirror fetcher thread, we can safely assume it's mirroring.
+      if (highestBatchLeaderEpoch > localLeaderEpoch) {
+        // only remove the fetcher and throw exception when batch leader epoch is higher than local epoch.
+        replicaMgr.mirrorMetadataManager.get.transitionTo(partition.getMirrorName().get(), topicPartition, MirrorPartitionState.EPOCH_BUMPING)
+        throw new IllegalStateException(s"Rejecting the batch because the batch leader epoch $highestBatchLeaderEpoch is higher than local leader epoch $localLeaderEpoch")
+      } else {
+        // only do leader epoch bump because the batch can still be appended
+        replicaMgr.mirrorMetadataManager.get.bumpLeaderEpoch(partition.getMirrorName().get(), java.util.Set.of(topicPartition))
+      }
+    }
+  }
+
   // process fetched data
   override def processPartitionData(
     topicPartition: TopicPartition,
@@ -93,6 +113,8 @@ class MirrorFetcherThread(name: String,
     if (logTrace)
       trace("Mirror follower has replica log end offset %d for partition %s. Received %d bytes of messages and leader hw %d"
         .format(log.logEndOffset, topicPartition, records.sizeInBytes, partitionData.highWatermark))
+
+    maybeBumpLeaderEpoch(topicPartition, partition, records)
 
     // Append batches from the source cluster to the destination partition's log.
     val logAppendInfo = partition.appendRecordsToFollowerOrFutureReplica(records, isFuture = false, partitionLeaderEpoch, isMirrorLeader = true)

@@ -138,6 +138,12 @@ public class MirrorCoordinator {
                 log.info("PREPARING for topics {}.", topicPartitions);
                 scheduleTruncation(mirrorName, topicPartitions);
                 break;
+            case EPOCH_BUMPING:
+                log.info("EPOCH_BUMPING for topics {}.", topicPartitions);
+                replicaManager.mirrorFetcherManager().removeFetcherForPartitions(CollectionConverters.asScala(topicPartitions));
+                metadataManager.bumpLeaderEpoch(mirrorName, topicPartitions)
+                    .whenComplete((v, ex) -> transitionTo(mirrorName, topicPartitions, MirrorPartitionState.MIRRORING));
+                break;
             case MIRRORING:
                 log.info("MIRRORING topics {}.", topicPartitions);
                 replicaManager.maybeCreateMirrorFetchers(mirrorName, topicPartitions);
@@ -492,7 +498,7 @@ public class MirrorCoordinator {
                             }
 
                             replicaManager.maybeTruncateForLeaderEpoch(epochs,
-                                    partition -> transitionTo(mirrorName, Set.of(partition), MirrorPartitionState.MIRRORING));
+                                    partition -> transitionTo(mirrorName, Set.of(partition), MirrorPartitionState.EPOCH_BUMPING));
                         });
                 } catch (Exception e) {
                     log.warn("Failed to truncate to last mirrored offsets for mirror {}, retrying in {} ms", mirrorName, retryDelayMs, e);
