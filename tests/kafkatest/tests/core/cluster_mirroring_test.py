@@ -75,17 +75,17 @@ class ClusterMirroringTest(Test):
         """:type test_context: ducktape.tests.test.TestContext"""
         super(ClusterMirroringTest, self).__init__(test_context)
         topic = "my-topic"
-        self.topics = {topic: {"partitions": 3, "replication-factor": 3}}
+        self.topics = {topic: {"partitions": 1, "replication-factor": 2, "configs": {"min.insync.replicas": 1, "mirror.support.unclean.leader.election": True }}}
         self.source_kafka = KafkaService(
             test_context,
-            num_nodes=3,
+            num_nodes=2,
             zk=None,
             topics=self.topics,
             use_cluster_mirroring=True,
             controller_num_nodes_override=1,
         )
         self.dest_kafka = KafkaService(
-            test_context, num_nodes=3, zk=None, use_cluster_mirroring=True,
+            test_context, num_nodes=2, zk=None, use_cluster_mirroring=True,
             controller_num_nodes_override=1,
         )
         self.producer = VerifiableProducer(
@@ -101,12 +101,17 @@ class ClusterMirroringTest(Test):
         self.dest_kafka.start()
 
         self.logger.info(
-            "Changing metadata.version in destination to %s"
+            "Changing metadata.version to %s"
             % CLUSTER_MIRRORING_METADATA_VERSION
         )
+        self.source_kafka.upgrade_metadata_version(CLUSTER_MIRRORING_METADATA_VERSION)
         self.dest_kafka.upgrade_metadata_version(CLUSTER_MIRRORING_METADATA_VERSION)
+
         self.logger.info(
-            "Changing mirror.version in destination to %s" % CLUSTER_MIRRORING_VERSION
+            "Changing mirror.version to %s" % CLUSTER_MIRRORING_VERSION
+        )
+        self.source_kafka.run_features_command(
+            "upgrade", "mirror.version", CLUSTER_MIRRORING_VERSION
         )
         self.dest_kafka.run_features_command(
             "upgrade", "mirror.version", CLUSTER_MIRRORING_VERSION
@@ -128,13 +133,15 @@ class ClusterMirroringTest(Test):
                 for node in kafka.nodes:
                     kafka.stop_node(node, clean_shutdown=False)
 
-    def all_satisfy_in_mirror(self, kafka_node, mirror_name, per_partition_condition):
+    def all_satisfy_in_mirror(self, kafka_node, mirror_name, per_partition_condition, kafka=None):
         """Check that all partitions of all mirrored topics satisfy the given condition."""
-        output = self.dest_kafka.describe_cluster_mirror(kafka_node)
+        if kafka is None:
+            kafka = self.dest_kafka
+        output = kafka.describe_cluster_mirror(kafka_node)
         if output == "":
             return False
 
-        mirrors = self.dest_kafka.parse_describe_cluster_mirror(output)
+        mirrors = kafka.parse_describe_cluster_mirror(output)
         if mirror_name not in mirrors:
             return False
         mirror = mirrors[mirror_name]
@@ -147,6 +154,33 @@ class ClusterMirroringTest(Test):
                 if not per_partition_condition(partition):
                     return False
         return True
+
+    def assert_log_segments_converged(self):
+        def log_segment_hashes(kafka, topic, partition=0):
+            leader_node = kafka.leader(topic, partition)
+            cmd = "md5sum %s*/%s-%d/*.log 2>/dev/null" % (
+                KafkaService.DATA_LOG_DIR_PREFIX, topic, partition)
+            hashes = {}
+            for line in leader_node.account.ssh_capture(cmd, allow_fail=True):
+                parts = line.strip().split()
+                if len(parts) == 2:
+                    hashes[os.path.basename(parts[1])] = parts[0]
+            return hashes
+
+        for topic, cfg in self.topics.items():
+            for partition in range(cfg["partitions"]):
+                source_hashes = log_segment_hashes(self.source_kafka, topic, partition)
+                dest_hashes = log_segment_hashes(self.dest_kafka, topic, partition)
+                assert source_hashes.keys() == dest_hashes.keys(), \
+                    "Segment files differ for %s-%d: source=%s, dest=%s" % (
+                        topic, partition, sorted(source_hashes.keys()), sorted(dest_hashes.keys()))
+                mismatches = []
+                for seg in source_hashes:
+                    if source_hashes[seg] != dest_hashes[seg]:
+                        mismatches.append("%s: source=%s, dest=%s" % (
+                            seg, source_hashes[seg], dest_hashes[seg]))
+                assert not mismatches, \
+                    "Log segment mismatch for %s-%d:\n  %s" % (topic, partition, "\n  ".join(mismatches))
 
     @cluster(num_nodes=9)
     @defaults(metadata_quorum=[quorum.isolated_kraft])
@@ -162,7 +196,6 @@ class ClusterMirroringTest(Test):
         kafka_node = self.dest_kafka.nodes[0]
 
         prop_file = str(mirror_cfg["cfg"])
-        self.logger.info(prop_file)
         kafka_node.account.ssh(
             "mkdir -p %s" % ClusterMirroringTest.PERSISTENT_ROOT, allow_fail=False
         )
@@ -237,33 +270,7 @@ class ClusterMirroringTest(Test):
             err_msg="Failed to start mirrors",
         )
 
-        def log_segment_hashes(kafka, topic, partition=0):
-            """Return a dict mapping segment file names to their MD5 hashes."""
-            leader_node = kafka.leader(topic, partition)
-            cmd = "md5sum %s*/%s-%d/*.log 2>/dev/null" % (
-                KafkaService.DATA_LOG_DIR_PREFIX, topic, partition)
-            hashes = {}
-            for line in leader_node.account.ssh_capture(cmd, allow_fail=True):
-                parts = line.strip().split()
-                if len(parts) == 2:
-                    hashes[os.path.basename(parts[1])] = parts[0]
-            return hashes
-
-        # Check log segments convergence by comparing md5 hashes
-        for topic, cfg in self.topics.items():
-            for partition in range(cfg["partitions"]):
-                source_hashes = log_segment_hashes(self.source_kafka, topic, partition)
-                dest_hashes = log_segment_hashes(self.dest_kafka, topic, partition)
-                assert source_hashes.keys() == dest_hashes.keys(), \
-                    "Segment files differ for %s-%d: source=%s, dest=%s" % (
-                        topic, partition, sorted(source_hashes.keys()), sorted(dest_hashes.keys()))
-                mismatches = []
-                for seg in source_hashes:
-                    if source_hashes[seg] != dest_hashes[seg]:
-                        mismatches.append("%s: source=%s, dest=%s" % (
-                            seg, source_hashes[seg], dest_hashes[seg]))
-                assert not mismatches, \
-                    "Log segment mismatch for %s-%d:\n  %s" % (topic, partition, "\n  ".join(mismatches))
+        self.assert_log_segments_converged()
 
     @cluster(num_nodes=9)
     @defaults(metadata_quorum=[quorum.isolated_kraft])
@@ -438,3 +445,219 @@ class ClusterMirroringTest(Test):
         dest_committed = run_consumer(self.dest_kafka, topic, "read_committed")
         assert dest_committed == dest_count - 4, \
             "Expected dest_committed=%d, got %d" % (dest_count - 4, dest_committed)
+
+    @cluster(num_nodes=9)
+    @defaults(metadata_quorum=[quorum.isolated_kraft])
+    def test_log_convergence_ule(self, metadata_quorum):
+        """Verify that mirrored log segments are byte identical to source after bouncing both clusters and triggering ULE."""
+        topic = next(iter(self.topics.keys()))
+        mirror_cfg = {
+            "name": "my-mirror",
+            "cfg": ClusterMirrorConfig(self.source_kafka.bootstrap_servers()),
+        }
+        self.logger.info(
+            "Creating mirror %s with settings %s", mirror_cfg["name"], mirror_cfg["cfg"]
+        )
+        kafka_node = self.dest_kafka.nodes[0]
+
+        prop_file = str(mirror_cfg["cfg"])
+        kafka_node.account.ssh(
+            "mkdir -p %s" % ClusterMirroringTest.PERSISTENT_ROOT, allow_fail=False
+        )
+        kafka_node.account.create_file(
+            ClusterMirroringTest.MIRROR_CONFIG_FILE, prop_file
+        )
+
+        wait_until(
+            lambda: self.dest_kafka.create_cluster_mirror(
+                kafka_node, mirror_cfg["name"], ClusterMirroringTest.MIRROR_CONFIG_FILE
+            ),
+            timeout_sec=20,
+            backoff_sec=2,
+            err_msg="Failed to create cluster mirror",
+        )
+
+        wait_until(
+            lambda: (
+                "Started"
+                in self.dest_kafka.start_cluster_mirror_topics(
+                    kafka_node, mirror_cfg["name"], self.topics.keys()
+                )
+            ),
+            timeout_sec=20,
+            backoff_sec=2,
+            err_msg="Failed to start mirror topics",
+        )
+
+        wait_until(
+            lambda: self.all_satisfy_in_mirror(
+                kafka_node, mirror_cfg["name"], lambda p: p["state"] == "MIRRORING"
+            ),
+            timeout_sec=20,
+            backoff_sec=2,
+            err_msg="Failed to start mirrors",
+        )
+
+        wait_until(
+            lambda: self.producer.num_acked >= 5,
+            timeout_sec=10,
+            backoff_sec=2,
+            err_msg="Failed to produce to source cluster",
+        )
+
+        acked = self.producer.num_acked
+        leader_node = self.source_kafka.leader(topic)
+        self.source_kafka.stop_node(leader_node, clean_shutdown=True)
+        wait_until(
+            lambda: self.producer.num_acked - acked > 1000,
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg="Failed to produce since initial leader %s bounced" % leader_node,
+        )
+        wait_until(
+            lambda: self.all_satisfy_in_mirror(
+                kafka_node, mirror_cfg["name"],
+                lambda p: p["lag"] == 0 and p["state"] == "MIRRORING"
+            ),
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg="Failed to start mirrors",
+        )
+
+        acked = self.producer.num_acked
+        second_leader_node = self.source_kafka.leader(topic)
+        self.source_kafka.stop_node(second_leader_node, clean_shutdown=True)
+        self.source_kafka.start_node(leader_node)
+        self.source_kafka.run_leader_election_command(topic, partition=0, election_type="UNCLEAN")
+        wait_until(
+            lambda: self.producer.num_acked - acked > 1000,
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg="Failed to produce since initial leader %s bounced" % leader_node,
+        )
+        wait_until(
+            lambda: self.all_satisfy_in_mirror(
+                kafka_node, mirror_cfg["name"],
+                lambda p: p["lag"] == 0 and p["state"] == "MIRRORING"
+            ),
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg="Failed to start mirrors",
+        )
+        self.producer.stop()
+
+        self.logger.info("Failing over (destination topic becomes writable)")
+        wait_until(
+            lambda: (
+                "Stopped"
+                in self.dest_kafka.stop_cluster_mirror_topics(
+                    kafka_node, mirror_cfg["name"], self.topics.keys()
+                )
+            ),
+            timeout_sec=20,
+            backoff_sec=2,
+            err_msg="Failed to stop mirror topics",
+        )
+        wait_until(
+            lambda: self.all_satisfy_in_mirror(
+                kafka_node, mirror_cfg["name"],
+                lambda p: p["state"] == "STOPPED"
+            ),
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg="Failed to ensure mirror is stopped",
+        )
+
+        self.producer = VerifiableProducer(
+            self.test_context,
+            num_nodes=1,
+            kafka=self.dest_kafka,
+            topic=topic,
+            throughput=100,
+        )
+        self.producer.start()
+        wait_until(
+            lambda: self.producer.num_acked >= 5,
+            timeout_sec=30,
+            backoff_sec=2,
+            err_msg="Failed to produce to destination cluster after failover",
+        )
+        self.producer.stop()
+
+        self.logger.info("Triggering ULE 2")
+        self.source_kafka.stop_node(leader_node, clean_shutdown=True)
+        self.source_kafka.start_node(second_leader_node)
+        self.source_kafka.run_leader_election_command(topic, partition=0, election_type="UNCLEAN")
+
+        self.logger.info("Producing to source after ULE 2")
+        self.producer = VerifiableProducer(
+            self.test_context,
+            num_nodes=1,
+            kafka=self.source_kafka,
+            topic=topic,
+            throughput=100,
+        )
+        self.producer.start()
+        wait_until(
+            lambda: self.producer.num_acked >= 5,
+            timeout_sec=30,
+            backoff_sec=2,
+            err_msg="Failed to produce to source cluster after ULE 2",
+        )
+        self.producer.stop()
+
+        self.logger.info("Failing back (now source mirrors from destination)")
+        failback_cfg = ClusterMirrorConfig(self.dest_kafka.bootstrap_servers())
+        failback_node = second_leader_node
+        failback_node.account.ssh(
+            "mkdir -p %s" % ClusterMirroringTest.PERSISTENT_ROOT, allow_fail=False
+        )
+        failback_node.account.create_file(
+            ClusterMirroringTest.MIRROR_CONFIG_FILE, str(failback_cfg)
+        )
+
+        wait_until(
+            lambda: self.source_kafka.create_cluster_mirror(
+                failback_node, mirror_cfg["name"], ClusterMirroringTest.MIRROR_CONFIG_FILE
+            ),
+            timeout_sec=20,
+            backoff_sec=2,
+            err_msg="Failed to create cluster mirror on source",
+        )
+
+        wait_until(
+            lambda: (
+                "Started"
+                in self.source_kafka.start_cluster_mirror_topics(
+                    failback_node, mirror_cfg["name"], self.topics.keys()
+                )
+            ),
+            timeout_sec=20,
+            backoff_sec=2,
+            err_msg="Failed to start mirror topics on source",
+        )
+
+        # mirror should stay in PREPARING state because not all source replicas have rejoined the ISR, so the LME truncation cannot complete
+        wait_until(
+            lambda: self.all_satisfy_in_mirror(
+                failback_node, mirror_cfg["name"], lambda p: p["state"] == "PREPARING",
+                kafka=self.source_kafka
+            ),
+            timeout_sec=20,
+            backoff_sec=2,
+            err_msg="Mirror on source did not reach PREPARING state",
+        )
+
+        self.source_kafka.start_node(leader_node)
+        wait_until(
+            lambda: self.all_satisfy_in_mirror(
+                failback_node, mirror_cfg["name"],
+                lambda p: p["lag"] == 0 and p["state"] == "MIRRORING",
+                kafka=self.source_kafka
+            ),
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg="Mirror on source did not reach MIRRORING with lag 0",
+        )
+
+        self.assert_log_segments_converged()

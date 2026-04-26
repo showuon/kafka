@@ -960,6 +960,15 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         self.logger.info("Running %s command...\n%s" % (op, cmd))
         self.nodes[0].account.ssh(cmd)
 
+    def run_leader_election_command(self, topic, partition, election_type=None):
+        cmd = self.path.script("kafka-leader-election.sh ")
+        cmd += "--bootstrap-server %s " % self.bootstrap_servers()
+        cmd += "--topic %s --partition %s " % (topic, partition)
+        if election_type is not None:
+            cmd += "--election-type %s" % election_type
+        self.logger.info("Running kafka-leader-election command...\n%s" % cmd)
+        self.nodes[0].account.ssh(cmd)
+
     def pids(self, node):
         """Return process ids associated with running processes on the given node."""
         try:
