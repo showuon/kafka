@@ -96,7 +96,7 @@ class MirrorFetcherThread(name: String,
         throw new HigherMirrorLeaderEpochException(s"Rejecting the batch because the batch leader epoch $highestBatchLeaderEpoch is higher than local leader epoch $localLeaderEpoch")
       } else {
         // Only do a leader epoch bump without throwing exception because the batch can still be appended
-        replicaMgr.mirrorMetadataManager.map(mmm => mmm.bumpLeaderEpoch(partition.getMirrorName().get(), java.util.Set.of(topicPartition))
+        replicaMgr.mirrorMetadataManager.map(mmm => mmm.bumpLeaderEpoch(partition.getMirrorName().get(), java.util.Set.of(topicPartition)))
       }
     }
   }

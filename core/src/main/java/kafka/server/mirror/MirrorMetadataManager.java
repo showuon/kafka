@@ -133,8 +133,8 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static java.util.Collections.singletonList;
-import static kafka.server.mirror.MirrorUtils.MIN_DESTINATION_LEADER_EPOCH_LEAD;
 import static kafka.server.mirror.MirrorUtils.LEADER_EPOCH_BUMP_HEADROOM;
+import static kafka.server.mirror.MirrorUtils.MIN_DESTINATION_LEADER_EPOCH_LEAD;
 import static kafka.server.mirror.MirrorUtils.originalMirrorName;
 import static org.apache.kafka.clients.CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG;
 import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
