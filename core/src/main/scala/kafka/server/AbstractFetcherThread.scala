@@ -119,6 +119,8 @@ abstract class AbstractFetcherThread(name: String,
     false
   }
 
+  protected def handleHigherMirrorLeaderEpochError(mirrorName: String, topicPartition: TopicPartition): Unit = {}
+
   override def shutdown(): Unit = {
     initiateShutdown()
     inLock(partitionMapLock) {
@@ -519,6 +521,11 @@ abstract class AbstractFetcherThread(name: String,
                       error(s"Error while processing data for partition $topicPartition " +
                         s"at offset ${currentFetchState.fetchOffset}", e)
                       markPartitionFailed(topicPartition)
+                    case e: HigherMirrorLeaderEpochException =>
+                      error(s"Error while processing data for partition $topicPartition " +
+                        s"at offset ${currentFetchState.fetchOffset}, waiting for leader epoch bump.", e)
+                      markPartitionFailed(topicPartition)
+                      handleHigherMirrorLeaderEpochError(currentFetchState.mirrorName(), topicPartition)
                     case t: Throwable =>
                       // stop monitoring this partition and add it to the set of failed partitions
                       error(s"Unexpected error occurred while processing data for partition $topicPartition " +

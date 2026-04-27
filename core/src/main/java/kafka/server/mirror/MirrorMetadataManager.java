@@ -964,8 +964,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         for (String mirrorName : Set.copyOf(sourceSenders.keySet())) {
             try {
                 discoverSourceBrokers(mirrorName);
-                syncTopicMetadata(mirrorName);
-                syncMirrorMetadata(mirrorName);
+                Optional<MetadataResponse> metadataResponse = syncTopicMetadata(mirrorName);
+                syncMirrorMetadata(mirrorName, metadataResponse);
             } catch (Exception e) {
                 log.error("Failed to refresh metadata for mirror {}", mirrorName, e);
             }
@@ -1020,6 +1020,32 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             }
         }
         log.info("Bumping leader epoch for partitions {} to {}", topicPartitions, leaderEpochFromMetadata);
+        return leaderEpochFromMetadata;
+    }
+
+    private Map<TopicPartition, Integer> buildBumpLeaderEpochRequestData(String mirrorName, MetadataResponse metadataResponse) {
+        Set<String> mirrorTopics = getConfiguredTopics(mirrorName);
+        Map<TopicPartition, Integer> leaderEpochFromMetadata = new HashMap<>();
+        for (MetadataResponse.TopicMetadata topicMetadata : metadataResponse.topicMetadata()) {
+            if (topicMetadata.error() != Errors.NONE) {
+                continue;
+            }
+            if (!mirrorTopics.contains(topicMetadata.topic())) {
+                continue;
+            }
+            for (MetadataResponse.PartitionMetadata partitionMetadata : topicMetadata.partitionMetadata()) {
+                TopicPartition tp = partitionMetadata.topicPartition;
+                int epoch = partitionMetadata.leaderEpoch.orElse(-1);
+                int localEpoch = metadataImage.topics().getTopic(tp.topic()).partitions().get(tp.partition()).leaderEpoch;
+
+                if (epoch > localEpoch - MIN_DESTINATION_LEADER_EPOCH_LEAD) {
+                    // will throw exception when overflow, but this should not happen
+                    int newEpoch = Math.addExact(epoch, LEADER_EPOCH_BUMP_HEADROOM);
+                    leaderEpochFromMetadata.put(tp, newEpoch);
+                }
+            }
+        }
+        log.info("Bumping leader epoch for: {}", leaderEpochFromMetadata);
         return leaderEpochFromMetadata;
     }
 
@@ -1146,7 +1172,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         );
 
         if (response.responseBody() instanceof MetadataResponse metadataResponse) {
-            log.info("Periodic metadata response: {}", metadataResponse);
+            log.debug("Periodic metadata response: {}", metadataResponse);
             Map<Integer, Node> brokerNodes = new HashMap<>();
             metadataResponse.brokers().forEach(broker -> brokerNodes.put(broker.id(), broker));
             var createPartitionsTopics = processTopicMetadata(mirrorName, metadataResponse.topicMetadata(), brokerNodes);
@@ -1275,7 +1301,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * Syncs mirror metadata (configurations, consumer group offsets, ACLs) from source clusters.
      * Only the coordinator for each mirror name handles this, distributing load across brokers.
      */
-    void syncMirrorMetadata(String mirrorName) {
+    void syncMirrorMetadata(String mirrorName, Optional<MetadataResponse> metadataResponse) {
         if (isLocalCoordinator(mirrorName)) {
             ensureConnection(mirrorName);
             try {
@@ -1284,6 +1310,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 syncTopicConfigurations(mirrorName, mirrorConfig);
                 syncConsumerGroupOffsets(mirrorName, mirrorConfig);
                 syncAccessControlLists(mirrorName, mirrorConfig);
+                // Periodically check if we need to bump leader epoch for all mirrored partitions
+                metadataResponse.ifPresent(metadata -> sendBumpLeaderEpoch(buildBumpLeaderEpochRequestData(mirrorName, metadata)));
             } catch (Exception e) {
                 log.error("Failed to sync mirror metadata for mirror {}", mirrorName, e);
             }

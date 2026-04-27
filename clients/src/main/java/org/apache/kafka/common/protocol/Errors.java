@@ -49,6 +49,7 @@ import org.apache.kafka.common.errors.GroupIdNotFoundException;
 import org.apache.kafka.common.errors.GroupMaxSizeReachedException;
 import org.apache.kafka.common.errors.GroupNotEmptyException;
 import org.apache.kafka.common.errors.GroupSubscribedToTopicException;
+import org.apache.kafka.common.errors.HigherMirrorLeaderEpochException;
 import org.apache.kafka.common.errors.IllegalGenerationException;
 import org.apache.kafka.common.errors.IllegalSaslStateException;
 import org.apache.kafka.common.errors.InconsistentClusterIdException;
@@ -438,7 +439,8 @@ public enum Errors {
     MIRROR_TOPIC_NOT_PAUSED(140, "The mirror topic is not paused.", MirrorTopicNotPausedException::new),
     MIRROR_TOPIC_BEING_STOPPED(141, "The mirror topic is being stopped.", MirrorTopicBeingStoppedException::new),
     MIRROR_NOT_EMPTY(142, "The mirror still has active or non-stopped topics.", MirrorNotEmptyException::new),
-    MIRROR_AUTHORIZATION_FAILED(143, "Mirror authorization failed.", MirrorAuthorizationException::new);
+    MIRROR_AUTHORIZATION_FAILED(143, "Mirror authorization failed.", MirrorAuthorizationException::new),
+    HIGHER_MIRROR_LEADER_EPOCH(144, "Mirror leader epoch is higher than local leader epoch.", HigherMirrorLeaderEpochException::new);
 
     private static final Logger log = LoggerFactory.getLogger(Errors.class);
 

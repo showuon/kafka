@@ -140,7 +140,6 @@ public class MirrorCoordinator {
                 break;
             case EPOCH_FENCING:
                 log.info("EPOCH_BUMPING for topics {}.", topicPartitions);
-                replicaManager.mirrorFetcherManager().removeFetcherForPartitions(CollectionConverters.asScala(topicPartitions));
                 metadataManager.bumpLeaderEpoch(mirrorName, topicPartitions)
                     .whenComplete((v, ex) -> {
                         if (ex != null) {
