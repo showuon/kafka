@@ -133,6 +133,8 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static java.util.Collections.singletonList;
+import static kafka.server.mirror.MirrorUtils.MIN_DESTINATION_LEADER_EPOCH_LEAD;
+import static kafka.server.mirror.MirrorUtils.LEADER_EPOCH_BUMP_HEADROOM;
 import static kafka.server.mirror.MirrorUtils.originalMirrorName;
 import static org.apache.kafka.clients.CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG;
 import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
@@ -270,7 +272,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         }
 
         maybeRecreateConnection(delta, newImage);
-        syncMetadataForNewMirrorTopics(delta, newImage);
 
         // get all mirror partition leaders on this node based on the delta
         Set<TopicPartition> mirrorLeaders = getMirrorLeadersAndClearFollowerStates(delta, newImage);
@@ -1010,8 +1011,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 }
                 int epoch = partitionMetadata.leaderEpoch.orElse(-1);
                 int localEpoch = metadataImage.topics().getTopic(tp.topic()).partitions().get(tp.partition()).leaderEpoch;
-                if (epoch > localEpoch - 3) {
-                    leaderEpochFromMetadata.put(tp, epoch + 10);
+
+                if (epoch > localEpoch - MIN_DESTINATION_LEADER_EPOCH_LEAD) {
+                    // will throw exception when overflow, but this should not happen
+                    int newEpoch = Math.addExact(epoch, LEADER_EPOCH_BUMP_HEADROOM);
+                    leaderEpochFromMetadata.put(tp, newEpoch);
                 }
             }
         }

@@ -18,6 +18,7 @@ package kafka.server.mirror
 
 import kafka.cluster.Partition
 import kafka.server._
+import kafka.server.mirror.MirrorUtils.MIN_DESTINATION_LEADER_EPOCH_LEAD
 import org.apache.kafka.common.{Node, TopicPartition}
 import org.apache.kafka.common.message.FetchResponseData
 import org.apache.kafka.common.record.Records
@@ -80,12 +81,12 @@ class MirrorFetcherThread(name: String,
     val localLeaderEpoch = partition.getLeaderEpoch
     val highestBatchLeaderEpoch = if (records.lastBatch().isPresent)
       records.lastBatch().get().partitionLeaderEpoch() else -1
-    if (highestBatchLeaderEpoch > localLeaderEpoch - 3) {
+    if (highestBatchLeaderEpoch > localLeaderEpoch - MIN_DESTINATION_LEADER_EPOCH_LEAD) {
       log.info(s"!!! Bumping leader epoch for partition $topicPartition from $localLeaderEpoch to $highestBatchLeaderEpoch")
       // since we're in mirror fetcher thread, we can safely assume it's mirroring.
       if (highestBatchLeaderEpoch > localLeaderEpoch) {
         // only remove the fetcher and throw exception when batch leader epoch is higher than local epoch.
-        replicaMgr.mirrorMetadataManager.get.transitionTo(partition.getMirrorName().get(), topicPartition, MirrorPartitionState.EPOCH_BUMPING)
+        replicaMgr.mirrorMetadataManager.get.transitionTo(partition.getMirrorName().get(), topicPartition, MirrorPartitionState.EPOCH_FENCING)
         throw new IllegalStateException(s"Rejecting the batch because the batch leader epoch $highestBatchLeaderEpoch is higher than local leader epoch $localLeaderEpoch")
       } else {
         // only do leader epoch bump because the batch can still be appended
