@@ -105,6 +105,7 @@ import org.apache.kafka.server.common.RequestLocal;
 import org.apache.kafka.server.config.MirrorConfig;
 import org.apache.kafka.server.metrics.KafkaMetricsGroup;
 import org.apache.kafka.server.network.BrokerEndPoint;
+import org.apache.kafka.server.util.KafkaScheduler;
 import org.apache.kafka.server.util.RequestAndCompletionHandler;
 
 import org.slf4j.Logger;
@@ -133,8 +134,8 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static java.util.Collections.singletonList;
-import static kafka.server.mirror.MirrorUtils.LEADER_EPOCH_BUMP_HEADROOM;
-import static kafka.server.mirror.MirrorUtils.MIN_DESTINATION_LEADER_EPOCH_LEAD;
+import static kafka.server.mirror.MirrorUtils.LEADER_EPOCH_BUMP_INCREMENT;
+import static kafka.server.mirror.MirrorUtils.LEADER_EPOCH_BUMP_THRESHOLD;
 import static kafka.server.mirror.MirrorUtils.originalMirrorName;
 import static org.apache.kafka.clients.CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG;
 import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
@@ -180,6 +181,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private Optional<Function<MirrorRecordKey, Integer>> coordinatorPartitionFinder = Optional.empty();
     private Optional<Function<String, Integer>> coordinatorPartitionByNameFinder = Optional.empty();
     private volatile Admin adminClient;
+    private final KafkaScheduler scheduler;
 
     // cache
     private final Map<String, Uuid> sourceClusterIds = new ConcurrentHashMap<>();
@@ -211,7 +213,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         MetadataCache metadataCache,
         NodeToControllerChannelManager channelManager,
         Supplier<GroupCoordinator> groupCoordinatorSupplier,
-        Supplier<MirrorFetcherManager> mirrorFetcherManagerSupplier
+        Supplier<MirrorFetcherManager> mirrorFetcherManagerSupplier,
+        KafkaScheduler scheduler
     ) {
         this.name = "[" + MirrorMetadataManager.class.getSimpleName() + " id=" + brokerConfig.nodeId() + "] ";
         this.log = new LogContext(name).logger(MirrorMetadataManager.class);
@@ -225,6 +228,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         this.mirrorFetcherManagerSupplier = mirrorFetcherManagerSupplier;
         this.metadataImage = MetadataImage.EMPTY;
         this.metadataCache = metadataCache;
+        this.scheduler = scheduler;
 
         this.metricsGroup = new KafkaMetricsGroup(this.getClass());
         this.metadataRefreshError = new AtomicLong();
@@ -237,6 +241,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         metricsGroup.newGauge("AclSyncError", aclSyncError::get);
         metricsGroup.newGauge("TopicMetadataRefreshError", metadataRefreshError::get);
         metricsGroup.newGauge("PreparingPartitionState", () -> partitionStateCount(MirrorPartitionState.PREPARING));
+        metricsGroup.newGauge("EpochFencingPartitionState", () -> partitionStateCount(MirrorPartitionState.EPOCH_FENCING));
         metricsGroup.newGauge("MirroringPartitionState", () -> partitionStateCount(MirrorPartitionState.MIRRORING));
         metricsGroup.newGauge("PausingPartitionState", () -> partitionStateCount(MirrorPartitionState.PAUSING));
         metricsGroup.newGauge("PausedPartitionState", () -> partitionStateCount(MirrorPartitionState.PAUSED));
@@ -964,8 +969,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         for (String mirrorName : Set.copyOf(sourceSenders.keySet())) {
             try {
                 discoverSourceBrokers(mirrorName);
-                Optional<MetadataResponse> metadataResponse = syncTopicMetadata(mirrorName);
-                syncMirrorMetadata(mirrorName, metadataResponse);
+                syncMirrorMetadata(mirrorName, syncTopicMetadata(mirrorName));
             } catch (Exception e) {
                 log.error("Failed to refresh metadata for mirror {}", mirrorName, e);
             }
@@ -975,14 +979,26 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         metadataRefreshError.incrementAndGet();
     }
 
-    public CompletableFuture<Void> bumpLeaderEpoch(String mirrorName, Set<TopicPartition> topicPartitions) {
-        ensureConnection(mirrorName);
-        discoverSourceBrokers(mirrorName);
-        Optional<MetadataResponse> metadataResponse = syncTopicMetadata(mirrorName);
-        if (metadataResponse.isPresent()) {
-            return sendBumpLeaderEpoch(buildBumpLeaderEpochRequestData(metadataResponse.get(), topicPartitions));
-        }
-        return CompletableFuture.completedFuture(null);
+    public CompletableFuture<Void> scheduleBumpLeaderEpoch(String mirrorName, Set<TopicPartition> topicPartitions) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        scheduler.scheduleOnce("bump-leader-epoch", () -> {
+            ensureConnection(mirrorName);
+            discoverSourceBrokers(mirrorName);
+            Optional<MetadataResponse> metadataResponse = syncTopicMetadata(mirrorName);
+            if (metadataResponse.isPresent()) {
+                sendBumpLeaderEpoch(buildBumpLeaderEpochRequestData(mirrorName, metadataResponse.get(), topicPartitions))
+                    .whenComplete((v, ex) -> {
+                        if (ex != null) {
+                            future.completeExceptionally(ex);
+                        } else {
+                            future.complete(null);
+                        }
+                    });
+            } else {
+                future.complete(null);
+            }
+        });
+        return future;
     }
 
     public Map<TopicPartition, Integer> buildBumpLeaderEpochRequestData(LogManager logManager, Set<TopicPartition> topicPartitions) {
@@ -994,58 +1010,41 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         return partitionMinEpochs;
     }
 
-    /**
-     * Resolves the leader epoch from a metadata response for each requested partition
-     * (same field brokers return in MetadataResponse partition entries).
-     */
-    private Map<TopicPartition, Integer> buildBumpLeaderEpochRequestData(MetadataResponse metadataResponse, Set<TopicPartition> topicPartitions) {
+    private Map<TopicPartition, Integer> buildBumpLeaderEpochRequestData(String mirrorName, MetadataResponse metadataResponse, Set<TopicPartition> topicPartitions) {
+        Set<String> mirrorTopics = new HashSet<>();
+        if (topicPartitions.isEmpty()) {
+            mirrorTopics = getConfiguredTopics(mirrorName);
+        }
         Map<TopicPartition, Integer> leaderEpochFromMetadata = new HashMap<>();
         for (MetadataResponse.TopicMetadata topicMetadata : metadataResponse.topicMetadata()) {
             if (topicMetadata.error() != Errors.NONE) {
                 continue;
             }
+            if (!mirrorTopics.isEmpty() && !mirrorTopics.contains(topicMetadata.topic())) {
+                continue;
+            }
             for (MetadataResponse.PartitionMetadata partitionMetadata : topicMetadata.partitionMetadata()) {
                 TopicPartition tp = partitionMetadata.topicPartition;
-                if (!topicPartitions.contains(tp)) {
+                if (!topicPartitions.isEmpty() && !topicPartitions.contains(tp)) {
                     continue;
                 }
-                int epoch = partitionMetadata.leaderEpoch.orElse(-1);
+                if (partitionMetadata.leaderEpoch.isEmpty()) {
+                    continue;
+                }
+                if (metadataImage.topics().getTopic(tp.topic()) == null ||
+                        metadataImage.topics().getTopic(tp.topic()).partitions().get(tp.partition()) == null) {
+                    continue;
+                }
+                int epoch = partitionMetadata.leaderEpoch.get();
                 int localEpoch = metadataImage.topics().getTopic(tp.topic()).partitions().get(tp.partition()).leaderEpoch;
-
-                if (epoch > localEpoch - MIN_DESTINATION_LEADER_EPOCH_LEAD) {
+                if (epoch > localEpoch - LEADER_EPOCH_BUMP_THRESHOLD) {
                     // will throw exception when overflow, but this should not happen
-                    int newEpoch = Math.addExact(epoch, LEADER_EPOCH_BUMP_HEADROOM);
+                    int newEpoch = Math.addExact(epoch, LEADER_EPOCH_BUMP_INCREMENT);
                     leaderEpochFromMetadata.put(tp, newEpoch);
                 }
             }
         }
         log.info("Bumping leader epoch for partitions {} to {}", topicPartitions, leaderEpochFromMetadata);
-        return leaderEpochFromMetadata;
-    }
-
-    private Map<TopicPartition, Integer> buildBumpLeaderEpochRequestData(String mirrorName, MetadataResponse metadataResponse) {
-        Set<String> mirrorTopics = getConfiguredTopics(mirrorName);
-        Map<TopicPartition, Integer> leaderEpochFromMetadata = new HashMap<>();
-        for (MetadataResponse.TopicMetadata topicMetadata : metadataResponse.topicMetadata()) {
-            if (topicMetadata.error() != Errors.NONE) {
-                continue;
-            }
-            if (!mirrorTopics.contains(topicMetadata.topic())) {
-                continue;
-            }
-            for (MetadataResponse.PartitionMetadata partitionMetadata : topicMetadata.partitionMetadata()) {
-                TopicPartition tp = partitionMetadata.topicPartition;
-                int epoch = partitionMetadata.leaderEpoch.orElse(-1);
-                int localEpoch = metadataImage.topics().getTopic(tp.topic()).partitions().get(tp.partition()).leaderEpoch;
-
-                if (epoch > localEpoch - MIN_DESTINATION_LEADER_EPOCH_LEAD) {
-                    // will throw exception when overflow, but this should not happen
-                    int newEpoch = Math.addExact(epoch, LEADER_EPOCH_BUMP_HEADROOM);
-                    leaderEpochFromMetadata.put(tp, newEpoch);
-                }
-            }
-        }
-        log.info("Bumping leader epoch for: {}", leaderEpochFromMetadata);
         return leaderEpochFromMetadata;
     }
 
@@ -1311,7 +1310,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 syncConsumerGroupOffsets(mirrorName, mirrorConfig);
                 syncAccessControlLists(mirrorName, mirrorConfig);
                 // Periodically check if we need to bump leader epoch for all mirrored partitions
-                metadataResponse.ifPresent(metadata -> sendBumpLeaderEpoch(buildBumpLeaderEpochRequestData(mirrorName, metadata)));
+                metadataResponse.ifPresent(metadata -> sendBumpLeaderEpoch(buildBumpLeaderEpochRequestData(mirrorName, metadata, Set.of())));
             } catch (Exception e) {
                 log.error("Failed to sync mirror metadata for mirror {}", mirrorName, e);
             }

@@ -28,12 +28,16 @@ public enum MirrorPartitionState {
      */
     PREPARING((byte) 0),
 
+    /**
+     * Checking if bumping the leader epoch is necessary to ensure local leader epoch > source leader epoch.
+     * Valid from: UNKNOWN, PREPARING, STOPPED, FAILED.
+     */
     EPOCH_FENCING((byte) 1),
 
     /**
-     * All ISR members have completed truncation. A MirrorFetcherThread is started to
+     * All ISR members have completed truncation and leader epoch bumping completes. A MirrorFetcherThread is started to
      * continuously replicate records from the source cluster.
-     * Valid from: PREPARING, PAUSED.
+     * Valid from: EPOCH_FENCING, PAUSED.
      */
     MIRRORING((byte) 2),
 

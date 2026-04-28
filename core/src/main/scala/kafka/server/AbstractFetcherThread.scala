@@ -521,8 +521,8 @@ abstract class AbstractFetcherThread(name: String,
                       error(s"Error while processing data for partition $topicPartition " +
                         s"at offset ${currentFetchState.fetchOffset}", e)
                       markPartitionFailed(topicPartition)
-                    case e: HigherMirrorLeaderEpochException =>
-                      error(s"Error while processing data for partition $topicPartition " +
+                    case e: MirrorLeaderEpochExceededException =>
+                      error(s"Error while processing data for mirror partition $topicPartition " +
                         s"at offset ${currentFetchState.fetchOffset}, waiting for leader epoch bump.", e)
                       markPartitionFailed(topicPartition)
                       handleHigherMirrorLeaderEpochError(currentFetchState.mirrorName(), topicPartition)

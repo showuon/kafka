@@ -18,8 +18,8 @@ package kafka.server.mirror
 
 import kafka.cluster.Partition
 import kafka.server._
-import kafka.server.mirror.MirrorUtils.MIN_DESTINATION_LEADER_EPOCH_LEAD
-import org.apache.kafka.common.errors.HigherMirrorLeaderEpochException
+import kafka.server.mirror.MirrorUtils.LEADER_EPOCH_BUMP_THRESHOLD
+import org.apache.kafka.common.errors.MirrorLeaderEpochExceededException
 import org.apache.kafka.common.{Node, TopicPartition}
 import org.apache.kafka.common.message.FetchResponseData
 import org.apache.kafka.common.record.Records
@@ -89,15 +89,14 @@ class MirrorFetcherThread(name: String,
     val highestBatchLeaderEpoch = if (records.lastBatch().isPresent)
       records.lastBatch().get().partitionLeaderEpoch() else -1
     log.info(s"Current highestBatchLeaderEpoch: $highestBatchLeaderEpoch, localLeaderEpoch: $localLeaderEpoch")
-    if (highestBatchLeaderEpoch > localLeaderEpoch - MIN_DESTINATION_LEADER_EPOCH_LEAD) {
-      // If the batch leader epoch is higher than the local leader epoch, we need to stop mirroring for the partition and bump the local leader epoch.
-      if (highestBatchLeaderEpoch > localLeaderEpoch) {
-        // This will force the topic partition to be marked as failed and move mirror partition state to EPOCH_FENCING.
-        throw new HigherMirrorLeaderEpochException(s"Rejecting the batch because the batch leader epoch $highestBatchLeaderEpoch is higher than local leader epoch $localLeaderEpoch")
-      } else {
-        // Only do a leader epoch bump without throwing exception because the batch can still be appended
-        replicaMgr.mirrorMetadataManager.map(mmm => mmm.bumpLeaderEpoch(partition.getMirrorName().get(), java.util.Set.of(topicPartition)))
-      }
+    if (highestBatchLeaderEpoch > localLeaderEpoch) {
+      // Fence this partition when source records are already ahead of the local leader epoch.
+      // The exception will mark this partition as failed and transition mirror state to EPOCH_FENCING.
+      throw new MirrorLeaderEpochExceededException(s"Rejecting the batch because the batch leader epoch $highestBatchLeaderEpoch is higher than local leader epoch $localLeaderEpoch")
+    } else if (highestBatchLeaderEpoch > localLeaderEpoch - LEADER_EPOCH_BUMP_THRESHOLD) {
+      // When source batch is close to the local epoch (within LEADER_EPOCH_BUMP_THRESHOLD),
+      // schedule a proactive local epoch bump while still allowing the current batch to append.
+      replicaMgr.mirrorMetadataManager.map(mmm => mmm.scheduleBumpLeaderEpoch(partition.getMirrorName().get(), java.util.Set.of(topicPartition)))
     }
   }
 

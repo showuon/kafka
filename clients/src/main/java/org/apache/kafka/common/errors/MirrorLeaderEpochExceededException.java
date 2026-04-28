@@ -16,15 +16,15 @@
  */
 package org.apache.kafka.common.errors;
 
-public class HigherMirrorLeaderEpochException extends AuthorizationException {
+public class MirrorLeaderEpochExceededException extends ApiException {
 
     private static final long serialVersionUID = 1L;
 
-    public HigherMirrorLeaderEpochException(String message) {
+    public MirrorLeaderEpochExceededException(String message) {
         super(message);
     }
 
-    public HigherMirrorLeaderEpochException(String message, Throwable cause) {
+    public MirrorLeaderEpochExceededException(String message, Throwable cause) {
         super(message, cause);
     }
 }

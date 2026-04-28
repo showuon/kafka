@@ -139,8 +139,8 @@ public class MirrorCoordinator {
                 scheduleTruncation(mirrorName, topicPartitions);
                 break;
             case EPOCH_FENCING:
-                log.info("EPOCH_BUMPING for topics {}.", topicPartitions);
-                metadataManager.bumpLeaderEpoch(mirrorName, topicPartitions)
+                log.info("EPOCH_FENCING for topics {}.", topicPartitions);
+                metadataManager.scheduleBumpLeaderEpoch(mirrorName, topicPartitions)
                     .whenComplete((v, ex) -> {
                         if (ex != null) {
                             log.error("Failed to bump leader epoch for {}", topicPartitions, ex);
