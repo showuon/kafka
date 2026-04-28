@@ -144,7 +144,6 @@ public class MirrorCoordinator {
                     .whenComplete((v, ex) -> {
                         if (ex != null) {
                             log.error("Failed to bump leader epoch for {}", topicPartitions, ex);
-                            transitionTo(mirrorName, topicPartitions, MirrorPartitionState.FAILED);
                         } else {
                             transitionTo(mirrorName, topicPartitions, MirrorPartitionState.MIRRORING);
                         }
