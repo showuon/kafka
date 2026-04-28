@@ -528,6 +528,12 @@ class ClusterMirroringTest(Test):
         second_leader_node = self.source_kafka.leader(topic)
         self.source_kafka.stop_node(second_leader_node, clean_shutdown=True)
         self.source_kafka.start_node(leader_node)
+        wait_until(
+            lambda: self.source_kafka.leader(topic, partition=0) is None,
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg="Failed to have leader = None"
+        )
         self.source_kafka.run_leader_election_command(topic, partition=0, election_type="UNCLEAN")
         wait_until(
             lambda: self.producer.num_acked - acked > 1000,
@@ -587,6 +593,12 @@ class ClusterMirroringTest(Test):
         self.logger.info("Triggering ULE 2")
         self.source_kafka.stop_node(leader_node, clean_shutdown=True)
         self.source_kafka.start_node(second_leader_node)
+        wait_until(
+            lambda: self.source_kafka.leader(topic, partition=0) is None,
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg="Failed to have leader = None"
+        )
         self.source_kafka.run_leader_election_command(topic, partition=0, election_type="UNCLEAN")
 
         self.logger.info("Producing to source after ULE 2")
