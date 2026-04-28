@@ -78,7 +78,7 @@ class MirrorFetcherThread(name: String,
     replicaMgr.maybeCreateMirrorFetchers(mirrorName, mirrorPartitions.asJava)
   }
 
-  override protected def handleHigherMirrorLeaderEpochError(mirrorName: String, topicPartition: TopicPartition): Unit = {
+  override protected def handleMirrorLeaderEpochExceeded(mirrorName: String, topicPartition: TopicPartition): Unit = {
     // when the source cluster's epoch is higher than the destination cluster's epoch, we need to
     // fence the partition to prevent the source cluster from appending to the destination cluster.
     replicaMgr.mirrorMetadataManager.get.transitionTo(mirrorName, topicPartition, MirrorPartitionState.EPOCH_FENCING)
