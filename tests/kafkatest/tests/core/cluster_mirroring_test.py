@@ -28,6 +28,7 @@ from kafkatest.version import (
 )
 import itertools
 
+
 class ClusterMirrorConfig:
     def __init__(
         self,
@@ -67,6 +68,7 @@ class ClusterMirrorConfig:
         """
         return self.props()
 
+
 class ClusterMirroringTest(Test):
     PERSISTENT_ROOT = "/mnt/cluster_mirroring"
     MIRROR_CONFIG_FILE = os.path.join(PERSISTENT_ROOT, "cluster_mirror.properties")
@@ -75,7 +77,16 @@ class ClusterMirroringTest(Test):
         """:type test_context: ducktape.tests.test.TestContext"""
         super(ClusterMirroringTest, self).__init__(test_context)
         topic = "my-topic"
-        self.topics = {topic: {"partitions": 1, "replication-factor": 2, "configs": {"min.insync.replicas": 1, "mirror.support.unclean.leader.election": True }}}
+        self.topics = {
+            topic: {
+                "partitions": 1,
+                "replication-factor": 2,
+                "configs": {
+                    "min.insync.replicas": 1,
+                    "mirror.support.unclean.leader.election": True,
+                },
+            }
+        }
         self.source_kafka = KafkaService(
             test_context,
             num_nodes=2,
@@ -85,7 +96,10 @@ class ClusterMirroringTest(Test):
             controller_num_nodes_override=1,
         )
         self.dest_kafka = KafkaService(
-            test_context, num_nodes=2, zk=None, use_cluster_mirroring=True,
+            test_context,
+            num_nodes=2,
+            zk=None,
+            use_cluster_mirroring=True,
             controller_num_nodes_override=1,
         )
         self.producer = VerifiableProducer(
@@ -101,15 +115,12 @@ class ClusterMirroringTest(Test):
         self.dest_kafka.start()
 
         self.logger.info(
-            "Changing metadata.version to %s"
-            % CLUSTER_MIRRORING_METADATA_VERSION
+            "Changing metadata.version to %s" % CLUSTER_MIRRORING_METADATA_VERSION
         )
         self.source_kafka.upgrade_metadata_version(CLUSTER_MIRRORING_METADATA_VERSION)
         self.dest_kafka.upgrade_metadata_version(CLUSTER_MIRRORING_METADATA_VERSION)
 
-        self.logger.info(
-            "Changing mirror.version to %s" % CLUSTER_MIRRORING_VERSION
-        )
+        self.logger.info("Changing mirror.version to %s" % CLUSTER_MIRRORING_VERSION)
         self.source_kafka.run_features_command(
             "upgrade", "mirror.version", CLUSTER_MIRRORING_VERSION
         )
@@ -129,11 +140,15 @@ class ClusterMirroringTest(Test):
             try:
                 kafka.stop()
             except Exception:
-                self.logger.warning("Graceful stop failed for %s, forcing SIGKILL" % str(kafka))
+                self.logger.warning(
+                    "Graceful stop failed for %s, forcing SIGKILL" % str(kafka)
+                )
                 for node in kafka.nodes:
                     kafka.stop_node(node, clean_shutdown=False)
 
-    def all_satisfy_in_mirror(self, kafka_node, mirror_name, per_partition_condition, kafka=None):
+    def all_satisfy_in_mirror(
+        self, kafka_node, mirror_name, per_partition_condition, kafka=None
+    ):
         """Check that all partitions of all mirrored topics satisfy the given condition."""
         if kafka is None:
             kafka = self.dest_kafka
@@ -159,7 +174,10 @@ class ClusterMirroringTest(Test):
         def log_segment_hashes(kafka, topic, partition=0):
             leader_node = kafka.leader(topic, partition)
             cmd = "md5sum %s*/%s-%d/*.log 2>/dev/null" % (
-                KafkaService.DATA_LOG_DIR_PREFIX, topic, partition)
+                KafkaService.DATA_LOG_DIR_PREFIX,
+                topic,
+                partition,
+            )
             hashes = {}
             for line in leader_node.account.ssh_capture(cmd, allow_fail=True):
                 parts = line.strip().split()
@@ -171,16 +189,27 @@ class ClusterMirroringTest(Test):
             for partition in range(cfg["partitions"]):
                 source_hashes = log_segment_hashes(self.source_kafka, topic, partition)
                 dest_hashes = log_segment_hashes(self.dest_kafka, topic, partition)
-                assert source_hashes.keys() == dest_hashes.keys(), \
-                    "Segment files differ for %s-%d: source=%s, dest=%s" % (
-                        topic, partition, sorted(source_hashes.keys()), sorted(dest_hashes.keys()))
+                assert source_hashes.keys() == dest_hashes.keys(), (
+                    "Segment files differ for %s-%d: source=%s, dest=%s"
+                    % (
+                        topic,
+                        partition,
+                        sorted(source_hashes.keys()),
+                        sorted(dest_hashes.keys()),
+                    )
+                )
                 mismatches = []
                 for seg in source_hashes:
                     if source_hashes[seg] != dest_hashes[seg]:
-                        mismatches.append("%s: source=%s, dest=%s" % (
-                            seg, source_hashes[seg], dest_hashes[seg]))
-                assert not mismatches, \
-                    "Log segment mismatch for %s-%d:\n  %s" % (topic, partition, "\n  ".join(mismatches))
+                        mismatches.append(
+                            "%s: source=%s, dest=%s"
+                            % (seg, source_hashes[seg], dest_hashes[seg])
+                        )
+                assert not mismatches, "Log segment mismatch for %s-%d:\n  %s" % (
+                    topic,
+                    partition,
+                    "\n  ".join(mismatches),
+                )
 
     @cluster(num_nodes=9)
     @defaults(metadata_quorum=[quorum.isolated_kraft])
@@ -262,8 +291,9 @@ class ClusterMirroringTest(Test):
 
         wait_until(
             lambda: self.all_satisfy_in_mirror(
-                kafka_node, mirror_cfg["name"],
-                lambda p: p["lag"] == 0 and p["state"] == "MIRRORING"
+                kafka_node,
+                mirror_cfg["name"],
+                lambda p: p["lag"] == 0 and p["state"] == "MIRRORING",
             ),
             timeout_sec=60,
             backoff_sec=2,
@@ -280,13 +310,22 @@ class ClusterMirroringTest(Test):
         kafka_node = self.dest_kafka.nodes[0]
         topic = list(self.topics.keys())[0]
 
-        def run_producer(kafka, topic, transactional_id=None, mode="commit",
-                         num_records=1, waiting_ms=0, background=False):
+        def run_producer(
+            kafka,
+            topic,
+            transactional_id=None,
+            mode="commit",
+            num_records=1,
+            waiting_ms=0,
+            background=False,
+        ):
             """Run TransactionalTestProducer via SSH on the first broker node."""
             node = kafka.nodes[0]
             cmd = kafka.path.script("kafka-run-class.sh", node)
             cmd += " org.apache.kafka.tools.TransactionalTestProducer"
-            cmd += " --bootstrap-server %s" % kafka.bootstrap_servers(kafka.security_protocol)
+            cmd += " --bootstrap-server %s" % kafka.bootstrap_servers(
+                kafka.security_protocol
+            )
             cmd += " --topic %s" % topic
             if transactional_id is not None:
                 cmd += " --transactional-id %s" % transactional_id
@@ -309,21 +348,44 @@ class ClusterMirroringTest(Test):
             count = 0
             for partition in range(self.topics[topic]["partitions"]):
                 cmd = kafka.path.script("kafka-transactions.sh", node)
-                cmd += " --bootstrap-server %s" % kafka.bootstrap_servers(kafka.security_protocol)
-                cmd += " describe-producers --topic %s --partition %d" % (topic, partition)
+                cmd += " --bootstrap-server %s" % kafka.bootstrap_servers(
+                    kafka.security_protocol
+                )
+                cmd += " describe-producers --topic %s --partition %d" % (
+                    topic,
+                    partition,
+                )
                 for line in node.account.ssh_capture(cmd, allow_fail=True):
                     fields = line.strip().split()
-                    if fields and fields[-1] != "None" and fields[-1] != "CurrentTransactionStartOffset":
+                    if (
+                        fields
+                        and fields[-1] != "None"
+                        and fields[-1] != "CurrentTransactionStartOffset"
+                    ):
                         count += 1
             return count
 
         def send_interleaving_txns(topic):
             """Send interleaved transactional and non-transactional records, leaving 2 txns pending."""
-            run_producer(self.source_kafka, topic, topic + "-a", "commit", waiting_ms=5000, background=True)
+            run_producer(
+                self.source_kafka,
+                topic,
+                topic + "-a",
+                "commit",
+                waiting_ms=5000,
+                background=True,
+            )
             run_producer(self.source_kafka, topic)
             run_producer(self.source_kafka, topic, topic + "-b", "pending")
             run_producer(self.source_kafka, topic, topic + "-d", "pending")
-            run_producer(self.source_kafka, topic, topic + "-c", "abort", waiting_ms=5000, background=True)
+            run_producer(
+                self.source_kafka,
+                topic,
+                topic + "-c",
+                "abort",
+                waiting_ms=5000,
+                background=True,
+            )
             run_producer(self.source_kafka, topic, topic + "-d", "pending")
             run_producer(self.source_kafka, topic)
 
@@ -334,9 +396,7 @@ class ClusterMirroringTest(Test):
         self.producer.stop()
 
         mirror_cfg = ClusterMirrorConfig(self.source_kafka.bootstrap_servers())
-        self.logger.info(
-            "Creating mirror %s with settings %s", mirror_name, mirror_cfg
-        )
+        self.logger.info("Creating mirror %s with settings %s", mirror_name, mirror_cfg)
         prop_file = str(mirror_cfg)
         kafka_node.account.ssh(
             "mkdir -p %s" % ClusterMirroringTest.PERSISTENT_ROOT, allow_fail=False
@@ -368,8 +428,9 @@ class ClusterMirroringTest(Test):
 
         wait_until(
             lambda: self.all_satisfy_in_mirror(
-                kafka_node, mirror_name,
-                lambda p: p["lag"] == 0 and p["state"] == "MIRRORING"
+                kafka_node,
+                mirror_name,
+                lambda p: p["lag"] == 0 and p["state"] == "MIRRORING",
             ),
             timeout_sec=60,
             backoff_sec=2,
@@ -405,16 +466,20 @@ class ClusterMirroringTest(Test):
             return offsets
 
         source_offsets = parse_end_offsets(
-            self.source_kafka.get_offset_shell(topic=topic, time=-1))
+            self.source_kafka.get_offset_shell(topic=topic, time=-1)
+        )
         dest_offsets = parse_end_offsets(
-            self.dest_kafka.get_offset_shell(topic=topic, time=-1))
+            self.dest_kafka.get_offset_shell(topic=topic, time=-1)
+        )
         extra = sum(dest_offsets.values()) - sum(source_offsets.values())
         # 2 abort markers (one per pending txn) + 1 PID reset barrier per partition
         num_partitions = self.topics[topic]["partitions"]
         expected_extra = 2 + num_partitions
-        assert extra == expected_extra, \
-            "Expected %d extra records (2 abort + %d PID reset) on destination, got %d. " \
-            "source=%s, dest=%s" % (expected_extra, num_partitions, extra, source_offsets, dest_offsets)
+        assert extra == expected_extra, (
+            "Expected %d extra records (2 abort + %d PID reset) on destination, got %d. "
+            "source=%s, dest=%s"
+            % (expected_extra, num_partitions, extra, source_offsets, dest_offsets)
+        )
 
         run_producer(self.dest_kafka, topic, topic + "-b", "commit")
         run_producer(self.dest_kafka, topic, topic + "-d", "commit")
@@ -423,7 +488,9 @@ class ClusterMirroringTest(Test):
             """Run console consumer and return the record count."""
             node = kafka.nodes[0]
             cmd = kafka.path.script("kafka-console-consumer.sh", node)
-            cmd += " --bootstrap-server %s" % kafka.bootstrap_servers(kafka.security_protocol)
+            cmd += " --bootstrap-server %s" % kafka.bootstrap_servers(
+                kafka.security_protocol
+            )
             cmd += " --topic %s --from-beginning" % topic
             cmd += " --isolation-level %s" % isolation_level
             cmd += " --timeout-ms 10000"
@@ -436,15 +503,17 @@ class ClusterMirroringTest(Test):
         # checking raw number of records
         source_count = run_consumer(self.source_kafka, topic)
         dest_count = run_consumer(self.dest_kafka, topic)
-        assert dest_count == source_count + 2, \
-            "Expected dest to have exactly 2 more records than source, " \
+        assert dest_count == source_count + 2, (
+            "Expected dest to have exactly 2 more records than source, "
             "got source=%d, dest=%d" % (source_count, dest_count)
+        )
 
         # checking read_committed consumer can make progress
         # 4 aborted data records are filtered out: txn-b, txn-c, txn-d fenced, txn-d pending
         dest_committed = run_consumer(self.dest_kafka, topic, "read_committed")
-        assert dest_committed == dest_count - 4, \
+        assert dest_committed == dest_count - 4, (
             "Expected dest_committed=%d, got %d" % (dest_count - 4, dest_committed)
+        )
 
     @cluster(num_nodes=9)
     @defaults(metadata_quorum=[quorum.isolated_kraft])
@@ -516,8 +585,9 @@ class ClusterMirroringTest(Test):
         )
         wait_until(
             lambda: self.all_satisfy_in_mirror(
-                kafka_node, mirror_cfg["name"],
-                lambda p: p["lag"] == 0 and p["state"] == "MIRRORING"
+                kafka_node,
+                mirror_cfg["name"],
+                lambda p: p["lag"] == 0 and p["state"] == "MIRRORING",
             ),
             timeout_sec=60,
             backoff_sec=2,
@@ -532,9 +602,11 @@ class ClusterMirroringTest(Test):
             lambda: self.source_kafka.leader(topic, partition=0) is None,
             timeout_sec=60,
             backoff_sec=2,
-            err_msg="Failed to have leader = None"
+            err_msg="Failed to have leader = None",
         )
-        self.source_kafka.run_leader_election_command(topic, partition=0, election_type="UNCLEAN")
+        self.source_kafka.run_leader_election_command(
+            topic, partition=0, election_type="UNCLEAN"
+        )
         wait_until(
             lambda: self.producer.num_acked - acked > 1000,
             timeout_sec=60,
@@ -543,8 +615,9 @@ class ClusterMirroringTest(Test):
         )
         wait_until(
             lambda: self.all_satisfy_in_mirror(
-                kafka_node, mirror_cfg["name"],
-                lambda p: p["lag"] == 0 and p["state"] == "MIRRORING"
+                kafka_node,
+                mirror_cfg["name"],
+                lambda p: p["lag"] == 0 and p["state"] == "MIRRORING",
             ),
             timeout_sec=60,
             backoff_sec=2,
@@ -566,8 +639,7 @@ class ClusterMirroringTest(Test):
         )
         wait_until(
             lambda: self.all_satisfy_in_mirror(
-                kafka_node, mirror_cfg["name"],
-                lambda p: p["state"] == "STOPPED"
+                kafka_node, mirror_cfg["name"], lambda p: p["state"] == "STOPPED"
             ),
             timeout_sec=60,
             backoff_sec=2,
@@ -597,9 +669,11 @@ class ClusterMirroringTest(Test):
             lambda: self.source_kafka.leader(topic, partition=0) is None,
             timeout_sec=60,
             backoff_sec=2,
-            err_msg="Failed to have leader = None"
+            err_msg="Failed to have leader = None",
         )
-        self.source_kafka.run_leader_election_command(topic, partition=0, election_type="UNCLEAN")
+        self.source_kafka.run_leader_election_command(
+            topic, partition=0, election_type="UNCLEAN"
+        )
 
         self.logger.info("Producing to source after ULE 2")
         self.producer = VerifiableProducer(
@@ -630,7 +704,9 @@ class ClusterMirroringTest(Test):
 
         wait_until(
             lambda: self.source_kafka.create_cluster_mirror(
-                failback_node, mirror_cfg["name"], ClusterMirroringTest.MIRROR_CONFIG_FILE
+                failback_node,
+                mirror_cfg["name"],
+                ClusterMirroringTest.MIRROR_CONFIG_FILE,
             ),
             timeout_sec=20,
             backoff_sec=2,
@@ -652,8 +728,10 @@ class ClusterMirroringTest(Test):
         # mirror should stay in PREPARING state because not all source replicas have rejoined the ISR, so the LME truncation cannot complete
         wait_until(
             lambda: self.all_satisfy_in_mirror(
-                failback_node, mirror_cfg["name"], lambda p: p["state"] == "PREPARING",
-                kafka=self.source_kafka
+                failback_node,
+                mirror_cfg["name"],
+                lambda p: p["state"] == "PREPARING",
+                kafka=self.source_kafka,
             ),
             timeout_sec=20,
             backoff_sec=2,
@@ -663,9 +741,10 @@ class ClusterMirroringTest(Test):
         self.source_kafka.start_node(leader_node)
         wait_until(
             lambda: self.all_satisfy_in_mirror(
-                failback_node, mirror_cfg["name"],
+                failback_node,
+                mirror_cfg["name"],
                 lambda p: p["lag"] == 0 and p["state"] == "MIRRORING",
-                kafka=self.source_kafka
+                kafka=self.source_kafka,
             ),
             timeout_sec=60,
             backoff_sec=2,
