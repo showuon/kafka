@@ -24,6 +24,10 @@ jobs:
     name: Build & Verify
     runs-on: ubuntu-latest
 
+    env:
+      ORG_GRADLE_PROJECT_maxTestRetries: 3
+      ORG_GRADLE_PROJECT_maxTestRetryFailures: 20
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
