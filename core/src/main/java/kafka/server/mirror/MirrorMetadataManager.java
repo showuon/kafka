@@ -350,16 +350,20 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     // Check if all partitions in bumpLeaderEpoch are updated to the higher leader epoch, then complete the future
     public void maybeCompleteBumpLeaderEpochFuture() {
         pendingLeaderEpochBumps.removeIf(bumpLeaderEpoch -> {
-            Set<TopicPartition> incompletedTps = bumpLeaderEpoch.partitionToEpoch().entrySet().stream().filter(entry -> {
+            Set<TopicPartition> pendingPartitions = bumpLeaderEpoch.partitionToEpoch().entrySet().stream().filter(entry -> {
                 TopicPartition tp = entry.getKey();
                 int epoch = entry.getValue();
-                return metadataImage.topics().getPartition(metadataImage.topics().getTopic(tp.topic()).id(), tp.partition()).leaderEpoch <= epoch;
+                var topicImage = metadataImage.topics().getTopic(tp.topic());
+                if (topicImage == null) return false;
+                var partitionReg = topicImage.partitions().get(tp.partition());
+                if (partitionReg == null) return false;
+                return partitionReg.leaderEpoch <= epoch;
             }).map(Map.Entry::getKey).collect(Collectors.toSet());
-            if (incompletedTps.isEmpty()) {
+            if (pendingPartitions.isEmpty()) {
                 bumpLeaderEpoch.future().complete(null);
                 return true;
             } else {
-                log.info("bumpLeaderEpoch future is not completed for partitions: {}, all: {}", incompletedTps, bumpLeaderEpoch.partitionToEpoch().keySet());
+                log.info("bumpLeaderEpoch future is pending for partitions: {}, all: {}", pendingPartitions, bumpLeaderEpoch.partitionToEpoch().keySet());
                 return false;
             }
         });
@@ -459,8 +463,12 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                     if (mirrorName != null && !mirrorName.isBlank()) {
                         pendingPartitionStates.remove(tp);
                         pendingLeaderEpochBumps.removeIf(bumpLeaderEpoch -> {
-                            bumpLeaderEpoch.future().completeExceptionally(new IllegalStateException("Not leader anymore"));
-                            return true;
+                            if (bumpLeaderEpoch.partitionToEpoch().containsKey(tp)) {
+                                bumpLeaderEpoch.future().completeExceptionally(
+                                        new IllegalStateException("Not leader anymore for " + tp));
+                                return true;
+                            }
+                            return false;
                         });
                     }
                 }
@@ -1331,7 +1339,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 syncConsumerGroupOffsets(mirrorName, mirrorConfig);
                 syncAccessControlLists(mirrorName, mirrorConfig);
                 // Periodically check if we need to bump leader epoch for all mirrored partitions
-                metadataResponse.ifPresent(metadata -> sendBumpLeaderEpoch(buildBumpLeaderEpochRequestData(mirrorName, metadata, Set.of())));
+                metadataResponse.ifPresent(metadata ->
+                        sendBumpLeaderEpoch(buildBumpLeaderEpochRequestData(mirrorName, metadata, Set.of()))
+                                .whenComplete((v, ex) -> {
+                                    if (ex != null) log.warn("Periodic epoch bump failed for mirror {}", mirrorName, ex);
+                                }));
                 discoverTopicsByPattern(mirrorName, mirrorConfig);
                 enforceExcludePatterns(mirrorName, mirrorConfig);
             } catch (Exception e) {
