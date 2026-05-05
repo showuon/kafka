@@ -53,5 +53,8 @@ jobs:
       - name: Spotless Check
         run: ./gradlew spotlessCheck
 
+      - name: RAT
+        run: ./gradlew rat
+
       - name: Unit Tests
         run: ./gradlew unitTest
