@@ -26,7 +26,11 @@ import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AlterConfigOp;
 import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.clients.admin.DescribeMirrorsResult;
+import org.apache.kafka.clients.admin.GroupListing;
+import org.apache.kafka.clients.admin.ListConsumerGroupOffsetsSpec;
+import org.apache.kafka.clients.admin.ListGroupsOptions;
 import org.apache.kafka.clients.admin.MirrorDescription;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.GroupState;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.Node;
@@ -44,19 +48,12 @@ import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.DeleteAclsRequestData;
 import org.apache.kafka.common.message.DescribeConfigsRequestData;
 import org.apache.kafka.common.message.IncrementalAlterConfigsRequestData;
-import org.apache.kafka.common.message.ListGroupsRequestData;
 import org.apache.kafka.common.message.MetadataResponseData;
-import org.apache.kafka.common.message.OffsetCommitRequestData;
-import org.apache.kafka.common.message.OffsetFetchRequestData;
-import org.apache.kafka.common.message.OffsetFetchResponseData;
 import org.apache.kafka.common.message.ReadMirrorStatesRequestData;
 import org.apache.kafka.common.message.ReadMirrorStatesResponseData;
 import org.apache.kafka.common.message.StartMirrorTopicsRequestData;
 import org.apache.kafka.common.message.WriteMirrorStatesRequestData;
 import org.apache.kafka.common.metrics.Metrics;
-import org.apache.kafka.common.network.ClientInformation;
-import org.apache.kafka.common.network.ListenerName;
-import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.BumpLeaderEpochsRequest;
@@ -70,16 +67,10 @@ import org.apache.kafka.common.requests.DescribeAclsResponse;
 import org.apache.kafka.common.requests.DescribeConfigsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.kafka.common.requests.IncrementalAlterConfigsRequest;
-import org.apache.kafka.common.requests.ListGroupsRequest;
-import org.apache.kafka.common.requests.ListGroupsResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
-import org.apache.kafka.common.requests.OffsetFetchRequest;
-import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.ReadMirrorStatesRequest;
 import org.apache.kafka.common.requests.ReadMirrorStatesResponse;
-import org.apache.kafka.common.requests.RequestContext;
-import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.StartMirrorTopicsRequest;
 import org.apache.kafka.common.requests.StopMirrorTopicsRequest;
 import org.apache.kafka.common.requests.WriteMirrorStatesRequest;
@@ -87,12 +78,8 @@ import org.apache.kafka.common.requests.WriteMirrorStatesResponse;
 import org.apache.kafka.common.resource.PatternType;
 import org.apache.kafka.common.resource.ResourcePatternFilter;
 import org.apache.kafka.common.resource.ResourceType;
-import org.apache.kafka.common.security.auth.KafkaPrincipal;
-import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
-import org.apache.kafka.coordinator.group.Group;
-import org.apache.kafka.coordinator.group.GroupCoordinator;
 import org.apache.kafka.coordinator.mirror.MirrorRecordKey;
 import org.apache.kafka.image.ConfigurationDelta;
 import org.apache.kafka.image.MetadataDelta;
@@ -104,7 +91,6 @@ import org.apache.kafka.metadata.MetadataCache;
 import org.apache.kafka.metadata.authorizer.StandardAcl;
 import org.apache.kafka.server.common.ControllerRequestCompletionHandler;
 import org.apache.kafka.server.common.NodeToControllerChannelManager;
-import org.apache.kafka.server.common.RequestLocal;
 import org.apache.kafka.server.config.MirrorConfig;
 import org.apache.kafka.server.metrics.KafkaMetricsGroup;
 import org.apache.kafka.server.network.BrokerEndPoint;
@@ -113,7 +99,6 @@ import org.apache.kafka.server.util.RequestAndCompletionHandler;
 
 import org.slf4j.Logger;
 
-import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -129,6 +114,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -136,7 +122,6 @@ import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import static java.util.Collections.singletonList;
 import static kafka.server.mirror.MirrorUtils.LEADER_EPOCH_BUMP_INCREMENT;
 import static kafka.server.mirror.MirrorUtils.LEADER_EPOCH_BUMP_THRESHOLD;
 import static kafka.server.mirror.MirrorUtils.originalMirrorName;
@@ -171,22 +156,24 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private final Metrics metrics;
     private final Time time;
     private final Random random;
+
     // volatile for cross-thread visibility (written by KRaft thread, read by scheduler and fetcher threads)
     private volatile MetadataImage metadataImage;
     private final MetadataCache metadataCache;
+
     private volatile MirrorStateSender mirrorStateSender;
     private volatile boolean initialized = false;
     private final NodeToControllerChannelManager channelManager;
-    private final Supplier<GroupCoordinator> groupCoordinatorSupplier;
     private final Supplier<MirrorFetcherManager> mirrorFetcherManagerSupplier;
     private Optional<MirrorUtils.StateTransitioner> stateTransitioner = Optional.empty();
     private Optional<Consumer<String>> mirrorDeletionHandler = Optional.empty();
     private Optional<Function<MirrorRecordKey, Integer>> coordinatorPartitionFinder = Optional.empty();
     private Optional<Function<String, Integer>> coordinatorPartitionByNameFinder = Optional.empty();
-    private volatile Admin adminClient;
     private final KafkaScheduler scheduler;
 
-    // cache
+    private final Map<String, Admin> srcAdmins = new ConcurrentHashMap<>();
+    private volatile Admin dstAdmin;
+
     private final Map<String, Uuid> sourceClusterIds = new ConcurrentHashMap<>();
     private final Map<String, List<MirrorSourceSender>> sourceSenders = new ConcurrentHashMap<>();
     private final Map<String, Map<TopicPartition, Node>> sourceLeaders = new ConcurrentHashMap<>();
@@ -215,7 +202,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         Time time,
         MetadataCache metadataCache,
         NodeToControllerChannelManager channelManager,
-        Supplier<GroupCoordinator> groupCoordinatorSupplier,
         Supplier<MirrorFetcherManager> mirrorFetcherManagerSupplier,
         KafkaScheduler scheduler
     ) {
@@ -227,7 +213,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         this.time = time;
         this.random = new Random();
         this.channelManager = channelManager;
-        this.groupCoordinatorSupplier = groupCoordinatorSupplier;
         this.mirrorFetcherManagerSupplier = mirrorFetcherManagerSupplier;
         this.metadataImage = MetadataImage.EMPTY;
         this.metadataCache = metadataCache;
@@ -344,35 +329,17 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         if (delta.topicsDelta() != null) {
             clearFollowersState(delta.topicsDelta().localChanges(nodeId).followers().keySet(), newImage);
         }
-        maybeCompleteBumpLeaderEpochFuture();
-    }
-
-    // Check if all partitions in bumpLeaderEpoch are updated to the higher leader epoch, then complete the future
-    public void maybeCompleteBumpLeaderEpochFuture() {
-        pendingLeaderEpochBumps.removeIf(bumpLeaderEpoch -> {
-            Set<TopicPartition> pendingPartitions = bumpLeaderEpoch.partitionToEpoch().entrySet().stream().filter(entry -> {
-                TopicPartition tp = entry.getKey();
-                int epoch = entry.getValue();
-                var topicImage = metadataImage.topics().getTopic(tp.topic());
-                if (topicImage == null) return false;
-                var partitionReg = topicImage.partitions().get(tp.partition());
-                if (partitionReg == null) return false;
-                return partitionReg.leaderEpoch <= epoch;
-            }).map(Map.Entry::getKey).collect(Collectors.toSet());
-            if (pendingPartitions.isEmpty()) {
-                bumpLeaderEpoch.future().complete(null);
-                return true;
-            } else {
-                log.info("bumpLeaderEpoch future is pending for partitions: {}, all: {}", pendingPartitions, bumpLeaderEpoch.partitionToEpoch().keySet());
-                return false;
-            }
-        });
+        maybeCompletePendingEpochBumps();
     }
 
     @Override
     public void close() throws Exception {
         if (mirrorStateSender != null) {
             mirrorStateSender.shutdown();
+        }
+        srcAdmins.values().forEach(Admin::close);
+        if (dstAdmin != null) {
+            dstAdmin.close();
         }
         closeSourceSenders();
     }
@@ -809,6 +776,22 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         sourceSenders.put(mirrorName, senders);
     }
 
+    /** Creates Admin clients for source mirrors and the local destination, if not already initialized. */
+    private void ensureAdminClients(Set<String> mirrors) {
+        for (String mirrorName : mirrors) {
+            srcAdmins.computeIfAbsent(mirrorName, k -> {
+                Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.MIRROR, k));
+                return Admin.create(props);
+            });
+        }
+        if (dstAdmin == null) {
+            var endpoint = brokerConfig.effectiveAdvertisedBrokerListeners().head();
+            Properties props = new Properties();
+            props.put(BOOTSTRAP_SERVERS_CONFIG, endpoint.host() + ":" + endpoint.port());
+            dstAdmin = Admin.create(props);
+        }
+    }
+
     /** Sends a request to the source cluster, iterating available senders with fallback on failure. */
     private ClientResponse trySendSourceClusterRequest(String mirrorName, AbstractRequest.Builder<?> requestBuilder) {
         // snapshot sender list to avoid concurrent modification during iteration
@@ -969,30 +952,35 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     CompletionStage<Map<String, MirrorDescription>> truncateToLastMirrorEpochs(String mirrorName,
                                                                                Set<TopicPartition> topicPartitionSet) {
         log.info("Truncating to last mirrored epochs from local state for mirror {}: {}", mirrorName, topicPartitionSet);
-        if (adminClient == null) {
-            Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.MIRROR, mirrorName));
-            adminClient = Admin.create(props);
-        }
-
-        DescribeMirrorsResult result = adminClient.describeMirrors(List.of(mirrorName));
+        Admin admin = srcAdmins.computeIfAbsent(mirrorName, k -> {
+            Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.MIRROR, k));
+            return Admin.create(props);
+        });
+        DescribeMirrorsResult result = admin.describeMirrors(List.of(mirrorName));
         return result.allDescriptions().toCompletionStage();
     }
 
-    /** Syncs metadata from all source clusters. */
-    void syncMetadata() {
+    /** Periodic sync entry point. */
+    void periodicSync() {
         Set<String> mirrors = getConfiguredMirrors();
-        if (!mirrors.isEmpty()) {
-            log.debug("Refreshing mirror metadata for mirrors: {}", mirrors);
+        if (mirrors.isEmpty()) {
+            return;
         }
 
+        log.info("Syncing metadata for mirrors: {}", mirrors);
         mirrors.forEach(this::ensureConnection);
+        ensureAdminClients(mirrors);
+
         // snapshot keyset to avoid ConcurrentModificationException
         for (String mirrorName : Set.copyOf(sourceSenders.keySet())) {
             try {
                 discoverSourceBrokers(mirrorName);
-                syncMirrorMetadata(mirrorName, syncTopicMetadata(mirrorName));
+                log.info("Syncing source topic state for mirror {}", mirrorName);
+                var metadataResponse = syncSourceTopicState(mirrorName);
+                log.info("Syncing coordinator metadata for mirror {}", mirrorName);
+                syncCoordinatorMetadata(mirrorName, metadataResponse);
             } catch (Exception e) {
-                log.error("Failed to refresh metadata for mirror {}", mirrorName, e);
+                log.error("Failed to sync metadata for mirror {}", mirrorName, e);
             }
         }
 
@@ -1000,14 +988,13 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         metadataRefreshError.incrementAndGet();
     }
 
-    public CompletableFuture<Void> scheduleBumpLeaderEpoch(String mirrorName, Set<TopicPartition> topicPartitions) {
+    public CompletableFuture<Void> scheduleBumpLeaderEpochs(String mirrorName, Set<TopicPartition> topicPartitions) {
         CompletableFuture<Void> future = new CompletableFuture<>();
         scheduler.scheduleOnce("bump-leader-epoch", () -> {
             ensureConnection(mirrorName);
             discoverSourceBrokers(mirrorName);
-            Optional<MetadataResponse> metadataResponse = syncTopicMetadata(mirrorName);
-            if (metadataResponse.isPresent()) {
-                sendBumpLeaderEpoch(buildBumpLeaderEpochRequestData(mirrorName, metadataResponse.get(), topicPartitions))
+            Optional<MetadataResponse> metadataResponse = syncSourceTopicState(mirrorName);
+            maybeBumpLeaderEpochs(mirrorName, metadataResponse, topicPartitions)
                     .whenComplete((v, ex) -> {
                         if (ex != null) {
                             future.completeExceptionally(ex);
@@ -1015,61 +1002,21 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                             future.complete(null);
                         }
                     });
-            } else {
-                future.complete(null);
-            }
         });
         return future;
     }
 
-    public Map<TopicPartition, Integer> buildBumpLeaderEpochRequestData(LogManager logManager, Set<TopicPartition> topicPartitions) {
-        Map<TopicPartition, Integer> partitionMinEpochs = new HashMap<>();
-        topicPartitions.forEach(tp -> {
-            int epoch = logManager.getLog(tp, false).get().latestEpoch().orElse(-1);
-            partitionMinEpochs.put(tp, epoch);
-        });
-        return partitionMinEpochs;
+    private CompletableFuture<Void> maybeBumpLeaderEpochs(String mirrorName, Optional<MetadataResponse> metadataResponse, Set<TopicPartition> topicPartitions) {
+        if (metadataResponse.isPresent()) {
+            return sendBumpLeaderEpochs(buildSourceEpochBumpTargets(mirrorName, metadataResponse.get(), topicPartitions))
+                    .whenComplete((v, ex) -> {
+                        if (ex != null) log.warn("Failed to bump leader epoch for mirror {}", mirrorName, ex);
+                    });
+        }
+        return CompletableFuture.completedFuture(null);
     }
 
-    private Map<TopicPartition, Integer> buildBumpLeaderEpochRequestData(String mirrorName, MetadataResponse metadataResponse, Set<TopicPartition> topicPartitions) {
-        Set<String> mirrorTopics = new HashSet<>();
-        if (topicPartitions.isEmpty()) {
-            mirrorTopics = getConfiguredTopics(mirrorName);
-        }
-        Map<TopicPartition, Integer> leaderEpochFromMetadata = new HashMap<>();
-        for (MetadataResponse.TopicMetadata topicMetadata : metadataResponse.topicMetadata()) {
-            if (topicMetadata.error() != Errors.NONE) {
-                continue;
-            }
-            if (!mirrorTopics.isEmpty() && !mirrorTopics.contains(topicMetadata.topic())) {
-                continue;
-            }
-            for (MetadataResponse.PartitionMetadata partitionMetadata : topicMetadata.partitionMetadata()) {
-                TopicPartition tp = partitionMetadata.topicPartition;
-                if (!topicPartitions.isEmpty() && !topicPartitions.contains(tp)) {
-                    continue;
-                }
-                if (partitionMetadata.leaderEpoch.isEmpty()) {
-                    continue;
-                }
-                if (metadataImage.topics().getTopic(tp.topic()) == null ||
-                        metadataImage.topics().getTopic(tp.topic()).partitions().get(tp.partition()) == null) {
-                    continue;
-                }
-                int epoch = partitionMetadata.leaderEpoch.get();
-                int localEpoch = metadataImage.topics().getTopic(tp.topic()).partitions().get(tp.partition()).leaderEpoch;
-                if (epoch > localEpoch - LEADER_EPOCH_BUMP_THRESHOLD) {
-                    // will throw exception when overflow, but this should not happen
-                    int newEpoch = Math.addExact(epoch, LEADER_EPOCH_BUMP_INCREMENT);
-                    leaderEpochFromMetadata.put(tp, newEpoch);
-                }
-            }
-        }
-        log.info("Bumping leader epoch for partitions {} to {}", topicPartitions, leaderEpochFromMetadata);
-        return leaderEpochFromMetadata;
-    }
-
-    public CompletableFuture<Void> sendBumpLeaderEpoch(Map<TopicPartition, Integer> partitionMinEpochs) {
+    public CompletableFuture<Void> sendBumpLeaderEpochs(Map<TopicPartition, Integer> partitionMinEpochs) {
         if (partitionMinEpochs.isEmpty()) {
             return CompletableFuture.completedFuture(null);
         }
@@ -1109,6 +1056,74 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             }
         });
         return future;
+    }
+
+    private Map<TopicPartition, Integer> buildSourceEpochBumpTargets(String mirrorName, MetadataResponse metadataResponse, Set<TopicPartition> topicPartitions) {
+        Set<String> mirrorTopics = new HashSet<>();
+        if (topicPartitions.isEmpty()) {
+            mirrorTopics = getConfiguredTopics(mirrorName);
+        }
+        Map<TopicPartition, Integer> leaderEpochFromMetadata = new HashMap<>();
+        for (MetadataResponse.TopicMetadata topicMetadata : metadataResponse.topicMetadata()) {
+            if (topicMetadata.error() != Errors.NONE) {
+                continue;
+            }
+            if (!mirrorTopics.isEmpty() && !mirrorTopics.contains(topicMetadata.topic())) {
+                continue;
+            }
+            for (MetadataResponse.PartitionMetadata partitionMetadata : topicMetadata.partitionMetadata()) {
+                TopicPartition tp = partitionMetadata.topicPartition;
+                if (!topicPartitions.isEmpty() && !topicPartitions.contains(tp)) {
+                    continue;
+                }
+                if (partitionMetadata.leaderEpoch.isEmpty()) {
+                    continue;
+                }
+                if (metadataImage.topics().getTopic(tp.topic()) == null ||
+                        metadataImage.topics().getTopic(tp.topic()).partitions().get(tp.partition()) == null) {
+                    continue;
+                }
+                int epoch = partitionMetadata.leaderEpoch.get();
+                int localEpoch = metadataImage.topics().getTopic(tp.topic()).partitions().get(tp.partition()).leaderEpoch;
+                if (epoch > localEpoch - LEADER_EPOCH_BUMP_THRESHOLD) {
+                    // will throw exception when overflow, but this should not happen
+                    int newEpoch = Math.addExact(epoch, LEADER_EPOCH_BUMP_INCREMENT);
+                    leaderEpochFromMetadata.put(tp, newEpoch);
+                }
+            }
+        }
+        log.info("Bumping leader epoch for partitions {} to {}", topicPartitions, leaderEpochFromMetadata);
+        return leaderEpochFromMetadata;
+    }
+
+    public Map<TopicPartition, Integer> buildLocalEpochBumpTargets(LogManager logManager, Set<TopicPartition> topicPartitions) {
+        Map<TopicPartition, Integer> partitionMinEpochs = new HashMap<>();
+        topicPartitions.forEach(tp -> {
+            int epoch = logManager.getLog(tp, false).get().latestEpoch().orElse(-1);
+            partitionMinEpochs.put(tp, epoch);
+        });
+        return partitionMinEpochs;
+    }
+
+    private void maybeCompletePendingEpochBumps() {
+        pendingLeaderEpochBumps.removeIf(bumpLeaderEpoch -> {
+            Set<TopicPartition> pendingPartitions = bumpLeaderEpoch.partitionToEpoch().entrySet().stream().filter(entry -> {
+                TopicPartition tp = entry.getKey();
+                int epoch = entry.getValue();
+                var topicImage = metadataImage.topics().getTopic(tp.topic());
+                if (topicImage == null) return false;
+                var partitionReg = topicImage.partitions().get(tp.partition());
+                if (partitionReg == null) return false;
+                return partitionReg.leaderEpoch <= epoch;
+            }).map(Map.Entry::getKey).collect(Collectors.toSet());
+            if (pendingPartitions.isEmpty()) {
+                bumpLeaderEpoch.future().complete(null);
+                return true;
+            } else {
+                log.info("bumpLeaderEpoch future is pending for partitions: {}, all: {}", pendingPartitions, bumpLeaderEpoch.partitionToEpoch().keySet());
+                return false;
+            }
+        });
     }
 
     /**
@@ -1181,8 +1196,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         sourceSenders.put(mirrorName, merged);
     }
 
-    /** Fetches topic metadata from the source cluster and updates partition leaders, counts, and deletions. */
-    private Optional<MetadataResponse> syncTopicMetadata(String mirrorName) {
+    /**
+     * Fetches topic metadata from the source cluster.
+     * Runs on every broker to keep partition leaders, topic creation, deletion, and partition counts in sync.
+     */
+    private Optional<MetadataResponse> syncSourceTopicState(String mirrorName) {
         Set<String> topics = getConfiguredTopics(mirrorName);
         if (topics.isEmpty()) {
             return Optional.empty();
@@ -1325,29 +1343,27 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     /**
-     * Syncs mirror metadata (configurations, consumer group offsets, ACLs) from source clusters.
-     * Only the coordinator for each mirror name handles this, distributing load across brokers.
+     * Syncs configurations, consumer group offsets, ACLs, and topic patterns from source clusters.
+     * Runs only on the coordinator broker for each mirror.
      */
-    void syncMirrorMetadata(String mirrorName, Optional<MetadataResponse> metadataResponse) {
-        if (isLocalCoordinator(mirrorName)) {
-            ensureConnection(mirrorName);
-            try {
-                MirrorConfig mirrorConfig = MirrorConfig.fromProperties(
-                        metadataCache.config(new ConfigResource(ConfigResource.Type.MIRROR, mirrorName)));
-                syncTopicConfigurations(mirrorName, mirrorConfig);
-                syncConsumerGroupOffsets(mirrorName, mirrorConfig);
-                syncAccessControlLists(mirrorName, mirrorConfig);
-                // Periodically check if we need to bump leader epoch for all mirrored partitions
-                metadataResponse.ifPresent(metadata ->
-                        sendBumpLeaderEpoch(buildBumpLeaderEpochRequestData(mirrorName, metadata, Set.of()))
-                                .whenComplete((v, ex) -> {
-                                    if (ex != null) log.warn("Periodic epoch bump failed for mirror {}", mirrorName, ex);
-                                }));
-                discoverTopicsByPattern(mirrorName, mirrorConfig);
-                enforceExcludePatterns(mirrorName, mirrorConfig);
-            } catch (Exception e) {
-                log.error("Failed to sync mirror metadata for mirror {}", mirrorName, e);
-            }
+    void syncCoordinatorMetadata(String mirrorName, Optional<MetadataResponse> metadataResponse) {
+        if (!isLocalCoordinator(mirrorName)) {
+            return;
+        }
+
+        ensureConnection(mirrorName);
+
+        try {
+            MirrorConfig mirrorConfig = MirrorConfig.fromProperties(
+                    metadataCache.config(new ConfigResource(ConfigResource.Type.MIRROR, mirrorName)));
+            syncTopicConfigurations(mirrorName, mirrorConfig);
+            syncConsumerGroupOffsets(mirrorName, mirrorConfig);
+            syncAccessControlLists(mirrorName, mirrorConfig);
+            maybeBumpLeaderEpochs(mirrorName, metadataResponse, Set.of());
+            discoverTopicsByPattern(mirrorName, mirrorConfig);
+            enforceExcludePatterns(mirrorName, mirrorConfig);
+        } catch (Exception e) {
+            log.error("Failed to sync mirror metadata for mirror {}", mirrorName, e);
         }
     }
 
@@ -1442,99 +1458,95 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         }
     }
 
+    /**
+     * Syncs consumer group offsets from the source cluster to the destination.
+     * Only commits offsets for topics actively mirrored, and skips groups that are active
+     * (non-EMPTY, non-DEAD) on the destination to avoid regressing offsets after failover.
+     */
     private void syncConsumerGroupOffsets(String mirrorName, MirrorConfig mirrorConfig) {
         // TODO: This is incremented on every metadata refresh for testing purpose, as we don't have error handling at this stage
         consumerGroupOffsetSyncError.incrementAndGet();
-        Pattern groupsIncludePattern = mirrorConfig.groupsIncludePattern();
-        Pattern groupsExcludePattern = mirrorConfig.groupsExcludePattern();
-        // 1. list group
-        ListGroupsRequest.Builder builder = new ListGroupsRequest.Builder(new ListGroupsRequestData()
-                // TODO: if the source cluster is in old version, it won't support types filter
-                .setTypesFilter(List.of(Group.GroupType.CLASSIC.name(), Group.GroupType.CONSUMER.name()))
-                .setStatesFilter(singletonList(GroupState.STABLE.name())));
-        var listGroupResponse = trySendSourceClusterRequest(mirrorName, builder);
-        if (listGroupResponse.responseBody() instanceof ListGroupsResponse listGroupsRes) {
-            log.debug("List groups response for mirror {}: {}", mirrorName, listGroupsRes);
 
-            // Filter groups by include pattern
-            var matchingGroups = listGroupsRes.data().groups().stream()
-                    .filter(group -> groupsIncludePattern == null || groupsIncludePattern.matcher(group.groupId()).matches()
-                            && (groupsExcludePattern == null || !groupsExcludePattern.matcher(group.groupId()).matches()))
+        Admin srcAdmin = srcAdmins.get(mirrorName);
+        if (srcAdmin == null || dstAdmin == null) {
+            return;
+        }
+
+        Set<String> mirrorTopics = getConfiguredTopics(mirrorName);
+        log.info("Syncing consumer group offsets for mirror {}, mirrorTopics={}", mirrorName, mirrorTopics);
+        if (mirrorTopics.isEmpty()) {
+            return;
+        }
+
+        try {
+            Pattern groupsIncludePattern = mirrorConfig.groupsIncludePattern();
+            Pattern groupsExcludePattern = mirrorConfig.groupsExcludePattern();
+
+            List<String> sourceGroupIds = srcAdmin.listGroups().all()
+                    .get(30, TimeUnit.SECONDS).stream()
+                    .map(GroupListing::groupId)
+                    .filter(id -> groupsIncludePattern == null || groupsIncludePattern.matcher(id).matches())
+                    .filter(id -> groupsExcludePattern == null || !groupsExcludePattern.matcher(id).matches())
                     .toList();
-
-            if (matchingGroups.isEmpty()) {
+            log.debug("Source groups for mirror {}: {}", mirrorName, sourceGroupIds);
+            if (sourceGroupIds.isEmpty()) {
                 return;
             }
 
-            // 2. get committed offsets for each group
-            OffsetFetchRequest.Builder offsetFetchBuilder = OffsetFetchRequest.Builder.forTopicNames(
-                    new OffsetFetchRequestData()
-                            .setRequireStable(false)
-                            .setGroups(matchingGroups.stream().map(group -> new OffsetFetchRequestData.OffsetFetchRequestGroup()
-                                    .setGroupId(group.groupId())
-                                    .setTopics(null)).toList()), false);
-            var offsetFetchResponse = trySendSourceClusterRequest(mirrorName, offsetFetchBuilder);
-            if (offsetFetchResponse.responseBody() instanceof OffsetFetchResponse offsetFetchRes) {
-                log.debug("Periodic offset fetch response: {}", offsetFetchRes);
+            Map<String, ListConsumerGroupOffsetsSpec> groupSpecs = sourceGroupIds.stream()
+                    .collect(Collectors.toMap(id -> id, id -> new ListConsumerGroupOffsetsSpec()));
+            Map<String, Map<TopicPartition, OffsetAndMetadata>> allOffsets = srcAdmin
+                    .listConsumerGroupOffsets(groupSpecs).all().get(30, TimeUnit.SECONDS);
 
-                // 3. commit offsets to consumer group coordinator
-                // TODO: need to find the current group coordinator for each group
-                offsetFetchRes.data().groups().forEach(group -> {
-                    List<OffsetCommitRequestData.OffsetCommitRequestTopic> topicList = toOffsetCommitTopics(group);
-                    commitOffsetsToGroupCoordinator(group.groupId(), topicList);
-                });
+            Optional<Set<String>> activeDestGroups = getActiveDestinationGroupIds();
+            if (activeDestGroups.isEmpty()) {
+                return;
             }
+            log.debug("Active destination groups: {}", activeDestGroups.get());
+
+            for (var entry : allOffsets.entrySet()) {
+                String groupId = entry.getKey();
+                if (activeDestGroups.get().contains(groupId)) {
+                    log.warn("Skipping offset sync for group {} in mirror {}: active on destination", groupId, mirrorName);
+                    continue;
+                }
+
+                Map<TopicPartition, OffsetAndMetadata> filtered = entry.getValue().entrySet().stream()
+                        .filter(e -> mirrorTopics.contains(e.getKey().topic()))
+                        .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+                if (filtered.isEmpty()) {
+                    continue;
+                }
+
+                log.debug("Committing offsets for group {} on destination, partitions={}", groupId, filtered.keySet());
+                dstAdmin.alterConsumerGroupOffsets(groupId, filtered).all().get(30, TimeUnit.SECONDS);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to sync consumer group offsets for mirror {}: {}", mirrorName, e.getMessage());
         }
     }
 
-    private List<OffsetCommitRequestData.OffsetCommitRequestTopic> toOffsetCommitTopics(OffsetFetchResponseData.OffsetFetchResponseGroup group) {
-        List<OffsetCommitRequestData.OffsetCommitRequestTopic> topicList = new ArrayList<>();
-        group.topics().forEach(t -> {
-            List<OffsetCommitRequestData.OffsetCommitRequestPartition> parList = new ArrayList<>();
-            t.partitions().forEach(par -> {
-                parList.add(new OffsetCommitRequestData.OffsetCommitRequestPartition()
-                        .setPartitionIndex(par.partitionIndex())
-                        .setCommittedOffset(par.committedOffset())
-                        .setCommittedLeaderEpoch(par.committedLeaderEpoch())
-                        .setCommittedMetadata(par.metadata()));
-            });
-            topicList.add(new OffsetCommitRequestData.OffsetCommitRequestTopic()
-                    .setTopicId(t.topicId())
-                    .setName(t.name())
-                    .setPartitions(parList));
-        });
-        return topicList;
-    }
-
-    private void commitOffsetsToGroupCoordinator(String groupId, List<OffsetCommitRequestData.OffsetCommitRequestTopic> topicList) {
-        groupCoordinatorSupplier.get().commitOffsets(
-                new RequestContext(
-                        new RequestHeader(
-                                ApiKeys.OFFSET_COMMIT,
-                                ApiKeys.OFFSET_COMMIT.latestVersion(),
-                                "client",
-                                0
-                        ),
-                        "1",
-                        InetAddress.getLoopbackAddress(),
-                        KafkaPrincipal.ANONYMOUS,
-                        ListenerName.forSecurityProtocol(SecurityProtocol.PLAINTEXT),
-                        SecurityProtocol.PLAINTEXT,
-                        ClientInformation.EMPTY,
-                        true
-                ),
-                new OffsetCommitRequestData()
-                        .setGroupId(groupId)
-                        .setMemberId("")
-                        .setGenerationIdOrMemberEpoch(-1)
-                        .setRetentionTimeMs(-1)
-                        .setGroupInstanceId("")
-                        .setTopics(topicList),
-                RequestLocal.noCaching().bufferSupplier()
-        ).handle((data, exception) -> {
-            log.debug("Periodic offset commit result: {}, exception: {}", data, exception);
-            return null;
-        });
+    /**
+     * Returns groups that are active on the destination cluster (excludes EMPTY and DEAD).
+     * Returns empty Optional on failure so the caller can skip the sync cycle.
+     */
+    private Optional<Set<String>> getActiveDestinationGroupIds() {
+        try {
+            var options = new ListGroupsOptions()
+                    .inGroupStates(Set.of(
+                            GroupState.STABLE,
+                            GroupState.PREPARING_REBALANCE,
+                            GroupState.COMPLETING_REBALANCE,
+                            GroupState.ASSIGNING,
+                            GroupState.RECONCILING));
+            return Optional.of(dstAdmin.listGroups(options).all()
+                    .get(30, TimeUnit.SECONDS).stream()
+                    .map(GroupListing::groupId)
+                    .collect(Collectors.toSet()));
+        } catch (Exception e) {
+            log.warn("Failed to list destination groups, skipping offset sync cycle: {}", e.getMessage());
+            return Optional.empty();
+        }
     }
 
     private void syncAccessControlLists(String mirrorName, MirrorConfig mirrorConfig) {
