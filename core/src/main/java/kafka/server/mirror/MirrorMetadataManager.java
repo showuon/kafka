@@ -1460,8 +1460,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     /**
      * Syncs consumer group offsets from the source cluster to the destination.
+     * Uses Admin clients which handle coordinator routing internally.
      * Only commits offsets for topics actively mirrored, and skips groups that are active
      * (non-EMPTY, non-DEAD) on the destination to avoid regressing offsets after failover.
+     * TODO: Share groups use a different offset model (__share_group_state) and will need
+     *  a separate sync flow with dedicated APIs when mirroring support is added.
      */
     private void syncConsumerGroupOffsets(String mirrorName, MirrorConfig mirrorConfig) {
         // TODO: This is incremented on every metadata refresh for testing purpose, as we don't have error handling at this stage
@@ -1483,7 +1486,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             Pattern groupsIncludePattern = mirrorConfig.groupsIncludePattern();
             Pattern groupsExcludePattern = mirrorConfig.groupsExcludePattern();
 
-            List<String> sourceGroupIds = srcAdmin.listGroups().all()
+            List<String> sourceGroupIds = srcAdmin.listGroups(ListGroupsOptions.forConsumerGroups()).all()
                     .get(30, TimeUnit.SECONDS).stream()
                     .map(GroupListing::groupId)
                     .filter(id -> groupsIncludePattern == null || groupsIncludePattern.matcher(id).matches())
@@ -1519,8 +1522,12 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                     continue;
                 }
 
-                log.debug("Committing offsets for group {} on destination, partitions={}", groupId, filtered.keySet());
-                dstAdmin.alterConsumerGroupOffsets(groupId, filtered).all().get(30, TimeUnit.SECONDS);
+                try {
+                    log.debug("Committing offsets for group {} on destination, partitions={}", groupId, filtered.keySet());
+                    dstAdmin.alterConsumerGroupOffsets(groupId, filtered).all().get(30, TimeUnit.SECONDS);
+                } catch (Exception e) {
+                    log.warn("Failed to commit offsets for group {} in mirror {}: {}", groupId, mirrorName, e.getMessage());
+                }
             }
         } catch (Exception e) {
             log.warn("Failed to sync consumer group offsets for mirror {}: {}", mirrorName, e.getMessage());
@@ -1528,12 +1535,12 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     /**
-     * Returns groups that are active on the destination cluster (excludes EMPTY and DEAD).
+     * Returns consumer groups that are active on the destination cluster (excludes EMPTY and DEAD).
      * Returns empty Optional on failure so the caller can skip the sync cycle.
      */
     private Optional<Set<String>> getActiveDestinationGroupIds() {
         try {
-            var options = new ListGroupsOptions()
+            var options = ListGroupsOptions.forConsumerGroups()
                     .inGroupStates(Set.of(
                             GroupState.STABLE,
                             GroupState.PREPARING_REBALANCE,
