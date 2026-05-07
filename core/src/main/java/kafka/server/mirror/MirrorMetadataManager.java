@@ -29,6 +29,7 @@ import org.apache.kafka.clients.admin.DescribeMirrorsResult;
 import org.apache.kafka.clients.admin.GroupListing;
 import org.apache.kafka.clients.admin.ListConsumerGroupOffsetsSpec;
 import org.apache.kafka.clients.admin.ListGroupsOptions;
+import org.apache.kafka.clients.admin.ListShareGroupOffsetsSpec;
 import org.apache.kafka.clients.admin.MirrorDescription;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.GroupState;
@@ -194,6 +195,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private AtomicLong metadataRefreshError;
     private AtomicLong topicConfigSyncError;
     private AtomicLong consumerGroupOffsetSyncError;
+    private AtomicLong shareGroupOffsetSyncError;
     private AtomicLong aclSyncError;
 
     public MirrorMetadataManager(
@@ -222,10 +224,12 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         this.metadataRefreshError = new AtomicLong();
         this.topicConfigSyncError = new AtomicLong();
         this.consumerGroupOffsetSyncError = new AtomicLong();
+        this.shareGroupOffsetSyncError = new AtomicLong();
         this.aclSyncError = new AtomicLong();
 
         metricsGroup.newGauge("TopicConfigSyncError", topicConfigSyncError::get);
         metricsGroup.newGauge("ConsumerGroupOffsetSyncError", consumerGroupOffsetSyncError::get);
+        metricsGroup.newGauge("ShareGroupOffsetSyncError", shareGroupOffsetSyncError::get);
         metricsGroup.newGauge("AclSyncError", aclSyncError::get);
         metricsGroup.newGauge("TopicMetadataRefreshError", metadataRefreshError::get);
         metricsGroup.newGauge("PreparingPartitionState", () -> partitionStateCount(MirrorPartitionState.PREPARING));
@@ -1357,7 +1361,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             MirrorConfig mirrorConfig = MirrorConfig.fromProperties(
                     metadataCache.config(new ConfigResource(ConfigResource.Type.MIRROR, mirrorName)));
             syncTopicConfigurations(mirrorName, mirrorConfig);
-            syncConsumerGroupOffsets(mirrorName, mirrorConfig);
+            syncGroupOffsets(mirrorName, mirrorConfig);
             syncAccessControlLists(mirrorName, mirrorConfig);
             maybeBumpLeaderEpochs(mirrorName, metadataResponse, Set.of());
             discoverTopicsByPattern(mirrorName, mirrorConfig);
@@ -1459,17 +1463,12 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     /**
-     * Syncs consumer group offsets from the source cluster to the destination.
-     * Uses Admin clients which handle coordinator routing internally.
-     * Only commits offsets for topics actively mirrored, and skips groups that are active
-     * (non-EMPTY, non-DEAD) on the destination to avoid regressing offsets after failover.
-     * TODO: Share groups use a different offset model (__share_group_state) and will need
-     *  a separate sync flow with dedicated APIs when mirroring support is added.
+     * Syncs group offsets from the source cluster to the destination in two phases:
+     * consumer groups first, then share groups. Keeping them separate avoids cross-type
+     * conflicts where a consumer group on the source could overwrite a share group with
+     * the same name on the destination (or vice versa).
      */
-    private void syncConsumerGroupOffsets(String mirrorName, MirrorConfig mirrorConfig) {
-        // TODO: This is incremented on every metadata refresh for testing purpose, as we don't have error handling at this stage
-        consumerGroupOffsetSyncError.incrementAndGet();
-
+    private void syncGroupOffsets(String mirrorName, MirrorConfig mirrorConfig) {
         Admin srcAdmin = srcAdmins.get(mirrorName);
         if (srcAdmin == null || dstAdmin == null) {
             log.error("Admin clients not initialized for mirror {}, skipping offset sync", mirrorName);
@@ -1477,41 +1476,43 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         }
 
         Set<String> mirrorTopics = getConfiguredTopics(mirrorName);
-        log.info("Syncing consumer group offsets for mirror {}, mirrorTopics={}", mirrorName, mirrorTopics);
         if (mirrorTopics.isEmpty()) {
             return;
         }
 
-        try {
-            Pattern groupsIncludePattern = mirrorConfig.groupsIncludePattern();
-            Pattern groupsExcludePattern = mirrorConfig.groupsExcludePattern();
+        Pattern groupsIncludePattern = mirrorConfig.groupsIncludePattern();
+        Pattern groupsExcludePattern = mirrorConfig.groupsExcludePattern();
 
-            List<String> sourceGroupIds = srcAdmin.listGroups(ListGroupsOptions.forConsumerGroups()).all()
-                    .get(30, TimeUnit.SECONDS).stream()
-                    .map(GroupListing::groupId)
-                    .filter(id -> groupsIncludePattern == null || groupsIncludePattern.matcher(id).matches())
-                    .filter(id -> groupsExcludePattern == null || !groupsExcludePattern.matcher(id).matches())
-                    .toList();
-            log.debug("Source groups for mirror {}: {}", mirrorName, sourceGroupIds);
+        syncConsumerGroupOffsets(srcAdmin, mirrorName, mirrorTopics, groupsIncludePattern, groupsExcludePattern);
+        syncShareGroupOffsets(srcAdmin, mirrorName, mirrorTopics, groupsIncludePattern, groupsExcludePattern);
+    }
+
+    private void syncConsumerGroupOffsets(Admin srcAdmin, String mirrorName, Set<String> mirrorTopics,
+                                          Pattern groupsIncludePattern, Pattern groupsExcludePattern) {
+        // TODO: This is incremented on every metadata refresh for testing purpose, as we don't have error handling at this stage
+        consumerGroupOffsetSyncError.incrementAndGet();
+        try {
+            List<String> sourceGroupIds = listSourceGroupIds(srcAdmin, ListGroupsOptions.forConsumerGroups(),
+                    groupsIncludePattern, groupsExcludePattern);
             if (sourceGroupIds.isEmpty()) {
                 return;
             }
+            log.info("Syncing consumer group offsets for mirror {}, groups={}", mirrorName, sourceGroupIds);
 
             Map<String, ListConsumerGroupOffsetsSpec> groupSpecs = sourceGroupIds.stream()
                     .collect(Collectors.toMap(id -> id, id -> new ListConsumerGroupOffsetsSpec()));
             Map<String, Map<TopicPartition, OffsetAndMetadata>> allOffsets = srcAdmin
-                    .listConsumerGroupOffsets(groupSpecs).all().get(30, TimeUnit.SECONDS);
+                    .listConsumerGroupOffsets(groupSpecs).all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
 
-            Optional<Set<String>> activeDestGroups = getActiveDestinationGroupIds();
+            Optional<Set<String>> activeDestGroups = getActiveDestinationGroupIds(ListGroupsOptions.forConsumerGroups());
             if (activeDestGroups.isEmpty()) {
                 return;
             }
-            log.debug("Active destination groups: {}", activeDestGroups.get());
 
             for (var entry : allOffsets.entrySet()) {
                 String groupId = entry.getKey();
                 if (activeDestGroups.get().contains(groupId)) {
-                    log.warn("Skipping offset sync for group {} in mirror {}: active on destination", groupId, mirrorName);
+                    log.debug("Skipping consumer group offset sync for group {} in mirror {}: active on destination", groupId, mirrorName);
                     continue;
                 }
 
@@ -1523,10 +1524,10 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 }
 
                 try {
-                    log.debug("Committing offsets for group {} on destination, partitions={}", groupId, filtered.keySet());
-                    dstAdmin.alterConsumerGroupOffsets(groupId, filtered).all().get(30, TimeUnit.SECONDS);
+                    log.debug("Committing consumer group offsets for group {} on destination, partitions={}", groupId, filtered.keySet());
+                    dstAdmin.alterConsumerGroupOffsets(groupId, filtered).all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
                 } catch (Exception e) {
-                    log.warn("Failed to commit offsets for group {} in mirror {}: {}", groupId, mirrorName, e.getMessage());
+                    log.warn("Failed to commit consumer group offsets for group {} in mirror {}: {}", groupId, mirrorName, e.getMessage());
                 }
             }
         } catch (Exception e) {
@@ -1534,21 +1535,75 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         }
     }
 
-    /**
-     * Returns consumer groups that are active on the destination cluster (excludes EMPTY and DEAD).
-     * Returns empty Optional on failure so the caller can skip the sync cycle.
-     */
-    private Optional<Set<String>> getActiveDestinationGroupIds() {
+    private void syncShareGroupOffsets(Admin srcAdmin, String mirrorName, Set<String> mirrorTopics,
+                                       Pattern groupsIncludePattern, Pattern groupsExcludePattern) {
+        // TODO: This is incremented on every metadata refresh for testing purpose, as we don't have error handling at this stage
+        shareGroupOffsetSyncError.incrementAndGet();
         try {
-            var options = ListGroupsOptions.forConsumerGroups()
-                    .inGroupStates(Set.of(
-                            GroupState.STABLE,
-                            GroupState.PREPARING_REBALANCE,
-                            GroupState.COMPLETING_REBALANCE,
-                            GroupState.ASSIGNING,
-                            GroupState.RECONCILING));
+            List<String> sourceGroupIds = listSourceGroupIds(srcAdmin, ListGroupsOptions.forShareGroups(),
+                    groupsIncludePattern, groupsExcludePattern);
+            if (sourceGroupIds.isEmpty()) {
+                return;
+            }
+            log.info("Syncing share group offsets for mirror {}, groups={}", mirrorName, sourceGroupIds);
+
+            Map<String, ListShareGroupOffsetsSpec> groupSpecs = sourceGroupIds.stream()
+                    .collect(Collectors.toMap(id -> id, id -> new ListShareGroupOffsetsSpec()));
+            Map<String, Map<TopicPartition, OffsetAndMetadata>> allOffsets = srcAdmin
+                    .listShareGroupOffsets(groupSpecs).all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
+
+            Optional<Set<String>> activeDestGroups = getActiveDestinationGroupIds(ListGroupsOptions.forShareGroups());
+            if (activeDestGroups.isEmpty()) {
+                return;
+            }
+
+            for (var entry : allOffsets.entrySet()) {
+                String groupId = entry.getKey();
+                if (activeDestGroups.get().contains(groupId)) {
+                    log.debug("Skipping share group offset sync for group {} in mirror {}: active on destination", groupId, mirrorName);
+                    continue;
+                }
+
+                Map<TopicPartition, Long> filtered = entry.getValue().entrySet().stream()
+                        .filter(e -> mirrorTopics.contains(e.getKey().topic()))
+                        .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().offset()));
+                if (filtered.isEmpty()) {
+                    continue;
+                }
+
+                try {
+                    log.debug("Committing share group offsets for group {} on destination, partitions={}", groupId, filtered.keySet());
+                    dstAdmin.alterShareGroupOffsets(groupId, filtered).all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
+                } catch (Exception e) {
+                    log.warn("Failed to commit share group offsets for group {} in mirror {}: {}", groupId, mirrorName, e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to sync share group offsets for mirror {}: {}", mirrorName, e.getMessage());
+        }
+    }
+
+    private List<String> listSourceGroupIds(Admin srcAdmin, ListGroupsOptions options,
+                                            Pattern groupsIncludePattern, Pattern groupsExcludePattern) throws Exception {
+        return srcAdmin.listGroups(options).all()
+                .get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS).stream()
+                .map(GroupListing::groupId)
+                .filter(id -> groupsIncludePattern == null || groupsIncludePattern.matcher(id).matches())
+                .filter(id -> groupsExcludePattern == null || !groupsExcludePattern.matcher(id).matches())
+                .toList();
+    }
+
+    /** Returns empty Optional on failure so the caller can skip the sync cycle. */
+    private Optional<Set<String>> getActiveDestinationGroupIds(ListGroupsOptions typeFilter) {
+        try {
+            var options = typeFilter.inGroupStates(Set.of(
+                    GroupState.STABLE,
+                    GroupState.PREPARING_REBALANCE,
+                    GroupState.COMPLETING_REBALANCE,
+                    GroupState.ASSIGNING,
+                    GroupState.RECONCILING));
             return Optional.of(dstAdmin.listGroups(options).all()
-                    .get(30, TimeUnit.SECONDS).stream()
+                    .get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS).stream()
                     .map(GroupListing::groupId)
                     .collect(Collectors.toSet()));
         } catch (Exception e) {
