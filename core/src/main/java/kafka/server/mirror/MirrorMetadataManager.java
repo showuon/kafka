@@ -1469,6 +1469,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
         Admin srcAdmin = srcAdmins.get(mirrorName);
         if (srcAdmin == null || dstAdmin == null) {
+            log.error("Admin clients not initialized for mirror {}, skipping offset sync", mirrorName);
             return;
         }
 
