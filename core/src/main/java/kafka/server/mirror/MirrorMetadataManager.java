@@ -1575,11 +1575,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                     log.debug("Committing share group offsets for group {} on destination, partitions={}", groupId, filtered.keySet());
                     dstAdmin.alterShareGroupOffsets(groupId, filtered).all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
                 } catch (Exception e) {
-                    log.warn("Failed to commit share group offsets for group {} in mirror {}: {}", groupId, mirrorName, e.getMessage());
+                    log.warn("Failed to commit share group offsets for group {} in mirror {}: {}", groupId, mirrorName, e);
                 }
             }
         } catch (Exception e) {
-            log.warn("Failed to sync share group offsets for mirror {}: {}", mirrorName, e.getMessage());
+            log.warn("Failed to sync share group offsets for mirror {}: {}", mirrorName, e);
         }
     }
 
@@ -1607,7 +1607,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                     .map(GroupListing::groupId)
                     .collect(Collectors.toSet()));
         } catch (Exception e) {
-            log.warn("Failed to list destination groups, skipping offset sync cycle: {}", e.getMessage());
+            log.warn("Failed to list destination groups, skipping offset sync cycle: {}", e);
             return Optional.empty();
         }
     }
