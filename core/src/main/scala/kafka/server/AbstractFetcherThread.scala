@@ -638,7 +638,10 @@ abstract class AbstractFetcherThread(name: String,
       removePartitions(Set(topicPartition))
     } finally partitionMapLock.unlock()
     warn(s"Partition $topicPartition marked as failed")
+    handlePartitionFailed(topicPartition)
   }
+
+  protected def handlePartitionFailed(topicPartition: TopicPartition): Unit = {}
 
   /**
    * Returns initial partition fetch state based on current state and the provided `initialFetchState`.
