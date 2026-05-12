@@ -92,9 +92,18 @@ public final class MirrorUtils {
         return mirrorName;
     }
 
-    public record PartitionStateInfo(int partition, MirrorPartitionState state, Integer leaderEpoch) { }
+    public record PartitionStateTransitionMeta(long transitionTimestampMs, MirrorPartitionState previousState) { }
 
-    public record PartitionStateLogEntry(String topic, int partition, MirrorPartitionState state) { }
+    public record PartitionStateInfo(int partition,
+                                     MirrorPartitionState state,
+                                     Integer leaderEpoch,
+                                     long stateChangeTimestampMs,
+                                     MirrorPartitionState previousState) { }
+
+    public record PartitionStateLogEntry(String topic,
+                                        int partition,
+                                        MirrorPartitionState state,
+                                        MirrorPartitionState previousState) { }
 
     public record PartitionKey(String mirrorName, String topic, int partition) { }
 

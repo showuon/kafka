@@ -1318,6 +1318,8 @@ public class RequestResponseTest {
                                 .setState((byte) 0)
                                 .setPartitionIndex(0)
                                 .setLastMirrorEpoch(0)
+                                .setTimestamp(1L)
+                                .setPreviousState((byte) 16)
                         ))));
         return new ReadMirrorStatesResponse(data);
     }

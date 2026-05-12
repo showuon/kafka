@@ -206,12 +206,15 @@ public class MirrorCoordinator {
             MirrorPartitionState currentState = metadataManager.getPartitionState(mirrorName, tp);
             if (MirrorPartitionState.isValidTransition(currentState, newState)) {
                 log.debug("Transitioning partition {} from {} to {}.", tp, currentState, newState);
-                updateMirrorPartitionState(mirrorName, tp, newState)
+                MirrorPartitionState previousState = currentState != null ? currentState : MirrorPartitionState.UNKNOWN;
+                long stateChangeTimestampMs = time.milliseconds();
+                updateMirrorPartitionState(mirrorName, tp, newState, stateChangeTimestampMs, previousState)
                         .whenComplete((optTp, ex) -> {
                             if (ex != null) {
                                 // TODO: a new component will handle state transitions from a shared queue, so retry means put back in the queue
                                 log.error("Failed to update partition state for {}: {}, retrying", tp, ex.getMessage());
-                                scheduler.scheduleOnce("MirrorStateUpdateRetry", () -> updateMirrorPartitionState(mirrorName, tp, newState), 100);
+                                scheduler.scheduleOnce("MirrorStateUpdateRetry",
+                                        () -> updateMirrorPartitionState(mirrorName, tp, newState, stateChangeTimestampMs, previousState), 100);
                             } else {
                                 // successfully writes data into internal log
                                 try {
@@ -325,7 +328,13 @@ public class MirrorCoordinator {
                 TopicPartition tp = new TopicPartition(topic, partition.partition());
                 partitionIndices.add(tp.partition());
                 if (partition.state() != null && partition.state() != MirrorPartitionState.UNKNOWN) {
-                    updateMirrorPartitionState(updatedMirrorName, tp, partition.state());
+                    MirrorPartitionState prev = partition.previousState() != null
+                            ? partition.previousState()
+                            : MirrorPartitionState.UNKNOWN;
+                    long ts = partition.stateChangeTimestampMs() >= 0
+                            ? partition.stateChangeTimestampMs()
+                            : time.milliseconds();
+                    updateMirrorPartitionState(updatedMirrorName, tp, partition.state(), ts, prev);
                 }
                 if (partition.leaderEpoch() != -1) {
                     offsets.putIfAbsent(topic, new HashMap<>());
@@ -381,7 +390,9 @@ public class MirrorCoordinator {
 
     private CompletableFuture<Optional<TopicPartition>> updateMirrorPartitionState(String mirrorName,
                                                                                   TopicPartition topicPartition,
-                                                                                  MirrorPartitionState newState) {
+                                                                                  MirrorPartitionState newState,
+                                                                                  long stateChangeTimestampMs,
+                                                                                  MirrorPartitionState previousState) {
         CompletableFuture<Optional<TopicPartition>> future = new CompletableFuture<>();
         // no need to write a record for the same state again
         if (metadataManager.getPartitionState(mirrorName, topicPartition) == newState) {
@@ -394,11 +405,11 @@ public class MirrorCoordinator {
                     getCoordinatorPartitionByKey(new MirrorRecordKey(
                             mirrorName, metadataCache.getTopicId(topicPartition.topic()), topicPartition.partition())));
             var mirrorTopicIdPartition = replicaManager.topicIdPartition(mirrorTopicPartition);
-            var record = generateMirrorPartitionState(mirrorName, topicPartition, newState);
+            var record = generateMirrorPartitionState(mirrorName, topicPartition, newState, previousState);
             var keyBytes = serde.serializeKey(record);
             var valueBytes = serde.serializeValue(record);
-            var timestamp = time.milliseconds();
-            var memRecord = MemoryRecords.withRecords(Compression.NONE, new SimpleRecord(timestamp, keyBytes, valueBytes));
+            var memRecord = MemoryRecords.withRecords(Compression.NONE,
+                    new SimpleRecord(stateChangeTimestampMs, keyBytes, valueBytes));
 
             replicaManager.appendRecords(
                     // TODO: replace this with Cluster Mirror specific timeout
@@ -414,7 +425,8 @@ public class MirrorCoordinator {
                                 log.error("Failed to write partition state to coordinator: {}", pr.error.message());
                                 future.completeExceptionally(pr.error.exception());
                             } else {
-                                metadataManager.updatePartitionState(new MirrorUtils.PartitionKey(mirrorName, topicPartition.topic(), topicPartition.partition()), newState);
+                                metadataManager.updatePartitionState(new MirrorUtils.PartitionKey(mirrorName, topicPartition.topic(), topicPartition.partition()),
+                                        newState, stateChangeTimestampMs);
                                 future.complete(Optional.of(topicPartition));
                             }
                             return null;
@@ -428,11 +440,15 @@ public class MirrorCoordinator {
         } else {
             // write state data to remote coordinator (async network operation)
             Map<String, Set<MirrorUtils.PartitionStateInfo>> topicMetadata =
-                    Map.of(topicPartition.topic(), Set.of(new MirrorUtils.PartitionStateInfo(topicPartition.partition(), newState, -1)));
+                    Map.of(topicPartition.topic(), Set.of(new MirrorUtils.PartitionStateInfo(
+                            topicPartition.partition(), newState, -1, stateChangeTimestampMs, previousState)));
             metadataManager.writeStatesToRemoteCoordinator(mirrorName, topicMetadata, Set.of(),
                     res -> res.data().topics().forEach(topic -> topic.partitions().forEach(par -> {
                         if (par.errorCode() == Errors.NONE.code()) {
-                            metadataManager.updatePartitionState(new MirrorUtils.PartitionKey(mirrorName, topicPartition.topic(), topicPartition.partition()), newState);
+                            metadataManager.updatePartitionState(
+                                    new MirrorUtils.PartitionKey(mirrorName, topicPartition.topic(), topicPartition.partition()),
+                                    newState,
+                                    stateChangeTimestampMs);
                             future.complete(Optional.of(topicPartition));
                         } else {
                             // propagate remote coordinator errors to trigger retry
@@ -666,7 +682,7 @@ public class MirrorCoordinator {
                 } else {
                     remoteTopicMetadata
                         .computeIfAbsent(topic, k -> new HashSet<>())
-                        .add(new MirrorUtils.PartitionStateInfo(par, null, off));
+                        .add(new MirrorUtils.PartitionStateInfo(par, null, off, -1L, MirrorPartitionState.UNKNOWN));
                 }
             });
         });
@@ -730,9 +746,16 @@ public class MirrorCoordinator {
         return future;
     }
 
-    private static CoordinatorRecord generateMirrorPartitionState(String mirrorName, TopicPartition topicPartition, MirrorPartitionState state) {
+    private static CoordinatorRecord generateMirrorPartitionState(String mirrorName,
+                                                                  TopicPartition topicPartition,
+                                                                  MirrorPartitionState state,
+                                                                  MirrorPartitionState previousState) {
         var key = new MirrorPartitionStateKey().setMirrorName(mirrorName);
-        var val = new MirrorPartitionStateValue().setTopicName(topicPartition.topic()).setPartition(topicPartition.partition()).setState(state.value());
+        var val = new MirrorPartitionStateValue()
+                .setTopicName(topicPartition.topic())
+                .setPartition(topicPartition.partition())
+                .setState(state.value())
+                .setPreviousState(previousState.value());
         var apiVersion = new ApiMessageAndVersion(val, MirrorPartitionStateValue.HIGHEST_SUPPORTED_VERSION);
         return CoordinatorRecord.record(key, apiVersion);
     }
@@ -828,7 +851,11 @@ public class MirrorCoordinator {
         short version = buffer.getShort();
         if (version <= MirrorPartitionStateValue.HIGHEST_SUPPORTED_VERSION && version >= MirrorPartitionStateValue.LOWEST_SUPPORTED_VERSION) {
             MirrorPartitionStateValue value = new MirrorPartitionStateValue(new ByteBufferAccessor(buffer), version);
-            return new MirrorUtils.PartitionStateLogEntry(value.topicName(), value.partition(), MirrorPartitionState.fromValue(value.state()));
+            return new MirrorUtils.PartitionStateLogEntry(
+                    value.topicName(),
+                    value.partition(),
+                    MirrorPartitionState.fromValue(value.state()),
+                    MirrorPartitionState.fromValue(value.previousState()));
         } else {
             throw new IllegalStateException("Unsupported partition state value version: " + version);
         }
@@ -892,8 +919,11 @@ public class MirrorCoordinator {
                             } else if (version == CoordinatorRecordType.MIRROR_PARTITION_STATE.id()) {
                                 String clusterName = readMirrorNameFromKey(record.key());
                                 MirrorUtils.PartitionStateLogEntry value = readMirrorPartitionStateValue(record.value());
-                                metadataManager.updatePartitionState(
-                                        new MirrorUtils.PartitionKey(clusterName, value.topic(), value.partition()), value.state());
+                                metadataManager.updatePartitionStateFromLog(
+                                        new MirrorUtils.PartitionKey(clusterName, value.topic(), value.partition()),
+                                        value.state(),
+                                        value.previousState(),
+                                        record.timestamp());
                             } else {
                                 throw new IllegalArgumentException("Unknown cluster mirror log key version " + version);
                             }
