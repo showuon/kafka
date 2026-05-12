@@ -39,7 +39,9 @@
         { "name": "Timestamp", "type": "int64", "versions": "0+", "default": -1, "ignorable": true,
           "about": "The time at which this state change was initiated (milliseconds since the epoch), or -1 if unspecified." },
         { "name": "PreviousState", "type": "int8", "versions": "0+", "default": 16, "ignorable": true,
-          "about": "The mirror partition state before transitioning to State (UNKNOWN when unavailable)." }
+          "about": "The mirror partition state before transitioning to State (UNKNOWN when unavailable)." },
+        { "name": "Retriable", "type": "bool", "versions": "0+", "default": true, "ignorable": true,
+          "about": "Whether operations affecting this partition should be treated as retriable on failure." }
       ]}
     ]},
     { "name": "StoppedTopics", "type": "[]string", "versions": "0+", "about": "The topic names to be stopped." }

@@ -392,7 +392,8 @@ public class MirrorCoordinator {
                                                                                   TopicPartition topicPartition,
                                                                                   MirrorPartitionState newState,
                                                                                   long stateChangeTimestampMs,
-                                                                                  MirrorPartitionState previousState) {
+                                                                                  MirrorPartitionState previousState,
+                                                                                  boolean retriable) {
         CompletableFuture<Optional<TopicPartition>> future = new CompletableFuture<>();
         // no need to write a record for the same state again
         if (metadataManager.getPartitionState(mirrorName, topicPartition) == newState) {
@@ -405,7 +406,7 @@ public class MirrorCoordinator {
                     getCoordinatorPartitionByKey(new MirrorRecordKey(
                             mirrorName, metadataCache.getTopicId(topicPartition.topic()), topicPartition.partition())));
             var mirrorTopicIdPartition = replicaManager.topicIdPartition(mirrorTopicPartition);
-            var record = generateMirrorPartitionState(mirrorName, topicPartition, newState, previousState);
+            var record = generateMirrorPartitionState(mirrorName, topicPartition, newState, previousState, retriable);
             var keyBytes = serde.serializeKey(record);
             var valueBytes = serde.serializeValue(record);
             var memRecord = MemoryRecords.withRecords(Compression.NONE,
@@ -441,7 +442,7 @@ public class MirrorCoordinator {
             // write state data to remote coordinator (async network operation)
             Map<String, Set<MirrorUtils.PartitionStateInfo>> topicMetadata =
                     Map.of(topicPartition.topic(), Set.of(new MirrorUtils.PartitionStateInfo(
-                            topicPartition.partition(), newState, -1, stateChangeTimestampMs, previousState)));
+                            topicPartition.partition(), newState, -1, stateChangeTimestampMs, previousState, true)));
             metadataManager.writeStatesToRemoteCoordinator(mirrorName, topicMetadata, Set.of(),
                     res -> res.data().topics().forEach(topic -> topic.partitions().forEach(par -> {
                         if (par.errorCode() == Errors.NONE.code()) {
@@ -682,7 +683,7 @@ public class MirrorCoordinator {
                 } else {
                     remoteTopicMetadata
                         .computeIfAbsent(topic, k -> new HashSet<>())
-                        .add(new MirrorUtils.PartitionStateInfo(par, null, off, -1L, MirrorPartitionState.UNKNOWN));
+                        .add(new MirrorUtils.PartitionStateInfo(par, null, off, -1L, MirrorPartitionState.UNKNOWN, false));
                 }
             });
         });
@@ -749,13 +750,15 @@ public class MirrorCoordinator {
     private static CoordinatorRecord generateMirrorPartitionState(String mirrorName,
                                                                   TopicPartition topicPartition,
                                                                   MirrorPartitionState state,
-                                                                  MirrorPartitionState previousState) {
+                                                                  MirrorPartitionState previousState,
+                                                                  boolean retriable) {
         var key = new MirrorPartitionStateKey().setMirrorName(mirrorName);
         var val = new MirrorPartitionStateValue()
                 .setTopicName(topicPartition.topic())
                 .setPartition(topicPartition.partition())
                 .setState(state.value())
-                .setPreviousState(previousState.value());
+                .setPreviousState(previousState.value())
+                .setRetriable(retriable);
         var apiVersion = new ApiMessageAndVersion(val, MirrorPartitionStateValue.HIGHEST_SUPPORTED_VERSION);
         return CoordinatorRecord.record(key, apiVersion);
     }

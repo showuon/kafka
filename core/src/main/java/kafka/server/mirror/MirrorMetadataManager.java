@@ -180,7 +180,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private final Map<String, Map<TopicPartition, Node>> sourceLeaders = new ConcurrentHashMap<>();
     private final Map<MirrorUtils.PartitionKey, MirrorPartitionState> partitionStates = new ConcurrentHashMap<>();
     private final Map<MirrorPartitionState, AtomicLong> partitionStateCounts = new ConcurrentHashMap<>();
-    private final Map<MirrorUtils.PartitionKey, MirrorUtils.PartitionStateTransitionMeta> partitionStateTransitionMeta = new ConcurrentHashMap<>();
+    private final Map<MirrorUtils.PartitionKey, MirrorUtils.PartitionFailedStateMeta> partitionStateTransitionMeta = new ConcurrentHashMap<>();
     private final Map<MirrorUtils.PartitionKey, Integer> lastMirrorEpochs = new ConcurrentHashMap<>();
 
     // Leader epoch bumps require a request to the controller followed by a metadata log fetch.
@@ -618,6 +618,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 partitionData.setState(m.state() == null ? MirrorPartitionState.UNKNOWN.value() : m.state().value());
                 partitionData.setLastMirrorEpoch(m.leaderEpoch());
                 partitionData.setPartitionIndex(m.partition());
+                partitionData.setRetriable(m.retriable());
                 if (m.state() != null && m.state() != MirrorPartitionState.UNKNOWN) {
                     long ts = m.stateChangeTimestampMs() >= 0 ? m.stateChangeTimestampMs() : time.milliseconds();
                     partitionData.setTimestamp(ts);
@@ -720,9 +721,13 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                                 }
                                 if (partition.state() != -1) {
                                     partitionStates.put(pk, MirrorPartitionState.fromValue(partition.state()));
-                                    partitionStateTransitionMeta.put(pk, new MirrorUtils.PartitionStateTransitionMeta(
+                                    partitionStateTransitionMeta.put(pk, new MirrorUtils.PartitionFailedStateMeta(
                                             partition.timestamp(),
-                                            MirrorPartitionState.fromValue(partition.previousState())));
+                                            MirrorPartitionState.fromValue(partition.previousState()),
+                                            partition.retriable()));
+                                } else {
+                                    mergePartitionRetriable(mirrorName, new TopicPartition(topic.name(), partition.partitionIndex()),
+                                            partition.retriable());
                                 }
                             });
                         });
@@ -749,7 +754,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 MirrorUtils.PartitionKey pk = new MirrorUtils.PartitionKey(mirrorName, tp, part);
                 partitionResult.setLastMirrorEpoch(lastMirrorEpochs.getOrDefault(pk, -1));
                 partitionResult.setState(partitionStates.getOrDefault(pk, MirrorPartitionState.UNKNOWN).value());
-                MirrorUtils.PartitionStateTransitionMeta meta = partitionStateTransitionMeta.get(pk);
+                MirrorUtils.PartitionFailedStateMeta meta = partitionStateTransitionMeta.get(pk);
                 if (meta != null) {
                     partitionResult.setTimestamp(meta.transitionTimestampMs());
                     partitionResult.setPreviousState(meta.previousState().value());
@@ -757,6 +762,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                     partitionResult.setTimestamp(-1L);
                     partitionResult.setPreviousState(MirrorPartitionState.UNKNOWN.value());
                 }
+                partitionResult.setRetriable(meta != null ? meta.retriable() : true);
                 partitionResults.add(partitionResult);
             });
             topicResult.setPartitions(partitionResults);
@@ -873,6 +879,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     // atomic per-key update to keep partition state counts consistent
     void updatePartitionState(MirrorUtils.PartitionKey key, MirrorPartitionState newState, long transitionTimestampMs) {
+        MirrorUtils.PartitionFailedStateMeta priorMeta = partitionStateTransitionMeta.get(key);
         partitionStates.compute(key, (k, oldState) -> {
             if (oldState != null && oldState != newState) {
                 partitionStateCounts.computeIfAbsent(oldState, s -> new AtomicLong()).decrementAndGet();
@@ -880,7 +887,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             if (oldState != newState) {
                 partitionStateCounts.computeIfAbsent(newState, s -> new AtomicLong()).incrementAndGet();
                 MirrorPartitionState prev = oldState != null ? oldState : MirrorPartitionState.UNKNOWN;
-                partitionStateTransitionMeta.put(key, new MirrorUtils.PartitionStateTransitionMeta(transitionTimestampMs, prev));
+                boolean retriable = priorMeta != null ? priorMeta.retriable() : true;
+                partitionStateTransitionMeta.put(key, new MirrorUtils.PartitionFailedStateMeta(transitionTimestampMs, prev, retriable));
             }
             return newState;
         });
@@ -894,6 +902,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                                      MirrorPartitionState newState,
                                      MirrorPartitionState logPreviousState,
                                      long logTimestampMs) {
+        MirrorUtils.PartitionFailedStateMeta priorMeta = partitionStateTransitionMeta.get(key);
+        boolean retriable = priorMeta != null ? priorMeta.retriable() : true;
         partitionStates.compute(key, (k, oldState) -> {
             if (oldState != null && oldState != newState) {
                 partitionStateCounts.computeIfAbsent(oldState, s -> new AtomicLong()).decrementAndGet();
@@ -903,7 +913,18 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             }
             return newState;
         });
-        partitionStateTransitionMeta.put(key, new MirrorUtils.PartitionStateTransitionMeta(logTimestampMs, logPreviousState));
+        partitionStateTransitionMeta.put(key, new MirrorUtils.PartitionFailedStateMeta(logTimestampMs, logPreviousState, retriable));
+    }
+
+    void mergePartitionRetriable(String mirrorName, TopicPartition topicPartition, boolean retriable) {
+        MirrorUtils.PartitionKey key = new MirrorUtils.PartitionKey(
+                originalMirrorName(mirrorName), topicPartition.topic(), topicPartition.partition());
+        partitionStateTransitionMeta.compute(key, (k, old) -> {
+            if (old != null) {
+                return new MirrorUtils.PartitionFailedStateMeta(old.transitionTimestampMs(), old.previousState(), retriable);
+            }
+            return new MirrorUtils.PartitionFailedStateMeta(-1L, MirrorPartitionState.UNKNOWN, retriable);
+        });
     }
 
     // atomic remove + counter decrement to keep partition state counts consistent

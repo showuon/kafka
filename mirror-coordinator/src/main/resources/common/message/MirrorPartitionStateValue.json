@@ -15,8 +15,8 @@
 
 // Cluster Mirror is in development. This schema is subject to non-backwards-compatible changes.
 //
-// MirrorPartitionStateValue stores the mirror lifecycle state for one source topic partition.
-// The key identifies the mirror name; the value contains topic, partition, state, and transition metadata.
+// MirrorTopics record stores the list of topics being mirrored from a source cluster.
+// The key identifies the source cluster by mirror name, while the value contains topic names to replicate.
 {
   "apiKey": 2,
   "type": "coordinator-value",
@@ -31,6 +31,8 @@
     { "name": "State", "type": "int8", "versions": "0+",
       "about": "The mirror partition state." },
     { "name": "PreviousState", "type": "int8", "versions": "0+", "default": 16, "ignorable": true,
-      "about": "The mirror partition state before transitioning to State (UNKNOWN when unavailable or not recorded)." }
+      "about": "The mirror partition state before transitioning to State (UNKNOWN when unavailable or not recorded)." },
+    { "name": "Retriable", "type": "bool", "versions": "0+", "default": true, "ignorable": true,
+      "about": "Whether operations affecting this partition should be treated as retriable on failure." }
   ]
 }

@@ -1314,12 +1314,13 @@ public class RequestResponseTest {
         ReadMirrorStatesResponseData data = new ReadMirrorStatesResponseData()
                 .setTopics(List.of(new ReadMirrorStatesResponseData.TopicResult()
                         .setName("topic")
-                        .setPartitions(List.of(new ReadMirrorStatesResponseData.PartitionResult()
+                                .setPartitions(List.of(new ReadMirrorStatesResponseData.PartitionResult()
                                 .setState((byte) 0)
                                 .setPartitionIndex(0)
                                 .setLastMirrorEpoch(0)
                                 .setTimestamp(1L)
                                 .setPreviousState((byte) 16)
+                                .setRetriable(false)
                         ))));
         return new ReadMirrorStatesResponse(data);
     }
@@ -1329,10 +1330,11 @@ public class RequestResponseTest {
                 .setMirrorName("mirror")
                 .setTopics(List.of(new WriteMirrorStatesRequestData.TopicData()
                         .setName("topic")
-                        .setPartitions(List.of(new WriteMirrorStatesRequestData.PartitionData()
+                                .setPartitions(List.of(new WriteMirrorStatesRequestData.PartitionData()
                                 .setPartitionIndex(0)
                                 .setLastMirrorEpoch(0)
                                 .setState((byte) 0)
+                                .setRetriable(false)
                         ))
                 ));
         return new WriteMirrorStatesRequest.Builder(data).build(version);
