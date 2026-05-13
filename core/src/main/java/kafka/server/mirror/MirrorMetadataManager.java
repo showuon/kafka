@@ -179,6 +179,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private final Map<String, List<MirrorSourceSender>> sourceSenders = new ConcurrentHashMap<>();
     private final Map<String, Map<TopicPartition, Node>> sourceLeaders = new ConcurrentHashMap<>();
     private final Map<MirrorUtils.PartitionKey, MirrorPartitionState> partitionStates = new ConcurrentHashMap<>();
+    private final Map<MirrorUtils.PartitionKey, MirrorPartitionState> partitionPreviousStates = new ConcurrentHashMap<>();
     private final Map<MirrorPartitionState, AtomicLong> partitionStateCounts = new ConcurrentHashMap<>();
     private final Map<MirrorUtils.PartitionKey, Integer> lastMirrorEpochs = new ConcurrentHashMap<>();
 
@@ -188,6 +189,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     // lets the transition handler skip partitions that are already being processed
     private final Map<TopicPartition, MirrorPartitionState> pendingPartitionStates = new ConcurrentHashMap<>();
+    private final Map<TopicPartition, MirrorPartitionState> prevStateBeforeFailure = new ConcurrentHashMap<>();
+    private final Map<TopicPartition, Integer> failedRetryAttempts = new ConcurrentHashMap<>();
     private final Set<Uuid> pendingTopicCreations = ConcurrentHashMap.newKeySet();
 
     // metrics
@@ -350,6 +353,18 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     public Map<TopicPartition, MirrorPartitionState> pendingPartitionStates() {
         return pendingPartitionStates;
+    }
+
+    public Map<TopicPartition, MirrorPartitionState> prevStateBeforeFailure() {
+        return prevStateBeforeFailure;
+    }
+
+    public Map<TopicPartition, Integer> failedRetryAttempts() {
+        return failedRetryAttempts;
+    }
+
+    public Map<MirrorUtils.PartitionKey, MirrorPartitionState> partitionPreviousStates() {
+        return partitionPreviousStates;
     }
 
     public void initialize(MirrorUtils.StateTransitioner stateTransitioner,
@@ -706,14 +721,17 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                         // Update cache
                         readMirrorStatesResponse.data().topics().forEach(topic -> {
                             topic.partitions().forEach(partition -> {
+                                MirrorUtils.PartitionKey mpk = new MirrorUtils.PartitionKey(
+                                        mirrorName, topic.name(), partition.partitionIndex());
+                                TopicPartition tp = new TopicPartition(topic.name(), partition.partitionIndex());
                                 if (partition.lastMirrorEpoch() != -1) {
-                                    lastMirrorEpochs.put(new MirrorUtils.PartitionKey(mirrorName, topic.name(), partition.partitionIndex()),
-                                            partition.lastMirrorEpoch());
+                                    lastMirrorEpochs.put(mpk, partition.lastMirrorEpoch());
                                 }
                                 if (partition.state() != -1) {
-                                    partitionStates.put(new MirrorUtils.PartitionKey(mirrorName, topic.name(), partition.partitionIndex()),
-                                            MirrorPartitionState.fromValue(partition.state()));
+                                    partitionStates.put(mpk, MirrorPartitionState.fromValue(partition.state()));
                                 }
+                                partitionPreviousStates.put(mpk, MirrorPartitionState.fromValue(partition.previousState()));
+                                failedRetryAttempts.put(tp, (int) partition.retryAttempt());
                             });
                         });
 
@@ -734,11 +752,15 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             ReadMirrorStatesResponseData.TopicResult topicResult = new ReadMirrorStatesResponseData.TopicResult().setName(tp);
             List<ReadMirrorStatesResponseData.PartitionResult> partitionResults = new ArrayList<>();
             parts.forEach(part -> {
+                MirrorUtils.PartitionKey pk = new MirrorUtils.PartitionKey(mirrorName, tp, part);
                 ReadMirrorStatesResponseData.PartitionResult partitionResult = new ReadMirrorStatesResponseData.PartitionResult();
                 partitionResult.setPartitionIndex(part);
-                partitionResult.setLastMirrorEpoch(lastMirrorEpochs.getOrDefault(new MirrorUtils.PartitionKey(mirrorName, tp, part), -1));
-                partitionResult.setState(partitionStates.getOrDefault(
-                        new MirrorUtils.PartitionKey(mirrorName, tp, part), MirrorPartitionState.UNKNOWN).value());
+                partitionResult.setLastMirrorEpoch(lastMirrorEpochs.getOrDefault(pk, -1));
+                partitionResult.setState(partitionStates.getOrDefault(pk, MirrorPartitionState.UNKNOWN).value());
+                partitionResult.setPreviousState(
+                        partitionPreviousStates.getOrDefault(pk, MirrorPartitionState.UNKNOWN).value());
+                partitionResult.setRetryAttempt(
+                        failedRetryAttempts.getOrDefault(new TopicPartition(tp, part), 0).shortValue());
                 partitionResults.add(partitionResult);
             });
             topicResult.setPartitions(partitionResults);
@@ -872,6 +894,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             partitionStateCounts.computeIfAbsent(oldState, s -> new AtomicLong()).decrementAndGet();
             return null;
         });
+        partitionPreviousStates.remove(key);
     }
 
     void removeLastMirrorEpochs(String mirrorName) {
@@ -1853,6 +1876,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     void clear() {
         partitionStates.clear();
+        partitionPreviousStates.clear();
         partitionStateCounts.clear();
         lastMirrorEpochs.clear();
         sourceClusterIds.clear();
