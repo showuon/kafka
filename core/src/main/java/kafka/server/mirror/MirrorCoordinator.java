@@ -939,8 +939,10 @@ public class MirrorCoordinator {
                             } else if (version == CoordinatorRecordType.MIRROR_PARTITION_STATE.id()) {
                                 String clusterName = readMirrorNameFromKey(record.key());
                                 MirrorUtils.PartitionStateLogEntry value = readMirrorPartitionStateValue(record.value());
-                                metadataManager.updatePartitionState(
-                                        new MirrorUtils.PartitionKey(clusterName, value.topic(), value.partition()), value.state());
+                                MirrorUtils.PartitionKey pk = new MirrorUtils.PartitionKey(
+                                        clusterName, value.topic(), value.partition());
+                                metadataManager.updatePartitionState(pk, value.state());
+                                metadataManager.partitionPreviousStates().put(pk, value.previousState());
                                 TopicPartition tp = new TopicPartition(value.topic(), value.partition());
                                 if (value.state() == MirrorPartitionState.FAILED && value.retryAttempt() > 0) {
                                     metadataManager.failedRetryAttempts().put(tp, value.retryAttempt());
