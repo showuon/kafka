@@ -135,7 +135,7 @@ import static org.apache.kafka.controller.ConfigurationControlManager.STOPPED_TO
  * Bridges the local destination cluster and remote source clusters for Cluster Mirroring.
  *
  * Implements {@link MetadataPublisher} to detect leadership and config changes, triggering
- * partition state transitions (PREPARING, MIRRORING, STOPPING, STOPPED) via the
+ * partition state transitions (LOG_TRUNCATION, MIRRORING, STOPPING, STOPPED) via the
  * {@link MirrorCoordinator}. Manages remote cluster connections using {@link MirrorSourceSender}
  * and periodically syncs topic metadata, configs, consumer group offsets, and ACLs from source
  * clusters.
@@ -235,7 +235,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         metricsGroup.newGauge("ShareGroupOffsetSyncError", shareGroupOffsetSyncError::get);
         metricsGroup.newGauge("AclSyncError", aclSyncError::get);
         metricsGroup.newGauge("TopicMetadataRefreshError", metadataRefreshError::get);
-        metricsGroup.newGauge("PreparingPartitionState", () -> partitionStateCount(MirrorPartitionState.PREPARING));
+        metricsGroup.newGauge("LogTruncationPartitionState", () -> partitionStateCount(MirrorPartitionState.LOG_TRUNCATION));
         metricsGroup.newGauge("EpochFencingPartitionState", () -> partitionStateCount(MirrorPartitionState.EPOCH_FENCING));
         metricsGroup.newGauge("MirroringPartitionState", () -> partitionStateCount(MirrorPartitionState.MIRRORING));
         metricsGroup.newGauge("PausingPartitionState", () -> partitionStateCount(MirrorPartitionState.PAUSING));
@@ -321,7 +321,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 res.data().topics().forEach(topic ->
                     topic.partitions().forEach(partition -> {
                         TopicPartition resTp = new TopicPartition(topic.name(), partition.partitionIndex());
-                        // treat unrecorded state (-1) as UNKNOWN so the partition can transition to PREPARING
+                        // treat unrecorded state (-1) as UNKNOWN so the partition can transition to LOG_TRUNCATION
                         MirrorPartitionState state = partition.state() != -1
                                 ? MirrorPartitionState.fromValue(partition.state())
                                 : MirrorPartitionState.UNKNOWN;
@@ -503,7 +503,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      *   2. else, move the state to PAUSING state
      * When stopRequested=false and pauseRequested=false:
      *   1. if it's in PAUSED state, we should move it to MIRRORING state. It will happen when users resume mirroring
-     *   2. if it's in UNKNOWN or STOPPED state, we should move it to PREPARING state. It will happen when users startMirrorTopics.
+     *   2. if it's in UNKNOWN or STOPPED state, we should move it to LOG_TRUNCATION state. It will happen when users startMirrorTopics.
      *   3. else, keep the same state as is. This could happen like leadership change, and the new leader should continue to complete the process in previous leader.
      */
     private void applyMirrorStateTransition(String mirrorName, TopicPartition tp,
@@ -526,7 +526,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 t.transitionTo(mirrorName, tp, MirrorPartitionState.MIRRORING);
             } else if (curState == MirrorPartitionState.UNKNOWN
                     || curState == MirrorPartitionState.STOPPED) {
-                t.transitionTo(mirrorName, tp, MirrorPartitionState.PREPARING);
+                t.transitionTo(mirrorName, tp, MirrorPartitionState.LOG_TRUNCATION);
             } else {
                 t.transitionTo(mirrorName, tp, fetchedState != null ? fetchedState : curState);
             }

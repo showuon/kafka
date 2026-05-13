@@ -144,8 +144,8 @@ public class MirrorCoordinator {
     // Executes the appropriate actions for a state transition.
     private void handleStateTransition(String mirrorName, Set<TopicPartition> topicPartitions, MirrorPartitionState newState) {
         switch (newState) {
-            case PREPARING:
-                log.info("PREPARING for topics {}.", topicPartitions);
+            case LOG_TRUNCATION:
+                log.info("LOG_TRUNCATION for topics {}.", topicPartitions);
                 scheduleTruncation(mirrorName, topicPartitions);
                 break;
             case EPOCH_FENCING:
@@ -207,11 +207,13 @@ public class MirrorCoordinator {
         }
     }
 
-    private void updateRetryAttemptsAndPrevState(TopicPartition tp, MirrorPartitionState newState) {
+    private void updateRetryAttemptsAndPrevState(TopicPartition tp, MirrorPartitionState currentState, MirrorPartitionState newState) {
         if (newState == MirrorPartitionState.FAILED) {
             metadataManager.failedRetryAttempts().merge(tp, 1, Integer::sum);
-            metadataManager.prevStateBeforeFailure().put(tp, newState);
-        } else {
+            metadataManager.prevStateBeforeFailure().putIfAbsent(tp, currentState);
+        } else if (newState == MirrorPartitionState.MIRRORING
+                || newState == MirrorPartitionState.STOPPED
+                || newState == MirrorPartitionState.PAUSED) {
             metadataManager.failedRetryAttempts().remove(tp);
             metadataManager.prevStateBeforeFailure().remove(tp);
         }
@@ -226,10 +228,10 @@ public class MirrorCoordinator {
                 return;
             }
             long delay = failedRetryBackoff.backoff(attempt);
-            MirrorPartitionState prevState = metadataManager.prevStateBeforeFailure().getOrDefault(tp, MirrorPartitionState.PREPARING);
+            MirrorPartitionState targetState = metadataManager.prevStateBeforeFailure().getOrDefault(tp, MirrorPartitionState.MIRRORING);
             log.info("Scheduling retry #{} for partition {} in {} ms.", attempt + 1, tp, delay);
             scheduler.scheduleOnce("MirrorFailedRetry-" + tp,
-                () -> transitionTo(mirrorName, Set.of(tp), prevState), delay);
+                () -> transitionTo(mirrorName, Set.of(tp), targetState), delay);
         });
     }
 
@@ -239,7 +241,7 @@ public class MirrorCoordinator {
             MirrorPartitionState currentState = metadataManager.getPartitionState(mirrorName, tp);
             if (MirrorPartitionState.isValidTransition(currentState, newState)) {
                 log.debug("Transitioning partition {} from {} to {}.", tp, currentState, newState);
-                updateRetryAttemptsAndPrevState(tp, newState);
+                updateRetryAttemptsAndPrevState(tp, currentState, newState);
                 updateMirrorPartitionState(mirrorName, tp, newState)
                         .whenComplete((optTp, ex) -> {
                             if (ex != null) {
@@ -534,8 +536,8 @@ public class MirrorCoordinator {
                                     replicaManager.maybeTruncateForLeaderEpoch(epochs, truncateCallback);
                                     return;
                                 } else {
-                                    log.warn("Failed to truncate to last mirrored offsets for mirror {}, retrying in {} ms", mirrorName, RETRY_DELAY_MS, error);
-                                    scheduleTruncation(mirrorName, topicPartitions, RETRY_DELAY_MS);
+                                    log.warn("Failed to truncate to last mirrored offsets for mirror {}", mirrorName, error);
+                                    transitionTo(mirrorName, topicPartitions, MirrorPartitionState.FAILED);
                                     return;
                                 }
                             }
@@ -570,8 +572,8 @@ public class MirrorCoordinator {
                                     partition -> transitionTo(mirrorName, Set.of(partition), MirrorPartitionState.MIRRORING));
                         });
                 } catch (Exception e) {
-                    log.warn("Failed to truncate to last mirrored offsets for mirror {}, retrying in {} ms", mirrorName, RETRY_DELAY_MS, e);
-                    scheduleTruncation(mirrorName, topicPartitions, RETRY_DELAY_MS);
+                    log.warn("Failed to truncate to last mirrored offsets for mirror {}", mirrorName, e);
+                    transitionTo(mirrorName, topicPartitions, MirrorPartitionState.FAILED);
                 }
             }, delayMs);
     }
