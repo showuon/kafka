@@ -19,6 +19,7 @@ package kafka.server.mirror;
 import kafka.server.KafkaConfig;
 import kafka.server.ReplicaManager;
 
+import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.MirrorDescription;
 import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.TopicPartition;
@@ -491,9 +492,9 @@ public class MirrorCoordinator {
         numPartitions = brokerConfig.mirrorConfig().topicNumPartitions();
         failedRetryBackoff = new ExponentialBackoff(
                 brokerConfig.mirrorConfig().failedRetryInitialBackoffMs(),
-                2,
+                CommonClientConfigs.RETRY_BACKOFF_EXP_BASE,
                 brokerConfig.mirrorConfig().failedRetryMaxBackoffMs(),
-                0.2);
+                CommonClientConfigs.RETRY_BACKOFF_JITTER);
         metadataManager.initialize(
                 (mirrorName, tp, state) -> transitionTo(mirrorName, Set.of(tp), state),
                 this::tombstoneMirrorRecords,

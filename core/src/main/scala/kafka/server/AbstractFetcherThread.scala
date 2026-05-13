@@ -524,7 +524,7 @@ abstract class AbstractFetcherThread(name: String,
                     case e: MirrorLeaderEpochExceededException =>
                       error(s"Error while processing data for mirror partition $topicPartition " +
                         s"at offset ${currentFetchState.fetchOffset}, waiting for leader epoch bump.", e)
-                      markPartitionFailed(topicPartition)
+                      markPartitionRemoved(topicPartition)
                       handleMirrorLeaderEpochExceeded(currentFetchState.mirrorName(), topicPartition)
                     case t: Throwable =>
                       // stop monitoring this partition and add it to the set of failed partitions
@@ -631,13 +631,17 @@ abstract class AbstractFetcherThread(name: String,
     } finally partitionMapLock.unlock()
   }
 
-  private def markPartitionFailed(topicPartition: TopicPartition): Unit = {
+  private def markPartitionRemoved(topicPartition: TopicPartition): Unit = {
     partitionMapLock.lock()
     try {
       failedPartitions.add(topicPartition)
       removePartitions(Set(topicPartition))
     } finally partitionMapLock.unlock()
     warn(s"Partition $topicPartition marked as failed")
+  }
+
+  private def markPartitionFailed(topicPartition: TopicPartition): Unit = {
+    markPartitionRemoved(topicPartition)
     handlePartitionFailed(topicPartition)
   }
 
