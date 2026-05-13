@@ -106,7 +106,6 @@ public class MirrorCoordinator {
     private final Time time;
     private final MirrorRecordSerde serde;
 
-    private final Map<TopicPartition, Integer> failedRetryAttempts = new ConcurrentHashMap<>();
     // Exponential backoff for FAILED state retries with 20% jitter.
     // With defaults (initial=1s, max=300s): attempt 0 ~1s, attempt 1 ~2s, attempt 2 ~4s, ..., attempt 8+ ~300s.
     private ExponentialBackoff failedRetryBackoff;
@@ -208,26 +207,29 @@ public class MirrorCoordinator {
         }
     }
 
-    private void updateRetryAttempts(TopicPartition tp, MirrorPartitionState newState) {
+    private void updateRetryAttemptsAndPrevState(TopicPartition tp, MirrorPartitionState newState) {
         if (newState == MirrorPartitionState.FAILED) {
-            failedRetryAttempts.merge(tp, 1, Integer::sum);
+            metadataManager.failedRetryAttempts().merge(tp, 1, Integer::sum);
+            metadataManager.prevStateBeforeFailure().put(tp, newState);
         } else {
-            failedRetryAttempts.remove(tp);
+            metadataManager.failedRetryAttempts().remove(tp);
+            metadataManager.prevStateBeforeFailure().remove(tp);
         }
     }
 
     private void scheduleFailedRetries(String mirrorName, Set<TopicPartition> topicPartitions) {
         int maxAttempts = brokerConfig.mirrorConfig().failedRetryMaxAttempts();
         topicPartitions.forEach(tp -> {
-            int attempt = failedRetryAttempts.getOrDefault(tp, 0);
+            int attempt = metadataManager.failedRetryAttempts().getOrDefault(tp, 0);
             if (maxAttempts > 0 && attempt >= maxAttempts) {
                 log.error("Partition {} exceeded max retry attempts ({}), requires manual intervention.", tp, maxAttempts);
                 return;
             }
             long delay = failedRetryBackoff.backoff(attempt);
+            MirrorPartitionState prevState = metadataManager.prevStateBeforeFailure().getOrDefault(tp, MirrorPartitionState.PREPARING);
             log.info("Scheduling retry #{} for partition {} in {} ms.", attempt + 1, tp, delay);
             scheduler.scheduleOnce("MirrorFailedRetry-" + tp,
-                () -> transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.PREPARING), delay);
+                () -> transitionTo(mirrorName, Set.of(tp), prevState), delay);
         });
     }
 
@@ -237,7 +239,7 @@ public class MirrorCoordinator {
             MirrorPartitionState currentState = metadataManager.getPartitionState(mirrorName, tp);
             if (MirrorPartitionState.isValidTransition(currentState, newState)) {
                 log.debug("Transitioning partition {} from {} to {}.", tp, currentState, newState);
-                updateRetryAttempts(tp, newState);
+                updateRetryAttemptsAndPrevState(tp, newState);
                 updateMirrorPartitionState(mirrorName, tp, newState)
                         .whenComplete((optTp, ex) -> {
                             if (ex != null) {
@@ -767,14 +769,15 @@ public class MirrorCoordinator {
 
     private CoordinatorRecord generateMirrorPartitionState(String mirrorName, TopicPartition topicPartition, MirrorPartitionState state) {
         short retryAttempt = (state == MirrorPartitionState.FAILED)
-                ? failedRetryAttempts.getOrDefault(topicPartition, 0).shortValue()
+                ? metadataManager.failedRetryAttempts().getOrDefault(topicPartition, 0).shortValue()
                 : 0;
         var key = new MirrorPartitionStateKey().setMirrorName(mirrorName);
         var val = new MirrorPartitionStateValue()
                 .setTopicName(topicPartition.topic())
                 .setPartition(topicPartition.partition())
                 .setState(state.value())
-                .setRetryAttempt(retryAttempt);
+                .setRetryAttempt(retryAttempt)
+                .setPreviousState(metadataManager.prevStateBeforeFailure().getOrDefault(topicPartition, MirrorPartitionState.UNKNOWN).value());
         var apiVersion = new ApiMessageAndVersion(val, MirrorPartitionStateValue.HIGHEST_SUPPORTED_VERSION);
         return CoordinatorRecord.record(key, apiVersion);
     }
@@ -871,7 +874,8 @@ public class MirrorCoordinator {
         if (version <= MirrorPartitionStateValue.HIGHEST_SUPPORTED_VERSION && version >= MirrorPartitionStateValue.LOWEST_SUPPORTED_VERSION) {
             MirrorPartitionStateValue value = new MirrorPartitionStateValue(new ByteBufferAccessor(buffer), version);
             return new MirrorUtils.PartitionStateLogEntry(value.topicName(), value.partition(),
-                    MirrorPartitionState.fromValue(value.state()), value.retryAttempt());
+                    MirrorPartitionState.fromValue(value.state()), value.retryAttempt(),
+                    MirrorPartitionState.fromValue(value.previousState()));
         } else {
             throw new IllegalStateException("Unsupported partition state value version: " + version);
         }
@@ -939,9 +943,9 @@ public class MirrorCoordinator {
                                         new MirrorUtils.PartitionKey(clusterName, value.topic(), value.partition()), value.state());
                                 TopicPartition tp = new TopicPartition(value.topic(), value.partition());
                                 if (value.state() == MirrorPartitionState.FAILED && value.retryAttempt() > 0) {
-                                    failedRetryAttempts.put(tp, value.retryAttempt());
+                                    metadataManager.failedRetryAttempts().put(tp, value.retryAttempt());
                                 } else {
-                                    failedRetryAttempts.remove(tp);
+                                    metadataManager.failedRetryAttempts().remove(tp);
                                 }
                             } else {
                                 throw new IllegalArgumentException("Unknown cluster mirror log key version " + version);
@@ -978,7 +982,7 @@ public class MirrorCoordinator {
             OptionalInt partitionLeaderEpoch
     ) {
         sourceSenders.clear();
-        failedRetryAttempts.clear();
+        metadataManager.failedRetryAttempts().clear();
         metadataManager.clear();
     }
 
