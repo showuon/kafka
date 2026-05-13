@@ -39,7 +39,6 @@ import static org.apache.kafka.controller.ConfigurationControlManager.STOPPED_TO
  * Shared data types and utility methods for cluster mirroring components.
  */
 public final class MirrorUtils {
-    public static final int CONNECTION_FAILURE_THRESHOLD = 5;
     public static final int LEADER_EPOCH_BUMP_THRESHOLD = 3;
     public static final int LEADER_EPOCH_BUMP_INCREMENT = 10;
 
