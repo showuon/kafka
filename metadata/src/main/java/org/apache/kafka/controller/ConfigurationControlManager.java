@@ -26,8 +26,8 @@ import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.config.ConfigResource.Type;
 import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.config.types.Password;
-import org.apache.kafka.common.message.CreateMirrorResponseData;
-import org.apache.kafka.common.message.DeleteMirrorResponseData;
+import org.apache.kafka.common.message.CreateClusterMirrorResponseData;
+import org.apache.kafka.common.message.DeleteClusterMirrorResponseData;
 import org.apache.kafka.common.message.PauseMirrorTopicsResponseData;
 import org.apache.kafka.common.message.ResumeMirrorTopicsResponseData;
 import org.apache.kafka.common.message.StartMirrorTopicsRequestData;
@@ -535,12 +535,12 @@ public class ConfigurationControlManager {
         }
     }
 
-    ControllerResult<CreateMirrorResponseData> addMirrorConfig(
+    ControllerResult<CreateClusterMirrorResponseData> addMirrorConfig(
             Map<ConfigResource, Map<String, Entry<OpType, String>>> configChanges,
             boolean newlyCreatedResource
     ) {
         List<ApiMessageAndVersion> outputRecords = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
-        CreateMirrorResponseData data = new CreateMirrorResponseData();
+        CreateClusterMirrorResponseData data = new CreateClusterMirrorResponseData();
 
         for (Entry<ConfigResource, Map<String, Entry<OpType, String>>> resourceEntry :
                 configChanges.entrySet()) {
@@ -573,9 +573,9 @@ public class ConfigurationControlManager {
         return ControllerResult.atomicOf(outputRecords, data);
     }
 
-    ControllerResult<DeleteMirrorResponseData> deleteMirror(String mirrorName) {
+    ControllerResult<DeleteClusterMirrorResponseData> deleteClusterMirror(String mirrorName) {
         List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
-        DeleteMirrorResponseData data = new DeleteMirrorResponseData();
+        DeleteClusterMirrorResponseData data = new DeleteClusterMirrorResponseData();
 
         // Check mirror existence
         ConfigResource mirrorResource = new ConfigResource(Type.MIRROR, mirrorName);
