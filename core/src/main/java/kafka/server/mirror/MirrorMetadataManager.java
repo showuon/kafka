@@ -146,7 +146,7 @@ import static org.apache.kafka.controller.ConfigurationControlManager.STOPPED_TO
  * requests per coordinator node to reduce network overhead.
  */
 @SuppressWarnings({"ClassDataAbstractionCoupling", "ClassFanOutComplexity"})
-public class ClusterMirrorMetadataManager implements MetadataPublisher, AutoCloseable {
+public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private static final ResourcePatternFilter ANY_RESOURCE = new ResourcePatternFilter(ResourceType.ANY, null, PatternType.ANY);
     private static final AclBindingFilter ANY_RESOURCE_ACL = new AclBindingFilter(ANY_RESOURCE, AccessControlEntryFilter.ANY);
 
@@ -201,7 +201,7 @@ public class ClusterMirrorMetadataManager implements MetadataPublisher, AutoClos
     private AtomicLong shareGroupOffsetSyncError;
     private AtomicLong aclSyncError;
 
-    public ClusterMirrorMetadataManager(
+    public MirrorMetadataManager(
         KafkaConfig brokerConfig,
         Metrics metrics,
         Time time,
@@ -210,8 +210,8 @@ public class ClusterMirrorMetadataManager implements MetadataPublisher, AutoClos
         Supplier<MirrorFetcherManager> mirrorFetcherManagerSupplier,
         KafkaScheduler scheduler
     ) {
-        this.name = "[" + ClusterMirrorMetadataManager.class.getSimpleName() + " id=" + brokerConfig.nodeId() + "] ";
-        this.log = new LogContext(name).logger(ClusterMirrorMetadataManager.class);
+        this.name = "[" + MirrorMetadataManager.class.getSimpleName() + " id=" + brokerConfig.nodeId() + "] ";
+        this.log = new LogContext(name).logger(MirrorMetadataManager.class);
         this.brokerConfig = brokerConfig;
         this.nodeId = brokerConfig.nodeId();
         this.metrics = metrics;
@@ -373,7 +373,7 @@ public class ClusterMirrorMetadataManager implements MetadataPublisher, AutoClos
                            Function<String, Integer> coordinatorPartitionByNameFinder) {
         if (mirrorStateSender == null) {
             mirrorStateSender = new ClusterMirrorStateSender(ClusterMirrorStateSender.class.getSimpleName(),
-                    NetworkUtils.buildNetworkClient(ClusterMirrorMetadataManager.class.getSimpleName(), brokerConfig, metrics, time, new LogContext(name())),
+                    NetworkUtils.buildNetworkClient(MirrorMetadataManager.class.getSimpleName(), brokerConfig, metrics, time, new LogContext(name())),
                     brokerConfig.requestTimeoutMs(), Time.SYSTEM);
             mirrorStateSender.start();
         }
@@ -398,7 +398,7 @@ public class ClusterMirrorMetadataManager implements MetadataPublisher, AutoClos
     private void maybeRecreateConnection(MetadataDelta delta, MetadataImage newImage) {
         if (delta.configsDelta() != null) {
             delta.configsDelta().changes().entrySet().stream()
-                .filter(e -> e.getKey().type() == ConfigResource.Type.MIRROR)
+                .filter(e -> e.getKey().type() == ConfigResource.Type.CLUSTER_MIRROR)
                 .forEach(e -> {
                     String mirrorName = e.getKey().name();
                     boolean mirrorDeleted = newImage.configs()
@@ -775,7 +775,7 @@ public class ClusterMirrorMetadataManager implements MetadataPublisher, AutoClos
         if (sourceSenders.containsKey(mirrorName)) {
             return;
         }
-        Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.MIRROR, mirrorName));
+        Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName));
         String bootstrapServers = Optional.ofNullable(props.get(BOOTSTRAP_SERVERS_CONFIG))
                 .map(Object::toString)
                 .orElseThrow(() -> new IllegalArgumentException("Remote bootstrap server not found in Cluster Mirror config: " + mirrorName));
@@ -787,7 +787,7 @@ public class ClusterMirrorMetadataManager implements MetadataPublisher, AutoClos
         List<MirrorSourceSender> senders = new ArrayList<>();
         for (var address : addresses) {
             var brokerEndpoint = new BrokerEndPoint(random.nextInt(), address.getHostString(), address.getPort());
-            var logContext = new LogContext("[" + ClusterMirrorMetadataManager.class.getName() + " replicaId=" + nodeId + ", mirrorName=" + mirrorName + "] ");
+            var logContext = new LogContext("[" + MirrorMetadataManager.class.getName() + " replicaId=" + nodeId + ", mirrorName=" + mirrorName + "] ");
             senders.add(new MirrorSourceSender(
                     brokerEndpoint,
                     mirrorConfig,
@@ -806,7 +806,7 @@ public class ClusterMirrorMetadataManager implements MetadataPublisher, AutoClos
     private void ensureAdminClients(Set<String> mirrors) {
         for (String mirrorName : mirrors) {
             srcAdmins.computeIfAbsent(mirrorName, k -> {
-                Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.MIRROR, k));
+                Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, k));
                 return Admin.create(props);
             });
         }
@@ -980,7 +980,7 @@ public class ClusterMirrorMetadataManager implements MetadataPublisher, AutoClos
                                                                                Set<TopicPartition> topicPartitionSet) {
         log.info("Truncating to last mirrored epochs from local state for mirror {}: {}", mirrorName, topicPartitionSet);
         Admin admin = srcAdmins.computeIfAbsent(mirrorName, k -> {
-            Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.MIRROR, k));
+            Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, k));
             return Admin.create(props);
         });
         DescribeClusterMirrorsResult result = admin.describeClusterMirrors(List.of(mirrorName));
@@ -1197,7 +1197,7 @@ public class ClusterMirrorMetadataManager implements MetadataPublisher, AutoClos
             return;
         }
 
-        Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.MIRROR, mirrorName));
+        Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName));
         ClusterMirrorConfig mirrorConfig = ClusterMirrorConfig.fromProperties(props);
 
         List<MirrorSourceSender> addedSenders = new ArrayList<>();
@@ -1205,7 +1205,7 @@ public class ClusterMirrorMetadataManager implements MetadataPublisher, AutoClos
             try {
                 BrokerEndPoint endpoint = new BrokerEndPoint(broker.id(), broker.host(), broker.port());
                 String clientId = "nodeId-" + nodeId + "-" + mirrorName + "-" + broker.host() + "-" + broker.port();
-                LogContext logContext = new LogContext("[" + ClusterMirrorMetadataManager.class.getSimpleName() + "Sender id=" + nodeId + " clientId=" + clientId + "] ");
+                LogContext logContext = new LogContext("[" + MirrorMetadataManager.class.getSimpleName() + "Sender id=" + nodeId + " clientId=" + clientId + "] ");
                 addedSenders.add(ClusterMirrorUtils.createSender(endpoint, mirrorConfig, brokerConfig, metrics, time, clientId, logContext));
             } catch (Exception e) {
                 log.warn("Failed to create sender for broker {} in mirror {}", broker, mirrorName, e);
@@ -1383,7 +1383,7 @@ public class ClusterMirrorMetadataManager implements MetadataPublisher, AutoClos
 
         try {
             ClusterMirrorConfig mirrorConfig = ClusterMirrorConfig.fromProperties(
-                    metadataCache.config(new ConfigResource(ConfigResource.Type.MIRROR, mirrorName)));
+                    metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName)));
             syncTopicConfigurations(mirrorName, mirrorConfig);
             syncGroupOffsets(mirrorName, mirrorConfig);
             syncAccessControlLists(mirrorName, mirrorConfig);
@@ -1803,7 +1803,7 @@ public class ClusterMirrorMetadataManager implements MetadataPublisher, AutoClos
 
     Set<String> getConfiguredMirrors() {
         return metadataImage.configs().resourceData().keySet().stream()
-                .filter(resource -> resource.type() == ConfigResource.Type.MIRROR)
+                .filter(resource -> resource.type() == ConfigResource.Type.CLUSTER_MIRROR)
                 .map(ConfigResource::name)
                 .collect(Collectors.toSet());
     }
@@ -1836,7 +1836,7 @@ public class ClusterMirrorMetadataManager implements MetadataPublisher, AutoClos
     }
 
     String getSourceBootstrap(String mirrorName) {
-        Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.MIRROR, mirrorName));
+        Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName));
         return Optional.ofNullable(props.get(BOOTSTRAP_SERVERS_CONFIG))
                 .map(Object::toString)
                 .orElse(null);

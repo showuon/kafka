@@ -428,7 +428,7 @@ class KafkaApis(val requestChannel: RequestChannel,
           if (!describeAll) {
             responseData.mirrors().add(new DescribeClusterMirrorsResponseData.DescribedMirror()
               .setMirrorName(mirrorName)
-              .setErrorCode(Errors.MIRROR_AUTHORIZATION_FAILED.code))
+              .setErrorCode(Errors.CLUSTER_MIRROR_AUTHORIZATION_FAILED.code))
           }
         } else {
           val describedMirror = new DescribeClusterMirrorsResponseData.DescribedMirror()
@@ -1554,7 +1554,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       (Errors.TRANSACTIONAL_ID_AUTHORIZATION_FAILED, Node.noNode)
     else if (keyType == CoordinatorType.SHARE.id && request.context.apiVersion < 6)
       (Errors.INVALID_REQUEST, Node.noNode)
-    else if (keyType == CoordinatorType.MIRROR.id && request.context.apiVersion < 7) {
+    else if (keyType == CoordinatorType.CLUSTER_MIRROR.id && request.context.apiVersion < 7) {
       logger.warn("Mirror coordinator type is not supported for " +
         s"FindCoordinatorRequest version ${request.context.apiVersion}")
       (Errors.INVALID_REQUEST, Node.noNode)
@@ -1568,7 +1568,7 @@ class KafkaApis(val requestChannel: RequestChannel,
             error(s"Share coordinator key is invalid", e)
             return (Errors.INVALID_REQUEST, Node.noNode)
         }
-      } else if (keyType == CoordinatorType.MIRROR.id) {
+      } else if (keyType == CoordinatorType.CLUSTER_MIRROR.id) {
         authHelper.authorizeClusterOperation(request, CLUSTER_ACTION)
         try {
           ClusterMirrorRecordKey.validate(key)
@@ -1589,7 +1589,7 @@ class KafkaApis(val requestChannel: RequestChannel,
           // We know that shareCoordinator is defined at this stage.
           (shareCoordinator.partitionFor(SharePartitionKey.getInstance(key)), SHARE_GROUP_STATE_TOPIC_NAME)
 
-        case CoordinatorType.MIRROR =>
+        case CoordinatorType.CLUSTER_MIRROR =>
           (clusterMirrorCoordinator.getCoordinatorPartitionByKey(ClusterMirrorRecordKey.getInstance(key)), MIRROR_STATE_TOPIC_NAME)
       }
 

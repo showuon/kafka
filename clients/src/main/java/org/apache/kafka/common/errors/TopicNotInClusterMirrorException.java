@@ -16,15 +16,15 @@
  */
 package org.apache.kafka.common.errors;
 
-public class TopicAlreadyInMirrorException extends ApiException {
+public class TopicNotInClusterMirrorException extends ApiException {
 
     private static final long serialVersionUID = 1L;
 
-    public TopicAlreadyInMirrorException(String message) {
+    public TopicNotInClusterMirrorException(String message) {
         super(message);
     }
 
-    public TopicAlreadyInMirrorException(String message, Throwable cause) {
+    public TopicNotInClusterMirrorException(String message, Throwable cause) {
         super(message, cause);
     }
 }

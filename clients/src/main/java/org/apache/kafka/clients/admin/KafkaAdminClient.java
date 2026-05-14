@@ -1841,7 +1841,7 @@ public class KafkaAdminClient extends AdminClient {
             AbstractRequest.Builder<?> createRequest(int timeoutMs) {
                 return new FindCoordinatorRequest.Builder(
                     new FindCoordinatorRequestData()
-                        .setKeyType(FindCoordinatorRequest.CoordinatorType.MIRROR.id())
+                        .setKeyType(FindCoordinatorRequest.CoordinatorType.CLUSTER_MIRROR.id())
                         .setKey(key)
                         .setCoordinatorKeys(List.of())
                 );

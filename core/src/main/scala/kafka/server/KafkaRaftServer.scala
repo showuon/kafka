@@ -190,6 +190,6 @@ object KafkaRaftServer {
   val configSchema = new KafkaConfigSchema(Map(
     ConfigResource.Type.BROKER -> new ConfigDef(KafkaConfig.configDef),
     ConfigResource.Type.TOPIC -> LogConfig.configDefCopy,
-    ConfigResource.Type.MIRROR -> ClusterMirrorConfig.CONFIG_DEF,
+    ConfigResource.Type.CLUSTER_MIRROR -> ClusterMirrorConfig.CONFIG_DEF,
   ).asJava, ServerTopicConfigSynonyms.ALL_TOPIC_CONFIG_SYNONYMS)
 }

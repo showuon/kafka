@@ -194,7 +194,7 @@ public abstract class ClusterMirrorCommand {
         }
 
         private org.apache.kafka.clients.admin.Config describeMirrorConfig(String mirrorName) throws Exception {
-            ConfigResource mirrorConfigResource = new ConfigResource(ConfigResource.Type.MIRROR, mirrorName);
+            ConfigResource mirrorConfigResource = new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName);
             var configResult = adminClient.describeConfigs(List.of(mirrorConfigResource)).all().get();
             var mirrorConfigEntries = configResult.get(mirrorConfigResource);
 
@@ -527,9 +527,9 @@ public abstract class ClusterMirrorCommand {
         @SuppressWarnings({"NPathComplexity", "CyclomaticComplexity"})
         private void checkArgs() {
             if (args.length == 0)
-                CommandLineUtils.printUsageAndExit(parser, "Create cluster mirrors and manage mirrored topics.");
+                CommandLineUtils.printUsageAndExit(parser, "Create cluster mirrors and manage mirror topics.");
 
-            CommandLineUtils.maybePrintHelpOrVersion(this, "This tool helps to create cluster mirrors and manage mirrored topics.");
+            CommandLineUtils.maybePrintHelpOrVersion(this, "This tool helps to create cluster mirrors and manage mirror topics.");
 
             // should have exactly one action
             if ((has(createOpt) ? 1 : 0) + (has(startOpt) ? 1 : 0) + (has(stopOpt) ? 1 : 0)

@@ -134,11 +134,11 @@ import org.apache.kafka.common.errors.StreamsTopologyFencedException;
 import org.apache.kafka.common.errors.TelemetryTooLargeException;
 import org.apache.kafka.common.errors.ThrottlingQuotaExceededException;
 import org.apache.kafka.common.errors.TimeoutException;
-import org.apache.kafka.common.errors.TopicAlreadyInMirrorException;
+import org.apache.kafka.common.errors.TopicAlreadyInClusterMirrorException;
 import org.apache.kafka.common.errors.TopicAuthorizationException;
 import org.apache.kafka.common.errors.TopicDeletionDisabledException;
 import org.apache.kafka.common.errors.TopicExistsException;
-import org.apache.kafka.common.errors.TopicNotInMirrorException;
+import org.apache.kafka.common.errors.TopicNotInClusterMirrorException;
 import org.apache.kafka.common.errors.TransactionAbortableException;
 import org.apache.kafka.common.errors.TransactionCoordinatorFencedException;
 import org.apache.kafka.common.errors.TransactionalIdAuthorizationException;
@@ -431,16 +431,16 @@ public enum Errors {
     STREAMS_TOPOLOGY_FENCED(132, "The supplied topology epoch is outdated.", StreamsTopologyFencedException::new),
     SHARE_SESSION_LIMIT_REACHED(133, "The limit of share sessions has been reached.", ShareSessionLimitReachedException::new),
     READ_ONLY_TOPIC(134, "The topic is read-only.", ReadOnlyTopicException::new),
-    INVALID_MIRROR_NAME(135, "The mirror name does not meet the naming rules.", InvalidClusterMirrorNameException::new),
-    MIRROR_ALREADY_EXISTS(136, "The mirror already exists.", ClusterMirrorAlreadyExistsException::new),
-    UNKNOWN_MIRROR(137, "The mirror does not exist.", UnknownClusterMirrorException::new),
-    TOPIC_ALREADY_IN_MIRROR(138, "The topic is already assigned to a mirror.", TopicAlreadyInMirrorException::new),
-    TOPIC_NOT_IN_MIRROR(139, "The topic does not belong to the specified mirror.", TopicNotInMirrorException::new),
+    INVALID_CLUSTER_MIRROR_NAME(135, "The cluster mirror name does not meet the naming rules.", InvalidClusterMirrorNameException::new),
+    CLUSTER_MIRROR_ALREADY_EXISTS(136, "The cluster mirror already exists.", ClusterMirrorAlreadyExistsException::new),
+    UNKNOWN_CLUSTER_MIRROR(137, "The cluster mirror does not exist.", UnknownClusterMirrorException::new),
+    TOPIC_ALREADY_IN_CLUSTER_MIRROR(138, "The topic is already assigned to a cluster mirror.", TopicAlreadyInClusterMirrorException::new),
+    TOPIC_NOT_IN_CLUSTER_MIRROR(139, "The topic does not belong to the specified cluster mirror.", TopicNotInClusterMirrorException::new),
     MIRROR_TOPIC_ALREADY_PAUSED(140, "The mirror topic is already paused.", MirrorTopicAlreadyPausedException::new),
     MIRROR_TOPIC_NOT_PAUSED(141, "The mirror topic is not paused.", MirrorTopicNotPausedException::new),
     MIRROR_TOPIC_BEING_STOPPED(142, "The mirror topic is being stopped.", MirrorTopicBeingStoppedException::new),
-    MIRROR_NOT_EMPTY(143, "The mirror still has active or non-stopped topics.", ClusterMirrorNotEmptyException::new),
-    MIRROR_AUTHORIZATION_FAILED(144, "Mirror authorization failed.", ClusterMirrorAuthorizationException::new);
+    CLUSTER_MIRROR_NOT_EMPTY(143, "The cluster mirror still has active or non-stopped topics.", ClusterMirrorNotEmptyException::new),
+    CLUSTER_MIRROR_AUTHORIZATION_FAILED(144, "Cluster mirror authorization failed.", ClusterMirrorAuthorizationException::new);
 
     private static final Logger log = LoggerFactory.getLogger(Errors.class);
 

@@ -98,7 +98,7 @@ public class ClusterMirrorCoordinator {
     private final AtomicBoolean isActive = new AtomicBoolean(false);
     private final KafkaConfig brokerConfig;
     private final ReplicaManager replicaManager;
-    private final ClusterMirrorMetadataManager metadataManager;
+    private final MirrorMetadataManager metadataManager;
     private final Map<String, MirrorSourceSender> sourceSenders;
     private final Scheduler scheduler;
     private final Metrics metrics;
@@ -119,7 +119,7 @@ public class ClusterMirrorCoordinator {
             Metrics metrics,
             MetadataCache metadataCache,
             Time time,
-            ClusterMirrorMetadataManager mirrorMetadataManager
+            MirrorMetadataManager mirrorMetadataManager
     ) {
         this.name = "[" + ClusterMirrorCoordinator.class.getSimpleName() + " id=" + brokerConfig.nodeId() + "] ";
         this.log = new LogContext(name).logger(ClusterMirrorCoordinator.class);

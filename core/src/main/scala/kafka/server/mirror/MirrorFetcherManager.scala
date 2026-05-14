@@ -137,7 +137,7 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
     val logContext = new LogContext(s"[MirrorFetcher id=${brokerConfig.brokerId}, fetcherId=$fetcherId, leaderId=${srcEndpoint.id}, mirrorName=$mirrorName] ")
 
     val sender = if (mirrorName.nonEmpty) {
-      val mirrorProperties = metadataCache.config(new ConfigResource(ConfigResource.Type.MIRROR, mirrorName))
+      val mirrorProperties = metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName))
       info(s"Using mirror properties for $mirrorName: ${mirrorProperties.keySet()}")
       val mirrorConfig = ClusterMirrorConfig.fromProperties(mirrorProperties)
       val clientId = s"fetcherId-$fetcherId-mirrorName-$mirrorName"

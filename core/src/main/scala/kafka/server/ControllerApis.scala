@@ -715,11 +715,11 @@ class ControllerApis(
         } else {
           new ApiError(TOPIC_AUTHORIZATION_FAILED)
         }
-      case ConfigResource.Type.MIRROR =>
+      case ConfigResource.Type.CLUSTER_MIRROR =>
         if (authHelper.authorize(requestContext, ALTER_CONFIGS, CLUSTER_MIRROR, resource.name)) {
           new ApiError(NONE)
         } else {
-          new ApiError(MIRROR_AUTHORIZATION_FAILED)
+          new ApiError(CLUSTER_MIRROR_AUTHORIZATION_FAILED)
         }
       case ConfigResource.Type.GROUP =>
         if (authHelper.authorize(requestContext, ALTER_CONFIGS, GROUP, resource.name)) {

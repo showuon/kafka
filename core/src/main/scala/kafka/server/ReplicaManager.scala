@@ -23,7 +23,7 @@ import kafka.log.LogManager
 import kafka.server.HostedPartition.Online
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.ReplicaManager.{AtMinIsrPartitionCountMetricName, FailedIsrUpdatesPerSecMetricName, IsrExpandsPerSecMetricName, IsrShrinksPerSecMetricName, LeaderCountMetricName, OfflineReplicaCountMetricName, PartitionCountMetricName, PartitionsWithLateTransactionsCountMetricName, ProducerIdCountMetricName, ReassigningPartitionsMetricName, UnderMinIsrPartitionCountMetricName, UnderReplicatedPartitionsMetricName, createLogReadResult, isListOffsetsTimestampUnsupported}
-import kafka.server.mirror.{LagInfo, MirrorFetcherManager, ClusterMirrorMetadataManager, MirrorPartitionState}
+import kafka.server.mirror.{LagInfo, MirrorFetcherManager, MirrorMetadataManager, MirrorPartitionState}
 import kafka.server.share.DelayedShareFetch
 import kafka.utils._
 import org.apache.kafka.common.config.{ConfigResource, TopicConfig}
@@ -231,7 +231,7 @@ class ReplicaManager(val config: KafkaConfig,
                      addPartitionsToTxnManager: Option[AddPartitionsToTxnManager] = None,
                      val directoryEventHandler: DirectoryEventHandler = DirectoryEventHandler.NOOP,
                      val defaultActionQueue: ActionQueue = new DelayedActionQueue,
-                     val clusterMirrorMetadataManager: Option[ClusterMirrorMetadataManager] = None
+                     val mirrorMetadataManager: Option[MirrorMetadataManager] = None
                      ) extends Logging {
   private val metricsGroup = new KafkaMetricsGroup(this.getClass)
   private val addPartitionsToTxnConfig = new AddPartitionsToTxnConfig(config)
@@ -1417,8 +1417,8 @@ class ReplicaManager(val config: KafkaConfig,
 
     def validateReadOnlyTopic(partition: Partition, records: MemoryRecords, origin: AppendOrigin): Unit = {
       val mirrorName = partition.getMirrorName()
-      if (clusterMirrorMetadataManager.isDefined && mirrorName.isPresent) {
-        val state = clusterMirrorMetadataManager.get.getPartitionState(mirrorName.get(), partition.topicPartition)
+      if (mirrorMetadataManager.isDefined && mirrorName.isPresent) {
+        val state = mirrorMetadataManager.get.getPartitionState(mirrorName.get(), partition.topicPartition)
         val allowed = state == MirrorPartitionState.STOPPED ||
           (state == MirrorPartitionState.STOPPING &&
             (origin == AppendOrigin.COORDINATOR || origin == AppendOrigin.REPLICATION) &&
@@ -2646,7 +2646,7 @@ class ReplicaManager(val config: KafkaConfig,
           try {
             if (mirrorName != null && !mirrorName.isEmpty) {
               // Get the source partition leader
-              val sourceLeader = clusterMirrorMetadataManager.get.resolveSourceLeader(mirrorName, tp)
+              val sourceLeader = mirrorMetadataManager.get.resolveSourceLeader(mirrorName, tp)
               val leaderEndpoint = new BrokerEndPoint(sourceLeader.id(), sourceLeader.host(), sourceLeader.port())
 
               val fetchState = InitialFetchState(

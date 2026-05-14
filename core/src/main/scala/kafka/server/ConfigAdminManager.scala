@@ -25,7 +25,7 @@ import org.apache.kafka.clients.admin.{AlterConfigOp, ConfigEntry}
 import org.apache.kafka.clients.admin.AlterConfigOp.OpType
 import org.apache.kafka.common.config.ConfigDef.ConfigKey
 import org.apache.kafka.server.config.ClusterMirrorConfig
-import org.apache.kafka.common.config.ConfigResource.Type.{BROKER, BROKER_LOGGER, CLIENT_METRICS, GROUP, MIRROR, TOPIC}
+import org.apache.kafka.common.config.ConfigResource.Type.{BROKER, BROKER_LOGGER, CLIENT_METRICS, GROUP, CLUSTER_MIRROR, TOPIC}
 import org.apache.kafka.common.config.{ConfigDef, ConfigResource, TopicConfig}
 import org.apache.kafka.common.errors.{ApiException, InvalidConfigurationException, InvalidRequestException}
 import org.apache.kafka.common.message.{AlterConfigsRequestData, AlterConfigsResponseData, IncrementalAlterConfigsRequestData, IncrementalAlterConfigsResponseData}
@@ -151,7 +151,7 @@ class ConfigAdminManager(nodeId: Int,
                 }
             case CLIENT_METRICS | GROUP =>
             // Nothing to do.
-            case MIRROR =>
+            case CLUSTER_MIRROR =>
               val validKeys = ClusterMirrorConfig.CONFIG_DEF.names()
               resource.configs().forEach { config =>
                 if (!validKeys.contains(config.name())) {

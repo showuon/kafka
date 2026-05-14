@@ -22,7 +22,7 @@ import kafka.coordinator.transaction.TransactionCoordinator
 import kafka.log.LogManager
 import kafka.server.share.SharePartitionManager
 import kafka.server.{KafkaConfig, ReplicaManager}
-import kafka.server.mirror.{ClusterMirrorMetadataManager, ClusterMirrorCoordinator}
+import kafka.server.mirror.{MirrorMetadataManager, ClusterMirrorCoordinator}
 import kafka.utils.Logging
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.errors.TimeoutException
@@ -86,7 +86,7 @@ class BrokerMetadataPublisher(
   fatalFaultHandler: FaultHandler,
   metadataPublishingFaultHandler: FaultHandler,
   mirrorCoordinator: ClusterMirrorCoordinator,
-  mirrorMetadataManager: ClusterMirrorMetadataManager
+  mirrorMetadataManager: MirrorMetadataManager
 ) extends MetadataPublisher with Logging {
   logIdent = s"[BrokerMetadataPublisher id=${config.nodeId}] "
 

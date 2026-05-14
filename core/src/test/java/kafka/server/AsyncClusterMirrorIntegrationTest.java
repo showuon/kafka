@@ -363,7 +363,7 @@ public class AsyncClusterMirrorIntegrationTest {
     }
 
     private void appendToTopicsInclude(String mirrorName, String pattern) throws Exception {
-        ConfigResource mirrorResource = new ConfigResource(ConfigResource.Type.MIRROR, mirrorName);
+        ConfigResource mirrorResource = new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName);
         var configResult = destAdmin.describeConfigs(List.of(mirrorResource)).all().get(30, TimeUnit.SECONDS);
         var mirrorConfigEntries = configResult.get(mirrorResource);
 
@@ -686,7 +686,7 @@ public class AsyncClusterMirrorIntegrationTest {
         consumeFromCluster(destCluster, topic, 30);
 
         // Verify the pattern was persisted to mirror.topics.include
-        ConfigResource mirrorResource = new ConfigResource(ConfigResource.Type.MIRROR, MIRROR_NAME);
+        ConfigResource mirrorResource = new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, MIRROR_NAME);
         var configResult = destAdmin.describeConfigs(List.of(mirrorResource)).all().get(30, TimeUnit.SECONDS);
         var mirrorConfigEntries = configResult.get(mirrorResource);
         ConfigEntry includeEntry = mirrorConfigEntries.get(ClusterMirrorConfig.MIRROR_TOPICS_INCLUDE_CONFIG);
