@@ -1068,7 +1068,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         });
 
         pendingLeaderEpochBumps.add(new ClusterMirrorUtils.LeaderEpochBump(future, Collections.unmodifiableMap(partitionMinEpochs)));
-        maybeCompletePendingEpochBumps();
+        maybeCompletePendingEpochBumps(); // already-met condition is detected immediately (e.g. epoch 11 vs target 0)
 
         channelManager.sendRequest(new BumpLeaderEpochsRequest.Builder(
                 new BumpLeaderEpochsRequestData().setTopics(topicStates)
