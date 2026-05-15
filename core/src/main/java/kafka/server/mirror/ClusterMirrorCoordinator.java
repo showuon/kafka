@@ -93,7 +93,6 @@ import static org.apache.kafka.common.utils.Utils.require;
 public class ClusterMirrorCoordinator {
     private static final long RETRY_DELAY_MS = 5000L;
 
-    private final String name;
     private final Logger log;
     private final AtomicBoolean isActive = new AtomicBoolean(false);
     private final KafkaConfig brokerConfig;
@@ -120,7 +119,7 @@ public class ClusterMirrorCoordinator {
             Time time,
             MirrorMetadataManager mirrorMetadataManager
     ) {
-        this.name = "[" + ClusterMirrorCoordinator.class.getSimpleName() + " id=" + brokerConfig.nodeId() + "] ";
+        String name = "[" + ClusterMirrorCoordinator.class.getSimpleName() + " id=" + brokerConfig.nodeId() + "] ";
         this.log = new LogContext(name).logger(ClusterMirrorCoordinator.class);
         this.brokerConfig = brokerConfig;
         this.replicaManager = replicaManager;
@@ -499,8 +498,8 @@ public class ClusterMirrorCoordinator {
         metadataManager.initialize(
                 (mirrorName, tp, state) -> transitionTo(mirrorName, Set.of(tp), state),
                 this::tombstoneMirrorRecords,
-                key -> getCoordinatorPartitionByKey(key),
-                mirrorName -> getCoordinatorPartitionByName(mirrorName));
+                this::getCoordinatorPartitionByKey,
+                this::getCoordinatorPartitionByName);
 
         scheduler.startup();
 
@@ -511,13 +510,8 @@ public class ClusterMirrorCoordinator {
         log.info("Startup complete.");
     }
 
-    /** Schedules truncation to align replicas with last mirrored offsets before resuming. */
+    /** Schedules truncation to align replicas with last mirrored epoch. */
     private void scheduleTruncation(String mirrorName, Set<TopicPartition> topicPartitions) {
-        scheduleTruncation(mirrorName, topicPartitions, 0);
-    }
-
-    /** Schedules truncation with retry on failure, using mirror.truncation.backoff.ms as retry delay. */
-    private void scheduleTruncation(String mirrorName, Set<TopicPartition> topicPartitions, long delayMs) {
         final Consumer<TopicPartition> truncateCallback =
             partition -> transitionTo(mirrorName, Set.of(partition), MirrorPartitionState.EPOCH_FENCING);
         scheduler.scheduleOnce("LastMirrorEpochsTruncation",
@@ -532,12 +526,11 @@ public class ClusterMirrorCoordinator {
                                     Map<TopicPartition, Integer> epochs = topicPartitions.stream()
                                         .collect(Collectors.toMap(tp -> tp, tp -> -1));
                                     replicaManager.maybeTruncateForLeaderEpoch(epochs, truncateCallback);
-                                    return;
                                 } else {
                                     log.warn("Failed to truncate to last mirrored offsets for mirror {}", mirrorName, error);
                                     transitionTo(mirrorName, topicPartitions, MirrorPartitionState.FAILED);
-                                    return;
                                 }
+                                return;
                             }
 
                             ClusterMirrorDescription description = descriptions.get(mirrorName);
@@ -573,7 +566,7 @@ public class ClusterMirrorCoordinator {
                     log.warn("Failed to truncate to last mirrored offsets for mirror {}", mirrorName, e);
                     transitionTo(mirrorName, topicPartitions, MirrorPartitionState.FAILED);
                 }
-            }, delayMs);
+            }, 0);
     }
 
     /**
@@ -907,8 +900,7 @@ public class ClusterMirrorCoordinator {
 
                     if (fetchDataInfo.records instanceof MemoryRecords) {
                         memRecords = (MemoryRecords) fetchDataInfo.records;
-                    } else if (fetchDataInfo.records instanceof FileRecords) {
-                        FileRecords fileRecords = (FileRecords) fetchDataInfo.records;
+                    } else if (fetchDataInfo.records instanceof FileRecords fileRecords) {
                         int sizeInBytes = fileRecords.sizeInBytes();
                         int bytesNeeded = Math.max(maxLength, sizeInBytes);
 
@@ -926,9 +918,7 @@ public class ClusterMirrorCoordinator {
                     } else {
                         return null;
                     }
-                    Iterator<MutableRecordBatch> itr = memRecords.batches().iterator();
-                    while (itr.hasNext()) {
-                        MutableRecordBatch batch = itr.next();
+                    for (MutableRecordBatch batch : memRecords.batches()) {
                         batch.iterator().forEachRemaining(record -> {
                             require(record.hasKey(), "Mirror log's key should not be null");
                             short version = record.key().getShort();
@@ -962,9 +952,7 @@ public class ClusterMirrorCoordinator {
             }
 
             // we've read all the mirrored records, transition the state for each topic partitions
-            ClusterMirrorUtils.StateTransitionCallback callback = (mirrorName, topics, state)
-                    -> handleStateTransition(mirrorName, topics, state);
-            metadataManager.applyLoadedPartitionStates(callback);
+            metadataManager.applyLoadedPartitionStates(this::handleStateTransition);
 
             return null;
         });
