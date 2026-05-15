@@ -25,6 +25,7 @@ import org.apache.kafka.clients.ClientUtils;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AlterConfigOp;
 import org.apache.kafka.clients.admin.ClusterMirrorDescription;
+import org.apache.kafka.clients.admin.Config;
 import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.clients.admin.DescribeClusterMirrorsResult;
 import org.apache.kafka.clients.admin.GroupListing;
@@ -37,7 +38,6 @@ import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
-import org.apache.kafka.common.acl.AccessControlEntryFilter;
 import org.apache.kafka.common.acl.AclBinding;
 import org.apache.kafka.common.acl.AclBindingFilter;
 import org.apache.kafka.common.config.ConfigResource;
@@ -47,7 +47,6 @@ import org.apache.kafka.common.message.CreateAclsRequestData;
 import org.apache.kafka.common.message.CreatePartitionsRequestData;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.DeleteAclsRequestData;
-import org.apache.kafka.common.message.DescribeConfigsRequestData;
 import org.apache.kafka.common.message.IncrementalAlterConfigsRequestData;
 import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.message.ReadMirrorStatesRequestData;
@@ -63,10 +62,6 @@ import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.CreateTopicsResponse;
 import org.apache.kafka.common.requests.DeleteAclsRequest;
-import org.apache.kafka.common.requests.DescribeAclsRequest;
-import org.apache.kafka.common.requests.DescribeAclsResponse;
-import org.apache.kafka.common.requests.DescribeConfigsRequest;
-import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.kafka.common.requests.IncrementalAlterConfigsRequest;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
@@ -76,8 +71,6 @@ import org.apache.kafka.common.requests.StartMirrorTopicsRequest;
 import org.apache.kafka.common.requests.StopMirrorTopicsRequest;
 import org.apache.kafka.common.requests.WriteMirrorStatesRequest;
 import org.apache.kafka.common.requests.WriteMirrorStatesResponse;
-import org.apache.kafka.common.resource.PatternType;
-import org.apache.kafka.common.resource.ResourcePatternFilter;
 import org.apache.kafka.common.resource.ResourceType;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
@@ -147,9 +140,6 @@ import static org.apache.kafka.controller.ConfigurationControlManager.STOPPED_TO
  */
 @SuppressWarnings({"ClassDataAbstractionCoupling", "ClassFanOutComplexity"})
 public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
-    private static final ResourcePatternFilter ANY_RESOURCE = new ResourcePatternFilter(ResourceType.ANY, null, PatternType.ANY);
-    private static final AclBindingFilter ANY_RESOURCE_ACL = new AclBindingFilter(ANY_RESOURCE, AccessControlEntryFilter.ANY);
-
     private final String name;
     private final Logger log;
     private final KafkaConfig brokerConfig;
@@ -803,7 +793,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     /** Creates Admin clients for source mirrors and the local destination, if not already initialized. */
-    private void ensureAdminClients(Set<String> mirrors) {
+    private void createAdminClients(Set<String> mirrors) {
         for (String mirrorName : mirrors) {
             srcAdmins.computeIfAbsent(mirrorName, k -> {
                 Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, k));
@@ -996,7 +986,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
         log.info("Syncing metadata for mirrors: {}", mirrors);
         mirrors.forEach(this::ensureConnection);
-        ensureAdminClients(mirrors);
+        createAdminClients(mirrors);
 
         // snapshot keyset to avoid ConcurrentModificationException
         for (String mirrorName : Set.copyOf(sourceSenders.keySet())) {
@@ -1396,57 +1386,57 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     private void syncTopicConfigurations(String mirrorName, ClusterMirrorConfig mirrorConfig) {
+        Admin srcAdmin = srcAdmins.get(mirrorName);
+        if (srcAdmin == null) {
+            log.error("Source admin client not initialized for mirror {}, skipping config sync", mirrorName);
+            return;
+        }
+
         Set<String> topics = getConfiguredTopics(mirrorName);
         log.debug("Describing topic configs for topics: {}", topics);
         // TODO: This is incremented on every metadata refresh for testing purpose, as we don't have error handling at this stage
         topicConfigSyncError.incrementAndGet();
 
-        List<DescribeConfigsRequestData.DescribeConfigsResource> describeConfigsResources =
-            topics.stream()
-                .map(topic -> new DescribeConfigsRequestData.DescribeConfigsResource()
-                    .setResourceType(ConfigResource.Type.TOPIC.id())
-                    .setResourceName(topic))
-                .toList();
+        Collection<ConfigResource> resources = topics.stream()
+            .map(topic -> new ConfigResource(ConfigResource.Type.TOPIC, topic))
+            .toList();
 
-        DescribeConfigsRequest.Builder describeConfigsRequest =
-            new DescribeConfigsRequest.Builder(new DescribeConfigsRequestData().setResources(describeConfigsResources));
-
-        var describeConfigResponse = trySendSourceClusterRequest(mirrorName, describeConfigsRequest);
-        if (describeConfigResponse.responseBody() instanceof DescribeConfigsResponse describeConfigsRes) {
-            log.debug("Periodic describe config response: {}", describeConfigsRes);
-            Map<String, Map<String, String>> configsToChange = detectConfigurationChanges(describeConfigsRes, mirrorConfig);
+        try {
+            Map<ConfigResource, Config> sourceConfigs = srcAdmin.describeConfigs(resources)
+                .all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
+            Map<String, Map<String, String>> configsToChange = detectConfigurationChanges(sourceConfigs, mirrorConfig);
             applyConfigurationChanges(configsToChange);
+        } catch (Exception e) {
+            log.warn("Failed to describe topic configs for mirror {}: {}", mirrorName, e.getMessage());
         }
     }
 
     private Map<String, Map<String, String>> detectConfigurationChanges(
-            DescribeConfigsResponse describeConfigsRes, ClusterMirrorConfig mirrorConfig) {
+            Map<ConfigResource, Config> sourceConfigs, ClusterMirrorConfig mirrorConfig) {
         Map<String, Map<String, String>> configsToChange = new HashMap<>();
         Pattern excludePattern = mirrorConfig.topicPropertiesExcludePattern();
 
-        describeConfigsRes.data().results().forEach(describeConfigResult -> {
-            if (describeConfigResult.resourceType() == ConfigResource.Type.TOPIC.id()) {
-                Properties props = metadataCache.topicConfig(describeConfigResult.resourceName());
+        sourceConfigs.forEach((resource, config) -> {
+            if (resource.type() == ConfigResource.Type.TOPIC) {
+                Properties props = metadataCache.topicConfig(resource.name());
                 Map<String, String> conChange = new HashMap<>();
 
-                describeConfigResult.configs().forEach(con -> {
-                    // Ensures the destination cluster's mirror.name setting is never overwritten
-                    // by source cluster configs (which wouldn't have this config set)
-                    if (con.configSource() == DescribeConfigsResponse.ConfigSource.TOPIC_CONFIG.id()
-                            && !con.name().equals(TopicConfig.MIRROR_NAME_CONFIG)
-                            && (excludePattern == null || !excludePattern.matcher(con.name()).matches())) {
-                        if (props.containsKey(con.name())) {
-                            if (!props.get(con.name()).equals(con.value())) {
-                                conChange.put(con.name(), con.value());
+                config.entries().forEach(entry -> {
+                    if (entry.source() == ConfigEntry.ConfigSource.DYNAMIC_TOPIC_CONFIG
+                            && !entry.name().equals(TopicConfig.MIRROR_NAME_CONFIG)
+                            && (excludePattern == null || !excludePattern.matcher(entry.name()).matches())) {
+                        if (props.containsKey(entry.name())) {
+                            if (!props.get(entry.name()).equals(entry.value())) {
+                                conChange.put(entry.name(), entry.value());
                             }
                         } else {
-                            conChange.put(con.name(), con.value());
+                            conChange.put(entry.name(), entry.value());
                         }
                     }
                 });
 
                 if (!conChange.isEmpty()) {
-                    configsToChange.put(describeConfigResult.resourceName(), conChange);
+                    configsToChange.put(resource.name(), conChange);
                 }
             }
         });
@@ -1645,29 +1635,33 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         // TODO: How do we disambiguate ACLs that reference the same resource name
         //       when multiple cluster mirrors exist?
 
-        // TODO: This is incremented on every metadata refresh for testing purpose, as we don't have error handling at this stage
-        aclSyncError.incrementAndGet();
-
-        // list remote acls
-        var describeAclsRequest = new DescribeAclsRequest.Builder(ANY_RESOURCE_ACL);
-        var describeAclsResponse = trySendSourceClusterRequest(mirrorName, describeAclsRequest);
-        if (!(describeAclsResponse.responseBody() instanceof DescribeAclsResponse aclsResponse)) {
-            log.warn("Unexpected ACL response type from remote cluster: {}", describeAclsResponse);
+        Admin srcAdmin = srcAdmins.get(mirrorName);
+        if (srcAdmin == null) {
+            log.error("Source admin client not initialized for mirror {}, skipping ACL sync", mirrorName);
             return;
         }
 
-        log.debug("Describe ACLs response from remote cluster {}: {}", mirrorName, aclsResponse);
+        // TODO: This is incremented on every metadata refresh for testing purpose, as we don't have error handling at this stage
+        aclSyncError.incrementAndGet();
 
-        // Filter ACLs by include rules
-        List<ClusterMirrorConfig.AclRule> aclIncludeRules = mirrorConfig.aclIncludeRules();
-        var allRemoteAcls = DescribeAclsResponse.aclBindings(aclsResponse.acls()).stream()
-                .filter(acl -> aclIncludeRules.stream().anyMatch(rule -> rule.matches(acl)))
-                .toList();
-        var aclChanges = detectACLChanges(allRemoteAcls);
-        applyAccessControlListChanges(mirrorName, aclChanges);
+        try {
+            Collection<AclBinding> remoteAcls = srcAdmin.describeAcls(AclBindingFilter.ANY)
+                .values().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
+
+            log.debug("Describe ACLs response from remote cluster {}: {}", mirrorName, remoteAcls);
+
+            List<ClusterMirrorConfig.AclRule> aclIncludeRules = mirrorConfig.aclIncludeRules();
+            var allRemoteAcls = remoteAcls.stream()
+                    .filter(acl -> aclIncludeRules.stream().anyMatch(rule -> rule.matches(acl)))
+                    .toList();
+            var aclChanges = detectAccessControlListsChanges(allRemoteAcls);
+            applyAccessControlListChanges(mirrorName, aclChanges);
+        } catch (Exception e) {
+            log.warn("Failed to describe ACLs for mirror {}: {}", mirrorName, e.getMessage());
+        }
     }
 
-    private ACLChanges detectACLChanges(List<AclBinding> allRemoteAcls) {
+    private ACLChanges detectAccessControlListsChanges(List<AclBinding> allRemoteAcls) {
         var addACLsList = new ArrayList<AclBinding>();
         var deleteACLsList = new ArrayList<AclBinding>();
         var current = metadataImage.acls().acls().values();
@@ -1857,17 +1851,19 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         if (cached != null) {
             return cached;
         }
-        // cache miss: resolve by sending a synchronous metadata request
-        ensureConnection(mirrorName);
+        // lazily create the admin client
+        // handles the edge case where getSourceClusterId is called before periodicSync
+        Admin srcAdmin = srcAdmins.computeIfAbsent(mirrorName, k -> {
+            Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, k));
+            return Admin.create(props);
+        });
         try {
-            var response = trySendSourceClusterRequest(mirrorName, MetadataRequest.Builder.allTopics());
-            if (response.responseBody() instanceof MetadataResponse metadataResponse) {
-                String clusterId = metadataResponse.clusterId();
-                if (clusterId != null && !clusterId.isEmpty()) {
-                    cached = Uuid.fromString(clusterId);
-                    sourceClusterIds.put(mirrorName, cached);
-                    return cached;
-                }
+            String clusterId = srcAdmin.describeCluster()
+                .clusterId().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
+            if (clusterId != null && !clusterId.isEmpty()) {
+                cached = Uuid.fromString(clusterId);
+                sourceClusterIds.put(mirrorName, cached);
+                return cached;
             }
         } catch (Exception e) {
             log.warn("Failed to resolve source cluster ID for mirror {}", mirrorName, e);
@@ -1876,6 +1872,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     void clear() {
+        failedRetryAttempts.clear();
         partitionStates.clear();
         partitionPreviousStates.clear();
         partitionStateCounts.clear();

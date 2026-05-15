@@ -99,7 +99,6 @@ public class ClusterMirrorCoordinator {
     private final KafkaConfig brokerConfig;
     private final ReplicaManager replicaManager;
     private final MirrorMetadataManager metadataManager;
-    private final Map<String, MirrorSourceSender> sourceSenders;
     private final Scheduler scheduler;
     private final Metrics metrics;
     private final MetadataCache metadataCache;
@@ -131,7 +130,6 @@ public class ClusterMirrorCoordinator {
         this.time = time;
         this.serde = new ClusterMirrorRecordSerde();
         this.metadataCache = metadataCache;
-        this.sourceSenders = new HashMap<>();
     }
 
     private boolean isLocalCoordinator(String mirrorName, String topic, int partition) {
@@ -985,17 +983,11 @@ public class ClusterMirrorCoordinator {
             int partitionIndex,
             OptionalInt partitionLeaderEpoch
     ) {
-        sourceSenders.clear();
-        metadataManager.failedRetryAttempts().clear();
         metadataManager.clear();
     }
 
     public Set<String> getConfiguredMirrors() {
         return metadataManager.getConfiguredMirrors();
-    }
-
-    public Set<String> getConfiguredTopics(String mirrorName) {
-        return metadataManager.getConfiguredTopics(mirrorName);
     }
 
     public int getActiveTopicCount(String mirrorName) {
