@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ducktape.mark import defaults, ignore, parametrize
+from ducktape.mark import defaults, parametrize
 from ducktape.mark.resource import cluster
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
@@ -153,8 +153,6 @@ class ClusterMirroringMigrationTest(MirrorHelpers, Test):
     ######### tests #########
 
     @cluster(num_nodes=7)
-    # TODO: destination topic creation is skipped for some topics when source is ZK
-    @ignore
     @parametrize(metadata_quorum=quorum.zk)
     def test_migration_from_zk(self, metadata_quorum):
         """Migrate data from Kafka 2.1.1 (ZooKeeper mode) to current dev build."""
