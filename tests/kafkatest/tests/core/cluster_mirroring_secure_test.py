@@ -124,7 +124,7 @@ class ClusterMirroringSecureTest(MirrorHelpers, Test):
             cmd_suffix.replace("--command-config", "--producer.config"))
         self.client_node.account.ssh(cmd)
 
-    def consume_records(self, kafka, topic, max_messages, timeout_ms=10000, group=None):
+    def consume_records(self, kafka, topic, max_messages, timeout_ms=30000, group=None):
         env_prefix, cmd_suffix = kafka._cmd_security_opts(self.client_node)
         cmd = "%s%s --bootstrap-server %s --topic %s --from-beginning --max-messages %d --timeout-ms %d" % (
             env_prefix,

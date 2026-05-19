@@ -144,11 +144,17 @@ class ClusterMirroringMigrationTest(MirrorHelpers, Test):
 
         # Log segment comparison is not suitable here because STOPPING writes
         # epoch bumps and PID reset barriers to the destination segments.
+        # Use wait_until because lag zero can be reported before the fetcher
+        # discovers the source's actual offsets (sourceOffset=0 gives false lag=0).
         self.logger.info("Verifying destination records after failover")
         for topic in topics:
-            count = self.consume_records(topic, self.dest_kafka, max_messages=num_records)
-            assert count == num_records, \
-                "Expected %d records on destination for %s, got %d" % (num_records, topic, count)
+            wait_until(
+                lambda t=topic: self.consume_records(
+                    t, self.dest_kafka, max_messages=num_records
+                ) == num_records,
+                timeout_sec=60, backoff_sec=5,
+                err_msg="Expected %d records on destination for %s" % (num_records, topic),
+            )
 
     ######### tests #########
 

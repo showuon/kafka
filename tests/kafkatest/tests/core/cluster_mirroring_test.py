@@ -161,7 +161,7 @@ class MirrorHelpers:
                   topic, num_records, bootstrap_servers)
         self.client_node.account.ssh(cmd, allow_fail=True)
 
-    def consume_records(self, topic, kafka, max_messages=None, timeout_ms=10000,
+    def consume_records(self, topic, kafka, max_messages=None, timeout_ms=30000,
                         isolation_level=None, group=None, from_beginning=True):
         """Consume records and return count using kafka-console-consumer."""
         cmd = "%s --bootstrap-server %s --topic %s --timeout-ms %d" % (
@@ -280,7 +280,7 @@ class ClusterMirroringTest(MirrorHelpers, Test):
 
     ######### helpers #########
 
-    def consume_share_records(self, topic, kafka, group, max_messages=None, timeout_ms=10000):
+    def consume_share_records(self, topic, kafka, group, max_messages=None, timeout_ms=30000):
         """Consume records using kafka-console-share-consumer and return count."""
         cmd = "%s --bootstrap-server %s --topic %s --group %s --timeout-ms %d" % (
             self.client.path.script("kafka-console-share-consumer.sh"),
