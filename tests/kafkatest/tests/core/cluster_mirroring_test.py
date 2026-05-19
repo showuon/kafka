@@ -152,6 +152,70 @@ class MirrorHelpers:
                          sleep_s, num_cycles, interval_ms)
         time.sleep(sleep_s)
 
+    def produce_records(self, node, topic, num_records):
+        """Produce records to a specific broker node using kafka-producer-perf-test."""
+        bootstrap_servers = "%s:9092" % node.account.hostname
+        cmd = "%s --topic %s --num-records %d --record-size 1 --throughput -1" \
+              " --producer-props bootstrap.servers=%s" % (
+                  self.client.path.script("kafka-producer-perf-test.sh"),
+                  topic, num_records, bootstrap_servers)
+        self.client_node.account.ssh(cmd, allow_fail=True)
+
+    def consume_records(self, topic, kafka, max_messages=None, timeout_ms=10000,
+                        isolation_level=None, group=None, from_beginning=True):
+        """Consume records and return count using kafka-console-consumer."""
+        cmd = "%s --bootstrap-server %s --topic %s --timeout-ms %d" % (
+            self.client.path.script("kafka-console-consumer.sh"),
+            kafka.bootstrap_servers(kafka.security_protocol),
+            topic, timeout_ms)
+        if from_beginning:
+            cmd += " --from-beginning"
+        if max_messages is not None:
+            cmd += " --max-messages %d" % max_messages
+        if isolation_level is not None:
+            cmd += " --isolation-level %s" % isolation_level
+        if group is not None:
+            cmd += " --group %s" % group
+        cmd += " 2>/dev/null"
+        count = 0
+        for line in self.client_node.account.ssh_capture(cmd, allow_fail=True):
+            if line.strip():
+                count += 1
+        return count
+
+    def wait_for_log_convergence(self, source_kafka, dest_kafka, topics):
+        """Poll until source leader and all dest replica log segment hashes match."""
+        def log_segment_hashes(node, topic, partition):
+            cmd = "md5sum %s*/%s-%d/*.log 2>/dev/null" % (
+                KafkaService.DATA_LOG_DIR_PREFIX, topic, partition)
+            hashes = {}
+            for line in node.account.ssh_capture(cmd, allow_fail=True):
+                parts = line.strip().split()
+                if len(parts) == 2:
+                    hashes[os.path.basename(parts[1])] = parts[0]
+            return hashes
+
+        def check():
+            for topic, cfg in topics.items():
+                for partition in range(cfg["partitions"]):
+                    source = log_segment_hashes(
+                        source_kafka.leader(topic, partition), topic, partition)
+                    for node in dest_kafka.replicas(topic, partition):
+                        dest = log_segment_hashes(node, topic, partition)
+                        if source.keys() != dest.keys() or any(
+                                source[seg] != dest[seg] for seg in source):
+                            return False
+                        self.logger.info("Hashes match for %s-%d dest %s: %d segments verified",
+                                         topic, partition, node.name, len(source))
+            return True
+
+        wait_until(
+            check,
+            timeout_sec=120,
+            backoff_sec=5,
+            err_msg="Log segments did not converge between source and destination",
+        )
+
 
 class ClusterMirroringTest(MirrorHelpers, Test):
     """Tests for KIP-1279 Cluster Mirroring using a source and destination cluster."""
@@ -216,38 +280,6 @@ class ClusterMirroringTest(MirrorHelpers, Test):
 
     ######### helpers #########
 
-    def produce_records(self, node, topic, num_records):
-        """Produce records to a specific broker node using kafka-producer-perf-test."""
-        bootstrap_servers = "%s:9092" % node.account.hostname
-        cmd = "%s --topic %s --num-records %d --record-size 1 --throughput -1" \
-              " --producer-props bootstrap.servers=%s" % (
-                  self.client.path.script("kafka-producer-perf-test.sh"),
-                  topic, num_records, bootstrap_servers)
-        self.client_node.account.ssh(cmd, allow_fail=True)
-
-    def consume_records(self, topic, kafka, max_messages=None, timeout_ms=10000,
-                        isolation_level=None, group=None, from_beginning=True):
-        """Consume records and return count using kafka-console-consumer."""
-        cmd = "%s --bootstrap-server %s --topic %s --timeout-ms %d" % (
-            self.client.path.script("kafka-console-consumer.sh"),
-            kafka.bootstrap_servers(kafka.security_protocol),
-            topic, timeout_ms)
-        if from_beginning:
-            cmd += " --from-beginning"
-        if max_messages is not None:
-            cmd += " --max-messages %d" % max_messages
-        if isolation_level is not None:
-            cmd += " --isolation-level %s" % isolation_level
-        if group is not None:
-            cmd += " --group %s" % group
-        # Suppress stderr to avoid counting "Processed a total of N messages" line
-        cmd += " 2>/dev/null"
-        count = 0
-        for line in self.client_node.account.ssh_capture(cmd, allow_fail=True):
-            if line.strip():
-                count += 1
-        return count
-
     def consume_share_records(self, topic, kafka, group, max_messages=None, timeout_ms=10000):
         """Consume records using kafka-console-share-consumer and return count."""
         cmd = "%s --bootstrap-server %s --topic %s --group %s --timeout-ms %d" % (
@@ -262,39 +294,6 @@ class ClusterMirroringTest(MirrorHelpers, Test):
             if line.strip():
                 count += 1
         return count
-
-    def wait_for_log_convergence(self, source_kafka, dest_kafka):
-        """Poll until source leader and all dest replica log segment hashes match."""
-        def log_segment_hashes(node, topic, partition):
-            cmd = "md5sum %s*/%s-%d/*.log 2>/dev/null" % (
-                KafkaService.DATA_LOG_DIR_PREFIX, topic, partition)
-            hashes = {}
-            for line in node.account.ssh_capture(cmd, allow_fail=True):
-                parts = line.strip().split()
-                if len(parts) == 2:
-                    hashes[os.path.basename(parts[1])] = parts[0]
-            return hashes
-
-        def check():
-            for topic, cfg in self.topics.items():
-                for partition in range(cfg["partitions"]):
-                    source = log_segment_hashes(
-                        source_kafka.leader(topic, partition), topic, partition)
-                    for node in dest_kafka.replicas(topic, partition):
-                        dest = log_segment_hashes(node, topic, partition)
-                        if source.keys() != dest.keys() or any(
-                                source[seg] != dest[seg] for seg in source):
-                            return False
-                        self.logger.info("Hashes match for %s-%d dest %s: %d segments verified",
-                                         topic, partition, node.name, len(source))
-            return True
-
-        wait_until(
-            check,
-            timeout_sec=120,
-            backoff_sec=5,
-            err_msg="Log segments did not converge between source and destination",
-        )
 
     def run_background_consumer(self, kafka, topic, group):
         """Start a background console consumer on the client node."""
@@ -869,7 +868,7 @@ class ClusterMirroringTest(MirrorHelpers, Test):
                 err_msg="Mirror %s did not catch up" % mirror_name)
 
         self.logger.info("Poll until source and destination log segment hashes converge")
-        self.wait_for_log_convergence(self.source_kafka, self.dest_kafka)
+        self.wait_for_log_convergence(self.source_kafka, self.dest_kafka, self.topics)
 
     @cluster(num_nodes=7)
     @defaults(metadata_quorum=[quorum.isolated_kraft])
@@ -1009,7 +1008,7 @@ class ClusterMirroringTest(MirrorHelpers, Test):
                                   err_msg="Reverse mirror did not catch up")
 
         self.logger.info("Poll until log segment hashes converge (dest is source of truth after failback)")
-        self.wait_for_log_convergence(self.dest_kafka, self.source_kafka)
+        self.wait_for_log_convergence(self.dest_kafka, self.source_kafka, self.topics)
 
     @cluster(num_nodes=7)
     @defaults(metadata_quorum=[quorum.isolated_kraft])
