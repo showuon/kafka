@@ -43,7 +43,7 @@ class ClusterMirroringSecureTest(MirrorHelpers, Test):
             ["transaction.state.log.min.isr", "1"],
             ["share.coordinator.state.topic.replication.factor", "2"],
             ["share.coordinator.state.topic.min.isr", "1"],
-            ["mirror.topic.replication.factor", "2"],
+            ["mirror.state.topic.replication.factor", "2"],
             ["super.users", "User:kafka"],
         ]
         self.source_kafka = KafkaService(

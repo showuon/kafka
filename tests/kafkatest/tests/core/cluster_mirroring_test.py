@@ -169,7 +169,7 @@ class ClusterMirroringTest(MirrorHelpers, Test):
             ["transaction.state.log.min.isr", "1"],
             ["share.coordinator.state.topic.replication.factor", "2"],
             ["share.coordinator.state.topic.min.isr", "1"],
-            ["mirror.topic.replication.factor", "2"],
+            ["mirror.state.topic.replication.factor", "2"],
         ]
         self.source_kafka = KafkaService(
             test_context, num_nodes=2, zk=None,

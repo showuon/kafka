@@ -2165,7 +2165,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
     def alter_mirror_config(self, node, mirror_name, config):
         force_use_zk_connection = not self.all_nodes_configs_command_uses_bootstrap_server()
         cmd = fix_opts_for_new_jvm(node)
-        cmd += "%s --entity-type mirrors --entity-name %s --alter --add-config %s" % \
+        cmd += "%s --entity-type cluster-mirrors --entity-name %s --alter --add-config %s" % \
                (self.kafka_configs_cmd_with_optional_security_settings(node, force_use_zk_connection),
                 mirror_name, config)
         output = ""
@@ -2179,7 +2179,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
     def describe_mirror_config(self, node, mirror_name):
         force_use_zk_connection = not self.all_nodes_configs_command_uses_bootstrap_server()
         cmd = fix_opts_for_new_jvm(node)
-        cmd += "%s --entity-type mirrors --entity-name %s --describe" % \
+        cmd += "%s --entity-type cluster-mirrors --entity-name %s --describe" % \
                (self.kafka_configs_cmd_with_optional_security_settings(node, force_use_zk_connection),
                 mirror_name)
         return self.run_cli_tool(node, cmd)
