@@ -77,6 +77,8 @@ import static org.apache.kafka.common.metadata.MetadataRecordType.CONFIG_RECORD;
 import static org.apache.kafka.common.protocol.Errors.CLUSTER_MIRROR_ALREADY_EXISTS;
 import static org.apache.kafka.common.protocol.Errors.INVALID_CONFIG;
 import static org.apache.kafka.controller.QuorumController.MAX_RECORDS_PER_USER_OP;
+import static org.apache.kafka.controller.ReplicationControlManager.STARTING_MIRRORING;
+import static org.apache.kafka.controller.ReplicationControlManager.STOPPING_MIRRORING;
 
 public class ConfigurationControlManager {
     public static final ConfigResource DEFAULT_NODE = new ConfigResource(Type.BROKER, "");
@@ -445,27 +447,20 @@ public class ConfigurationControlManager {
             // no previous mirror name, so skip this validation
             if (topicInfo != null) {
                 String currMirrorNameValue = topicInfo.mirrorName();
-                if (currMirrorNameValue != null && !currMirrorNameValue.isBlank() && !currMirrorNameValue.endsWith(STOPPED_TOPIC_SUFFIX)) {
+                int currMirrorStateChange = topicInfo.mirrorState();
+                if (currMirrorNameValue != null && !currMirrorNameValue.isBlank() && currMirrorStateChange != STOPPING_MIRRORING) {
                     topicRes.setErrorCode(Errors.TOPIC_ALREADY_IN_CLUSTER_MIRROR.code()).setName(topicName);
                     topicResList.add(topicRes);
                     continue;
                 }
             }
 
-
-//            Map<String, Entry<OpType, String>> keyToOps = Map.of(
-//                    TopicConfig.MIRROR_NAME_CONFIG, new AbstractMap.SimpleImmutableEntry<>(SET, mirrorName));
-//            ControllerResult<ApiError> configResult = incrementalAlterConfig(configResource, keyToOps, true);
-//            if (configResult.response().isFailure()) {
-//                topicRes.setErrorCode(configResult.response().error().code()).setName(topicName);
-//                topicResList.add(topicRes);
-//                continue;
-//            }
+            // add a ClusterMirrorTopicChangeStateRecord for the starting mirror
             records.add(new ApiMessageAndVersion(
                     new ClusterMirrorTopicChangeStateRecord()
                             .setTopicId(topic.topicId())
                             .setMirrorName(mirrorName)
-                            .setMirrorTopicChangeState((byte) 0),
+                            .setMirrorTopicChangeState((byte) STARTING_MIRRORING),
                     (short) 0));
 
             topicRes.setName(topicName);

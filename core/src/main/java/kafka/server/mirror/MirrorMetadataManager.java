@@ -126,6 +126,8 @@ import static org.apache.kafka.clients.CommonClientConfigs.BOOTSTRAP_SERVERS_CON
 import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
 import static org.apache.kafka.controller.ConfigurationControlManager.PAUSED_TOPIC_SUFFIX;
 import static org.apache.kafka.controller.ConfigurationControlManager.STOPPED_TOPIC_SUFFIX;
+import static org.apache.kafka.controller.ReplicationControlManager.PAUSING_MIRRORING;
+import static org.apache.kafka.controller.ReplicationControlManager.STOPPING_MIRRORING;
 
 /**
  * Bridges the local destination cluster and remote source clusters for Cluster Mirroring.
@@ -290,10 +292,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         Map<String, Map<TopicPartition, Boolean>> remotePauseFlags = new HashMap<>();
 
         mirrorLeaders.forEach(tp -> {
-            String rawMirrorName = (String) newImage.configs().configProperties(
-                    new ConfigResource(ConfigResource.Type.TOPIC, tp.topic())).get(TopicConfig.MIRROR_NAME_CONFIG);
-            boolean stopRequested = rawMirrorName.endsWith(STOPPED_TOPIC_SUFFIX);
-            boolean pauseRequested = rawMirrorName.endsWith(PAUSED_TOPIC_SUFFIX);
+            TopicImage topicImage = newImage.topics().getTopic(tp.topic());
+            String rawMirrorName = topicImage.mirrorName();
+            int mirrorStateChange = topicImage.clusterMirrorTopicChangeState();
+            boolean stopRequested = mirrorStateChange == STOPPING_MIRRORING;
+            boolean pauseRequested = mirrorStateChange == PAUSING_MIRRORING;
             String mirrorName = ClusterMirrorUtils.originalMirrorName(rawMirrorName);
 
             ClusterMirrorUtils.PartitionKey key = new ClusterMirrorUtils.PartitionKey(mirrorName, tp.topic(), tp.partition());
@@ -451,20 +454,17 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 }
             });
 
-//
-//            localReplicaChanges.mirrorTopicStates().entrySet().forEach(e -> {
-//                Uuid topicId = e.getKey();
-//                LocalReplicaChanges.MirrorTopicState mirrorTopicState = e.getValue();
-//                // get the partition leader is the local node
-//                TopicImage topicImage = image.topics().getTopic(topicId);
-//                if (topicImage != null) {
-//                    topicImage.partitions().forEach((partitionId, partition) -> {
-//                        if (partition.leader == nodeId) {
-//                            mirrorLeaderPartitions.add(new TopicPartition(topicImage.name(), partitionId));
-//                        }
-//                    });
-//                }
-//            });
+            localReplicaChanges.mirrorTopicStates().keySet().forEach(topicId -> {
+                // get the partition leader is the local node
+                TopicImage topicImage = image.topics().getTopic(topicId);
+                if (topicImage != null) {
+                    topicImage.partitions().forEach((partitionId, partition) -> {
+                        if (partition.leader == nodeId) {
+                            mirrorLeaderPartitions.add(new TopicPartition(topicImage.name(), partitionId));
+                        }
+                    });
+                }
+            });
 
             // remove the pending state from this node because it is not the leader anymore
             localReplicaChanges.followers().keySet().forEach(tp -> {
@@ -485,33 +485,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 }
             });
         }
-
-        // the config change in configsDelta contains the mirror.name setting from empty to non-empty
-//        if (delta.configsDelta() != null) {
-//            // get all resources containing the non-empty mirror name change
-//            Map<ConfigResource, ConfigurationDelta> mirrorNameChanged = delta.configsDelta().changes().entrySet().stream().filter(entry ->
-//                            entry.getValue().changes().containsKey(TopicConfig.MIRROR_NAME_CONFIG) &&
-//                                    entry.getValue().changes().get(TopicConfig.MIRROR_NAME_CONFIG).isPresent()
-//                                    && !entry.getValue().changes().get(TopicConfig.MIRROR_NAME_CONFIG).get().isBlank())
-//                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-//
-//            // get all topics from the resources
-//            Set<String> topicsWithMirrorNameChanged = mirrorNameChanged.keySet().stream()
-//                    .filter(configResource -> configResource.type().equals(ConfigResource.Type.TOPIC))
-//                    .map(ConfigResource::name).collect(Collectors.toSet());
-//
-//            // get the partition leader is the local node
-//            topicsWithMirrorNameChanged.forEach(topic -> {
-//                TopicImage topicImage = image.topics().getTopic(topic);
-//                if (topicImage != null) {
-//                    topicImage.partitions().forEach((partitionId, partition) -> {
-//                        if (partition.leader == nodeId) {
-//                            mirrorLeaderPartitions.add(new TopicPartition(topic, partitionId));
-//                        }
-//                    });
-//                }
-//            });
-//        }
 
         return mirrorLeaderPartitions;
     }

@@ -164,7 +164,6 @@ public final class TopicDelta {
 
         int newMirrorState = clusterMirrorTopicChangeState == null ? image.clusterMirrorTopicChangeState() : clusterMirrorTopicChangeState;
         String newMirrorName =  mirrorName == null ? image.mirrorName() : mirrorName;
-        System.out.println("!!! topicDelta apply:" + image.clusterMirrorTopicChangeState() + ";;" + clusterMirrorTopicChangeState + ";;" + mirrorName + ";;" + image.mirrorName());
 
         return new TopicImage(
                 image.name(),

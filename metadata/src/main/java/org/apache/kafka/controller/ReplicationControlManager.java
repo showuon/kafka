@@ -153,6 +153,9 @@ import static org.apache.kafka.metadata.LeaderConstants.NO_LEADER_CHANGE;
 public class ReplicationControlManager {
     static final int MAX_ELECTIONS_PER_IMBALANCE = 1_000;
     static final int MAX_PARTITIONS_PER_BATCH = 10_000;
+    public static final int STARTING_MIRRORING = 0;
+    public static final int STOPPING_MIRRORING = 1;
+    public static final int PAUSING_MIRRORING = 2;
 
     static class Builder {
         private SnapshotRegistry snapshotRegistry = null;

@@ -19,10 +19,10 @@ package kafka.cluster
 import kafka.controller.StateChangeLogger
 import kafka.log.{LogManager => KafkaLogManager}
 import kafka.server._
+import kafka.server.metadata.KRaftMetadataCache
 import kafka.server.share.DelayedShareFetch
 import kafka.utils.CoreUtils.{inReadLock, inWriteLock}
 import kafka.utils._
-import org.apache.kafka.common.config.{ConfigResource, TopicConfig}
 import org.apache.kafka.common.errors._
 import org.apache.kafka.common.message.AlterPartitionRequestData.BrokerState
 import org.apache.kafka.common.message.OffsetForLeaderEpochResponseData.EpochEndOffset
@@ -1420,9 +1420,12 @@ class Partition(val topicPartition: TopicPartition,
   }
 
   def getMirrorName(): Optional[String] = {
-    Option(metadataCache.config(new ConfigResource(ConfigResource.Type.TOPIC, topic)))
-      .flatMap(config => Option(config.get(TopicConfig.MIRROR_NAME_CONFIG).asInstanceOf[String]))
-      .toJava
+    val topicImage = metadataCache.asInstanceOf[KRaftMetadataCache].currentImage().topics().getTopic(topic)
+    if (topicImage != null && topicImage.mirrorName() != null) {
+      Optional.of(topicImage.mirrorName())
+    } else {
+      Optional.empty()
+    }
   }
 
   private def doAppendRecordsToFollowerOrFutureReplica(
