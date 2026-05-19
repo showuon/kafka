@@ -258,6 +258,9 @@ public final class MetadataDelta {
             case REGISTER_CONTROLLER_RECORD:
                 replay((RegisterControllerRecord) record);
                 break;
+            case CLUSTER_MIRROR_TOPIC_CHANGE_STATE_RECORD:
+                replay((ClusterMirrorTopicChangeStateRecord) record);
+                break;
             default:
                 throw new RuntimeException("Unknown metadata record type " + type);
         }

@@ -429,13 +429,6 @@ public class ConfigurationControlManager {
         for (StartMirrorTopicsRequestData.TopicData topic : topics) {
             StartMirrorTopicsResponseData.TopicResult topicRes = new StartMirrorTopicsResponseData.TopicResult();
             String topicName = topic.topicName();
-            log.info("!!! topics:" + topic.topicName() + ";;" + topic.topicId() + replicationControl.getTopic(topic.topicId()));
-            String currMirrorNameValue = replicationControl.getTopic(topic.topicId()).mirrorName();
-            if (currMirrorNameValue != null && !currMirrorNameValue.isBlank() && !currMirrorNameValue.endsWith(STOPPED_TOPIC_SUFFIX)) {
-                topicRes.setErrorCode(Errors.TOPIC_ALREADY_IN_CLUSTER_MIRROR.code()).setName(topicName);
-                topicResList.add(topicRes);
-                continue;
-            }
 
             if (!topic.topicId().equals(Uuid.ZERO_UUID) && topic.numPartitions() > 0) {
                 ApiError createError = replicationControl.createMirrorTopic(
@@ -448,6 +441,18 @@ public class ConfigurationControlManager {
                 }
             }
 
+            ReplicationControlManager.TopicControlInfo topicInfo = replicationControl.getTopic(topic.topicId());
+            // no previous mirror name, so skip this validation
+            if (topicInfo != null) {
+                String currMirrorNameValue = topicInfo.mirrorName();
+                if (currMirrorNameValue != null && !currMirrorNameValue.isBlank() && !currMirrorNameValue.endsWith(STOPPED_TOPIC_SUFFIX)) {
+                    topicRes.setErrorCode(Errors.TOPIC_ALREADY_IN_CLUSTER_MIRROR.code()).setName(topicName);
+                    topicResList.add(topicRes);
+                    continue;
+                }
+            }
+
+
 //            Map<String, Entry<OpType, String>> keyToOps = Map.of(
 //                    TopicConfig.MIRROR_NAME_CONFIG, new AbstractMap.SimpleImmutableEntry<>(SET, mirrorName));
 //            ControllerResult<ApiError> configResult = incrementalAlterConfig(configResource, keyToOps, true);
@@ -459,7 +464,7 @@ public class ConfigurationControlManager {
             records.add(new ApiMessageAndVersion(
                     new ClusterMirrorTopicChangeStateRecord()
                             .setTopicId(topic.topicId())
-                            .setMirrorName(currMirrorNameValue)
+                            .setMirrorName(mirrorName)
                             .setMirrorTopicChangeState((byte) 0),
                     (short) 0));
 

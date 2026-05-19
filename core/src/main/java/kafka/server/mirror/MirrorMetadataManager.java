@@ -77,6 +77,7 @@ import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorRecordKey;
 import org.apache.kafka.image.ConfigurationDelta;
+import org.apache.kafka.image.LocalReplicaChanges;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.image.TopicImage;
@@ -441,19 +442,32 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         Set<TopicPartition> mirrorLeaderPartitions = new HashSet<>();
 
         if (delta.topicsDelta() != null) {
+            LocalReplicaChanges localReplicaChanges = delta.topicsDelta().localChanges(nodeId);
             // new partition leader in topicsDelta that has mirror.name not empty
-            delta.topicsDelta().localChanges(nodeId).leaders().keySet().forEach(tp -> {
-                Properties props = image.configs().configProperties(new ConfigResource(ConfigResource.Type.TOPIC, tp.topic()));
-                if (props.containsKey(TopicConfig.MIRROR_NAME_CONFIG)) {
-                    String mirrorName = (String) props.get(TopicConfig.MIRROR_NAME_CONFIG);
-                    if (mirrorName != null && !mirrorName.isBlank()) {
-                        mirrorLeaderPartitions.add(tp);
-                    }
+            localReplicaChanges.leaders().keySet().forEach(tp -> {
+                String mirrorName = image.topics().getTopic(tp.topic()).mirrorName();
+                if (mirrorName != null && !mirrorName.isBlank()) {
+                    mirrorLeaderPartitions.add(tp);
                 }
             });
 
+//
+//            localReplicaChanges.mirrorTopicStates().entrySet().forEach(e -> {
+//                Uuid topicId = e.getKey();
+//                LocalReplicaChanges.MirrorTopicState mirrorTopicState = e.getValue();
+//                // get the partition leader is the local node
+//                TopicImage topicImage = image.topics().getTopic(topicId);
+//                if (topicImage != null) {
+//                    topicImage.partitions().forEach((partitionId, partition) -> {
+//                        if (partition.leader == nodeId) {
+//                            mirrorLeaderPartitions.add(new TopicPartition(topicImage.name(), partitionId));
+//                        }
+//                    });
+//                }
+//            });
+
             // remove the pending state from this node because it is not the leader anymore
-            delta.topicsDelta().localChanges(nodeId).followers().keySet().forEach(tp -> {
+            localReplicaChanges.followers().keySet().forEach(tp -> {
                 Properties props = image.configs().configProperties(new ConfigResource(ConfigResource.Type.TOPIC, tp.topic()));
                 if (props.containsKey(TopicConfig.MIRROR_NAME_CONFIG)) {
                     String mirrorName = (String) props.get(TopicConfig.MIRROR_NAME_CONFIG);
@@ -473,31 +487,31 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         }
 
         // the config change in configsDelta contains the mirror.name setting from empty to non-empty
-        if (delta.configsDelta() != null) {
-            // get all resources containing the non-empty mirror name change
-            Map<ConfigResource, ConfigurationDelta> mirrorNameChanged = delta.configsDelta().changes().entrySet().stream().filter(entry ->
-                            entry.getValue().changes().containsKey(TopicConfig.MIRROR_NAME_CONFIG) &&
-                                    entry.getValue().changes().get(TopicConfig.MIRROR_NAME_CONFIG).isPresent()
-                                    && !entry.getValue().changes().get(TopicConfig.MIRROR_NAME_CONFIG).get().isBlank())
-                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-
-            // get all topics from the resources
-            Set<String> topicsWithMirrorNameChanged = mirrorNameChanged.keySet().stream()
-                    .filter(configResource -> configResource.type().equals(ConfigResource.Type.TOPIC))
-                    .map(ConfigResource::name).collect(Collectors.toSet());
-
-            // get the partition leader is the local node
-            topicsWithMirrorNameChanged.forEach(topic -> {
-                TopicImage topicImage = image.topics().getTopic(topic);
-                if (topicImage != null) {
-                    topicImage.partitions().forEach((partitionId, partition) -> {
-                        if (partition.leader == nodeId) {
-                            mirrorLeaderPartitions.add(new TopicPartition(topic, partitionId));
-                        }
-                    });
-                }
-            });
-        }
+//        if (delta.configsDelta() != null) {
+//            // get all resources containing the non-empty mirror name change
+//            Map<ConfigResource, ConfigurationDelta> mirrorNameChanged = delta.configsDelta().changes().entrySet().stream().filter(entry ->
+//                            entry.getValue().changes().containsKey(TopicConfig.MIRROR_NAME_CONFIG) &&
+//                                    entry.getValue().changes().get(TopicConfig.MIRROR_NAME_CONFIG).isPresent()
+//                                    && !entry.getValue().changes().get(TopicConfig.MIRROR_NAME_CONFIG).get().isBlank())
+//                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+//
+//            // get all topics from the resources
+//            Set<String> topicsWithMirrorNameChanged = mirrorNameChanged.keySet().stream()
+//                    .filter(configResource -> configResource.type().equals(ConfigResource.Type.TOPIC))
+//                    .map(ConfigResource::name).collect(Collectors.toSet());
+//
+//            // get the partition leader is the local node
+//            topicsWithMirrorNameChanged.forEach(topic -> {
+//                TopicImage topicImage = image.topics().getTopic(topic);
+//                if (topicImage != null) {
+//                    topicImage.partitions().forEach((partitionId, partition) -> {
+//                        if (partition.leader == nodeId) {
+//                            mirrorLeaderPartitions.add(new TopicPartition(topic, partitionId));
+//                        }
+//                    });
+//                }
+//            });
+//        }
 
         return mirrorLeaderPartitions;
     }

@@ -40,6 +40,7 @@ import java.util.stream.Collectors;
 public final class TopicDelta {
     private final TopicImage image;
     private final Map<Integer, PartitionRegistration> partitionChanges = new HashMap<>();
+    private final Map<Uuid, LocalReplicaChanges.MirrorTopicState> topicChanges = new HashMap<>();
     private final Map<Integer, Integer> partitionToUncleanLeaderElectionCount = new HashMap<>();
     private final Map<Integer, Integer> partitionToElrElectionCount = new HashMap<>();
     private Integer clusterMirrorTopicChangeState;
@@ -109,6 +110,7 @@ public final class TopicDelta {
     public void replay(ClusterMirrorTopicChangeStateRecord record) {
         mirrorName = record.mirrorName();
         clusterMirrorTopicChangeState = (int) record.mirrorTopicChangeState();
+        topicChanges.put(record.topicId(), new LocalReplicaChanges.MirrorTopicState(mirrorName, clusterMirrorTopicChangeState));
     }
 
     private void updateElectionStats(int partitionId, PartitionRegistration prevPartition, int newLeader, byte newLeaderRecoveryState) {
@@ -198,6 +200,7 @@ public final class TopicDelta {
         Map<TopicPartition, LocalReplicaChanges.PartitionInfo> followers = new HashMap<>();
         Map<String, Uuid> topicIds = new HashMap<>();
         Map<TopicIdPartition, Uuid> directoryIds = new HashMap<>();
+        Map<Uuid, LocalReplicaChanges.MirrorTopicState> mirrorTopicChanges = new HashMap<>();
 
         for (Entry<Integer, PartitionRegistration> entry : partitionChanges.entrySet()) {
             if (!Replicas.contains(entry.getValue().replicas, brokerId)) {
@@ -245,7 +248,7 @@ public final class TopicDelta {
             }
         }
 
-        return new LocalReplicaChanges(deletes, electedLeaders, leaders, followers, topicIds, directoryIds);
+        return new LocalReplicaChanges(deletes, electedLeaders, leaders, followers, topicIds, directoryIds, mirrorTopicChanges);
     }
 
     @Override
