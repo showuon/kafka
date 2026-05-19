@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import time
 
 from ducktape.mark import defaults
@@ -23,14 +22,14 @@ from ducktape.utils.util import wait_until
 from kafkatest.services.kafka import KafkaService
 from kafkatest.services.kafka import quorum
 from kafkatest.services.security.security_config import SecurityConfig
-from kafkatest.tests.core.cluster_mirroring_test import ClientService, ClusterMirrorConfig
+from kafkatest.tests.core.cluster_mirroring_test import ClientService, MirrorConfig, MirrorHelpers
 from kafkatest.version import (
     CLUSTER_MIRRORING_METADATA_VERSION,
     CLUSTER_MIRRORING_VERSION,
 )
 
 
-class ClusterMirroringSecureTest(Test):
+class ClusterMirroringSecureTest(MirrorHelpers, Test):
     """Tests for KIP-1279 Cluster Mirroring with SASL_SSL security and authorization."""
 
     def __init__(self, test_context):
@@ -142,7 +141,7 @@ class ClusterMirroringSecureTest(Test):
         return count
 
     def create_mirror_config(self, source_kafka):
-        mirror_cfg = ClusterMirrorConfig(
+        mirror_cfg = MirrorConfig(
             source_kafka.bootstrap_servers(source_kafka.security_protocol),
             security_config=source_kafka.security_config,
         )
@@ -150,54 +149,6 @@ class ClusterMirroringSecureTest(Test):
             'org.apache.kafka.common.security.plain.PlainLoginModule required ' \
             'username="kafka" password="kafka-secret";'
         return mirror_cfg
-
-    def all_satisfy_in_mirror(self, kafka, mirror_name, condition, topics=None):
-        output = kafka.describe_cluster_mirror(self.client_node)
-        if output == "":
-            return False
-        try:
-            mirrors = kafka.parse_describe_cluster_mirror(output)
-        except (json.JSONDecodeError, KeyError):
-            return False
-        if mirror_name not in mirrors:
-            return False
-        mirror = mirrors[mirror_name]
-        check_topics = topics if topics is not None else list(mirror.keys())
-        for topic in check_topics:
-            if topic not in mirror:
-                return False
-            for partition in mirror[topic].values():
-                if not condition(partition):
-                    return False
-        return True
-
-    def wait_mirror_state(self, kafka, mirror_name, state, topics=None):
-        def check():
-            return self.all_satisfy_in_mirror(
-                kafka, mirror_name,
-                lambda p: p["state"] == state, topics)
-        wait_until(check, timeout_sec=60, backoff_sec=2,
-                   err_msg="Mirror did not reach %s state" % state)
-
-    def wait_mirror_lag_zero(self, kafka, mirror_name, topics=None):
-        def check():
-            return self.all_satisfy_in_mirror(
-                kafka, mirror_name,
-                lambda p: p["lag"] == 0 and p["state"] == "MIRRORING", topics)
-        wait_until(check, timeout_sec=120, backoff_sec=5,
-                   err_msg="Mirror did not catch up")
-
-    def wait_for_metadata_sync(self, kafka, mirror_name, num_cycles=1):
-        output = kafka.describe_mirror_config(self.client_node, mirror_name)
-        interval_ms = 30000
-        for line in output.splitlines():
-            if "mirror.metadata.refresh.interval.ms=" in line:
-                interval_ms = int(line.strip().split()[0].split("=")[1])
-                break
-        sleep_s = (interval_ms // 1000) * num_cycles + 2
-        self.logger.info("Waiting %ds for %d metadata sync cycle(s) (interval=%dms)",
-                         sleep_s, num_cycles, interval_ms)
-        time.sleep(sleep_s)
 
     def describe_cluster_mirror_as_client(self, kafka):
         client_env = "KAFKA_OPTS='-D%s -D%s' " % (
@@ -213,6 +164,14 @@ class ClusterMirroringSecureTest(Test):
 
     def list_acls(self, kafka):
         return self.run_acl_cmd(kafka, "--list")
+
+    def wait_for_acl_condition(self, kafka, mirror_name, condition, err_msg):
+        self.wait_for_metadata_sync(kafka, mirror_name)
+        def check():
+            dest_acls = self.list_acls(kafka)
+            self.logger.debug("Destination ACLs:\n%s" % dest_acls)
+            return condition(dest_acls)
+        wait_until(check, timeout_sec=60, backoff_sec=5, err_msg=err_msg)
 
     ######### tests #########
 
@@ -262,12 +221,11 @@ class ClusterMirroringSecureTest(Test):
                          "--remove --allow-principal User:client --operation READ "
                          "--group my-group --force")
 
-        self.wait_for_metadata_sync(self.dest_kafka, "my-mirror")
-
         self.logger.info("Verifying consumer group ACL removal propagated to destination")
-        dest_acls = self.list_acls(self.dest_kafka)
-        assert "my-group" not in dest_acls, \
-            "Group ACL for my-group should have been removed from destination"
+        self.wait_for_acl_condition(
+            self.dest_kafka, "my-mirror",
+            lambda acls: "my-group" not in acls,
+            "Group ACL for my-group should have been removed from destination")
 
     @cluster(num_nodes=7)
     @defaults(metadata_quorum=[quorum.isolated_kraft])
@@ -296,12 +254,12 @@ class ClusterMirroringSecureTest(Test):
         self.wait_mirror_state(self.dest_kafka, "my-mirror", "MIRRORING",
                                topics=["orders-topic", "internal-topic"])
 
-        self.wait_for_metadata_sync(self.dest_kafka, "my-mirror")
-
         self.logger.info("Verifying ACL filtering on destination")
+        self.wait_for_acl_condition(
+            self.dest_kafka, "my-mirror",
+            lambda acls: "User:client" in acls and "orders-topic" in acls,
+            "Client READ ACL on orders-topic should be synced (matches include rule)")
+
         dest_acls = self.list_acls(self.dest_kafka)
-        self.logger.info("Destination ACLs:\n%s" % dest_acls)
-        assert "User:client" in dest_acls and "orders-topic" in dest_acls, \
-            "Client READ ACL on orders-topic should be synced (matches include rule)"
         assert "User:other-client" not in dest_acls or "internal-topic" not in dest_acls, \
             "Other-client WRITE ACL on internal-topic should not be synced (filtered out)"
