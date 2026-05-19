@@ -34,7 +34,11 @@ import java.util.Map.Entry;
  *
  * This class is thread-safe.
  */
-public record TopicImage(String name, Uuid id, Map<Integer, PartitionRegistration> partitions) {
+public record TopicImage(String name, Uuid id, String mirrorName, int clusterMirrorTopicChangeState, Map<Integer, PartitionRegistration> partitions) {
+    public TopicImage(String name, Uuid id, Map<Integer, PartitionRegistration> partitions) {
+        this(name, id, null, -1, partitions);
+    }
+
     public TopicImage {
         partitions = Collections.unmodifiableMap(partitions);
     }

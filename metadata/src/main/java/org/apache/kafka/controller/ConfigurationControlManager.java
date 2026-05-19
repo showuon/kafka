@@ -34,6 +34,7 @@ import org.apache.kafka.common.message.StartMirrorTopicsRequestData;
 import org.apache.kafka.common.message.StartMirrorTopicsResponseData;
 import org.apache.kafka.common.message.StopMirrorTopicsResponseData;
 import org.apache.kafka.common.metadata.ClearElrRecord;
+import org.apache.kafka.common.metadata.ClusterMirrorTopicChangeStateRecord;
 import org.apache.kafka.common.metadata.ConfigRecord;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ApiError;
@@ -428,16 +429,12 @@ public class ConfigurationControlManager {
         for (StartMirrorTopicsRequestData.TopicData topic : topics) {
             StartMirrorTopicsResponseData.TopicResult topicRes = new StartMirrorTopicsResponseData.TopicResult();
             String topicName = topic.topicName();
-            ConfigResource configResource = new ConfigResource(Type.TOPIC, topicName);
-
-            TimelineHashMap<String, String> currentConfigs = configData.get(configResource);
-            if (currentConfigs != null) {
-                String currMirrorNameValue = currentConfigs.get(TopicConfig.MIRROR_NAME_CONFIG);
-                if (currMirrorNameValue != null && !currMirrorNameValue.isBlank() && !currMirrorNameValue.endsWith(STOPPED_TOPIC_SUFFIX)) {
-                    topicRes.setErrorCode(Errors.TOPIC_ALREADY_IN_CLUSTER_MIRROR.code()).setName(topicName);
-                    topicResList.add(topicRes);
-                    continue;
-                }
+            log.info("!!! topics:" + topic.topicName() + ";;" + topic.topicId() + replicationControl.getTopic(topic.topicId()));
+            String currMirrorNameValue = replicationControl.getTopic(topic.topicId()).mirrorName();
+            if (currMirrorNameValue != null && !currMirrorNameValue.isBlank() && !currMirrorNameValue.endsWith(STOPPED_TOPIC_SUFFIX)) {
+                topicRes.setErrorCode(Errors.TOPIC_ALREADY_IN_CLUSTER_MIRROR.code()).setName(topicName);
+                topicResList.add(topicRes);
+                continue;
             }
 
             if (!topic.topicId().equals(Uuid.ZERO_UUID) && topic.numPartitions() > 0) {
@@ -451,16 +448,21 @@ public class ConfigurationControlManager {
                 }
             }
 
-            Map<String, Entry<OpType, String>> keyToOps = Map.of(
-                    TopicConfig.MIRROR_NAME_CONFIG, new AbstractMap.SimpleImmutableEntry<>(SET, mirrorName));
-            ControllerResult<ApiError> configResult = incrementalAlterConfig(configResource, keyToOps, true);
-            if (configResult.response().isFailure()) {
-                topicRes.setErrorCode(configResult.response().error().code()).setName(topicName);
-                topicResList.add(topicRes);
-                continue;
-            }
+//            Map<String, Entry<OpType, String>> keyToOps = Map.of(
+//                    TopicConfig.MIRROR_NAME_CONFIG, new AbstractMap.SimpleImmutableEntry<>(SET, mirrorName));
+//            ControllerResult<ApiError> configResult = incrementalAlterConfig(configResource, keyToOps, true);
+//            if (configResult.response().isFailure()) {
+//                topicRes.setErrorCode(configResult.response().error().code()).setName(topicName);
+//                topicResList.add(topicRes);
+//                continue;
+//            }
+            records.add(new ApiMessageAndVersion(
+                    new ClusterMirrorTopicChangeStateRecord()
+                            .setTopicId(topic.topicId())
+                            .setMirrorName(currMirrorNameValue)
+                            .setMirrorTopicChangeState((byte) 0),
+                    (short) 0));
 
-            records.addAll(configResult.records());
             topicRes.setName(topicName);
             topicResList.add(topicRes);
         }

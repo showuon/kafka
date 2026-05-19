@@ -20,6 +20,7 @@ package org.apache.kafka.image;
 import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.metadata.ClusterMirrorTopicChangeStateRecord;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.metadata.PartitionRegistration;
@@ -41,6 +42,8 @@ public final class TopicDelta {
     private final Map<Integer, PartitionRegistration> partitionChanges = new HashMap<>();
     private final Map<Integer, Integer> partitionToUncleanLeaderElectionCount = new HashMap<>();
     private final Map<Integer, Integer> partitionToElrElectionCount = new HashMap<>();
+    private Integer clusterMirrorTopicChangeState;
+    private String mirrorName;
 
     public TopicDelta(TopicImage image) {
         this.image = image;
@@ -103,6 +106,11 @@ public final class TopicDelta {
         partitionChanges.put(record.partitionId(), prevPartition.merge(record));
     }
 
+    public void replay(ClusterMirrorTopicChangeStateRecord record) {
+        mirrorName = record.mirrorName();
+        clusterMirrorTopicChangeState = (int) record.mirrorTopicChangeState();
+    }
+
     private void updateElectionStats(int partitionId, PartitionRegistration prevPartition, int newLeader, byte newLeaderRecoveryState) {
         if (PartitionRegistration.electionWasUnclean(newLeaderRecoveryState)) {
             partitionToUncleanLeaderElectionCount.put(partitionId, partitionToUncleanLeaderElectionCount.getOrDefault(partitionId, 0) + 1);
@@ -151,7 +159,17 @@ public final class TopicDelta {
                 newPartitions.put(entry.getKey(), entry.getValue());
             }
         }
-        return new TopicImage(image.name(), image.id(), newPartitions);
+
+        int newMirrorState = clusterMirrorTopicChangeState == null ? image.clusterMirrorTopicChangeState() : clusterMirrorTopicChangeState;
+        String newMirrorName =  mirrorName == null ? image.mirrorName() : mirrorName;
+        System.out.println("!!! topicDelta apply:" + image.clusterMirrorTopicChangeState() + ";;" + clusterMirrorTopicChangeState + ";;" + mirrorName + ";;" + image.mirrorName());
+
+        return new TopicImage(
+                image.name(),
+                image.id(),
+                newMirrorName,
+                newMirrorState,
+                newPartitions);
     }
 
     /**

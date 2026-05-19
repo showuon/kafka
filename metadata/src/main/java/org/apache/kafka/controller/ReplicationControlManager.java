@@ -71,6 +71,7 @@ import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData.On
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData.OngoingTopicReassignment;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.ClearElrRecord;
+import org.apache.kafka.common.metadata.ClusterMirrorTopicChangeStateRecord;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
@@ -253,11 +254,26 @@ public class ReplicationControlManager {
         private final String name;
         private final Uuid id;
         private final TimelineHashMap<Integer, PartitionRegistration> parts;
+        private final String mirrorName;
+        private final int mirrorState;
+        private final SnapshotRegistry snapshotRegistry;
 
         TopicControlInfo(String name, SnapshotRegistry snapshotRegistry, Uuid id) {
             this.name = name;
             this.id = id;
+            this.snapshotRegistry = snapshotRegistry;
             this.parts = new TimelineHashMap<>(snapshotRegistry, 0);
+            this.mirrorName = null;
+            this.mirrorState = -1;
+        }
+
+        TopicControlInfo(String name, SnapshotRegistry snapshotRegistry, Uuid id, String mirrorName, int mirrorState) {
+            this.name = name;
+            this.id = id;
+            this.snapshotRegistry = snapshotRegistry;
+            this.parts = new TimelineHashMap<>(snapshotRegistry, 0);
+            this.mirrorName = mirrorName;
+            this.mirrorState = mirrorState;
         }
 
         public String name() {
@@ -270,6 +286,18 @@ public class ReplicationControlManager {
 
         public int numPartitions(long epoch) {
             return parts.size(epoch);
+        }
+
+        public String mirrorName() {
+            return mirrorName;
+        }
+
+        public int mirrorState() {
+            return mirrorState;
+        }
+
+        public SnapshotRegistry snapshotRegistry() {
+            return snapshotRegistry;
         }
     }
 
@@ -568,6 +596,17 @@ public class ReplicationControlManager {
         brokersToIsrs.removeTopicEntryForBroker(topic.id, NO_LEADER);
 
         log.info("Replayed RemoveTopicRecord for topic {} with ID {}.", topic.name, record.topicId());
+    }
+
+    public void replay(ClusterMirrorTopicChangeStateRecord record) {
+        TopicControlInfo topicInfo = topics.get(record.topicId());
+        if (topicInfo == null) {
+            throw new UnknownTopicIdException("Can't find topic with ID " + record.topicId() +
+                    " to update cluster mirror state.");
+        } else {
+            topics.put(record.topicId(), new TopicControlInfo(topicInfo.name, topicInfo.snapshotRegistry, topicInfo.id, record.mirrorName(), record.mirrorTopicChangeState()));
+            log.info("Replayed ClusterMirrorTopicChangeStateRecord for topic {} with ID {}, mirror name {} and state {}.", topicInfo.name, record.topicId(), record.mirrorName(), record.mirrorTopicChangeState());
+        }
     }
 
     public void replay(ClearElrRecord record) {
