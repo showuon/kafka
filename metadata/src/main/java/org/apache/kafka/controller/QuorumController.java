@@ -1818,7 +1818,7 @@ public final class QuorumController implements Controller {
             List<String> patterns
     ) {
         return appendWriteEvent("stopMirrorTopics", context.deadlineNs(),
-                () -> configurationControl.stopMirrorTopics(mirrorName, topics, patterns));
+                () -> configurationControl.stopMirrorTopics(mirrorName, topics, patterns, replicationControl));
     }
 
     @Override
@@ -1828,7 +1828,7 @@ public final class QuorumController implements Controller {
             Set<String> topics
     ) {
         return appendWriteEvent("pauseMirrorTopics", context.deadlineNs(),
-                () -> configurationControl.pauseMirrorTopics(mirrorName, topics));
+                () -> configurationControl.pauseMirrorTopics(mirrorName, topics, replicationControl));
     }
 
     @Override
@@ -1838,7 +1838,7 @@ public final class QuorumController implements Controller {
             Set<String> topics
     ) {
         return appendWriteEvent("resumeMirrorTopics", context.deadlineNs(),
-                () -> configurationControl.resumeMirrorTopics(mirrorName, topics));
+                () -> configurationControl.resumeMirrorTopics(mirrorName, topics, replicationControl));
     }
 
     @Override
