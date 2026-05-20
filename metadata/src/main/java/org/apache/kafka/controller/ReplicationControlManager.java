@@ -273,11 +273,11 @@ public class ReplicationControlManager {
             this.mirrorState = -1;
         }
 
-        TopicControlInfo(String name, SnapshotRegistry snapshotRegistry, Uuid id, String mirrorName, int mirrorState) {
-            this.name = name;
-            this.id = id;
-            this.snapshotRegistry = snapshotRegistry;
-            this.parts = new TimelineHashMap<>(snapshotRegistry, 0);
+        TopicControlInfo(TopicControlInfo copyTopicInfo, String mirrorName, int mirrorState) {
+            this.name = copyTopicInfo.name;
+            this.id = copyTopicInfo.id;
+            this.snapshotRegistry = copyTopicInfo.snapshotRegistry;
+            this.parts = copyTopicInfo.parts;
             this.mirrorName = mirrorName;
             this.mirrorState = mirrorState;
         }
@@ -610,7 +610,7 @@ public class ReplicationControlManager {
             throw new UnknownTopicIdException("Can't find topic with ID " + record.topicId() +
                     " to update cluster mirror state.");
         } else {
-            topics.put(record.topicId(), new TopicControlInfo(topicInfo.name, topicInfo.snapshotRegistry, topicInfo.id, record.mirrorName(), record.mirrorTopicChangeState()));
+            topics.put(record.topicId(), new TopicControlInfo(topicInfo, record.mirrorName(), record.mirrorTopicChangeState()));
             log.info("Replayed ClusterMirrorTopicChangeStateRecord for topic {} with ID {}, mirror name {} and state {}.", topicInfo.name, record.topicId(), record.mirrorName(), record.mirrorTopicChangeState());
         }
     }
