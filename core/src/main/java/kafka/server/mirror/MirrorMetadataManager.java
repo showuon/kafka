@@ -76,7 +76,6 @@ import org.apache.kafka.common.resource.ResourceType;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorRecordKey;
-import org.apache.kafka.image.ConfigurationDelta;
 import org.apache.kafka.image.LocalReplicaChanges;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
@@ -126,8 +125,8 @@ import static org.apache.kafka.clients.CommonClientConfigs.BOOTSTRAP_SERVERS_CON
 import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
 import static org.apache.kafka.controller.ConfigurationControlManager.PAUSED_TOPIC_SUFFIX;
 import static org.apache.kafka.controller.ConfigurationControlManager.STOPPED_TOPIC_SUFFIX;
-import static org.apache.kafka.controller.ReplicationControlManager.PAUSING_MIRRORING;
-import static org.apache.kafka.controller.ReplicationControlManager.STOPPING_MIRRORING;
+import static org.apache.kafka.controller.ReplicationControlManager.PAUSED;
+import static org.apache.kafka.controller.ReplicationControlManager.STOPPED;
 
 /**
  * Bridges the local destination cluster and remote source clusters for Cluster Mirroring.
@@ -295,8 +294,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             TopicImage topicImage = newImage.topics().getTopic(tp.topic());
             String rawMirrorName = topicImage.mirrorName();
             int mirrorStateChange = topicImage.clusterMirrorTopicChangeState();
-            boolean stopRequested = mirrorStateChange == STOPPING_MIRRORING;
-            boolean pauseRequested = mirrorStateChange == PAUSING_MIRRORING;
+            boolean stopRequested = mirrorStateChange == STOPPED;
+            boolean pauseRequested = mirrorStateChange == PAUSED;
             String mirrorName = ClusterMirrorUtils.originalMirrorName(rawMirrorName);
 
             ClusterMirrorUtils.PartitionKey key = new ClusterMirrorUtils.PartitionKey(mirrorName, tp.topic(), tp.partition());

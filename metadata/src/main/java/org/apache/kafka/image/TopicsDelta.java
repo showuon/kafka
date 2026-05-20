@@ -21,7 +21,7 @@ import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.metadata.ClearElrRecord;
-import org.apache.kafka.common.metadata.ClusterMirrorTopicChangeStateRecord;
+import org.apache.kafka.common.metadata.MirrorTopicStateChangeRecord;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
@@ -96,7 +96,7 @@ public final class TopicsDelta {
         topicDelta.replay(record);
     }
 
-    public void replay(ClusterMirrorTopicChangeStateRecord record) {
+    public void replay(MirrorTopicStateChangeRecord record) {
         TopicDelta topicDelta = getOrCreateTopicDelta(record.topicId());
         topicDelta.replay(record);
     }

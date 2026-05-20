@@ -20,7 +20,7 @@ package org.apache.kafka.image;
 import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
-import org.apache.kafka.common.metadata.ClusterMirrorTopicChangeStateRecord;
+import org.apache.kafka.common.metadata.MirrorTopicStateChangeRecord;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.metadata.PartitionRegistration;
@@ -106,9 +106,9 @@ public final class TopicDelta {
         partitionChanges.put(record.partitionId(), prevPartition.merge(record));
     }
 
-    public void replay(ClusterMirrorTopicChangeStateRecord record) {
+    public void replay(MirrorTopicStateChangeRecord record) {
         mirrorName = record.mirrorName();
-        clusterMirrorTopicChangeState = (int) record.mirrorTopicChangeState();
+        clusterMirrorTopicChangeState = (int) record.desiredState();
     }
 
     private void updateElectionStats(int partitionId, PartitionRegistration prevPartition, int newLeader, byte newLeaderRecoveryState) {

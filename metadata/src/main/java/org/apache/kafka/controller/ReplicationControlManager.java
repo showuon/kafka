@@ -23,7 +23,6 @@ import org.apache.kafka.common.DirectoryId;
 import org.apache.kafka.common.ElectionType;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigResource;
-import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.BrokerIdNotRegisteredException;
 import org.apache.kafka.common.errors.InvalidPartitionsException;
@@ -70,11 +69,9 @@ import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData.Lis
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData.OngoingPartitionReassignment;
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData.OngoingTopicReassignment;
-import org.apache.kafka.common.message.StopMirrorTopicsResponseData;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.ClearElrRecord;
-import org.apache.kafka.common.metadata.ClusterMirrorTopicChangeStateRecord;
-import org.apache.kafka.common.metadata.ConfigRecord;
+import org.apache.kafka.common.metadata.MirrorTopicStateChangeRecord;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
@@ -156,9 +153,9 @@ import static org.apache.kafka.metadata.LeaderConstants.NO_LEADER_CHANGE;
 public class ReplicationControlManager {
     static final int MAX_ELECTIONS_PER_IMBALANCE = 1_000;
     static final int MAX_PARTITIONS_PER_BATCH = 10_000;
-    public static final int STARTING_MIRRORING = 0;
-    public static final int STOPPING_MIRRORING = 1;
-    public static final int PAUSING_MIRRORING = 2;
+    public static final int MIRRORING = 2;
+    public static final int STOPPED = 6;
+    public static final int PAUSED = 4;
 
     static class Builder {
         private SnapshotRegistry snapshotRegistry = null;
@@ -604,14 +601,14 @@ public class ReplicationControlManager {
         log.info("Replayed RemoveTopicRecord for topic {} with ID {}.", topic.name, record.topicId());
     }
 
-    public void replay(ClusterMirrorTopicChangeStateRecord record) {
+    public void replay(MirrorTopicStateChangeRecord record) {
         TopicControlInfo topicInfo = topics.get(record.topicId());
         if (topicInfo == null) {
             throw new UnknownTopicIdException("Can't find topic with ID " + record.topicId() +
                     " to update cluster mirror state.");
         } else {
-            topics.put(record.topicId(), new TopicControlInfo(topicInfo, record.mirrorName(), record.mirrorTopicChangeState()));
-            log.info("Replayed ClusterMirrorTopicChangeStateRecord for topic {} with ID {}, mirror name {} and state {}.", topicInfo.name, record.topicId(), record.mirrorName(), record.mirrorTopicChangeState());
+            topics.put(record.topicId(), new TopicControlInfo(topicInfo, record.mirrorName(), record.desiredState()));
+            log.info("Replayed MirrorTopicStateChangeRecord for topic {} with ID {}, mirror name {} and state {}.", topicInfo.name, record.topicId(), record.mirrorName(), record.desiredState());
         }
     }
 

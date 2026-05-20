@@ -34,7 +34,7 @@ import org.apache.kafka.common.message.StartMirrorTopicsRequestData;
 import org.apache.kafka.common.message.StartMirrorTopicsResponseData;
 import org.apache.kafka.common.message.StopMirrorTopicsResponseData;
 import org.apache.kafka.common.metadata.ClearElrRecord;
-import org.apache.kafka.common.metadata.ClusterMirrorTopicChangeStateRecord;
+import org.apache.kafka.common.metadata.MirrorTopicStateChangeRecord;
 import org.apache.kafka.common.metadata.ConfigRecord;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ApiError;
@@ -77,9 +77,9 @@ import static org.apache.kafka.common.metadata.MetadataRecordType.CONFIG_RECORD;
 import static org.apache.kafka.common.protocol.Errors.CLUSTER_MIRROR_ALREADY_EXISTS;
 import static org.apache.kafka.common.protocol.Errors.INVALID_CONFIG;
 import static org.apache.kafka.controller.QuorumController.MAX_RECORDS_PER_USER_OP;
-import static org.apache.kafka.controller.ReplicationControlManager.PAUSING_MIRRORING;
-import static org.apache.kafka.controller.ReplicationControlManager.STARTING_MIRRORING;
-import static org.apache.kafka.controller.ReplicationControlManager.STOPPING_MIRRORING;
+import static org.apache.kafka.controller.ReplicationControlManager.MIRRORING;
+import static org.apache.kafka.controller.ReplicationControlManager.PAUSED;
+import static org.apache.kafka.controller.ReplicationControlManager.STOPPED;
 
 public class ConfigurationControlManager {
     public static final ConfigResource DEFAULT_NODE = new ConfigResource(Type.BROKER, "");
@@ -280,17 +280,17 @@ public class ConfigurationControlManager {
             }
 
             // no-op if the topic is still in STOPPING change state
-            if (currMirrorStateChange == STOPPING_MIRRORING) {
+            if (currMirrorStateChange == STOPPED) {
                 topicRes.setName(topic);
                 topicResList.add(topicRes);
                 continue;
             }
 
             records.add(new ApiMessageAndVersion(
-                    new ClusterMirrorTopicChangeStateRecord()
+                    new MirrorTopicStateChangeRecord()
                             .setTopicId(topicId)
                             .setMirrorName(mirrorName)
-                            .setMirrorTopicChangeState((byte) STOPPING_MIRRORING),
+                            .setDesiredState((byte) STOPPED),
                     (short) 0));
 
             topicRes.setName(topic);
@@ -331,17 +331,17 @@ public class ConfigurationControlManager {
             }
 
             // Don't allow to pause a topic when stopping/stopped
-            if (currMirrorStateChange == STOPPING_MIRRORING) {
+            if (currMirrorStateChange == STOPPED) {
                 topicRes.setErrorCode(Errors.MIRROR_TOPIC_BEING_STOPPED.code()).setName(topic);
                 topicResList.add(topicRes);
                 continue;
             }
 
             records.add(new ApiMessageAndVersion(
-                new ClusterMirrorTopicChangeStateRecord()
+                new MirrorTopicStateChangeRecord()
                     .setTopicId(topicId)
                     .setMirrorName(mirrorName)
-                    .setMirrorTopicChangeState((byte) PAUSING_MIRRORING),
+                    .setDesiredState((byte) PAUSED),
                 (short) 0));
         }
         data.setTopics(topicResList);
@@ -380,17 +380,17 @@ public class ConfigurationControlManager {
                 continue;
             }
 
-            if (currMirrorStateChange != PAUSING_MIRRORING) {
+            if (currMirrorStateChange != PAUSED) {
                 topicRes.setErrorCode(Errors.MIRROR_TOPIC_NOT_PAUSED.code()).setName(topic);
                 topicResList.add(topicRes);
                 continue;
             }
 
             records.add(new ApiMessageAndVersion(
-                new ClusterMirrorTopicChangeStateRecord()
+                new MirrorTopicStateChangeRecord()
                     .setTopicId(topicId)
                     .setMirrorName(mirrorName)
-                    .setMirrorTopicChangeState((byte) STARTING_MIRRORING),
+                    .setDesiredState((byte) MIRRORING),
                 (short) 0));
         }
         data.setTopics(topicResList);
@@ -446,7 +446,7 @@ public class ConfigurationControlManager {
             if (topicInfo != null) {
                 String currMirrorNameValue = topicInfo.mirrorName();
                 int currMirrorStateChange = topicInfo.mirrorState();
-                if (currMirrorNameValue != null && !currMirrorNameValue.isBlank() && currMirrorStateChange != STOPPING_MIRRORING) {
+                if (currMirrorNameValue != null && !currMirrorNameValue.isBlank() && currMirrorStateChange != STOPPED) {
                     topicRes.setErrorCode(Errors.TOPIC_ALREADY_IN_CLUSTER_MIRROR.code()).setName(topicName);
                     topicResList.add(topicRes);
                     continue;
@@ -454,10 +454,10 @@ public class ConfigurationControlManager {
             }
 
             records.add(new ApiMessageAndVersion(
-                    new ClusterMirrorTopicChangeStateRecord()
+                    new MirrorTopicStateChangeRecord()
                             .setTopicId(topic.topicId())
                             .setMirrorName(mirrorName)
-                            .setMirrorTopicChangeState((byte) STARTING_MIRRORING),
+                            .setDesiredState((byte) MIRRORING),
                     (short) 0));
 
             topicRes.setName(topicName);

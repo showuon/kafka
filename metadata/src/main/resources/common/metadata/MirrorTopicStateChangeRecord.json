@@ -16,15 +16,15 @@
 {
   "apiKey": 29,
   "type": "metadata",
-  "name": "ClusterMirrorTopicChangeStateRecord",
+  "name": "MirrorTopicStateChangeRecord",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
     { "name": "TopicId", "type": "uuid", "versions": "0+",
       "about": "The topic to remove. All associated partitions will be removed as well." },
     { "name": "MirrorName", "type": "string", "versions": "0+",
-      "about": "The mirror name" },
-    { "name": "MirrorTopicChangeState", "type": "int8", "versions": "0+",
-      "about": "The mirror topic change state. 0 means start, 1 means stop, 2 means pause" }
+      "about": "The cluster mirror name" },
+    { "name": "DesiredState", "type": "int8", "versions": "0+",
+      "about": "The mirror topic desired state. 2 means the desired state is MIRRORING, 6 means stop, 4 means pause" }
   ]
 }
