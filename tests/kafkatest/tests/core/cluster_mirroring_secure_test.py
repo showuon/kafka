@@ -261,5 +261,5 @@ class ClusterMirroringSecureTest(MirrorHelpers, Test):
             "Client READ ACL on orders-topic should be synced (matches include rule)")
 
         dest_acls = self.list_acls(self.dest_kafka)
-        assert "User:other-client" not in dest_acls or "internal-topic" not in dest_acls, \
+        assert "User:other-client" not in dest_acls and "internal-topic" not in dest_acls, \
             "Other-client WRITE ACL on internal-topic should not be synced (filtered out)"
