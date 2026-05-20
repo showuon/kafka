@@ -467,20 +467,17 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
             // remove the pending state from this node because it is not the leader anymore
             localReplicaChanges.followers().keySet().forEach(tp -> {
-                Properties props = image.configs().configProperties(new ConfigResource(ConfigResource.Type.TOPIC, tp.topic()));
-                if (props.containsKey(TopicConfig.MIRROR_NAME_CONFIG)) {
-                    String mirrorName = (String) props.get(TopicConfig.MIRROR_NAME_CONFIG);
-                    if (mirrorName != null && !mirrorName.isBlank()) {
-                        pendingPartitionStates.remove(tp);
-                        pendingLeaderEpochBumps.removeIf(bumpLeaderEpoch -> {
-                            if (bumpLeaderEpoch.partitionToEpoch().containsKey(tp)) {
-                                bumpLeaderEpoch.future().completeExceptionally(
-                                        new IllegalStateException("Not leader anymore for " + tp));
-                                return true;
-                            }
-                            return false;
-                        });
-                    }
+                String mirrorName = image.topics().getTopic(tp.topic()).mirrorName();
+                if (mirrorName != null && !mirrorName.isBlank()) {
+                    pendingPartitionStates.remove(tp);
+                    pendingLeaderEpochBumps.removeIf(bumpLeaderEpoch -> {
+                        if (bumpLeaderEpoch.partitionToEpoch().containsKey(tp)) {
+                            bumpLeaderEpoch.future().completeExceptionally(
+                                    new IllegalStateException("Not leader anymore for " + tp));
+                            return true;
+                        }
+                        return false;
+                    });
                 }
             });
         }
@@ -533,9 +530,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     // Clears mirror state for partitions where this broker lost leadership, unless it is the coordinator
     private void clearFollowersState(Set<TopicPartition> followerDelta, MetadataImage newImage) {
         followerDelta.forEach(followerTp -> {
-            String mirrorName = (String) newImage.configs()
-                    .configProperties(new ConfigResource(ConfigResource.Type.TOPIC, followerTp.topic()))
-                    .get(TopicConfig.MIRROR_NAME_CONFIG);
+            String mirrorName = newImage.topics().getTopic(followerTp.topic()).mirrorName();
             if (mirrorName != null && !mirrorName.isEmpty() && !isLocalCoordinator(mirrorName, followerTp.topic(), followerTp.partition())) {
                 String updatedMirrorName = originalMirrorName(mirrorName);
                 ClusterMirrorUtils.PartitionKey key = new ClusterMirrorUtils.PartitionKey(updatedMirrorName, followerTp.topic(), followerTp.partition());
@@ -1426,7 +1421,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
                 config.entries().forEach(entry -> {
                     if (entry.source() == ConfigEntry.ConfigSource.DYNAMIC_TOPIC_CONFIG
-                            && !entry.name().equals(TopicConfig.MIRROR_NAME_CONFIG)
                             && (excludePattern == null || !excludePattern.matcher(entry.name()).matches())) {
                         if (props.containsKey(entry.name())) {
                             if (!props.get(entry.name()).equals(entry.value())) {
@@ -1817,16 +1811,15 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     Set<String> getConfiguredTopics(String mirrorName, boolean includePaused, boolean includeStopped) {
-        return metadataImage.configs().resourceData().entrySet().stream()
-                .filter(configEntry -> {
-                    if (configEntry.getKey().type() != ConfigResource.Type.TOPIC) return false;
-                    String topicMirrorName = configEntry.getValue().data().get(TopicConfig.MIRROR_NAME_CONFIG);
+        return metadataImage.topics().topicsById().values().stream()
+                .filter(topicInfo -> {
+                    String topicMirrorName = topicInfo.mirrorName();
                     if (topicMirrorName == null) return false;
                     if (!includeStopped && topicMirrorName.endsWith(STOPPED_TOPIC_SUFFIX)) return false;
                     if (!includePaused && topicMirrorName.endsWith(PAUSED_TOPIC_SUFFIX)) return false;
                     return mirrorName.equals(ClusterMirrorUtils.originalMirrorName(topicMirrorName));
                 })
-                .map(configEntry -> configEntry.getKey().name())
+                .map(TopicImage::name)
                 .collect(Collectors.toSet());
     }
 

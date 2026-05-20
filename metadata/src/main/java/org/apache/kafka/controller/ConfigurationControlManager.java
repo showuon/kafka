@@ -241,7 +241,7 @@ public class ConfigurationControlManager {
         data.setMirrorName(mirrorName);
 
         if (!patterns.isEmpty()) {
-            ApiError patternError = updatePatternsAndStopExcluded(mirrorName, records, (includeSet, excludeSet) -> {
+            ApiError patternError = updatePatternsAndStopExcluded(mirrorName, records, replicationControl, (includeSet, excludeSet) -> {
                 for (String pattern : patterns) {
                     if (!includeSet.remove(pattern)) {
                         excludeSet.add(pattern);
@@ -409,7 +409,7 @@ public class ConfigurationControlManager {
         data.setMirrorName(mirrorName);
 
         if (!includePatterns.isEmpty() || !excludePatterns.isEmpty()) {
-            ApiError patternError = updatePatternsAndStopExcluded(mirrorName, records, (includeSet, excludeSet) -> {
+            ApiError patternError = updatePatternsAndStopExcluded(mirrorName, records, replicationControl, (includeSet, excludeSet) -> {
                 for (String pattern : includePatterns) {
                     includeSet.add(pattern);
                     excludeSet.remove(pattern);
@@ -486,6 +486,7 @@ public class ConfigurationControlManager {
      * then stops any active topics that now match the updated exclude pattern.
      */
     private ApiError updatePatternsAndStopExcluded(String mirrorName, List<ApiMessageAndVersion> records,
+                                                   ReplicationControlManager replicationControl,
                                                    BiConsumer<Set<String>, Set<String>> mutator) {
         ConfigResource mirrorResource = new ConfigResource(Type.CLUSTER_MIRROR, mirrorName);
         TimelineHashMap<String, String> mirrorConfigs = configData.get(mirrorResource);
@@ -505,7 +506,7 @@ public class ConfigurationControlManager {
             return result.response();
         }
         records.addAll(result.records());
-        stopExcludedTopics(mirrorName, excludeSet, records);
+        stopExcludedTopics(mirrorName, excludeSet, records, replicationControl);
         return ApiError.NONE;
     }
 
@@ -513,25 +514,21 @@ public class ConfigurationControlManager {
      * Scans active topics for the given mirror and stops any that match the current exclude pattern.
      * Called after pattern updates to enforce exclusion on already-mirroring topics.
      */
-    private void stopExcludedTopics(String mirrorName, Set<String> excludePatterns, List<ApiMessageAndVersion> records) {
+    private void stopExcludedTopics(String mirrorName, Set<String> excludePatterns, List<ApiMessageAndVersion> records, ReplicationControlManager replicationControl) {
         if (excludePatterns.isEmpty()) return;
 
         String combined = String.join("|", excludePatterns);
         Pattern excludePattern = Pattern.compile("^(" + combined + ")$");
 
-        for (Entry<ConfigResource, TimelineHashMap<String, String>> entry : configData.entrySet()) {
-            if (entry.getKey().type() != Type.TOPIC) continue;
-            String topicMirrorName = entry.getValue().get(TopicConfig.MIRROR_NAME_CONFIG);
-            if (topicMirrorName == null || !topicMirrorName.equals(mirrorName)) continue;
-            String topicName = entry.getKey().name();
+        replicationControl.getMirrorTopics().forEach(topicInfo -> {
+            String topicName = topicInfo.name();
             if (excludePattern.matcher(topicName).matches()) {
-                records.add(new ApiMessageAndVersion(new ConfigRecord()
-                        .setResourceType(Type.TOPIC.id())
-                        .setResourceName(topicName)
-                        .setName(TopicConfig.MIRROR_NAME_CONFIG)
-                        .setValue(mirrorName + STOPPED_TOPIC_SUFFIX), (short) 0));
+                records.add(new ApiMessageAndVersion(new MirrorTopicStateChangeRecord()
+                    .setTopicId(topicInfo.topicId())
+                    .setMirrorName(mirrorName)
+                    .setDesiredState((byte) STOPPED), (short) 0));
             }
-        }
+        });
     }
 
     ControllerResult<CreateClusterMirrorResponseData> addMirrorConfig(
@@ -572,7 +569,7 @@ public class ConfigurationControlManager {
         return ControllerResult.atomicOf(outputRecords, data);
     }
 
-    ControllerResult<DeleteClusterMirrorResponseData> deleteClusterMirror(String mirrorName) {
+    ControllerResult<DeleteClusterMirrorResponseData> deleteClusterMirror(String mirrorName, ReplicationControlManager replicationControl) {
         List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
         DeleteClusterMirrorResponseData data = new DeleteClusterMirrorResponseData();
 
@@ -586,33 +583,28 @@ public class ConfigurationControlManager {
         }
 
         // Precondition: no active/paused topics
-        String stoppedSuffix = mirrorName + STOPPED_TOPIC_SUFFIX;
-        for (Entry<ConfigResource, TimelineHashMap<String, String>> entry : configData.entrySet()) {
-            if (entry.getKey().type() != Type.TOPIC) continue;
-            String mirrorNameValue = entry.getValue().get(TopicConfig.MIRROR_NAME_CONFIG);
-            if (mirrorNameValue == null || mirrorNameValue.isBlank()) continue;
-            if (mirrorNameValue.equals(mirrorName) || mirrorNameValue.equals(mirrorName + PAUSED_TOPIC_SUFFIX)) {
+        Set<ReplicationControlManager.TopicControlInfo> topicControlInfos = replicationControl.getMirrorTopics();
+        for (ReplicationControlManager.TopicControlInfo topicInfo: topicControlInfos) {
+            String curMirrorName = topicInfo.mirrorName();
+            int desiredMirrorState = topicInfo.mirrorState();
+            if (curMirrorName.equals(mirrorName) && (desiredMirrorState == PAUSED || desiredMirrorState == MIRRORING)) {
                 data.setErrorCode(Errors.CLUSTER_MIRROR_NOT_EMPTY.code());
                 data.setErrorMessage("Mirror '" + mirrorName + "' still has active or paused topic '"
-                    + entry.getKey().name() + "'");
+                        + topicInfo.name() + "'");
                 return ControllerResult.of(records, data);
             }
-        }
+        };
 
         // Clear stopped topic associations
-        for (Entry<ConfigResource, TimelineHashMap<String, String>> entry : configData.entrySet()) {
-            if (entry.getKey().type() != Type.TOPIC) continue;
-            String mirrorNameValue = entry.getValue().get(TopicConfig.MIRROR_NAME_CONFIG);
-            if (stoppedSuffix.equals(mirrorNameValue)) {
-                Map<String, Entry<OpType, String>> keyToOps = Map.of(
-                    TopicConfig.MIRROR_NAME_CONFIG, new AbstractMap.SimpleImmutableEntry<>(DELETE, null));
-                ControllerResult<ApiError> configResult = incrementalAlterConfig(entry.getKey(), keyToOps, true);
-                if (configResult.response().isFailure()) {
-                    data.setErrorCode(configResult.response().error().code());
-                    data.setErrorMessage("Failed to clear mirror association for topic '" + entry.getKey().name() + "'");
-                    return ControllerResult.of(records, data);
-                }
-                records.addAll(configResult.records());
+        for (ReplicationControlManager.TopicControlInfo topicInfo: topicControlInfos) {
+            int desiredMirrorState = topicInfo.mirrorState();
+            if (desiredMirrorState == STOPPED) {
+                records.add(new ApiMessageAndVersion(
+                    new MirrorTopicStateChangeRecord()
+                        .setTopicId(topicInfo.topicId())
+                        .setMirrorName("")
+                        .setDesiredState((byte) -1),
+                    (short) 0));
             }
         }
 

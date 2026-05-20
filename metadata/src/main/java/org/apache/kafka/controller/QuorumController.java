@@ -1847,7 +1847,7 @@ public final class QuorumController implements Controller {
             String mirrorName
     ) {
         return appendWriteEvent("deleteClusterMirror", context.deadlineNs(),
-                () -> configurationControl.deleteClusterMirror(mirrorName));
+                () -> configurationControl.deleteClusterMirror(mirrorName, replicationControl));
     }
 
     @Override

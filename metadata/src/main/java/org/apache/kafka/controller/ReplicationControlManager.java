@@ -123,6 +123,7 @@ import java.util.OptionalInt;
 import java.util.Set;
 import java.util.function.IntPredicate;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import static org.apache.kafka.clients.admin.AlterConfigOp.OpType.SET;
 import static org.apache.kafka.common.config.ConfigResource.Type.TOPIC;
@@ -1212,6 +1213,12 @@ public class ReplicationControlManager {
     // VisibleForTesting
     TopicControlInfo getTopic(Uuid topicId) {
         return topics.get(topicId);
+    }
+
+    Set<TopicControlInfo> getMirrorTopics() {
+        return topics.values().stream()
+            .filter(topicControlInfo ->
+                topicControlInfo.mirrorName != null && !topicControlInfo.mirrorName.isBlank()).collect(Collectors.toSet());
     }
 
     Uuid getTopicId(String name) {

@@ -29,7 +29,7 @@ import org.apache.kafka.clients.CommonClientConfigs
 import org.apache.kafka.clients.admin.EndpointType
 import org.apache.kafka.common.acl.AclOperation
 import org.apache.kafka.common.acl.AclOperation._
-import org.apache.kafka.common.config.{ConfigResource, TopicConfig}
+import org.apache.kafka.common.config.ConfigResource
 import org.apache.kafka.common.errors._
 import org.apache.kafka.common.internals.Topic.{GROUP_METADATA_TOPIC_NAME, MIRROR_STATE_TOPIC_NAME, SHARE_GROUP_STATE_TOPIC_NAME, TRANSACTION_STATE_TOPIC_NAME, isInternal}
 import org.apache.kafka.common.internals.{FatalExitError, Plugin, Topic}
@@ -186,7 +186,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.LIST_GROUPS => handleListGroupsRequest(request).exceptionally(handleError)
         case ApiKeys.SASL_HANDSHAKE => handleSaslHandshakeRequest(request)
         case ApiKeys.API_VERSIONS => handleApiVersionsRequest(request)
-        case ApiKeys.CREATE_TOPICS => handleCreateTopics(request)
+        case ApiKeys.CREATE_TOPICS => forwardToController(request)
         case ApiKeys.DELETE_TOPICS => forwardToController(request)
         case ApiKeys.DELETE_RECORDS => handleDeleteRecordsRequest(request)
         case ApiKeys.INIT_PRODUCER_ID => handleInitProducerIdRequest(request, requestLocal)
@@ -277,19 +277,6 @@ class KafkaApis(val requestChannel: RequestChannel,
       if (request.apiLocalCompleteTimeNanos < 0)
         request.apiLocalCompleteTimeNanos = time.nanoseconds
     }
-  }
-
-  def handleCreateTopics(request: RequestChannel.Request): Unit = {
-    val createTopicsRequest = request.body[CreateTopicsRequest]
-
-    // mirror.name check
-    createTopicsRequest.data().topics().stream().forEach(creatableTopic => {
-      if (creatableTopic.configs().stream().anyMatch(creatableTopicConfig =>
-        TopicConfig.MIRROR_NAME_CONFIG.equals(creatableTopicConfig.name())))
-        throw new InvalidRequestException("The 'mirror.name' configuration can only be modified through dedicated mirror management APIs.")
-    })
-
-    forwardToController(request)
   }
 
   def handleWriteMirrorStates(request: RequestChannel.Request): Unit = {
