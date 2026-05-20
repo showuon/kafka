@@ -122,6 +122,7 @@ import static kafka.server.mirror.ClusterMirrorUtils.LEADER_EPOCH_BUMP_INCREMENT
 import static kafka.server.mirror.ClusterMirrorUtils.LEADER_EPOCH_BUMP_THRESHOLD;
 import static kafka.server.mirror.ClusterMirrorUtils.originalMirrorName;
 import static org.apache.kafka.clients.CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG;
+import static org.apache.kafka.common.Uuid.ZERO_UUID;
 import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
 import static org.apache.kafka.controller.ConfigurationControlManager.PAUSED_TOPIC_SUFFIX;
 import static org.apache.kafka.controller.ConfigurationControlManager.STOPPED_TOPIC_SUFFIX;
@@ -183,7 +184,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private final Map<TopicPartition, MirrorPartitionState> pendingPartitionStates = new ConcurrentHashMap<>();
     private final Map<TopicPartition, MirrorPartitionState> prevStateBeforeFailure = new ConcurrentHashMap<>();
     private final Map<TopicPartition, Integer> failedRetryAttempts = new ConcurrentHashMap<>();
-    private final Set<Uuid> pendingTopicCreations = ConcurrentHashMap.newKeySet();
+    private final Set<String> pendingTopicCreations = ConcurrentHashMap.newKeySet();
 
     private final AtomicLong metadataRefreshError;
     private final AtomicLong topicConfigSyncError;
@@ -259,7 +260,13 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
         // clear pending topic creations for topics that now exist
         if (delta.topicsDelta() != null) {
-            delta.topicsDelta().createdTopicIds().forEach(pendingTopicCreations::remove);
+            delta.topicsDelta().createdTopicIds().forEach(topicId -> {
+                if (ZERO_UUID.equals(topicId)) {
+                    pendingTopicCreations.remove(newImage.topics().getTopic(topicId).name());
+                } else {
+                    pendingTopicCreations.remove(topicId.toString());
+                }
+            });
         }
 
         Set<String> reconnectedMirrors = maybeRecreateConnection(delta, newImage);
@@ -1262,7 +1269,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * Once created, onMetadataUpdate will detect it and start the mirror state machine.
      */
     private void createMirrorTopic(String topicName, org.apache.kafka.common.Uuid topicId, int numPartitions) {
-        if (!pendingTopicCreations.add(topicId)) {
+        // When source cluster doesn't support topicID (i.e. before v2.8), it will be ZERO_UUID. Replacing it with topicName.
+        final String pendingCreationKey = ZERO_UUID.equals(topicId) ? topicName : topicId.toString();
+        if (!pendingTopicCreations.add(pendingCreationKey)) {
             log.debug("Skipping creation of mirror topic {} (topicId={}), request already in-flight", topicName, topicId);
             return;
         }
@@ -1278,17 +1287,17 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         ControllerRequestCompletionHandler requestCompletionHandler = new ControllerRequestCompletionHandler() {
             @Override
             public void onTimeout() {
-                pendingTopicCreations.remove(topicId);
+                pendingTopicCreations.remove(pendingCreationKey);
                 log.warn("Create mirror topic timed out for {} (topicId={})", topicName, topicId);
             }
 
             @Override
             public void onComplete(ClientResponse response) {
-                pendingTopicCreations.remove(topicId);
                 if (response.responseBody() instanceof CreateTopicsResponse createTopicsResponse) {
                     createTopicsResponse.data().topics().forEach(topic -> {
                         Errors error = Errors.forCode(topic.errorCode());
                         if (error != Errors.NONE) {
+                            pendingTopicCreations.remove(pendingCreationKey);
                             log.warn("Failed to create mirror topic {} (topicId={}): {}", topicName, topicId, error.message());
                         }
                     });
