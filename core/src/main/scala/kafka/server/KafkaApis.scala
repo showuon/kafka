@@ -342,6 +342,8 @@ class KafkaApis(val requestChannel: RequestChannel,
       requestHelper.sendMaybeThrottle(request, new StopMirrorTopicsResponse(new StopMirrorTopicsResponseData().setErrorCode(Errors.UNSUPPORTED_VERSION.code)))
       return
     }
+
+    clusterMirrorCoordinator.getMirrorStates()
     forwardToController(request)
   }
 

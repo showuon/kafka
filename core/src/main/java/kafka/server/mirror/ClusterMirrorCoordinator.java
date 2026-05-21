@@ -28,6 +28,7 @@ import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.message.MirrorPidResetRecord;
+import org.apache.kafka.common.message.ReadMirrorStatesResponseData;
 import org.apache.kafka.common.message.WriteMirrorStatesResponseData;
 import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
@@ -83,6 +84,7 @@ import java.util.stream.Collectors;
 import scala.Option;
 import scala.jdk.javaapi.CollectionConverters;
 
+import static kafka.server.mirror.ClusterMirrorUtils.mergeReadMirrorStatesResponses;
 import static org.apache.kafka.common.utils.Utils.require;
 
 /**
@@ -387,10 +389,47 @@ public class ClusterMirrorCoordinator {
         callback.accept(new WriteMirrorStatesResponse(data));
     }
 
-    public void getCachedPartitionMetadata(String mirrorName,
-                                           Map<String, Set<Integer>> partitions,
-                                           Consumer<ReadMirrorStatesResponse> callback) {
-        metadataManager.getCachedPartitionMetadata(mirrorName, partitions, callback);
+    public ReadMirrorStatesResponse getCachedPartitionMetadata(String mirrorName,
+                                                               Map<String, Set<Integer>> partitions) {
+        return metadataManager.getCachedPartitionMetadata(mirrorName, partitions);
+    }
+
+    public void getPartitionMetadata(String mirrorName,
+                                     Map<String, Set<Integer>> partitions,
+                                     Consumer<ReadMirrorStatesResponse> callback) {
+        if (partitions.isEmpty()) {
+            callback.accept(new ReadMirrorStatesResponse(new ReadMirrorStatesResponseData()));
+            return;
+        }
+        Map<String, Set<Integer>> localReadPartitions = new HashMap<>();
+        Map<String, Set<Integer>> remoteReadPartitions = new HashMap<>();
+        partitions.forEach((topic, partitionIndices) -> partitionIndices.forEach(partition -> {
+            if (isLocalCoordinator(mirrorName, topic, partition)) {
+                localReadPartitions.computeIfAbsent(topic, k -> new HashSet<>()).add(partition);
+            } else {
+                remoteReadPartitions.computeIfAbsent(topic, k -> new HashSet<>()).add(partition);
+            }
+        }));
+
+        ReadMirrorStatesResponse localResponse = localReadPartitions.isEmpty()
+                ? null
+                : metadataManager.getCachedPartitionMetadata(mirrorName, localReadPartitions);
+
+        if (remoteReadPartitions.isEmpty()) {
+            callback.accept(localResponse != null ? localResponse
+                    : new ReadMirrorStatesResponse(new ReadMirrorStatesResponseData()));
+            return;
+        }
+
+        metadataManager.readStatesFromRemoteCoordinator(mirrorName, remoteReadPartitions,
+                remoteResponse -> callback.accept(merge(localResponse, remoteResponse)));
+    }
+
+    private ReadMirrorStatesResponse merge(ReadMirrorStatesResponse left, ReadMirrorStatesResponse right) {
+        if (left == null) {
+            return right;
+        }
+        return null;
     }
 
     private CompletableFuture<Void> collectAndUpdateLastMirrorEpochs(String mirrorName, Set<TopicPartition> topicPartitions) {

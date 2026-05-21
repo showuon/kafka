@@ -663,9 +663,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * Reads partition states from remote coordinators, batching requests per coordinator node.
      * Updates local cache (lastMirrorEpochs, partitionStates) with each response.
      */
-    private void readStatesFromRemoteCoordinator(String mirrorName,
-                                                 Map<String, Set<Integer>> partitions,
-                                                 Consumer<ReadMirrorStatesResponse> callback) {
+    void readStatesFromRemoteCoordinator(String mirrorName,
+                                         Map<String, Set<Integer>> partitions,
+                                         Consumer<ReadMirrorStatesResponse> callback) {
         log.debug("Reading states from remote coordinator: {} {}", mirrorName, partitions);
 
         // Group partitions by coordinator node for batching
@@ -735,9 +735,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     /** Reads partition states and offsets from local cache. Used when this broker is the coordinator. */
-    void getCachedPartitionMetadata(String mirrorName,
-                                    Map<String, Set<Integer>> partitions,
-                                    Consumer<ReadMirrorStatesResponse> responseCallback) {
+    ReadMirrorStatesResponse getCachedPartitionMetadata(String mirrorName,
+                                                        Map<String, Set<Integer>> partitions) {
         ReadMirrorStatesResponseData data = new ReadMirrorStatesResponseData();
         List<ReadMirrorStatesResponseData.TopicResult> topicResults = new ArrayList<>();
         partitions.forEach((tp, parts) -> {
@@ -759,7 +758,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             topicResults.add(topicResult);
         });
         data.setTopics(topicResults);
-        responseCallback.accept(new ReadMirrorStatesResponse(data));
+        return new ReadMirrorStatesResponse(data);
     }
 
     /** Creates initial source senders from bootstrap addresses if not already connected. */
