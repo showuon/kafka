@@ -109,6 +109,7 @@ class MirrorFetcherThread(name: String,
         // successful fetch, remove the failed metadata
         mmm.failedRetryAttempts.remove(topicPartition)
         mmm.partitionPreviousStates().remove(new PartitionKey(mirrorName, topicPartition.topic(), topicPartition.partition()))
+        info("!!! cleaned failed state:" + topicPartition)
 
         if (highestBatchLeaderEpoch > localLeaderEpoch - LEADER_EPOCH_BUMP_THRESHOLD) {
           // When source batch is close to the local epoch (within LEADER_EPOCH_BUMP_THRESHOLD),

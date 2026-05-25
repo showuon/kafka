@@ -207,8 +207,10 @@ public class ClusterMirrorCoordinator {
     private void updateRetryAttemptsAndPrevState(String mirrorName, TopicPartition tp, MirrorPartitionState currentState, MirrorPartitionState newState) {
         ClusterMirrorUtils.PartitionKey key = new ClusterMirrorUtils.PartitionKey(mirrorName, tp.topic(), tp.partition());
         if (newState == MirrorPartitionState.FAILED) {
+            log.info("!!! updateRetryAttemptsAndPrevState:" + metadataManager.partitionPreviousStates() + ";;" + currentState);
             metadataManager.failedRetryAttempts().merge(tp, 1, Integer::sum);
             metadataManager.partitionPreviousStates().putIfAbsent(key, currentState);
+            log.info("!!! updateRetryAttemptsAndPrevState end:" + metadataManager.partitionPreviousStates() + ";;" + currentState);
         } else if (newState == MirrorPartitionState.STOPPED
                 || newState == MirrorPartitionState.PAUSED) {
             metadataManager.failedRetryAttempts().remove(tp);
