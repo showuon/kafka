@@ -195,7 +195,7 @@ class MirrorUtils:
             return self.all_satisfy_in_mirror(
                 kafka, mirror_name,
                 lambda p: p["lag"] == 0 and p["state"] == "MIRRORING", topics)
-        wait_until(check, timeout_sec=300, backoff_sec=5, err_msg=err_msg)
+        wait_until(check, timeout_sec=60, backoff_sec=5, err_msg=err_msg)
 
     def describe_consumer_group(self, kafka, group, client_node):
         """Describe a consumer group on a client node with security support."""
