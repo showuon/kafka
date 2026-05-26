@@ -121,8 +121,6 @@ abstract class AbstractFetcherThread(name: String,
 
   protected def handleMirrorLeaderEpochExceeded(mirrorName: String, topicPartition: TopicPartition): Unit = {}
 
-  protected def handleMirrorPartitionStaleMetadata(mirrorName: String, topicPartition: TopicPartition): Unit = {}
-
   override def shutdown(): Unit = {
     initiateShutdown()
     inLock(partitionMapLock) {
@@ -556,7 +554,7 @@ abstract class AbstractFetcherThread(name: String,
                       error(s"Error while processing data for mirror partition $topicPartition " +
                         s"at offset ${currentFetchState.fetchOffset}, waiting for metadata update.", e)
                       markPartitionRemoved(topicPartition)
-                      handleMirrorLeaderEpochExceeded(currentFetchState.mirrorName(), topicPartition)
+                      refreshSourceClusterMetadata(Set(topicPartition))
                     case t: Throwable =>
                       // stop monitoring this partition and add it to the set of failed partitions
                       error(s"Unexpected error occurred while processing data for partition $topicPartition " +

@@ -94,11 +94,6 @@ class MirrorFetcherThread(name: String,
     replicaMgr.mirrorMetadataManager.foreach(_.transitionTo(mirrorName, topicPartition, MirrorPartitionState.EPOCH_FENCING))
   }
 
-  override protected def handleMirrorPartitionStaleMetadata(mirrorName: String, topicPartition: TopicPartition): Unit = {
-    refreshSourceClusterMetadata(Set(topicPartition))
-    replicaMgr.mirrorMetadataManager.foreach(_.transitionTo(mirrorName, topicPartition, MirrorPartitionState.FAILED))
-  }
-
   def validateLeaderEpoch(topicPartition: TopicPartition, partition: Partition, records: Records, partitionLeaderEpoch: Int): Unit = {
     val localLeaderEpoch = partition.getLeaderEpoch
     val highestBatchLeaderEpoch = if (records.lastBatch().isPresent)
