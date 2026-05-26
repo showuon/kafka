@@ -272,7 +272,7 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
         self.source_kafka.restart_cluster(clean_shutdown=True)
 
         self.logger.info("Send 1 message via source broker 0")
-        self.produce_records(self.source_kafka, topic, 1, self.client_node,
+        self.produce_records(self.source_kafka, topic, 1, self.source_client_node,
                              bootstrap_servers=broker_bootstrap(src_broker0))
 
         self.logger.info("Start cluster mirror on destination")
