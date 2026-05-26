@@ -127,8 +127,10 @@ class MirrorFetcherThread(name: String,
     }
 
     if (highestBatchLeaderEpoch > partitionLeaderEpoch) {
-      // When this happens in intra-cluster, UnifiedLog will reject the batch and receive the new partition change
-      // metadata log soon to recreate fetcher thread.
+      // When this happens in intra-cluster, UnifiedLog will reject the batch and wait for the partition change
+      // metadata log to recreate fetcher thread.
+      // But if it happens in inter-cluster mirroring, we will never get the partition change metadata log,
+      // so we need to handle that by refreshing the source cluster metadata
       log.info("!!! highestBatchLeaderEpoch > partitionLeaderEpoch:" + topicPartition)
       throw new MirrorPartitionStaleMetadataException(s"Rejecting the batch because the batch leader " +
         s"epoch $highestBatchLeaderEpoch is higher than previously known leader epoch $partitionLeaderEpoch")
