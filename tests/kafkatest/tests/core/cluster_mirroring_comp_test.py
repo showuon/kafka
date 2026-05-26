@@ -188,19 +188,19 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
         self.wait_mirror_lag_zero(
             self.dest_kafka, mirror_name, topics=list(topics.keys()))
 
-#         self.logger.info("Verifying consumer group offset sync")
-#         self.wait_for_metadata_sync(self.dest_kafka, mirror_name, num_cycles=2)
-#         wait_until(
-#             lambda: "my-topic-a" in self.describe_consumer_group(
-#                 self.dest_kafka, "my-group", self.dest_client_node),
-#             timeout_sec=60, backoff_sec=5,
-#             err_msg="Expected my-topic-a offset to be synced on destination",
-#         )
-#
-#         self.logger.info("Verifying topic config sync")
-#         dest_topic_desc = self.dest_kafka.describe_topic("my-topic-a", node=self.dest_client_node)
-#         assert "retention.ms=100002" in dest_topic_desc, \
-#             "Expected retention.ms=100002 synced to destination, got: %s" % dest_topic_desc
+        self.logger.info("Verifying consumer group offset sync")
+        self.wait_for_metadata_sync(self.dest_kafka, mirror_name, num_cycles=2)
+        wait_until(
+            lambda: "my-topic-a" in self.describe_consumer_group(
+                self.dest_kafka, "my-group", self.dest_client_node),
+            timeout_sec=60, backoff_sec=5,
+            err_msg="Expected my-topic-a offset to be synced on destination",
+        )
+
+        self.logger.info("Verifying topic config sync")
+        dest_topic_desc = self.dest_kafka.describe_topic("my-topic-a", node=self.dest_client_node)
+        assert "retention.ms=100002" in dest_topic_desc, \
+            "Expected retention.ms=100002 synced to destination, got: %s" % dest_topic_desc
 
         self.logger.info("Stopping mirroring (failover)")
         for regex in ["my-topic.*", "new-topic"]:
