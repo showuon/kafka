@@ -94,11 +94,17 @@ class MirrorFetcherThread(name: String,
     replicaMgr.mirrorMetadataManager.foreach(_.transitionTo(mirrorName, topicPartition, MirrorPartitionState.EPOCH_FENCING))
   }
 
-  def validateLeaderEpoch(topicPartition: TopicPartition, partition: Partition, records: Records): Unit = {
+  def validateLeaderEpoch(topicPartition: TopicPartition, partition: Partition, records: Records, partitionLeaderEpoch: Int): Unit = {
     val localLeaderEpoch = partition.getLeaderEpoch
     val highestBatchLeaderEpoch = if (records.lastBatch().isPresent)
       records.lastBatch().get().partitionLeaderEpoch() else -1
-    log.debug(s"Current highestBatchLeaderEpoch: $highestBatchLeaderEpoch, localLeaderEpoch: $localLeaderEpoch, partition: $topicPartition")
+    log.info(s"Current highestBatchLeaderEpoch: $highestBatchLeaderEpoch, localLeaderEpoch: $localLeaderEpoch, partition: $topicPartition, partitionLE: $partitionLeaderEpoch")
+    if (highestBatchLeaderEpoch > partitionLeaderEpoch) {
+      // this should only happen in old version kafka because in newer version, the leader node validation will reject this
+      // request with FENCED_LEADER_EPOCH error
+      refreshSourceClusterMetadata(Set(topicPartition))
+    }
+
     if (highestBatchLeaderEpoch > localLeaderEpoch) {
       // React by fencing this partition when source records are already ahead of the local leader epoch.
       // The exception will mark this partition as failed and transition mirror state to EPOCH_FENCING.
@@ -142,7 +148,7 @@ class MirrorFetcherThread(name: String,
       trace("Mirror follower has replica log end offset %d for partition %s. Received %d bytes of messages and leader hw %d"
         .format(log.logEndOffset, topicPartition, records.sizeInBytes, partitionData.highWatermark))
 
-    validateLeaderEpoch(topicPartition, partition, records)
+    validateLeaderEpoch(topicPartition, partition, records, partitionLeaderEpoch)
 
     // Append batches from the source cluster to the destination partition's log.
     val logAppendInfo = partition.appendRecordsToFollowerOrFutureReplica(records, isFuture = false, partitionLeaderEpoch, isMirrorLeader = true)

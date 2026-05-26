@@ -426,7 +426,7 @@ abstract class AbstractFetcherThread(name: String,
     var fetchException: Option[Throwable] = None
 
     try {
-      debug(s"!!! Sending fetch request $fetchRequest")
+      info(s"!!! Sending fetch request $fetchRequest")
       responseData = leader.fetch(fetchRequest).asScala
     } catch {
       case t: Throwable =>

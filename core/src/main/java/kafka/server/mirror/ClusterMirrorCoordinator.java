@@ -518,7 +518,7 @@ public class ClusterMirrorCoordinator {
 
         // periodically query source cluster to get the metadata
         long metadataRefreshIntervalMs = brokerConfig.mirrorConfig().metadataRefreshIntervalMs();
-        scheduler.schedule("MirrorMetadataRefresh", metadataManager::periodicSync, 0, metadataRefreshIntervalMs);
+//        scheduler.schedule("MirrorMetadataRefresh", metadataManager::periodicSync, 0, metadataRefreshIntervalMs);
 
         log.info("Startup complete.");
     }
