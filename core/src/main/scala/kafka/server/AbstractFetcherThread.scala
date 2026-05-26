@@ -121,6 +121,8 @@ abstract class AbstractFetcherThread(name: String,
 
   protected def handleMirrorLeaderEpochExceeded(mirrorName: String, topicPartition: TopicPartition): Unit = {}
 
+  protected def handleMirrorPartitionStaleMetadata(mirrorName: String, topicPartition: TopicPartition): Unit = {}
+
   override def shutdown(): Unit = {
     initiateShutdown()
     inLock(partitionMapLock) {
@@ -548,6 +550,11 @@ abstract class AbstractFetcherThread(name: String,
                     case e: MirrorLeaderEpochExceededException =>
                       error(s"Error while processing data for mirror partition $topicPartition " +
                         s"at offset ${currentFetchState.fetchOffset}, waiting for leader epoch bump.", e)
+                      markPartitionRemoved(topicPartition)
+                      handleMirrorLeaderEpochExceeded(currentFetchState.mirrorName(), topicPartition)
+                    case e: MirrorPartitionStaleMetadataException =>
+                      error(s"Error while processing data for mirror partition $topicPartition " +
+                        s"at offset ${currentFetchState.fetchOffset}, waiting for metadata update.", e)
                       markPartitionRemoved(topicPartition)
                       handleMirrorLeaderEpochExceeded(currentFetchState.mirrorName(), topicPartition)
                     case t: Throwable =>

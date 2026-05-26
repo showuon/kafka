@@ -19,7 +19,7 @@ package kafka.server.mirror
 import kafka.cluster.Partition
 import kafka.server._
 import kafka.server.mirror.ClusterMirrorUtils.{LEADER_EPOCH_BUMP_THRESHOLD, LeaderInfo, PartitionKey}
-import org.apache.kafka.common.errors.MirrorLeaderEpochExceededException
+import org.apache.kafka.common.errors.{MirrorLeaderEpochExceededException, MirrorPartitionStaleMetadataException}
 import org.apache.kafka.common.message.FetchResponseData
 import org.apache.kafka.common.record.Records
 import org.apache.kafka.common.requests.FetchResponse
@@ -94,6 +94,11 @@ class MirrorFetcherThread(name: String,
     replicaMgr.mirrorMetadataManager.foreach(_.transitionTo(mirrorName, topicPartition, MirrorPartitionState.EPOCH_FENCING))
   }
 
+  override protected def handleMirrorPartitionStaleMetadata(mirrorName: String, topicPartition: TopicPartition): Unit = {
+    refreshSourceClusterMetadata(Set(topicPartition))
+    replicaMgr.mirrorMetadataManager.foreach(_.transitionTo(mirrorName, topicPartition, MirrorPartitionState.FAILED))
+  }
+
   def validateLeaderEpoch(topicPartition: TopicPartition, partition: Partition, records: Records, partitionLeaderEpoch: Int): Unit = {
     val localLeaderEpoch = partition.getLeaderEpoch
     val highestBatchLeaderEpoch = if (records.lastBatch().isPresent)
@@ -124,10 +129,8 @@ class MirrorFetcherThread(name: String,
     if (highestBatchLeaderEpoch > partitionLeaderEpoch) {
       // When this happens in intra-cluster, UnifiedLog will reject the batch and receive the new partition change
       // metadata log soon to recreate fetcher thread.
-      // But if this happens in
       log.info("!!! highestBatchLeaderEpoch > partitionLeaderEpoch:" + topicPartition)
-      refreshSourceClusterMetadata(Set(topicPartition))
-      throw new MirrorLeaderEpochExceededException(s"Rejecting the batch because the batch leader " +
+      throw new MirrorPartitionStaleMetadataException(s"Rejecting the batch because the batch leader " +
         s"epoch $highestBatchLeaderEpoch is higher than previously known leader epoch $partitionLeaderEpoch")
     }
   }
