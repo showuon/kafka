@@ -99,13 +99,6 @@ class MirrorFetcherThread(name: String,
     val highestBatchLeaderEpoch = if (records.lastBatch().isPresent)
       records.lastBatch().get().partitionLeaderEpoch() else -1
     log.info(s"Current highestBatchLeaderEpoch: $highestBatchLeaderEpoch, localLeaderEpoch: $localLeaderEpoch, partition: $topicPartition, partitionLE: $partitionLeaderEpoch")
-    if (highestBatchLeaderEpoch > partitionLeaderEpoch) {
-      // this should only happen in old version kafka because in newer version, the leader node validation will reject this
-      // request with FENCED_LEADER_EPOCH error
-      log.info("!!! highestBatchLeaderEpoch > partitionLeaderEpoch")
-      refreshSourceClusterMetadata(Set(topicPartition))
-    }
-
     if (highestBatchLeaderEpoch > localLeaderEpoch) {
       // React by fencing this partition when source records are already ahead of the local leader epoch.
       // The exception will mark this partition as failed and transition mirror state to EPOCH_FENCING.
@@ -126,6 +119,13 @@ class MirrorFetcherThread(name: String,
             }
         }
       }
+    }
+
+    if (highestBatchLeaderEpoch > partitionLeaderEpoch) {
+      // this should only happen in old version kafka because in newer version, the leader node validation will reject this
+      // request with FENCED_LEADER_EPOCH error
+      log.info("!!! highestBatchLeaderEpoch > partitionLeaderEpoch:" + topicPartition)
+      refreshSourceClusterMetadata(Set(topicPartition))
     }
   }
 
