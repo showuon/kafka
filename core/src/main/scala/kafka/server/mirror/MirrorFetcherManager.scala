@@ -204,6 +204,9 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
   def updatePartitionLag(mirrorName: String, topicPartition: TopicPartition, sourceOffset: Long, destinationOffset: Long): Unit = {
     val key = PartitionLagKey(mirrorName, topicPartition)
     val lag = Math.max(0, sourceOffset - destinationOffset)
+    if (lag == 0) {
+      info(s"!!! source: $sourceOffset, dest: $destinationOffset, par: $topicPartition")
+    }
     lagInfo.put(key, LagInfo(sourceOffset, destinationOffset, lag, time.milliseconds()))
   }
 

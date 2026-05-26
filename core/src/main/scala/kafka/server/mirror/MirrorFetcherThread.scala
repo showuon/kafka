@@ -98,7 +98,7 @@ class MirrorFetcherThread(name: String,
     val localLeaderEpoch = partition.getLeaderEpoch
     val highestBatchLeaderEpoch = if (records.lastBatch().isPresent)
       records.lastBatch().get().partitionLeaderEpoch() else -1
-    log.trace(s"Current highestBatchLeaderEpoch: $highestBatchLeaderEpoch, localLeaderEpoch: $localLeaderEpoch")
+    log.debug(s"Current highestBatchLeaderEpoch: $highestBatchLeaderEpoch, localLeaderEpoch: $localLeaderEpoch")
     if (highestBatchLeaderEpoch > localLeaderEpoch) {
       // React by fencing this partition when source records are already ahead of the local leader epoch.
       // The exception will mark this partition as failed and transition mirror state to EPOCH_FENCING.
@@ -109,7 +109,6 @@ class MirrorFetcherThread(name: String,
         // successful fetch, remove the failed metadata
         mmm.failedRetryAttempts.remove(topicPartition)
         mmm.partitionPreviousStates().remove(new PartitionKey(mirrorName, topicPartition.topic(), topicPartition.partition()))
-        info("!!! cleaned failed state:" + topicPartition)
 
         if (highestBatchLeaderEpoch > localLeaderEpoch - LEADER_EPOCH_BUMP_THRESHOLD) {
           // When source batch is close to the local epoch (within LEADER_EPOCH_BUMP_THRESHOLD),
