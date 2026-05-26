@@ -122,7 +122,8 @@ class MirrorFetcherThread(name: String,
     }
 
     if (highestBatchLeaderEpoch > partitionLeaderEpoch) {
-      // this should only happen in old version kafka because in newer version, the leader node validation will reject this
+      // When this happens in intra-cluster, UnifiedLog will reject it and receive the new partition change metadata log soon.
+      // the leader node validation will reject this
       // request with FENCED_LEADER_EPOCH error
       log.info("!!! highestBatchLeaderEpoch > partitionLeaderEpoch:" + topicPartition)
       refreshSourceClusterMetadata(Set(topicPartition))
