@@ -351,6 +351,8 @@ public class ClusterMirrorCoordinator {
     public void writePartitionStateInfo(String mirrorName,
                                         Map<String, Set<ClusterMirrorUtils.PartitionStateInfo>> topicMetadata,
                                         Consumer<WriteMirrorStatesResponse> callback) {
+        List<CompletableFuture<Optional<TopicPartition>>> updateMirrorPartitionStateFutures = new ArrayList<>();
+
         String updatedMirrorName = ClusterMirrorUtils.originalMirrorName(mirrorName);
         Map<String, Map<Integer, Integer>> offsets = new HashMap<>();
         Map<String, Set<Integer>> tps = new HashMap<>();
@@ -360,7 +362,7 @@ public class ClusterMirrorCoordinator {
                 TopicPartition tp = new TopicPartition(topic, partition.partition());
                 partitionIndices.add(tp.partition());
                 if (partition.state() != null && partition.state() != MirrorPartitionState.UNKNOWN) {
-                    updateMirrorPartitionState(updatedMirrorName, tp, partition.state());
+                    updateMirrorPartitionStateFutures.add(updateMirrorPartitionState(updatedMirrorName, tp, partition.state()));
                 }
                 if (partition.leaderEpoch() != -1) {
                     offsets.putIfAbsent(topic, new HashMap<>());
@@ -370,23 +372,32 @@ public class ClusterMirrorCoordinator {
             tps.put(topic, partitionIndices);
         });
 
-        updateLastMirrorEpochs(updatedMirrorName, offsets);
-
-        WriteMirrorStatesResponseData data = new WriteMirrorStatesResponseData();
-        List<WriteMirrorStatesResponseData.TopicResult> topicResults = new ArrayList<>();
-        tps.forEach((topic, indices) -> {
-            List<WriteMirrorStatesResponseData.PartitionResult> partitionResults = new ArrayList<>();
-            indices.forEach(i -> {
-                WriteMirrorStatesResponseData.PartitionResult partitionResult = new WriteMirrorStatesResponseData.PartitionResult();
-                partitionResult.setPartitionIndex(i);
-                partitionResult.setErrorCode((short) 0);
-                partitionResults.add(partitionResult);
+        CompletableFuture<Void> updateLastMirrorEpochsFuture = updateLastMirrorEpochs(updatedMirrorName, offsets);
+        CompletableFuture.allOf(updateMirrorPartitionStateFutures.toArray(CompletableFuture[]::new))
+            .thenCompose((v) -> updateLastMirrorEpochsFuture)
+            .whenComplete((v, e) -> {
+                WriteMirrorStatesResponseData data = new WriteMirrorStatesResponseData();
+                if  (e != null) {
+                    log.error("Failed to update last mirror partition state and LME for {}: {}", updatedMirrorName, e);
+                    data.setErrorCode(Errors.forException(e).code());
+                    data.setErrorMessage(e.getMessage());
+                } else {
+                    log.info("!!! write completes:" + topicMetadata);
+                    List<WriteMirrorStatesResponseData.TopicResult> topicResults = new ArrayList<>();
+                    tps.forEach((topic, indices) -> {
+                        List<WriteMirrorStatesResponseData.PartitionResult> partitionResults = new ArrayList<>();
+                        indices.forEach(i -> {
+                            WriteMirrorStatesResponseData.PartitionResult partitionResult = new WriteMirrorStatesResponseData.PartitionResult();
+                            partitionResult.setPartitionIndex(i);
+                            partitionResult.setErrorCode((short) 0);
+                            partitionResults.add(partitionResult);
+                        });
+                        topicResults.add(new WriteMirrorStatesResponseData.TopicResult().setName(topic).setPartitions(partitionResults));
+                    });
+                    data.setTopics(topicResults);
+                }
+                callback.accept(new WriteMirrorStatesResponse(data));
             });
-            topicResults.add(new WriteMirrorStatesResponseData.TopicResult().setName(topic).setPartitions(partitionResults));
-        });
-
-        data.setTopics(topicResults);
-        callback.accept(new WriteMirrorStatesResponse(data));
     }
 
     public void getCachedPartitionMetadata(String mirrorName,
