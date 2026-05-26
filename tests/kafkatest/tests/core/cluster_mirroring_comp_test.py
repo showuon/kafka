@@ -233,6 +233,9 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
         mirror_name = "new-mirror"
         self.topics = {topic: {"partitions": 1, "replication-factor": 2}}
 
+        self.setup_source(KafkaVersion(source_version), metadata_quorum)
+        self.setup_dest()
+
         self.source_kafka.create_topic({
             "topic": topic, "partitions": 1, "replication-factor": 2,
             "configs": {"mirror.support.unclean.leader.election": "true"},
