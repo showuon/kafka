@@ -237,8 +237,7 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
         self.setup_dest()
 
         self.source_kafka.create_topic({
-            "topic": topic, "partitions": 1, "replication-factor": 2,
-            "configs": {"mirror.support.unclean.leader.election": "true"},
+            "topic": topic, "partitions": 1, "replication-factor": 2
         })
 
         src_broker0 = self.source_kafka.nodes[0]
