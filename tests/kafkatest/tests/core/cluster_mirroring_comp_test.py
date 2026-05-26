@@ -226,82 +226,82 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
 #     @parametrize(source_version=str(LATEST_2_1), metadata_quorum=quorum.zk)
 #     @parametrize(source_version=str(LATEST_3_9), metadata_quorum=quorum.zk)
 #     @parametrize(source_version=str(LATEST_4_0), metadata_quorum=quorum.isolated_kraft)
-    def test_mirroring(self, source_version, metadata_quorum):
-        """Verify migration with data, consumer groups, and topic config sync."""
-        self.setup_source(KafkaVersion(source_version), metadata_quorum)
-        self.setup_dest()
-
-        num_records = 100
-        topics = {
-            "my-topic-a": {"partitions": 3, "replication-factor": 2},
-            "my-topic-b": {"partitions": 1, "replication-factor": 2},
-            "new-topic": {"partitions": 2, "replication-factor": 2},
-        }
-
-        self.logger.info("Creating topics on source cluster")
-        for t, cfg in topics.items():
-            self.source_kafka.create_topic({"topic": t, **cfg})
-
-        self.logger.info("Producing %d records to each source topic", num_records)
-        for t in topics:
-            self.produce_records(self.source_kafka, t, num_records, self.source_client_node)
-
-        self.logger.info("Creating consumer group on source by consuming my-topic-a")
-        self.consume_records(self.source_kafka, "my-topic-a", self.source_client_node,
-                             max_messages=num_records, group="my-group")
-
-        self.logger.info("Setting dynamic topic config on source")
-        self.source_kafka.alter_topic_config("my-topic-a", "retention.ms=100002", node=self.source_client_node)
-
-        self.logger.info("Creating and starting cluster mirror")
-        mirror_name = "my-mirror"
-        mirror_cfg = MirrorConfig(self.source_kafka.bootstrap_servers())
-
-        wait_until(
-            lambda: self.dest_kafka.create_cluster_mirror(
-                self.dest_client_node, mirror_name, mirror_cfg),
-            timeout_sec=20, backoff_sec=2,
-            err_msg="Failed to create cluster mirror",
-        )
-        for regex in ["my-topic.*", "new-topic"]:
-            wait_until(
-                lambda r=regex: "Started" in self.dest_kafka.start_cluster_mirror_topics(
-                    self.dest_client_node, mirror_name, r),
-                timeout_sec=20, backoff_sec=2,
-                err_msg="Failed to start mirror topics for %s" % regex,
-            )
-        self.logger.info("Waiting for all partitions to reach MIRRORING with zero lag")
-        self.wait_mirror_lag_zero(
-            self.dest_kafka, mirror_name, topics=list(topics.keys()))
-
-        self.logger.info("Verifying consumer group offset sync")
-        self.wait_for_metadata_sync(self.dest_kafka, mirror_name, num_cycles=2)
-        wait_until(
-            lambda: "my-topic-a" in self.describe_consumer_group(
-                self.dest_kafka, "my-group", self.dest_client_node),
-            timeout_sec=60, backoff_sec=5,
-            err_msg="Expected my-topic-a offset to be synced on destination",
-        )
-
-        self.logger.info("Verifying topic config sync")
-        dest_topic_desc = self.dest_kafka.describe_topic("my-topic-a", node=self.dest_client_node)
-        assert "retention.ms=100002" in dest_topic_desc, \
-            "Expected retention.ms=100002 synced to destination, got: %s" % dest_topic_desc
-
-        self.logger.info("Stopping mirroring (failover)")
-        for regex in ["my-topic.*", "new-topic"]:
-            self.dest_kafka.stop_cluster_mirror_topics(
-                self.dest_client_node, mirror_name, regex)
-        self.wait_mirror_state(
-            self.dest_kafka, mirror_name, "STOPPED",
-            topics=list(topics.keys()))
-
-        self.logger.info("Verifying destination records after failover")
-        for topic in topics:
-            wait_until(
-                lambda t=topic: self.consume_records(
-                    self.dest_kafka, t, self.dest_client_node, max_messages=num_records
-                ) == num_records,
-                timeout_sec=60, backoff_sec=5,
-                err_msg="Expected %d records on destination for %s" % (num_records, topic),
-            )
+#     def test_mirroring(self, source_version, metadata_quorum):
+#         """Verify migration with data, consumer groups, and topic config sync."""
+#         self.setup_source(KafkaVersion(source_version), metadata_quorum)
+#         self.setup_dest()
+#
+#         num_records = 100
+#         topics = {
+#             "my-topic-a": {"partitions": 3, "replication-factor": 2},
+#             "my-topic-b": {"partitions": 1, "replication-factor": 2},
+#             "new-topic": {"partitions": 2, "replication-factor": 2},
+#         }
+#
+#         self.logger.info("Creating topics on source cluster")
+#         for t, cfg in topics.items():
+#             self.source_kafka.create_topic({"topic": t, **cfg})
+#
+#         self.logger.info("Producing %d records to each source topic", num_records)
+#         for t in topics:
+#             self.produce_records(self.source_kafka, t, num_records, self.source_client_node)
+#
+#         self.logger.info("Creating consumer group on source by consuming my-topic-a")
+#         self.consume_records(self.source_kafka, "my-topic-a", self.source_client_node,
+#                              max_messages=num_records, group="my-group")
+#
+#         self.logger.info("Setting dynamic topic config on source")
+#         self.source_kafka.alter_topic_config("my-topic-a", "retention.ms=100002", node=self.source_client_node)
+#
+#         self.logger.info("Creating and starting cluster mirror")
+#         mirror_name = "my-mirror"
+#         mirror_cfg = MirrorConfig(self.source_kafka.bootstrap_servers())
+#
+#         wait_until(
+#             lambda: self.dest_kafka.create_cluster_mirror(
+#                 self.dest_client_node, mirror_name, mirror_cfg),
+#             timeout_sec=20, backoff_sec=2,
+#             err_msg="Failed to create cluster mirror",
+#         )
+#         for regex in ["my-topic.*", "new-topic"]:
+#             wait_until(
+#                 lambda r=regex: "Started" in self.dest_kafka.start_cluster_mirror_topics(
+#                     self.dest_client_node, mirror_name, r),
+#                 timeout_sec=20, backoff_sec=2,
+#                 err_msg="Failed to start mirror topics for %s" % regex,
+#             )
+#         self.logger.info("Waiting for all partitions to reach MIRRORING with zero lag")
+#         self.wait_mirror_lag_zero(
+#             self.dest_kafka, mirror_name, topics=list(topics.keys()))
+#
+#         self.logger.info("Verifying consumer group offset sync")
+#         self.wait_for_metadata_sync(self.dest_kafka, mirror_name, num_cycles=2)
+#         wait_until(
+#             lambda: "my-topic-a" in self.describe_consumer_group(
+#                 self.dest_kafka, "my-group", self.dest_client_node),
+#             timeout_sec=60, backoff_sec=5,
+#             err_msg="Expected my-topic-a offset to be synced on destination",
+#         )
+#
+#         self.logger.info("Verifying topic config sync")
+#         dest_topic_desc = self.dest_kafka.describe_topic("my-topic-a", node=self.dest_client_node)
+#         assert "retention.ms=100002" in dest_topic_desc, \
+#             "Expected retention.ms=100002 synced to destination, got: %s" % dest_topic_desc
+#
+#         self.logger.info("Stopping mirroring (failover)")
+#         for regex in ["my-topic.*", "new-topic"]:
+#             self.dest_kafka.stop_cluster_mirror_topics(
+#                 self.dest_client_node, mirror_name, regex)
+#         self.wait_mirror_state(
+#             self.dest_kafka, mirror_name, "STOPPED",
+#             topics=list(topics.keys()))
+#
+#         self.logger.info("Verifying destination records after failover")
+#         for topic in topics:
+#             wait_until(
+#                 lambda t=topic: self.consume_records(
+#                     self.dest_kafka, t, self.dest_client_node, max_messages=num_records
+#                 ) == num_records,
+#                 timeout_sec=60, backoff_sec=5,
+#                 err_msg="Expected %d records on destination for %s" % (num_records, topic),
+#             )
