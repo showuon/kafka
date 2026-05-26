@@ -487,6 +487,7 @@ abstract class AbstractFetcherThread(name: String,
                       else
                         currentFetchState.currentLeaderEpoch
 
+                      info(s"!!! tp: $topicPartition, epochForValidation: $epochForValidation, currentLE: ${currentFetchState.currentLeaderEpoch}, MLE: ${currentFetchState.mirrorLeaderEpoch}")
                       val logAppendInfoOpt = processPartitionData(
                         topicPartition,
                         currentFetchState.fetchOffset,
