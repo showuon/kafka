@@ -118,7 +118,7 @@ public enum MirrorPartitionState {
 
     @SuppressWarnings("checkstyle:cyclomaticComplexity")
     public static boolean isValidTransition(MirrorPartitionState source, MirrorPartitionState target) {
-        if (source == target) {
+        if (source == target && target == MIRRORING) {
             return true;
         }
         switch (target) {
