@@ -280,13 +280,13 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
 
         wait_until(
             lambda: self.dest_kafka.create_cluster_mirror(
-                self.client_node, mirror_name, mirror_cfg),
+                self.dest_client_node, mirror_name, mirror_cfg),
             timeout_sec=300, backoff_sec=2,
             err_msg="Failed to create cluster mirror",
         )
         wait_until(
             lambda: "Started" in self.dest_kafka.start_cluster_mirror_topics(
-                self.client_node, mirror_name, topic),
+                self.dest_client_node, mirror_name, topic),
             timeout_sec=300, backoff_sec=2,
             err_msg="Failed to start mirror topics",
         )
@@ -299,7 +299,7 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
         self.source_kafka.stop_node(src_broker0)
 
         self.logger.info("Send 1 message via source broker 1")
-        self.produce_records(self.source_kafka, topic, 1, self.client_node,
+        self.produce_records(self.source_kafka, topic, 1, self.source_client_node,
                              bootstrap_servers=broker_bootstrap(src_broker1))
         self.wait_mirror_lag_zero(self.dest_kafka, mirror_name, [topic],
                                   err_msg="Mirror did not catch up after broker 0 stopped")
@@ -312,15 +312,15 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
         trigger_ule(src_broker0)
 
         self.logger.info("Send 2 messages via source broker 0")
-        self.produce_records(self.source_kafka, topic, 2, self.client_node,
+        self.produce_records(self.source_kafka, topic, 2, self.source_client_node,
                              bootstrap_servers=broker_bootstrap(src_broker0))
         self.wait_mirror_lag_zero(self.dest_kafka, mirror_name, [topic],
                                   err_msg="Mirror did not catch up after ULE 1")
         log_hashes("after ULE 1 (broker 1 should be out of sync)")
 
         self.logger.info("Failover: stop mirror so destination topic becomes writable")
-        self.dest_kafka.stop_cluster_mirror_topics(self.client_node, mirror_name, topic)
+        self.dest_kafka.stop_cluster_mirror_topics(self.dest_client_node, mirror_name, topic)
         self.wait_mirror_state(self.dest_kafka, mirror_name, "STOPPED", [topic])
         self.logger.info("describe_cluster_mirror: %s",
-                         self.dest_kafka.describe_cluster_mirror(self.client_node))
+                         self.dest_kafka.describe_cluster_mirror(self.dest_client_node))
 
