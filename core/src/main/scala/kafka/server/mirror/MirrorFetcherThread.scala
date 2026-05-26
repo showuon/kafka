@@ -122,11 +122,13 @@ class MirrorFetcherThread(name: String,
     }
 
     if (highestBatchLeaderEpoch > partitionLeaderEpoch) {
-      // When this happens in intra-cluster, UnifiedLog will reject it and receive the new partition change metadata log soon.
-      // the leader node validation will reject this
-      // request with FENCED_LEADER_EPOCH error
+      // When this happens in intra-cluster, UnifiedLog will reject the batch and receive the new partition change
+      // metadata log soon to recreate fetcher thread.
+      // But if this happens in
       log.info("!!! highestBatchLeaderEpoch > partitionLeaderEpoch:" + topicPartition)
       refreshSourceClusterMetadata(Set(topicPartition))
+      throw new MirrorLeaderEpochExceededException(s"Rejecting the batch because the batch leader " +
+        s"epoch $highestBatchLeaderEpoch is higher than previously known leader epoch $partitionLeaderEpoch")
     }
   }
 
