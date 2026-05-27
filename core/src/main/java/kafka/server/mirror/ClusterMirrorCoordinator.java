@@ -786,7 +786,8 @@ public class ClusterMirrorCoordinator {
                 .setTopicName(topicPartition.topic())
                 .setPartition(topicPartition.partition())
                 .setState(state.value())
-                .setPreviousState(metadataManager.partitionPreviousStates().getOrDefault(new ClusterMirrorUtils.PartitionKey(mirrorName, topicPartition.topic(), topicPartition.partition()), MirrorPartitionState.UNKNOWN).value())
+                .setPreviousState(metadataManager.partitionPreviousStates().getOrDefault(
+                        new ClusterMirrorUtils.PartitionKey(mirrorName, topicPartition.topic(), topicPartition.partition()), MirrorPartitionState.UNKNOWN).value())
                 .setRetryAttempt(retryAttempt);
         var apiVersion = new ApiMessageAndVersion(val, MirrorPartitionStateValue.HIGHEST_SUPPORTED_VERSION);
         return CoordinatorRecord.record(key, apiVersion);
