@@ -871,8 +871,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         ensureConnection(mirrorName);
         List<MirrorSourceSender> senders = sourceSenders.get(mirrorName);
         if (senders != null && !senders.isEmpty()) {
-            log.info("No cached leader for mirror {} partition {}. Using bootstrap server as initial target.", mirrorName, tp);
-            BrokerEndPoint ep = senders.get(0).brokerEndPoint();
+            log.info("No cached leader for mirror {} partition {}. Using one of the bootstrap server as initial target.", mirrorName, tp);
+            BrokerEndPoint ep = senders.get(random.nextInt(senders.size())).brokerEndPoint();
             // set leaderEpoch to 0 if unknown to trigger source epoch discovery through fencing
             return new ClusterMirrorUtils.LeaderInfo(new Node(ep.id(), ep.host(), ep.port()), 0);
         }
