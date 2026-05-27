@@ -149,7 +149,7 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
         def trigger_ule(node):
             """Trigger unclean leader election on the given node."""
             cmd = "%s --bootstrap-server %s --topic %s --partition 0 --election-type UNCLEAN" % (
-                self.source_kafka.path.script("kafka-leader-election.sh", self.client_node),
+                self.source_kafka.path.script("kafka-leader-election.sh", self.source_client_node),
                 broker_bootstrap(node), topic)
             self.client_node.account.ssh(cmd, allow_fail=False)
 
