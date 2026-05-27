@@ -393,17 +393,15 @@ abstract class AbstractFetcherThread(name: String,
               partitionsNeedsRefreshMetadata += tp
             }
 
-          case Errors.NOT_LEADER_OR_FOLLOWER =>
+          case error =>
             if (mirrorName.isBlank) {
-              info(s"Retrying leaderEpoch request for partition $tp as the leader reported an error: ${Errors.NOT_LEADER_OR_FOLLOWER}")
+              info(s"Retrying leaderEpoch request for partition $tp as the leader reported an error: $error")
               partitionsWithError += tp
             } else {
+              // If it's mirror thread, the error should be the stale source cluster metadata
+              // Try refresh it to fix the issue.
               partitionsNeedsRefreshMetadata += tp
             }
-
-          case error =>
-            info(s"Retrying leaderEpoch request for partition $tp as the leader reported an error: $error")
-            partitionsWithError += tp
         }
       } else {
         // Partitions may have been removed from the fetcher while the thread was waiting for fetch
