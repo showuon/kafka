@@ -169,7 +169,7 @@ class RemoteLeaderEndPoint(logPrefix: String,
 
 
     val epochRequest = if (isClusterMirror)
-      OffsetsForLeaderEpochRequest.Builder.forConsumer(topics)
+      OffsetsForLeaderEpochRequest.Builder.forMirrorConsumer(topics)
     else
       OffsetsForLeaderEpochRequest.Builder.forFollower(topics, brokerConfig.brokerId)
     debug(s"Sending offset for leader epoch request $epochRequest")
