@@ -151,7 +151,7 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
             cmd = "%s --bootstrap-server %s --topic %s --partition 0 --election-type UNCLEAN" % (
                 self.source_kafka.path.script("kafka-leader-election.sh", self.source_client_node),
                 broker_bootstrap(node), topic)
-            self.client_node.account.ssh(cmd, allow_fail=False)
+            self.source_client_node.account.ssh(cmd, allow_fail=False)
 
         def log_hashes(label):
             """Log MD5 hashes of partition log segments for all brokers across both clusters."""
