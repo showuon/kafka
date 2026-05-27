@@ -18,6 +18,7 @@
 package kafka.server
 
 import com.yammer.metrics.core.Meter
+import kafka.server.mirror.MirrorFetcherThread
 import kafka.utils.CoreUtils.inLock
 import kafka.utils.Logging
 import org.apache.kafka.common.errors._
@@ -189,9 +190,14 @@ abstract class AbstractFetcherThread(name: String,
       if (state.isTruncating) {
         latestEpoch(tp).toScala match {
           case Some(epoch) =>
+            // use the leaderEpoch from the source cluster metadata when mirroring
+            val currentLeaderEpoch = if (!this.isInstanceOf[MirrorFetcherThread])
+              state.currentLeaderEpoch
+            else
+              this.asInstanceOf[MirrorFetcherThread].leaderEpochInSource(tp)
             partitionsWithEpochs += tp -> new EpochData()
               .setPartition(tp.partition)
-              .setCurrentLeaderEpoch(state.currentLeaderEpoch)
+              .setCurrentLeaderEpoch(currentLeaderEpoch)
               .setLeaderEpoch(epoch)
           case _ =>
             partitionsWithoutEpochs += tp
@@ -366,6 +372,7 @@ abstract class AbstractFetcherThread(name: String,
                                              latestEpochsForPartitions: Map[TopicPartition, EpochData]): ResultWithPartitions[Map[TopicPartition, OffsetTruncationState]] = {
     val fetchOffsets = mutable.HashMap.empty[TopicPartition, OffsetTruncationState]
     val partitionsWithError = mutable.HashSet.empty[TopicPartition]
+    val partitionsNeedsRefreshMetadata = mutable.HashSet.empty[TopicPartition]
 
     fetchedEpochs.foreachEntry { (tp, leaderEpochOffset) =>
       if (partitionStates.contains(tp)) {
@@ -377,10 +384,22 @@ abstract class AbstractFetcherThread(name: String,
               fetchOffsets.put(tp, offsetTruncationState)
 
           case Errors.FENCED_LEADER_EPOCH =>
-            val currentLeaderEpoch = latestEpochsForPartitions.get(tp)
-              .map(epochEndOffset => Int.box(epochEndOffset.currentLeaderEpoch)).toJava
-            if (onPartitionFenced(tp, currentLeaderEpoch))
+            if (mirrorName.isBlank) {
+              val currentLeaderEpoch = latestEpochsForPartitions.get(tp)
+                .map(epochEndOffset => Int.box(epochEndOffset.currentLeaderEpoch)).toJava
+              if (onPartitionFenced(tp, currentLeaderEpoch))
+                partitionsWithError += tp
+            } else {
+              partitionsNeedsRefreshMetadata += tp
+            }
+
+          case Errors.NOT_LEADER_OR_FOLLOWER =>
+            if (mirrorName.isBlank) {
+              info(s"Retrying leaderEpoch request for partition $tp as the leader reported an error: ${Errors.NOT_LEADER_OR_FOLLOWER}")
               partitionsWithError += tp
+            } else {
+              partitionsNeedsRefreshMetadata += tp
+            }
 
           case error =>
             info(s"Retrying leaderEpoch request for partition $tp as the leader reported an error: $error")
@@ -394,6 +413,11 @@ abstract class AbstractFetcherThread(name: String,
       }
     }
 
+    if (partitionsNeedsRefreshMetadata.nonEmpty) {
+      info("refreshing source metadata for " + partitionsNeedsRefreshMetadata)
+      removeFetcherForPartitions(partitionsNeedsRefreshMetadata)
+      refreshSourceClusterMetadata(partitionsNeedsRefreshMetadata)
+    }
     new ResultWithPartitions(fetchOffsets, partitionsWithError.asJava)
   }
 
@@ -683,7 +707,7 @@ abstract class AbstractFetcherThread(name: String,
       currentState
     } else if (initialFetchState.initOffset < 0) {
       fetchOffsetAndTruncate(tp, initialFetchState.topicId, initialFetchState.currentLeaderEpoch, initialFetchState.mirrorLeaderEpoch)
-    } else if (leader.isTruncationOnFetchSupported) {
+    } else if (leader.isTruncationOnFetchSupported && mirrorName.isBlank) {
       // With old message format, `latestEpoch` will be empty and we use Truncating state to truncate to high watermark
       val lastFetchedEpoch: Optional[Integer] = latestEpoch(tp)
 
