@@ -179,13 +179,13 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
         wait_until(
             lambda: self.dest_kafka.create_cluster_mirror(
                 self.dest_client_node, mirror_name, mirror_cfg),
-            timeout_sec=300, backoff_sec=2,
+            timeout_sec=60, backoff_sec=2,
             err_msg="Failed to create cluster mirror",
         )
         wait_until(
             lambda: "Started" in self.dest_kafka.start_cluster_mirror_topics(
                 self.dest_client_node, mirror_name, topic),
-            timeout_sec=300, backoff_sec=2,
+            timeout_sec=60, backoff_sec=2,
             err_msg="Failed to start mirror topics",
         )
         self.wait_mirror_state(
