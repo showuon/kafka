@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import time
 
 from ducktape.mark import parametrize
 from ducktape.mark.resource import cluster
@@ -216,3 +217,83 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
             count = MirrorUtils.consume_records(self.logger, self.dest_kafka, topic, self.dest_client_node,
                                          max_messages=num_records, expected_count=num_records)
             assert count >= num_records, "Expected %d records on %s, got %d" % (num_records, topic, count)
+
+    @cluster(num_nodes=8)
+    @parametrize(source_version=str(LATEST_2_1), metadata_quorum=quorum.zk)
+    @parametrize(source_version=str(LATEST_3_9), metadata_quorum=quorum.zk)
+    @parametrize(source_version=str(LATEST_4_0), metadata_quorum=quorum.isolated_kraft)
+    def test_ule_mirroring(self, source_version, metadata_quorum):
+        """Verify log convergence after unclean leader elections when migration."""
+        self.logger.info("Create source topic with ULE support enabled")
+        topic = "my-topic"
+        mirror_name = "new-mirror"
+        self.topics = {topic: {"partitions": 1, "replication-factor": 2},}
+
+        self.setup_source(KafkaVersion(source_version), metadata_quorum)
+        self.setup_dest()
+
+        self.source_kafka.create_topic({
+            "topic": topic, "partitions": 1, "replication-factor": 2,
+            "configs": {"unclean.leader.election.enable": "true"},
+        })
+
+        src_broker0 = self.source_kafka.nodes[0]
+        src_broker1 = self.source_kafka.nodes[1]
+
+        def broker_bootstrap(node):
+            """Return bootstrap server address for a single broker node."""
+            return "%s:9092" % node.account.hostname
+
+        self.logger.info("Bounce source brokers to trigger leader elections")
+        self.source_kafka.restart_cluster(clean_shutdown=True)
+
+        self.logger.info("Send 1 message via source broker 0")
+        self.produce_records(self.source_kafka, topic, 1, self.source_client_node,
+                             bootstrap_servers=broker_bootstrap(src_broker0))
+
+        self.logger.info("Start cluster mirror on destination")
+        mirror_cfg = MirrorConfig(self.source_kafka.bootstrap_servers())
+
+        wait_until(
+            lambda: self.dest_kafka.create_cluster_mirror(
+                self.dest_client_node, mirror_name, mirror_cfg),
+            timeout_sec=60, backoff_sec=2,
+            err_msg="Failed to create cluster mirror",
+        )
+        wait_until(
+            lambda: "Started" in self.dest_kafka.start_cluster_mirror_topics(
+                self.dest_client_node, mirror_name, topic),
+            timeout_sec=60, backoff_sec=2,
+            err_msg="Failed to start mirror topics",
+        )
+        self.wait_mirror_state(
+            self.dest_kafka, mirror_name, "MIRRORING", [topic],
+            err_msg="Mirror did not reach MIRRORING state",
+        )
+
+        self.logger.info("Stop source broker 0 (broker 0 becomes stale)")
+        self.source_kafka.stop_node(src_broker0)
+
+        self.logger.info("Send 1 message via source broker 1")
+        self.produce_records(self.source_kafka, topic, 1, self.source_client_node,
+                             bootstrap_servers=broker_bootstrap(src_broker1))
+        self.wait_mirror_lag_zero(self.dest_kafka, mirror_name, [topic],
+                                  err_msg="Mirror did not catch up after broker 0 stopped")
+        self.wait_for_log_convergence(self.source_kafka, self.dest_kafka, self.topics)
+
+        self.logger.info("ULE 1: stop broker 1, start broker 0 (stale), elect it as leader")
+        self.source_kafka.stop_node(src_broker1)
+        self.source_kafka.start_node(src_broker0)
+        time.sleep(5)
+
+        self.logger.info("Send 2 messages via source broker 0")
+        self.produce_records(self.source_kafka, topic, 2, self.source_client_node,
+                             bootstrap_servers=broker_bootstrap(src_broker0))
+        self.wait_mirror_lag_zero(self.dest_kafka, mirror_name, [topic],
+                                  err_msg="Mirror did not catch up after ULE 1")
+
+        self.wait_for_log_convergence(self.source_kafka, self.dest_kafka, self.topics)
+
+        self.logger.info("Failover: stop mirror so destination topic becomes writable")
+        self.dest_kafka.stop_cluster_mirror_topics(self.dest_client_node, mirror_name, topic)
+        self.wait_mirror_state(self.dest_kafka, mirror_name, "STOPPED", [topic])

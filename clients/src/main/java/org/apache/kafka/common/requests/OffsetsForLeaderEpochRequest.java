@@ -53,11 +53,6 @@ public class OffsetsForLeaderEpochRequest extends AbstractRequest {
         }
 
         public static Builder forMirrorConsumer(OffsetForLeaderTopicCollection epochsByPartition) {
-            // Old versions of this API require CLUSTER permission which is not typically granted
-            // to clients. Beginning with version 3, the broker requires only TOPIC Describe
-            // permission for the topic of each requested partition. In order to ensure client
-            // compatibility, we only send this request when we can guarantee the relaxed permissions.
-
             // The oldest supported source cluster version supports OFFSET_FOR_LEADER_EPOCH v2, so use v2 here.
             OffsetForLeaderEpochRequestData data = new OffsetForLeaderEpochRequestData();
             data.setTopics(epochsByPartition);
