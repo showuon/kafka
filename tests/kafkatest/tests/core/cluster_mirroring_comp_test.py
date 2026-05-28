@@ -212,16 +212,16 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
         time.sleep(5)
         log_hashes("after ULE 1 (broker 1 should be out of sync)")
 
-        self.logger.info("Failover: stop mirror so destination topic becomes writable")
-        self.dest_kafka.stop_cluster_mirror_topics(self.dest_client_node, mirror_name, topic)
-        self.wait_mirror_state(self.dest_kafka, mirror_name, "STOPPED", [topic])
-        self.logger.info("describe_cluster_mirror: %s",
-                         self.dest_kafka.describe_cluster_mirror(self.dest_client_node))
-
         self.logger.info("Start broker 1, and wait for all logs are converged")
         self.source_kafka.start_node(src_broker1)
         time.sleep(5)
         self.wait_for_log_convergence(self.dest_kafka, self.source_kafka, self.topics)
+
+        self.logger.info("Failover: stop mirror so destination topic becomes writable")
+        self.dest_kafka.stop_cluster_mirror_topics(self.dest_client_node, mirror_name, topic)
+        self.wait_mirror_state(self.dest_kafka, mirror_name, "STOPPED", [topic])
+
+
 #     @cluster(num_nodes=8)
 #     @parametrize(source_version=str(LATEST_2_1), metadata_quorum=quorum.zk)
 #     @parametrize(source_version=str(LATEST_3_9), metadata_quorum=quorum.zk)
