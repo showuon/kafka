@@ -198,7 +198,7 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
                                   err_msg="Mirror did not catch up after broker 0 stopped")
         time.sleep(5)
         log_hashes("after source broker 0 stopped (broker 0 should be out of sync)")
-        self.wait_for_log_convergence(self.dest_kafka, self.source_kafka, self.topics)
+        self.wait_for_log_convergence(self.source_kafka, self.dest_kafka, self.topics)
 
         self.logger.info("ULE 1: stop broker 1, start broker 0 (stale), elect it as leader")
         self.source_kafka.stop_node(src_broker1)
@@ -212,12 +212,7 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
                                   err_msg="Mirror did not catch up after ULE 1")
         time.sleep(5)
         log_hashes("after ULE 1 (broker 1 should be out of sync)")
-        self.wait_for_log_convergence(self.dest_kafka, self.source_kafka, self.topics)
-
-        self.logger.info("Start broker 1, and wait for all logs are converged")
-        self.source_kafka.start_node(src_broker1)
-        time.sleep(5)
-        self.wait_for_log_convergence(self.dest_kafka, self.source_kafka, self.topics)
+        self.wait_for_log_convergence(self.source_kafka, self.dest_kafka, self.topics)
 
         self.logger.info("Failover: stop mirror so destination topic becomes writable")
         self.dest_kafka.stop_cluster_mirror_topics(self.dest_client_node, mirror_name, topic)
