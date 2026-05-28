@@ -221,7 +221,7 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
         self.logger.info("Start broker 1, and wait for all logs are converged")
         self.source_kafka.start_node(src_broker1)
         time.sleep(5)
-        self.wait_for_log_convergence(self.dest_kafka, self.source_kafka, topic)
+        self.wait_for_log_convergence(self.dest_kafka, self.source_kafka, self.topics)
 #     @cluster(num_nodes=8)
 #     @parametrize(source_version=str(LATEST_2_1), metadata_quorum=quorum.zk)
 #     @parametrize(source_version=str(LATEST_3_9), metadata_quorum=quorum.zk)
