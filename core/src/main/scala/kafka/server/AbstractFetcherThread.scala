@@ -549,7 +549,7 @@ abstract class AbstractFetcherThread(name: String,
                         if ((validBytes > 0 || currentFetchState.lag.isEmpty || newMirrorLeaderEpoch.orElse(-1) != currentFetchState.mirrorLeaderEpoch().orElse(-1)) &&
                           partitionStates.contains(topicPartition)) {
                           val lastFetchedEpoch =
-                            if (logAppendInfo.lastLeaderEpoch.isPresent && currentFetchState.lastFetchedEpoch.isPresent)
+                            if (logAppendInfo.lastLeaderEpoch.isPresent)
                               logAppendInfo.lastLeaderEpoch else currentFetchState.lastFetchedEpoch
                           val newFetchState = new PartitionFetchState(currentFetchState.topicId, nextOffset, Optional.of(lag),
                             currentFetchState.currentLeaderEpoch, ReplicaState.FETCHING, lastFetchedEpoch, currentFetchState.mirrorName(), newMirrorLeaderEpoch)
