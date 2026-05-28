@@ -196,18 +196,20 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
                              bootstrap_servers=broker_bootstrap(src_broker1))
         self.wait_mirror_lag_zero(self.dest_kafka, mirror_name, [topic],
                                   err_msg="Mirror did not catch up after broker 0 stopped")
+        time.sleep(5)
         log_hashes("after source broker 0 stopped (broker 0 should be out of sync)")
 
         self.logger.info("ULE 1: stop broker 1, start broker 0 (stale), elect it as leader")
         self.source_kafka.stop_node(src_broker1)
         self.source_kafka.start_node(src_broker0)
-        time.sleep(3)
+        time.sleep(5)
 
         self.logger.info("Send 2 messages via source broker 0")
         self.produce_records(self.source_kafka, topic, 2, self.source_client_node,
                              bootstrap_servers=broker_bootstrap(src_broker0))
         self.wait_mirror_lag_zero(self.dest_kafka, mirror_name, [topic],
                                   err_msg="Mirror did not catch up after ULE 1")
+        time.sleep(5)
         log_hashes("after ULE 1 (broker 1 should be out of sync)")
 
         self.logger.info("Failover: stop mirror so destination topic becomes writable")
@@ -218,8 +220,8 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
 
         self.logger.info("Start broker 1, and wait for all logs are converged")
         self.source_kafka.start_node(src_broker1)
-        time.sleep(3)
-        self.wait_for_log_convergence(self.dest_kafka, self.source_kafka, topics)
+        time.sleep(5)
+        self.wait_for_log_convergence(self.dest_kafka, self.source_kafka, topic)
 #     @cluster(num_nodes=8)
 #     @parametrize(source_version=str(LATEST_2_1), metadata_quorum=quorum.zk)
 #     @parametrize(source_version=str(LATEST_3_9), metadata_quorum=quorum.zk)
