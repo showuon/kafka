@@ -370,16 +370,19 @@ class BrokerMetadataPublisher(
     getTopicDelta(topicName, image, delta).foreach { topicDelta =>
       val changes = topicDelta.localChanges(brokerId)
 
-      logger.info("update coordinator:" + changes.electedLeaders)
+      logger.info("update coordinator:" + changes.electedLeaders.size() + ";;" + topicDelta)
       changes.deletes.forEach { topicPartition =>
         resignation(topicPartition.partition, None)
       }
+      logger.info("election")
       changes.electedLeaders.forEach { (topicPartition, partitionInfo) =>
         election(topicPartition.partition, partitionInfo.partition.leaderEpoch)
       }
+      logger.info("resign")
       changes.followers.forEach { (topicPartition, partitionInfo) =>
         resignation(topicPartition.partition, Some(partitionInfo.partition.leaderEpoch))
       }
+      logger.info("resign done")
     }
   }
 
