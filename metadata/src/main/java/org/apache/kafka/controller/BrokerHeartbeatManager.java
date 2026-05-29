@@ -312,7 +312,7 @@ public class BrokerHeartbeatManager {
             return Long.MAX_VALUE;
         }
         BrokerHeartbeatState first = iterator.next();
-        log.info("lowestActiveOffset:" + first.metadataOffset + ";;" + first.controlledShutdownOffset);
+        log.info("!!! lowestActiveOffset:" + first.metadataOffset + ";;" + first.controlledShutdownOffset);
         return first.metadataOffset;
     }
 

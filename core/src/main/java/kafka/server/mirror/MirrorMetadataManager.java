@@ -254,6 +254,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         if (!initialized) {
             return;
         }
+        log.info("applying of a new metadata image with version: " + newImage.offset());
         // caching the image for query purpose
         this.metadataImage = newImage;
 
@@ -292,6 +293,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
             ClusterMirrorUtils.PartitionKey key = new ClusterMirrorUtils.PartitionKey(mirrorName, tp.topic(), tp.partition());
             if (isLocalCoordinator(key.mirrorName(), key.topic(), key.partition())) {
+                log.info("local coordinator:" + key);
                 // Handle local coordinator partitions inline (no network call needed)
                 MirrorPartitionState curState = partitionStates.getOrDefault(key, MirrorPartitionState.UNKNOWN);
                 applyMirrorStateTransition(key.mirrorName(), tp, curState, null, stopRequested, pauseRequested);
@@ -545,6 +547,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     // Clears mirror state for partitions where this broker lost leadership, unless it is the coordinator
     private void clearFollowersState(Set<TopicPartition> followerDelta, MetadataImage newImage) {
+        log.info("Clearing followers state for {}.", followerDelta);
         followerDelta.forEach(followerTp -> {
             String mirrorName = (String) newImage.configs()
                     .configProperties(new ConfigResource(ConfigResource.Type.TOPIC, followerTp.topic()))
@@ -579,6 +582,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     // Finds the coordinator node (leader of the __mirror_state partition) for a mirror record key
     private Node findCoordinatorNode(ClusterMirrorRecordKey key) {
+        log.info("Find coordinator node for key {}", key);
         try {
             if (metadataCache.contains(MIRROR_STATE_TOPIC_NAME)) {
                 Set<String> topicSet = new HashSet<>();
@@ -1141,6 +1145,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     private void maybeCompletePendingEpochBumps() {
+        log.info("maybeCompletePendingEpochBumps");
         pendingLeaderEpochBumps.removeIf(bumpLeaderEpoch -> {
             Set<TopicPartition> pendingPartitions = bumpLeaderEpoch.partitionToEpoch().entrySet().stream().filter(entry -> {
                 TopicPartition tp = entry.getKey();
