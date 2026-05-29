@@ -280,6 +280,7 @@ public class BrokerHeartbeatManager {
      */
     void touch(int brokerId, boolean fenced, long metadataOffset) {
         BrokerHeartbeatState broker = heartbeatStateOrThrow(brokerId);
+        log.info("!!! touch:" + broker.fenced + ";;" + broker.shuttingDown() + ";;" + metadataOffset + ";;" + fenced);
         // Remove the broker from the unfenced list and/or the active set. Its
         // position in either of those data structures depends on values we are
         // changing here. We will re-add it if necessary at the end of this function.

@@ -1732,6 +1732,7 @@ public class ReplicationControlManager {
         BrokerHeartbeatRequestData request,
         long registerBrokerRecordOffset
     ) {
+        log.info("!!! processBrokerHeartbeat");
         int brokerId = request.brokerId();
         long brokerEpoch = request.brokerEpoch();
         clusterControl.checkBrokerEpoch(brokerId, brokerEpoch);
