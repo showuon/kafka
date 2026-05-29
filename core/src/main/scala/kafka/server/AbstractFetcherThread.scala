@@ -702,17 +702,21 @@ abstract class AbstractFetcherThread(name: String,
    */
   private def partitionFetchState(tp: TopicPartition, initialFetchState: InitialFetchState, currentState: PartitionFetchState): PartitionFetchState = {
     if (currentState != null && currentState.currentLeaderEpoch == initialFetchState.currentLeaderEpoch) {
+      logger.info("!!! entering 1:" + tp + ";;" + initialFetchState)
       currentState
     } else if (initialFetchState.initOffset < 0) {
+      logger.info("!!! entering2:" + tp + ";;" + initialFetchState)
       fetchOffsetAndTruncate(tp, initialFetchState.topicId, initialFetchState.currentLeaderEpoch, initialFetchState.mirrorLeaderEpoch)
-    } else if (leader.isTruncationOnFetchSupported) {
+    } else if (leader.isTruncationOnFetchSupported && mirrorName.isBlank) {
+      logger.info("!!! entering3:" + tp + ";;" + initialFetchState)
       // With old message format, `latestEpoch` will be empty and we use Truncating state to truncate to high watermark
       val lastFetchedEpoch: Optional[Integer] = latestEpoch(tp)
 
-      val state = if (lastFetchedEpoch.isPresent && mirrorName.isBlank) ReplicaState.FETCHING else ReplicaState.TRUNCATING
+      val state = if (lastFetchedEpoch.isPresent) ReplicaState.FETCHING else ReplicaState.TRUNCATING
       new PartitionFetchState(initialFetchState.topicId.toJava, initialFetchState.initOffset, Optional.empty(), initialFetchState.currentLeaderEpoch,
         state, lastFetchedEpoch, initialFetchState.mirrorName, initialFetchState.mirrorLeaderEpoch)
     } else {
+      logger.info("!!! entering4:" + tp + ";;" + initialFetchState)
       new PartitionFetchState(initialFetchState.topicId.toJava, initialFetchState.initOffset, Optional.empty(), initialFetchState.currentLeaderEpoch,
         ReplicaState.TRUNCATING, Optional.empty(), initialFetchState.mirrorName, initialFetchState.mirrorLeaderEpoch)
     }
