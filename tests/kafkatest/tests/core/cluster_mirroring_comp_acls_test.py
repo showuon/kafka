@@ -85,6 +85,7 @@ class ClusterMirroringCompAclsTest(MirrorUtils, Test):
             self.zk.stop()
 
     def setup_source(self, source_version, metadata_quorum):
+        # Separate client node with matching CLI version for the older source cluster.
         self.source_client = ClientService(self.test_context, version=source_version)
         self.source_client.start()
         self.source_client_node = self.source_client.nodes[0]
@@ -119,6 +120,7 @@ class ClusterMirroringCompAclsTest(MirrorUtils, Test):
         self.source_client.setup_security(self.source_kafka.security_config)
 
     def setup_dest(self):
+        # Separate client node with DEV_BRANCH CLI for the destination cluster.
         self.dest_client = ClientService(self.test_context)
         self.dest_client.start()
         self.dest_client_node = self.dest_client.nodes[0]

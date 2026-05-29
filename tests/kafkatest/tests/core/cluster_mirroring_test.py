@@ -34,6 +34,7 @@ class ClusterMirroringTest(MirrorUtils, Test):
     def __init__(self, test_context):
         """:type test_context: ducktape.tests.test.TestContext"""
         super(ClusterMirroringTest, self).__init__(test_context)
+        # Single client node shared by both clusters (same DEV_BRANCH version).
         self.client = ClientService(test_context)
         server_props = [
             ["auto.create.topics.enable", "false"],
