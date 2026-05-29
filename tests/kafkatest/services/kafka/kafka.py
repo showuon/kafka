@@ -992,7 +992,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         """
         return math.ceil((1 + self.num_nodes_controller_role) / 2)
 
-    def stop_node(self, node, clean_shutdown=True, timeout_sec=60):
+    def stop_node(self, node, clean_shutdown=True, timeout_sec=20):
         pids = self.pids(node)
         cluster_has_combined_controllers = self.quorum_info.has_brokers and self.quorum_info.has_controllers
         force_sigkill_due_to_too_few_combined_controllers =\
