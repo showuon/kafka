@@ -684,6 +684,7 @@ class ClusterMirroringTest(MirrorUtils, Test):
             (self.source_kafka, src1), (self.dest_kafka, dst0),
             (self.source_kafka, src0), (self.dest_kafka, dst1),
         ]:
+            self.logger.info("restarting %s" % node.name)
             kafka.restart_node(node)
 
         self.logger.info("Send more data and wait for all mirrors to catch up")
