@@ -144,6 +144,7 @@ public class MetadataBatchLoader {
             // 2) this is not the first batch since last emitting a delta
             if (transactionState == TransactionState.STARTED_TRANSACTION && (indexWithinBatch > 0 || numBatches > 0)) {
                 // Accumulated delta is aligned on batch boundaries iff the BeginTransactionRecord is the first record in a batch
+                log.info("!!! loadBatch:" + lastOffset);
                 MetadataProvenance provenance = new MetadataProvenance(lastOffset, lastEpoch, lastContainedLogTimeMs, indexWithinBatch == 0);
                 LogDeltaManifest manifest = LogDeltaManifest.newBuilder()
                     .provenance(provenance)
@@ -181,6 +182,7 @@ public class MetadataBatchLoader {
      * flushed metadata will be passed to the {@link MetadataUpdater} configured for this class.
      */
     public void maybeFlushBatches(LeaderAndEpoch leaderAndEpoch, boolean isOffsetBatchAligned) {
+        log.info("!!! maybeFlushBatches:" + lastOffset);
         MetadataProvenance provenance = new MetadataProvenance(lastOffset, lastEpoch, lastContainedLogTimeMs, isOffsetBatchAligned);
         LogDeltaManifest manifest = LogDeltaManifest.newBuilder()
             .provenance(provenance)
