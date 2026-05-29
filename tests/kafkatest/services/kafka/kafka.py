@@ -1589,7 +1589,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
             if after_each_broker_restart is not None:
                 after_each_broker_restart(*args)
 
-    def restart_node(self, node, clean_shutdown=True, timeout_sec=60):
+    def restart_node(self, node, clean_shutdown=True, timeout_sec=20):
         """Restart the given node."""
         # ensure we wait for the broker to start by setting concurrent start to False for the invocation of start_node()
         orig_concurrent_start = self.concurrent_start
