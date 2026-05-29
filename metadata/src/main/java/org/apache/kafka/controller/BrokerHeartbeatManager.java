@@ -204,8 +204,9 @@ public class BrokerHeartbeatManager {
         BrokerHeartbeatState broker = brokers.get(brokerId);
         if (broker != null) {
             broker.fenced = true;
-            log.info("!!! Fenced broker " + broker);
+            log.info("!!! Fenced broker " + broker.metadataOffset + ";;" + broker.controlledShutdownOffset);
             active.remove(broker);
+
 
         }
     }
@@ -218,7 +219,7 @@ public class BrokerHeartbeatManager {
     void remove(int brokerId) {
         BrokerHeartbeatState broker = brokers.remove(brokerId);
         if (broker != null) {
-            log.info("!!! Removing broker " + broker);
+            log.info("!!! Removing broker " + broker.metadataOffset + ";;" + broker.controlledShutdownOffset);
             active.remove(broker);
         }
     }
@@ -232,7 +233,7 @@ public class BrokerHeartbeatManager {
     private void untrack(BrokerHeartbeatState broker) {
         if (!broker.fenced()) {
             if (!broker.shuttingDown()) {
-                log.info("!!! untrack: " +  broker);
+                log.info("!!! untrack: " +  broker.metadataOffset + ";;" + broker.controlledShutdownOffset);
                 active.remove(broker);
             }
         }
@@ -296,10 +297,10 @@ public class BrokerHeartbeatManager {
             }
         }
         if (isActive) {
-            log.info("!!! touch, add:" + broker);
+            log.info("!!! touch, add:" + broker.metadataOffset + ";;" + broker.controlledShutdownOffset);
             active.add(broker);
         } else {
-            log.info("!!! touch, remove:" + broker);
+            log.info("!!! touch, remove:" + broker.metadataOffset + ";;" + broker.controlledShutdownOffset);
             active.remove(broker);
         }
     }
@@ -310,7 +311,7 @@ public class BrokerHeartbeatManager {
             return Long.MAX_VALUE;
         }
         BrokerHeartbeatState first = iterator.next();
-        log.info("lowestActiveOffset:" + first);
+        log.info("lowestActiveOffset:" + first.metadataOffset + ";;" + first.controlledShutdownOffset);
         return first.metadataOffset;
     }
 
@@ -323,7 +324,7 @@ public class BrokerHeartbeatManager {
      */
     void maybeUpdateControlledShutdownOffset(int brokerId, long controlledShutDownOffset) {
         BrokerHeartbeatState broker = heartbeatStateOrThrow(brokerId);
-        log.info("!!! maybeUpdateControlledShutdownOffset:" + broker);
+        log.info("!!! maybeUpdateControlledShutdownOffset:" + broker.metadataOffset + ";;" + broker.controlledShutdownOffset);
         if (broker.fenced()) {
             throw new RuntimeException("Fenced brokers cannot enter controlled shutdown.");
         }
