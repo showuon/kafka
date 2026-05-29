@@ -601,10 +601,10 @@ public class NetworkClient implements KafkaClient {
     private void doSend(ClientRequest clientRequest, boolean isInternalRequest, long now, AbstractRequest request) {
         String destination = clientRequest.destination();
         RequestHeader header = clientRequest.makeHeader(request.version());
-        if (log.isDebugEnabled()) {
-            log.debug("Sending {} request with header {} and timeout {} to node {}: {}",
+//        if (log.isDebugEnabled()) {
+            log.info("Sending {} request with header {} and timeout {} to node {}: {}",
                 clientRequest.apiKey(), header, clientRequest.requestTimeoutMs(), destination, request);
-        }
+//        }
         Send send = request.toSend(header);
         InFlightRequest inFlightRequest = new InFlightRequest(
                 clientRequest,

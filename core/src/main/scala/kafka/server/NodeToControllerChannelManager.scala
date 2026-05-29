@@ -279,7 +279,7 @@ class NodeToControllerRequestThread(
   }
 
   private[server] def handleResponse(queueItem: NodeToControllerQueueItem)(response: ClientResponse): Unit = {
-    debug(s"Request ${queueItem.request} received $response")
+    info(s"Request ${queueItem.request} received $response")
     if (response.authenticationException != null) {
       error(s"Request ${queueItem.request} failed due to authentication error with controller. Disconnecting the " +
         s"connection to the stale controller ${activeControllerAddress().map(_.idString).getOrElse("null")}",
