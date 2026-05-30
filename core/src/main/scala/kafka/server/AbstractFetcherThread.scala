@@ -249,6 +249,7 @@ abstract class AbstractFetcherThread(name: String,
     val endOffsets = leader.fetchEpochEndOffsets(latestEpochsForPartitions.asJava)
     // Ensure we hold a lock during truncation
 
+    val partitionsNeedsRefreshMetadata = new util.HashSet[TopicPartition]()
     inLock(partitionMapLock) {
       //Check no leadership and no leader epoch changes happened whilst we were unlocked, fetching epochs
 
@@ -263,8 +264,16 @@ abstract class AbstractFetcherThread(name: String,
       }
 
       val result = maybeTruncateToEpochEndOffsets(epochEndOffsets, latestEpochsForPartitions)
+      partitionsNeedsRefreshMetadata.addAll(result.partitionsNeedsRefreshMetadata())
       handlePartitionsWithErrors(result.partitionsWithError.asScala, "truncateToEpochEndOffsets")
       updateFetchOffsetAndMaybeMarkTruncationComplete(result.result)
+    }
+    // Refresh source metadata out of the partitionMapLock since we will need to acquire MirrorFetcherThread lock and
+    // cause potential deadlock
+    if (!partitionsNeedsRefreshMetadata.isEmpty) {
+      info("refreshing source metadata for " + partitionsNeedsRefreshMetadata)
+      removeFetcherForPartitions(partitionsNeedsRefreshMetadata.asScala)
+      refreshSourceClusterMetadata(partitionsNeedsRefreshMetadata.asScala)
     }
   }
 
@@ -411,12 +420,7 @@ abstract class AbstractFetcherThread(name: String,
       }
     }
 
-    if (partitionsNeedsRefreshMetadata.nonEmpty) {
-      info("refreshing source metadata for " + partitionsNeedsRefreshMetadata)
-      removeFetcherForPartitions(partitionsNeedsRefreshMetadata)
-      refreshSourceClusterMetadata(partitionsNeedsRefreshMetadata)
-    }
-    new ResultWithPartitions(fetchOffsets, partitionsWithError.asJava)
+    new ResultWithPartitions(fetchOffsets, partitionsWithError.asJava, partitionsNeedsRefreshMetadata.asJava)
   }
 
   /**
