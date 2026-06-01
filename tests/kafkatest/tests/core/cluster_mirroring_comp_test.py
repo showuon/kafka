@@ -263,7 +263,7 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
             err_msg="Failed to start mirror topics",
         )
         MirrorUtils.wait_mirror_state(
-            self.logger, self.dest_kafka, self.client_node, mirror_name, "MIRRORING", [topic],
+            self.logger, self.dest_kafka, self.dest_client_node, mirror_name, "MIRRORING", [topic],
             err_msg="Mirror did not reach MIRRORING state",
         )
 
@@ -287,4 +287,4 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
 
         self.logger.info("Failover: stop mirror so destination topic becomes writable")
         self.dest_kafka.stop_cluster_mirror_topics(self.dest_client_node, mirror_name, topic)
-        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.client_node, mirror_name, "STOPPED", [topic])
+        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.dest_client_node, mirror_name, "STOPPED", [topic])
