@@ -244,8 +244,8 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
         self.source_kafka.restart_cluster(clean_shutdown=True)
 
         self.logger.info("Send 1 message via source broker 0")
-        self.produce_records(self.source_kafka, topic, 1, self.source_client_node,
-                             bootstrap_servers=self.broker_bootstrap(src_broker0))
+        MirrorUtils.produce_records(self.logger, self.source_kafka, topic, 1, self.source_client_node,
+                             bootstrap_servers=MirrorUtils.broker_bootstrap(src_broker0))
 
         self.logger.info("Start cluster mirror on destination")
         mirror_cfg = MirrorConfig(self.source_kafka.bootstrap_servers())
@@ -262,8 +262,8 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
             timeout_sec=60, backoff_sec=2,
             err_msg="Failed to start mirror topics",
         )
-        self.wait_mirror_state(
-            self.dest_kafka, mirror_name, "MIRRORING", [topic],
+        MirrorUtils.wait_mirror_state(
+            self.logger, self.dest_kafka, self.dest_client_node, mirror_name, "MIRRORING", [topic],
             err_msg="Mirror did not reach MIRRORING state",
         )
 
@@ -271,20 +271,20 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
         self.source_kafka.stop_node(src_broker0)
 
         self.logger.info("Send 1 message via source broker 1")
-        self.produce_records(self.source_kafka, topic, 1, self.source_client_node,
-                             bootstrap_servers=self.broker_bootstrap(src_broker1))
-        self.wait_for_log_convergence(self.source_kafka, self.dest_kafka, topics)
+        MirrorUtils.produce_records(self.logger, self.source_kafka, topic, 1, self.source_client_node,
+                             bootstrap_servers=MirrorUtils.broker_bootstrap(src_broker1))
+        MirrorUtils.wait_for_log_convergence(self.logger, self.source_kafka, self.dest_kafka, topics)
 
         self.logger.info("ULE 1: stop broker 1, start broker 0 (stale), elect it as leader")
         self.source_kafka.stop_node(src_broker1)
         self.source_kafka.start_node(src_broker0)
 
         self.logger.info("Send 2 messages via source broker 0")
-        self.produce_records(self.source_kafka, topic, 2, self.source_client_node,
-                             bootstrap_servers=self.broker_bootstrap(src_broker0))
+        MirrorUtils.produce_records(self.logger, self.source_kafka, topic, 2, self.source_client_node,
+                             bootstrap_servers=MirrorUtils.broker_bootstrap(src_broker0))
 
-        self.wait_for_log_convergence(self.source_kafka, self.dest_kafka, topics)
+        MirrorUtils.wait_for_log_convergence(self.logger, self.source_kafka, self.dest_kafka, topics)
 
         self.logger.info("Failover: stop mirror so destination topic becomes writable")
         self.dest_kafka.stop_cluster_mirror_topics(self.dest_client_node, mirror_name, topic)
-        self.wait_mirror_state(self.dest_kafka, mirror_name, "STOPPED", [topic])
+        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.dest_client_node, mirror_name, "STOPPED", [topic])

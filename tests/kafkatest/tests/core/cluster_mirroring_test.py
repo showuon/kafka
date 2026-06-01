@@ -123,7 +123,6 @@ class ClusterMirroringTest(MirrorUtils, Test):
         client_node.account.ssh(
             "pkill -SIGKILL -f '%s' || true" % pattern, allow_fail=True)
 
-
     @staticmethod
     def broker_bootstrap(node):
         """Return bootstrap server address for a single broker node."""
