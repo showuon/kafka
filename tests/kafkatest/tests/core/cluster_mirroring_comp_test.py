@@ -262,8 +262,8 @@ class ClusterMirroringCompPlainTest(MirrorUtils, Test):
             timeout_sec=60, backoff_sec=2,
             err_msg="Failed to start mirror topics",
         )
-        self.wait_mirror_state(
-            self.dest_kafka, mirror_name, "MIRRORING", [topic],
+        MirrorUtils.wait_mirror_state(
+            self.logger, self.dest_kafka, mirror_name, "MIRRORING", [topic],
             err_msg="Mirror did not reach MIRRORING state",
         )
 
