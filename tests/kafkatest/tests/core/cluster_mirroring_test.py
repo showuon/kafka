@@ -123,12 +123,6 @@ class ClusterMirroringTest(MirrorUtils, Test):
         client_node.account.ssh(
             "pkill -SIGKILL -f '%s' || true" % pattern, allow_fail=True)
 
-
-    @staticmethod
-    def broker_bootstrap(node):
-        """Return bootstrap server address for a single broker node."""
-        return "%s:9092" % node.account.hostname
-
     @staticmethod
     def consume_share_records(logger, kafka, client_node, topic, group,
                               max_messages=None, timeout_ms=30000,
