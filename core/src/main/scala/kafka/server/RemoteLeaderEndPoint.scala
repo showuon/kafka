@@ -167,7 +167,6 @@ class RemoteLeaderEndPoint(logPrefix: String,
       topic.partitions.add(epochData)
     }
 
-
     val epochRequest = if (isClusterMirror)
       OffsetsForLeaderEpochRequest.Builder.forMirrorConsumer(topics)
     else

@@ -18,7 +18,6 @@
 package kafka.server
 
 import com.yammer.metrics.core.Meter
-import kafka.server.mirror.MirrorFetcherThread
 import kafka.utils.CoreUtils.inLock
 import kafka.utils.Logging
 import org.apache.kafka.common.errors._
@@ -122,6 +121,10 @@ abstract class AbstractFetcherThread(name: String,
 
   protected def handleMirrorLeaderEpochExceeded(mirrorName: String, topicPartition: TopicPartition): Unit = {}
 
+  protected def leaderEpochFromSource(tp: TopicPartition): Option[Int] = {
+    Option.empty
+  }
+
   override def shutdown(): Unit = {
     initiateShutdown()
     inLock(partitionMapLock) {
@@ -191,10 +194,10 @@ abstract class AbstractFetcherThread(name: String,
         latestEpoch(tp).toScala match {
           case Some(epoch) =>
             // use the leaderEpoch from the source cluster metadata when mirroring
-            val currentLeaderEpoch = if (!this.isInstanceOf[MirrorFetcherThread])
+            val currentLeaderEpoch = if (mirrorName.isBlank)
               state.currentLeaderEpoch
             else
-              this.asInstanceOf[MirrorFetcherThread].leaderEpochInSource(tp)
+              leaderEpochFromSource(tp).getOrElse(state.currentLeaderEpoch())
             partitionsWithEpochs += tp -> new EpochData()
               .setPartition(tp.partition)
               .setCurrentLeaderEpoch(currentLeaderEpoch)
@@ -237,13 +240,12 @@ abstract class AbstractFetcherThread(name: String,
   }
 
   /**
-   * - Build a leader epoch fetch based on partitions that are in the Truncating phase
-   * - Send OffsetsForLeaderEpochRequest, retrieving the latest offset for each partition's
-   * leader epoch. This is the offset the follower should truncate to ensure
-   * accurate log replication.
-   * - Finally truncate the logs for partitions in the truncating phase and mark the
-   * truncation complete. Do this within a lock to ensure no leadership changes can
-   * occur during truncation.
+   * Send OffsetsForLeaderEpochRequest for partitions in the Truncating phase to retrieve
+   * the latest offset for each partition's leader epoch that they should truncate to,
+   * then perform the truncation and mark the truncation complete under lock.
+   *
+   * for mirror threads the currentLeaderEpoch provided might be a fenced leader epoch, which means the source leadership
+   * changed in-flight and the partition will retry on the next doWork cycle.
    */
   private def truncateToEpochEndOffsets(latestEpochsForPartitions: Map[TopicPartition, EpochData]): Unit = {
     val endOffsets = leader.fetchEpochEndOffsets(latestEpochsForPartitions.asJava)
@@ -252,7 +254,6 @@ abstract class AbstractFetcherThread(name: String,
     val partitionsNeedsRefreshMetadata = new util.HashSet[TopicPartition]()
     inLock(partitionMapLock) {
       //Check no leadership and no leader epoch changes happened whilst we were unlocked, fetching epochs
-
       val epochEndOffsets = endOffsets.asScala.filter { case (tp, _) =>
         val curPartitionState = partitionStates.stateValue(tp)
         val partitionEpochRequest = latestEpochsForPartitions.getOrElse(tp, {
@@ -268,10 +269,11 @@ abstract class AbstractFetcherThread(name: String,
       handlePartitionsWithErrors(result.partitionsWithError.asScala, "truncateToEpochEndOffsets")
       updateFetchOffsetAndMaybeMarkTruncationComplete(result.result)
     }
-    // Refresh source metadata out of the partitionMapLock since we will need to acquire MirrorFetcherThread lock and
-    // cause potential deadlock
+    // Log truncation has completed, so it's safe to release the lock for source metadata refresh.
+    // We will need to acquire both MirrorFetcherThread lock and partitionMapLock when removing fetchers, which might cause potential deadlock
+    // if we keep the partitionMapLock here.
     if (!partitionsNeedsRefreshMetadata.isEmpty) {
-      info("refreshing source metadata for " + partitionsNeedsRefreshMetadata)
+      info(s"refreshing source metadata for mirror name $mirrorName with partitions: $partitionsNeedsRefreshMetadata")
       removeFetcherForPartitions(partitionsNeedsRefreshMetadata.asScala)
       refreshSourceClusterMetadata(partitionsNeedsRefreshMetadata.asScala)
     }
@@ -717,6 +719,8 @@ abstract class AbstractFetcherThread(name: String,
       new PartitionFetchState(initialFetchState.topicId.toJava, initialFetchState.initOffset, Optional.empty(), initialFetchState.currentLeaderEpoch,
         state, lastFetchedEpoch, initialFetchState.mirrorName, initialFetchState.mirrorLeaderEpoch)
     } else {
+      // Mirror threads always skip truncation-on-fetch and use the explicit OffsetsForLeaderEpochRequest
+      // path because older source brokers may not include diverging epoch info in fetch responses.
       new PartitionFetchState(initialFetchState.topicId.toJava, initialFetchState.initOffset, Optional.empty(), initialFetchState.currentLeaderEpoch,
         ReplicaState.TRUNCATING, Optional.empty(), initialFetchState.mirrorName, initialFetchState.mirrorLeaderEpoch)
     }
