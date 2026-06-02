@@ -23,6 +23,7 @@ import kafka.server.ReplicaManager;
 
 import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.AlterConfigOp;
 import org.apache.kafka.clients.admin.ClusterMirrorDescription;
 import org.apache.kafka.clients.admin.Config;
@@ -34,6 +35,7 @@ import org.apache.kafka.clients.admin.ListGroupsOptions;
 import org.apache.kafka.clients.admin.ListShareGroupOffsetsSpec;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.Endpoint;
 import org.apache.kafka.common.GroupState;
 import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.Node;
@@ -41,7 +43,10 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.acl.AclBinding;
 import org.apache.kafka.common.acl.AclBindingFilter;
+import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.config.SaslConfigs;
+import org.apache.kafka.common.config.SslConfigs;
 import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.errors.SecurityDisabledException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
@@ -58,6 +63,8 @@ import org.apache.kafka.common.message.ReadMirrorStatesResponseData;
 import org.apache.kafka.common.message.StartMirrorTopicsRequestData;
 import org.apache.kafka.common.message.WriteMirrorStatesRequestData;
 import org.apache.kafka.common.metrics.Metrics;
+import org.apache.kafka.common.network.ChannelBuilders;
+import org.apache.kafka.common.network.ListenerName;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.BumpLeaderEpochsRequest;
 import org.apache.kafka.common.requests.CreateAclsRequest;
@@ -74,6 +81,7 @@ import org.apache.kafka.common.requests.StopMirrorTopicsRequest;
 import org.apache.kafka.common.requests.WriteMirrorStatesRequest;
 import org.apache.kafka.common.requests.WriteMirrorStatesResponse;
 import org.apache.kafka.common.resource.ResourceType;
+import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorRecordKey;
@@ -282,9 +290,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     private Admin getOrCreateDestAdmin() {
         if (dstAdmin == null) {
-            var endpoint = brokerConfig.effectiveAdvertisedBrokerListeners().head();
-            Properties props = new Properties();
-            props.put(BOOTSTRAP_SERVERS_CONFIG, endpoint.host() + ":" + endpoint.port());
+            Properties props = buildDestAdminClientProps(brokerConfig);
             dstAdmin = Admin.create(props);
         }
         return dstAdmin;
@@ -1582,6 +1588,52 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         });
         data.setTopics(topicResults);
         responseCallback.accept(new ReadMirrorStatesResponse(data));
+    }
+
+    // Visible for testing
+    static Properties buildDestAdminClientProps(KafkaConfig brokerConfig) {
+        ListenerName mirrorAdminListener = brokerConfig.mirrorAdminListenerName();
+        Endpoint endpoint = (Endpoint) brokerConfig.effectiveAdvertisedBrokerListeners()
+                .filter(e -> e.listener().equals(mirrorAdminListener.value()))
+                .head();
+
+        Properties props = new Properties();
+        props.put(BOOTSTRAP_SERVERS_CONFIG, endpoint.host() + ":" + endpoint.port());
+
+        SecurityProtocol securityProtocol = endpoint.securityProtocol();
+        props.put(AdminClientConfig.SECURITY_PROTOCOL_CONFIG, securityProtocol.name);
+
+        Map<String, ?> configs = ChannelBuilders.channelBuilderConfigs(brokerConfig, mirrorAdminListener);
+
+        // Get all the security configs
+        Set<String> securityConfigs = new HashSet<>();
+
+        ConfigDef securityConfigDef = new ConfigDef();
+        SaslConfigs.addClientSaslSupport(securityConfigDef);
+        SslConfigs.addClientSslSupport(securityConfigDef);
+        securityConfigs.addAll(securityConfigDef.configKeys().keySet());
+
+        String mirrorAdminSaslMechanism = brokerConfig.saslMechanismMirrorAdminProtocol();
+        String saslMechanismConfigPrefix = mirrorAdminListener.saslMechanismConfigPrefix(mirrorAdminSaslMechanism);
+        Map<String, ?> saslMechanismConfigs = brokerConfig.originalsWithPrefix(saslMechanismConfigPrefix, true);
+
+        securityConfigs.forEach(key -> {
+            if (saslMechanismConfigs.containsKey(key)) {
+                props.put(key, saslMechanismConfigs.get(key));
+            } else if (configs.containsKey(key)) {
+                Object value = configs.get(key);
+                if (value == null) {
+                    return;
+                }
+                props.put(key, value);
+            }
+        });
+
+        if (securityProtocol == SecurityProtocol.SASL_SSL || securityProtocol == SecurityProtocol.SASL_PLAINTEXT) {
+            props.put(SaslConfigs.SASL_MECHANISM, mirrorAdminSaslMechanism);
+        }
+
+        return props;
     }
 
     /** Updates cached source leader for a specific partition. */
