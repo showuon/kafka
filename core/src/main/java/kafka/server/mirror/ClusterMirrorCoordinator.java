@@ -87,7 +87,7 @@ import static org.apache.kafka.common.utils.Utils.require;
 
 /**
  * Coordinates partition-level state transitions for Cluster Mirroring.
- * Persists state and last mirrored offsets in the {@code __cluster_mirror_state} topic,
+ * Persists state and last mirrored offsets in the {@code __mirror_state} topic,
  * distributed across brokers by hashing the mirror record key to a partition.
  */
 public class ClusterMirrorCoordinator {
