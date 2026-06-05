@@ -46,7 +46,6 @@ import org.apache.kafka.common.acl.AclBindingFilter;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.config.SaslConfigs;
-import org.apache.kafka.common.config.SslConfigs;
 import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.errors.SecurityDisabledException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
@@ -1606,14 +1605,16 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         Map<String, ?> configs = ChannelBuilders.channelBuilderConfigs(brokerConfig, mirrorAdminListener);
 
         // Get all the security configs
-        Set<String> securityConfigs = new HashSet<>();
-
-        ConfigDef securityConfigDef = new ConfigDef();
-        SaslConfigs.addClientSaslSupport(securityConfigDef);
-        SslConfigs.addClientSslSupport(securityConfigDef);
-        securityConfigs.addAll(securityConfigDef.configKeys().keySet());
+        ConfigDef securityConfigDef = new ConfigDef().withClientSaslSupport().withClientSslSupport();
+        Set<String> securityConfigs = new HashSet<>(securityConfigDef.configKeys().keySet());
 
         String mirrorAdminSaslMechanism = brokerConfig.saslMechanismMirrorAdminProtocol();
+        if (securityProtocol == SecurityProtocol.SASL_SSL || securityProtocol == SecurityProtocol.SASL_PLAINTEXT) {
+            props.put(SaslConfigs.SASL_MECHANISM, mirrorAdminSaslMechanism);
+            // To avoid overwriting it below
+            configs.remove(SaslConfigs.SASL_MECHANISM);
+        }
+
         String saslMechanismConfigPrefix = mirrorAdminListener.saslMechanismConfigPrefix(mirrorAdminSaslMechanism);
         Map<String, ?> saslMechanismConfigs = brokerConfig.originalsWithPrefix(saslMechanismConfigPrefix, true);
 
@@ -1628,10 +1629,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 props.put(key, value);
             }
         });
-
-        if (securityProtocol == SecurityProtocol.SASL_SSL || securityProtocol == SecurityProtocol.SASL_PLAINTEXT) {
-            props.put(SaslConfigs.SASL_MECHANISM, mirrorAdminSaslMechanism);
-        }
 
         return props;
     }
