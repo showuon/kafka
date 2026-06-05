@@ -832,14 +832,21 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     /**
-     * Catches partitions that onMetadataUpdate could not start because their source leader
-     * was not yet known. This happens when the source cluster has not elected a leader for
-     * a partition at the time processTopicMetadata first runs: the partition is skipped in
-     * sourceLeaders, but the destination topic is still created, triggering onMetadataUpdate
-     * which finds no source leader and leaves the partition in UNKNOWN state. Since
-     * onMetadataUpdate only reacts to destination metadata changes, it never retries on its
-     * own. This method runs after each source metadata sync and transitions any UNKNOWN
-     * partitions whose source leader has since been discovered.
+     * Transitions partitions stuck in UNKNOWN because their source leader was not yet known
+     * when onMetadataUpdate first ran.
+     *
+     * The race: processTopicMetadata creates a mirror topic on the destination, which
+     * triggers onMetadataUpdate. That callback needs the source leader in sourceLeaders to
+     * transition the partition to LOG_TRUNCATION. If the source has not elected a leader yet
+     * (or the Admin describeTopics response arrived without one), the partition stays in
+     * UNKNOWN. Since onMetadataUpdate only fires on destination metadata changes, it will
+     * not retry on its own.
+     *
+     * This is more likely against older source clusters (e.g. Kafka 2.1 with ZK) where
+     * Admin.describeTopics goes through three round trips before returning topic metadata:
+     * describeCluster (node discovery), DescribeTopicPartitions (rejected with
+     * UnsupportedVersionException), then MetadataRequest (fallback). The extra latency
+     * widens the window in which the source leader is not yet known.
      */
     private void maybeStartMissedPartitions(String mirrorName) {
         var partitionLeaders = sourceLeaders.get(mirrorName);
