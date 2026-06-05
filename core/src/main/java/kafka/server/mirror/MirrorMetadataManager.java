@@ -747,6 +747,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
         maybeScalePartitions(createPartitionsTopics);
         maybeStopDeletedTopics(mirrorName, topicInfos);
+        maybeStartMissedPartitions(mirrorName);
     }
 
     /**
@@ -826,6 +827,38 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                         .filter(key -> key.mirrorName().equals(mirrorName) && key.topic().equals(name))
                         .forEach(key -> stateTransitioner.ifPresent(t ->
                                 t.transitionTo(mirrorName, new TopicPartition(key.topic(), key.partition()), MirrorPartitionState.STOPPING)));
+            }
+        });
+    }
+
+    /**
+     * Catches partitions that onMetadataUpdate could not start because their source leader
+     * was not yet known. This happens when the source cluster has not elected a leader for
+     * a partition at the time processTopicMetadata first runs: the partition is skipped in
+     * sourceLeaders, but the destination topic is still created, triggering onMetadataUpdate
+     * which finds no source leader and leaves the partition in UNKNOWN state. Since
+     * onMetadataUpdate only reacts to destination metadata changes, it never retries on its
+     * own. This method runs after each source metadata sync and transitions any UNKNOWN
+     * partitions whose source leader has since been discovered.
+     */
+    private void maybeStartMissedPartitions(String mirrorName) {
+        var partitionLeaders = sourceLeaders.get(mirrorName);
+        if (partitionLeaders == null) {
+            return;
+        }
+        partitionLeaders.keySet().forEach(tp -> {
+            ClusterMirrorUtils.PartitionKey key = new ClusterMirrorUtils.PartitionKey(mirrorName, tp.topic(), tp.partition());
+            if (partitionStates.getOrDefault(key, MirrorPartitionState.UNKNOWN) != MirrorPartitionState.UNKNOWN) {
+                return;
+            }
+            TopicImage topicImage = metadataImage.topics().getTopic(tp.topic());
+            if (topicImage == null) {
+                return;
+            }
+            var partition = topicImage.partitions().get(tp.partition());
+            if (partition != null && partition.leader == nodeId) {
+                log.info("Source leader for {} discovered after initial onMetadataUpdate, transitioning to LOG_TRUNCATION", tp);
+                stateTransitioner.ifPresent(t -> t.transitionTo(mirrorName, tp, MirrorPartitionState.LOG_TRUNCATION));
             }
         });
     }
@@ -1801,7 +1834,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             collectEpochBumpTargets(ts, topicPartitions, leaderEpochFromMetadata);
         }
         if (!leaderEpochFromMetadata.isEmpty()) {
-            log.info("Bumping leader epoch for partitions {} to {}", topicPartitions, leaderEpochFromMetadata);
+            log.info("Bumping leader epoch for partitions {}", leaderEpochFromMetadata);
         }
         return leaderEpochFromMetadata;
     }
