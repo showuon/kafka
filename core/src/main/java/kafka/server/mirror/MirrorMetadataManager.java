@@ -160,7 +160,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private final Metrics metrics;
     private final Time time;
 
-    private final Random random = new Random();
     private volatile MetadataImage metadataImage = MetadataImage.EMPTY;
 
     private volatile MirrorStateSender mirrorStateSender;
@@ -168,7 +167,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private volatile Admin dstAdmin;
 
     private final Map<String, Uuid> sourceClusterIds = new ConcurrentHashMap<>();
-    private final Map<String, List<MirrorSourceSender>> sourceSenders = new ConcurrentHashMap<>();
+    private final Map<String, Set<Node>> sourceNodes = new ConcurrentHashMap<>();
     private final Map<String, Map<TopicPartition, ClusterMirrorUtils.LeaderInfo>> sourceLeaders = new ConcurrentHashMap<>();
     private final Map<ClusterMirrorUtils.PartitionKey, MirrorPartitionState> partitionStates = new ConcurrentHashMap<>();
     private final Map<ClusterMirrorUtils.PartitionKey, MirrorPartitionState> partitionPreviousStates = new ConcurrentHashMap<>();
@@ -415,12 +414,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         partitionStateCounts.clear();
         lastMirrorEpochs.clear();
         sourceClusterIds.clear();
-
-        // snapshot and clear first, then close to avoid use-after-close races
-        Map<String, List<MirrorSourceSender>> snapshot = new HashMap<>(sourceSenders);
-        sourceSenders.clear();
-        snapshot.values().forEach(senders -> senders.forEach(MirrorSourceSender::close));
-
+        sourceNodes.clear();
         sourceLeaders.clear();
         pendingLeaderEpochBumps.clear();
         pendingPartitionStates.clear();
@@ -470,12 +464,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
                         if (connectionConfigChanged || mirrorDeleted) {
                             sourceLeaders.remove(mirrorName);
-                            List<MirrorSourceSender> senders = sourceSenders.remove(mirrorName);
-                            if (senders != null) {
-                                log.info("Mirror config changed for '{}'. Closing existing connections "
-                                        + "to trigger reconnection with updated configuration.", mirrorName);
-                                senders.forEach(MirrorSourceSender::close);
-                            }
                             Admin admin = srcAdmins.remove(mirrorName);
                             if (admin != null) {
                                 admin.close();
@@ -542,10 +530,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         }
 
         log.info("Syncing metadata for mirrors: {}", mirrors);
-        mirrors.forEach(this::ensureConnection);
 
         // Snapshot keyset to avoid ConcurrentModificationException
-        for (String mirrorName : Set.copyOf(sourceSenders.keySet())) {
+        for (String mirrorName : Set.copyOf(sourceNodes.keySet())) {
             try {
                 discoverSourceBrokers(mirrorName);
                 var topicsState = syncSourceTopicsState(mirrorName);
@@ -573,51 +560,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      */
     private void discoverSourceBrokers(String mirrorName) {
         Collection<Node> discoveredBrokers = describeSourceClusterNodes(mirrorName);
-        if (discoveredBrokers.isEmpty()) {
-            return;
-        }
-        List<MirrorSourceSender> currentSenders = sourceSenders.get(mirrorName);
-        if (currentSenders == null) {
-            return;
-        }
-
-        Set<String> currentEndpoints = currentSenders.stream()
-                .map(s -> s.brokerEndPoint().host() + ":" + s.brokerEndPoint().port())
-                .collect(Collectors.toSet());
-
-        List<Node> newBrokers = discoveredBrokers.stream()
-                .filter(n -> !currentEndpoints.contains(n.host() + ":" + n.port()))
-                .toList();
-
-        if (newBrokers.isEmpty()) {
-            return;
-        }
-
-        Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName));
-        ClusterMirrorConfig mirrorConfig = ClusterMirrorConfig.fromProperties(props);
-
-        List<MirrorSourceSender> addedSenders = new ArrayList<>();
-        for (Node broker : newBrokers) {
-            try {
-                BrokerEndPoint endpoint = new BrokerEndPoint(broker.id(), broker.host(), broker.port());
-                String clientId = "nodeId-" + nodeId + "-" + mirrorName + "-" + broker.host() + "-" + broker.port();
-                LogContext logContext = new LogContext("[" + MirrorMetadataManager.class.getSimpleName() + "Sender id=" + nodeId + " clientId=" + clientId + "] ");
-                addedSenders.add(ClusterMirrorUtils.createSender(endpoint, mirrorConfig, brokerConfig, metrics, time, clientId, logContext));
-            } catch (Exception e) {
-                log.warn("Failed to create sender for broker {} in mirror {}", broker, mirrorName, e);
-            }
-        }
-
-        if (addedSenders.isEmpty()) {
-            return;
-        }
-
-        List<MirrorSourceSender> merged = new ArrayList<>(currentSenders);
-        merged.addAll(addedSenders);
-        log.info("Adding {} discovered broker(s) to source senders for mirror {}: {}",
-                addedSenders.size(), mirrorName,
-                addedSenders.stream().map(s -> s.brokerEndPoint().toString()).collect(Collectors.joining(", ")));
-        sourceSenders.put(mirrorName, merged);
+        discoveredBrokers.forEach(node -> sourceNodes.computeIfAbsent(mirrorName, k -> ConcurrentHashMap.newKeySet()).add(node));
     }
 
     private Collection<Node> describeSourceClusterNodes(String mirrorName) {
@@ -880,7 +823,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         }
 
         log.info("Syncing coordinator metadata for mirror {}", mirrorName);
-        ensureConnection(mirrorName);
 
         try {
             ClusterMirrorConfig mirrorConfig = ClusterMirrorConfig.fromProperties(
@@ -1656,38 +1598,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         responseCallback.accept(new ReadMirrorStatesResponse(data));
     }
 
-    /** Creates initial source senders from bootstrap addresses if not already connected. */
-    private void ensureConnection(String mirrorName) {
-        if (sourceSenders.containsKey(mirrorName)) {
-            return;
-        }
-        Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName));
-        String bootstrapServers = Optional.ofNullable(props.get(BOOTSTRAP_SERVERS_CONFIG))
-                .map(Object::toString)
-                .orElseThrow(() -> new IllegalArgumentException("Remote bootstrap server not found in Cluster Mirror config: " + mirrorName));
-
-        log.info("Mirror config for '{}': {}", mirrorName, props);
-
-        var addresses = ClientUtils.parseAndValidateAddresses(Arrays.stream(bootstrapServers.split(",")).toList(), "use_all_dns_ips");
-        ClusterMirrorConfig mirrorConfig = ClusterMirrorConfig.fromProperties(props);
-        List<MirrorSourceSender> senders = new ArrayList<>();
-        for (var address : addresses) {
-            var brokerEndpoint = new BrokerEndPoint(random.nextInt(), address.getHostString(), address.getPort());
-            var logContext = new LogContext("[" + MirrorMetadataManager.class.getName() + " replicaId=" + nodeId + ", mirrorName=" + mirrorName + "] ");
-            senders.add(new MirrorSourceSender(
-                    brokerEndpoint,
-                    mirrorConfig,
-                    brokerConfig,
-                    metrics,
-                    time,
-                    brokerEndpoint.id(),
-                    "broker-" + nodeId + "-mirror-metadata-manager-" + mirrorName,
-                    logContext
-            ));
-        }
-        sourceSenders.put(mirrorName, senders);
-    }
-
     /** Updates cached source leader for a specific partition. */
     public void updateSourceLeader(String mirrorName, TopicPartition tp, ClusterMirrorUtils.LeaderInfo leader) {
         sourceLeaders.computeIfAbsent(mirrorName, k -> new ConcurrentHashMap<>()).put(tp, leader);
@@ -1702,21 +1612,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 return leader;
             }
         }
-
-        // No cached metadata. Fall back to the bootstrap server instead of blocking on a
-        // synchronous metadata refresh, which can stall the metadata event queue thread when
-        // the source broker is down. The periodic metadata refresh will populate the cache,
-        // and the fetcher thread will handle leader rediscovery via maybeCreateMirrorFetchers.
-        ensureConnection(mirrorName);
-        List<MirrorSourceSender> senders = sourceSenders.get(mirrorName);
-        if (senders != null && !senders.isEmpty()) {
-            log.info("No cached leader for mirror {} partition {}. Using one of the bootstrap server as initial target.", mirrorName, tp);
-            BrokerEndPoint ep = senders.get(random.nextInt(senders.size())).brokerEndPoint();
-            // set leaderEpoch to 0 if unknown to trigger source epoch discovery through fencing
-            return new ClusterMirrorUtils.LeaderInfo(new Node(ep.id(), ep.host(), ep.port()), 0);
-        }
-
-        throw new IllegalStateException("No source senders available for mirror " + mirrorName);
+        // No cached metadata. We throw exception and enter FAILED state and do the source cluster metadata refresh
+        throw new IllegalStateException("No source cluster metadata available for mirror " + mirrorName + " partition:" + tp);
     }
 
     // Atomic per-key update to keep partition state counts consistent
@@ -1759,7 +1656,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     public CompletableFuture<Void> scheduleBumpLeaderEpochs(String mirrorName, Set<TopicPartition> topicPartitions) {
         CompletableFuture<Void> future = new CompletableFuture<>();
         scheduler.scheduleOnce("bump-leader-epoch", () -> {
-            ensureConnection(mirrorName);
             discoverSourceBrokers(mirrorName);
             Optional<List<SourceTopicState>> topics = syncSourceTopicsState(mirrorName);
             maybeBumpLeaderEpochs(mirrorName, topics, topicPartitions)
