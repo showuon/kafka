@@ -591,6 +591,8 @@ class KafkaConfigTest {
   @Test
   def testMirrorAdminListenerNameExplicitlySet(): Unit = {
     val props = createDefaultConfig()
+    props.setProperty(SocketServerConfigs.LISTENERS_CONFIG, "PLAINTEXT://localhost:0,CONTROLLER://localhost:5000,MIRROR://localhost:5001")
+    props.setProperty(SocketServerConfigs.LISTENER_SECURITY_PROTOCOL_MAP_CONFIG, "MIRROR:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT")
     props.setProperty(ReplicationConfigs.MIRROR_ADMIN_LISTENER_NAME_CONFIG, "MIRROR")
     val config = KafkaConfig.fromProps(props)
     assertNotEquals(ListenerName.normalised("MIRROR"), config.interBrokerListenerName())
