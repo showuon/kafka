@@ -525,6 +525,10 @@ public class ConfigurationControlManager {
 
         replicationControl.getMirrorTopics().forEach(topicInfo -> {
             String topicName = topicInfo.name();
+            String curMirrorName = topicInfo.mirrorName();
+            if (topicName == null || !curMirrorName.equals(mirrorName))
+                return;
+
             if (excludePattern.matcher(topicName).matches()) {
                 records.add(new ApiMessageAndVersion(new MirrorTopicStateChangeRecord()
                     .setTopicId(topicInfo.topicId())
@@ -586,6 +590,7 @@ public class ConfigurationControlManager {
         Set<ReplicationControlManager.TopicControlInfo> topicControlInfos = replicationControl.getMirrorTopics();
         for (ReplicationControlManager.TopicControlInfo topicInfo: topicControlInfos) {
             String curMirrorName = topicInfo.mirrorName();
+            if (curMirrorName == null || curMirrorName.isBlank()) continue;
             int desiredMirrorState = topicInfo.mirrorState();
             if (curMirrorName.equals(mirrorName) && (desiredMirrorState == PAUSED || desiredMirrorState == MIRRORING)) {
                 data.setErrorCode(Errors.CLUSTER_MIRROR_NOT_EMPTY.code());
@@ -593,12 +598,13 @@ public class ConfigurationControlManager {
                         + topicInfo.name() + "'");
                 return ControllerResult.of(records, data);
             }
-        };
+        }
 
         // Clear stopped topic associations
         for (ReplicationControlManager.TopicControlInfo topicInfo: topicControlInfos) {
+            String curMirrorName = topicInfo.mirrorName();
             int desiredMirrorState = topicInfo.mirrorState();
-            if (desiredMirrorState == STOPPED) {
+            if (curMirrorName.equals(mirrorName) && desiredMirrorState == STOPPED) {
                 records.add(new ApiMessageAndVersion(
                     new MirrorTopicStateChangeRecord()
                         .setTopicId(topicInfo.topicId())

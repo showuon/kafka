@@ -21,10 +21,10 @@
   "flexibleVersions": "0+",
   "fields": [
     { "name": "TopicId", "type": "uuid", "versions": "0+",
-      "about": "The topic to remove. All associated partitions will be removed as well." },
-    { "name": "MirrorName", "type": "string", "versions": "0+",
+      "about": "The unique topic ID." },
+    { "name": "MirrorName", "type": "string", "versions": "0+", "entityType": "mirrorName",
       "about": "The cluster mirror name" },
     { "name": "DesiredState", "type": "int8", "versions": "0+",
-      "about": "The mirror topic desired state. 2 means the desired state is MIRRORING, 6 means stop, 4 means pause" }
+      "about": "The desired state for each mirror partition." }
   ]
 }

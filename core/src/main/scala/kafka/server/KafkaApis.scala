@@ -256,7 +256,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.STOP_MIRROR_TOPICS => handleStopMirrorTopics(request)
         case ApiKeys.PAUSE_MIRROR_TOPICS => handlePauseMirrorTopics(request)
         case ApiKeys.RESUME_MIRROR_TOPICS => handleResumeMirrorTopics(request)
-        case ApiKeys.DELETE_CLUSTER_MIRROR => handleDeleteMirror(request)
+        case ApiKeys.DELETE_CLUSTER_MIRROR => handleDeleteClusterMirror(request)
         case ApiKeys.LIST_CLUSTER_MIRRORS => handleListClusterMirrorsRequest(request)
         case ApiKeys.DESCRIBE_CLUSTER_MIRRORS => handleDescribeClusterMirrorsRequest(request)
         case ApiKeys.WRITE_MIRROR_STATES => handleWriteMirrorStates(request)
@@ -363,7 +363,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     forwardToController(request)
   }
 
-  def handleDeleteMirror(request: RequestChannel.Request): Unit = {
+  def handleDeleteClusterMirror(request: RequestChannel.Request): Unit = {
     if (!ClusterMirrorUtils.isClusterMirroringEnabled(apiVersionManager.features.finalizedFeatures)) {
       logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring delete mirror request")
       requestHelper.sendMaybeThrottle(request, new DeleteClusterMirrorResponse(new DeleteClusterMirrorResponseData().setErrorCode(Errors.UNSUPPORTED_VERSION.code)))

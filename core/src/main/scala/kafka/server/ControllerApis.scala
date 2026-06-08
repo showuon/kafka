@@ -136,13 +136,13 @@ class ControllerApis(
         case ApiKeys.ADD_RAFT_VOTER => handleAddRaftVoter(request)
         case ApiKeys.REMOVE_RAFT_VOTER => handleRemoveRaftVoter(request)
         case ApiKeys.UPDATE_RAFT_VOTER => handleUpdateRaftVoter(request)
-        case ApiKeys.CREATE_CLUSTER_MIRROR => handleCreateMirror(request)
+        case ApiKeys.CREATE_CLUSTER_MIRROR => handleCreateClusterMirror(request)
         case ApiKeys.START_MIRROR_TOPICS => handleStartMirrorTopics(request)
         case ApiKeys.STOP_MIRROR_TOPICS => handleStopMirrorTopics(request)
         case ApiKeys.BUMP_LEADER_EPOCHS => handleBumpLeaderEpoch(request)
         case ApiKeys.PAUSE_MIRROR_TOPICS => handlePauseMirrorTopics(request)
         case ApiKeys.RESUME_MIRROR_TOPICS => handleResumeMirrorTopics(request)
-        case ApiKeys.DELETE_CLUSTER_MIRROR => handleDeleteMirror(request)
+        case ApiKeys.DELETE_CLUSTER_MIRROR => handleDeleteClusterMirror(request)
         case _ => throw new ApiException(s"Unsupported ApiKey ${request.context.header.apiKey}")
       }
 
@@ -199,7 +199,7 @@ class ControllerApis(
     CompletableFuture.completedFuture[Unit](())
   }
 
-  def handleCreateMirror(request: RequestChannel.Request): CompletableFuture[Unit] = {
+  def handleCreateClusterMirror(request: RequestChannel.Request): CompletableFuture[Unit] = {
     val mirrorName = request.body[CreateClusterMirrorRequest].data().mirrorName()
     if (!authHelper.authorize(request.context, CREATE, CLUSTER_MIRROR, mirrorName))
       throw new ClusterMirrorAuthorizationException(s"Request $request needs CREATE permission on ClusterMirror:$mirrorName.")
@@ -393,7 +393,7 @@ class ControllerApis(
     CompletableFuture.completedFuture[Unit](())
   }
 
-  def handleDeleteMirror(request: RequestChannel.Request): CompletableFuture[Unit] = {
+  def handleDeleteClusterMirror(request: RequestChannel.Request): CompletableFuture[Unit] = {
     val deleteMirrorRequest = request.body[DeleteClusterMirrorRequest]
     val mirrorName = deleteMirrorRequest.data().mirrorName()
     if (!authHelper.authorize(request.context, ALTER, CLUSTER_MIRROR, mirrorName))

@@ -1420,11 +1420,15 @@ class Partition(val topicPartition: TopicPartition,
   }
 
   def getMirrorName(): Optional[String] = {
-    val topicImage = metadataCache.asInstanceOf[KRaftMetadataCache].currentImage().topics().getTopic(topic)
-    if (topicImage != null && topicImage.mirrorName() != null) {
-      Optional.of(topicImage.mirrorName())
-    } else {
-      Optional.empty()
+    metadataCache match {
+      case kraftMetadataCache: KRaftMetadataCache =>
+        val topicImage = kraftMetadataCache.currentImage().topics().getTopic(topic)
+        if (topicImage != null && topicImage.mirrorName() != null) {
+          Optional.of(topicImage.mirrorName())
+        } else {
+          Optional.empty()
+        }
+      case _ => Optional.empty()
     }
   }
 

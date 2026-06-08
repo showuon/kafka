@@ -18,6 +18,7 @@
 package org.apache.kafka.image;
 
 import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.metadata.MirrorTopicStateChangeRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.image.node.TopicImageNode;
 import org.apache.kafka.image.writer.ImageWriter;
@@ -36,7 +37,7 @@ import java.util.Map.Entry;
  */
 public record TopicImage(String name, Uuid id, String mirrorName, int clusterMirrorTopicChangeState, Map<Integer, PartitionRegistration> partitions) {
     public TopicImage(String name, Uuid id, Map<Integer, PartitionRegistration> partitions) {
-        this(name, id, null, -1, partitions);
+        this(name, id, "", -1, partitions);
     }
 
     public TopicImage {
@@ -47,6 +48,10 @@ public record TopicImage(String name, Uuid id, String mirrorName, int clusterMir
         writer.write(0, new TopicRecord().
             setName(name).
             setTopicId(id));
+        writer.write(0, new MirrorTopicStateChangeRecord().
+                setTopicId(id).
+                setMirrorName(mirrorName).
+                setDesiredState((byte) clusterMirrorTopicChangeState));
         for (Entry<Integer, PartitionRegistration> entry : partitions.entrySet()) {
             int partitionId = entry.getKey();
             PartitionRegistration partition = entry.getValue();
