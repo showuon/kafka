@@ -163,7 +163,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private volatile Admin dstAdmin;
 
     private final Map<String, Uuid> sourceClusterIds = new ConcurrentHashMap<>();
-    private final Map<String, Set<Node>> sourceNodes = new ConcurrentHashMap<>();
     private final Map<String, Map<TopicPartition, ClusterMirrorUtils.LeaderInfo>> sourceLeaders = new ConcurrentHashMap<>();
     private final Map<ClusterMirrorUtils.PartitionKey, MirrorPartitionState> partitionStates = new ConcurrentHashMap<>();
     private final Map<ClusterMirrorUtils.PartitionKey, MirrorPartitionState> partitionPreviousStates = new ConcurrentHashMap<>();
@@ -410,7 +409,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         partitionStateCounts.clear();
         lastMirrorEpochs.clear();
         sourceClusterIds.clear();
-        sourceNodes.clear();
         sourceLeaders.clear();
         pendingLeaderEpochBumps.clear();
         pendingPartitionStates.clear();
@@ -527,10 +525,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
         log.info("Syncing metadata for mirrors: {}", mirrors);
 
-        // Snapshot keyset to avoid ConcurrentModificationException
-        for (String mirrorName : Set.copyOf(sourceNodes.keySet())) {
+        for (String mirrorName : mirrors) {
             try {
-                discoverSourceBrokers(mirrorName);
+                describeSourceClusterId(mirrorName);
                 var topicsState = syncSourceTopicsState(mirrorName);
                 syncCoordinatorMetadata(mirrorName, topicsState);
             } catch (Exception e) {
@@ -545,33 +542,20 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     /** Schedules a source cluster metadata update. */
     public void scheduleSourceClusterMetadataUpdate(String mirrorName) {
         scheduler.scheduleOnce("SourceClusterMetadataUpdate", () -> {
-            discoverSourceBrokers(mirrorName);
             syncSourceTopicsState(mirrorName);
         });
     }
 
-    /**
-     * Discovers source cluster brokers via metadata and adds senders for any newly found brokers.
-     * Sender cleanup only happens via {@link #onMetadataUpdate} or {@link #clearCache}.
-     */
-    private void discoverSourceBrokers(String mirrorName) {
-        Collection<Node> discoveredBrokers = describeSourceClusterNodes(mirrorName);
-        discoveredBrokers.forEach(node -> sourceNodes.computeIfAbsent(mirrorName, k -> ConcurrentHashMap.newKeySet()).add(node));
-    }
-
-    private Collection<Node> describeSourceClusterNodes(String mirrorName) {
+    private void describeSourceClusterId(String mirrorName) {
         Admin srcAdmin = getOrCreateSourceAdmin(mirrorName);
         try {
             var clusterResult = srcAdmin.describeCluster();
             String clusterId = clusterResult.clusterId().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
-            Collection<Node> nodes = clusterResult.nodes().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
             validateSourceClusterId(mirrorName, clusterId);
-            return nodes;
         } catch (IllegalStateException e) {
             throw e;
         } catch (Exception e) {
             log.warn("Failed to describe source cluster for mirror {}", mirrorName, e);
-            return List.of();
         }
     }
 
@@ -1652,7 +1636,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     public CompletableFuture<Void> scheduleBumpLeaderEpochs(String mirrorName, Set<TopicPartition> topicPartitions) {
         CompletableFuture<Void> future = new CompletableFuture<>();
         scheduler.scheduleOnce("bump-leader-epoch", () -> {
-            discoverSourceBrokers(mirrorName);
             Optional<List<SourceTopicState>> topics = syncSourceTopicsState(mirrorName);
             maybeBumpLeaderEpochs(mirrorName, topics, topicPartitions)
                     .whenComplete((v, ex) -> {
