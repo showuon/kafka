@@ -1596,7 +1596,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     // Visible for testing
     static Properties buildDestAdminClientProps(KafkaConfig brokerConfig) {
         ListenerName mirrorAdminListener = brokerConfig.mirrorAdminListenerName();
-        Endpoint endpoint = brokerConfig.effectiveAdvertisedBrokerListeners()
+        Endpoint endpoint = (Endpoint) brokerConfig.effectiveAdvertisedBrokerListeners()
                 .filter(e -> e.listener().equals(mirrorAdminListener.value()))
                 .head();
 
