@@ -99,8 +99,8 @@ class RemoteLeaderEndPoint(logPrefix: String,
         fetchSessionHandler.handleError(t)
         throw t
     }
+
     val fetchResponse = clientResponse.responseBody.asInstanceOf[FetchResponse]
-    debug("!!! Got fetch response: " + fetchResponse)
     lastSeenEndpointList.clear()
     fetchResponse.data().nodeEndpoints().forEach(
       node => lastSeenEndpointList.put(node.nodeId(), new Node(node.nodeId(), node.host(), node.port(), node.rack())))
@@ -167,7 +167,10 @@ class RemoteLeaderEndPoint(logPrefix: String,
       topic.partitions.add(epochData)
     }
 
-    val epochRequest = OffsetsForLeaderEpochRequest.Builder.forFollower(topics, brokerConfig.brokerId)
+    val epochRequest = if (isClusterMirror)
+      OffsetsForLeaderEpochRequest.Builder.forMirrorConsumer(topics)
+    else
+      OffsetsForLeaderEpochRequest.Builder.forFollower(topics, brokerConfig.brokerId)
     debug(s"Sending offset for leader epoch request $epochRequest")
 
     try {
@@ -206,6 +209,8 @@ class RemoteLeaderEndPoint(logPrefix: String,
       if (fetchState.isReadyForFetch && !shouldFollowerThrottle(quota, fetchState, topicPartition)) {
         try {
           val logStartOffset = replicaManager.localLogOrException(topicPartition).logStartOffset
+          // Pre-KIP-595 sources (Fetch < v12) don't support lastFetchedEpoch;
+          // skip it until we confirm the source version from the first response.
           val lastFetchedEpoch = if (isTruncationOnFetchSupported)
             fetchState.lastFetchedEpoch()
           else
@@ -256,7 +261,7 @@ class RemoteLeaderEndPoint(logPrefix: String,
       Optional.of(new ReplicaFetch(fetchData.sessionPartitions(), requestBuilder))
     }
 
-    new ResultWithPartitions(fetchRequestOpt, partitionsWithError.asJava)
+    new ResultWithPartitions(fetchRequestOpt, partitionsWithError.asJava, util.Set.of())
   }
 
   /**

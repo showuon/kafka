@@ -1779,11 +1779,12 @@ public final class QuorumController implements Controller {
     @Override
     public CompletableFuture<CreateClusterMirrorResponseData> createClusterMirror(
             ControllerRequestContext context,
-            Map<ConfigResource, Map<String, Map.Entry<AlterConfigOp.OpType, String>>> configChanges
+            String mirrorName,
+            Map<String, Map.Entry<AlterConfigOp.OpType, String>> configChanges
     ) {
         return appendWriteEvent("createClusterMirror", context.deadlineNs(), () -> {
             ControllerResult<CreateClusterMirrorResponseData> result =
-                    configurationControl.addMirrorConfig(configChanges, false);
+                    configurationControl.addMirrorConfig(mirrorName, configChanges);
             return result;
         });
     }

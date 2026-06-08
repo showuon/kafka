@@ -1694,7 +1694,8 @@ class ReplicaManager(val config: KafkaConfig,
           })
         }
         val partition = getPartitionOrException(tp)
-        val mirrorUncleanLeaderElection = metadataCache.config(new ConfigResource(ConfigResource.Type.TOPIC, tp.topic())).get(TopicConfig.MIRROR_SUPPORT_UNCLEAN_LEADER_ELECTION_CONFIG).asInstanceOf[String]
+        val mirrorUncleanLeaderElection = metadataCache.config(new ConfigResource(ConfigResource.Type.TOPIC, tp.topic()))
+          .get(TopicConfig.MIRROR_SUPPORT_UNCLEAN_LEADER_ELECTION_CONFIG).asInstanceOf[String]
         val waitForAllReplicas = mirrorUncleanLeaderElection != null && mirrorUncleanLeaderElection.toBoolean
 
         partition.maybeCompleteTruncation(log, waitForAllReplicas = waitForAllReplicas, onCompleteCallback = Optional.of(callback),
@@ -2647,12 +2648,13 @@ class ReplicaManager(val config: KafkaConfig,
             if (mirrorName != null && !mirrorName.isEmpty) {
               // Get the source partition leader
               val sourceLeader = mirrorMetadataManager.get.resolveSourceLeader(mirrorName, tp)
-              val leaderEndpoint = new BrokerEndPoint(sourceLeader.id(), sourceLeader.host(), sourceLeader.port())
+              val sourceLeaderNode = sourceLeader.node()
+              val leaderEndpoint = new BrokerEndPoint(sourceLeaderNode.id(), sourceLeaderNode.host(), sourceLeaderNode.port())
 
               val fetchState = InitialFetchState(
                 topicId = Some(metadataCache.getTopicId(tp.topic)),
                 leader = leaderEndpoint,
-                currentLeaderEpoch = 0, // this will trigger source epoch discovery through fencing
+                currentLeaderEpoch = sourceLeader.leaderEpoch(),
                 initOffset = partition.localLogOrException.logEndOffset,
                 mirrorName = mirrorName,
                 mirrorLeaderEpoch = Optional.empty()

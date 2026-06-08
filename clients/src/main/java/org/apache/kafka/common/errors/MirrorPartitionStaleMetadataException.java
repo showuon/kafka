@@ -14,15 +14,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.kafka.common.errors;
 
-package org.apache.kafka.server;
+public class MirrorPartitionStaleMetadataException extends ApiException {
 
-import org.apache.kafka.common.TopicPartition;
+    private static final long serialVersionUID = 1L;
 
-import java.util.Set;
+    public MirrorPartitionStaleMetadataException(String message) {
+        super(message);
+    }
 
-public record ResultWithPartitions<R>(
-        R result,
-        Set<TopicPartition> partitionsWithError,
-        Set<TopicPartition> partitionsNeedsRefreshMetadata
-) { }
+    public MirrorPartitionStaleMetadataException(String message, Throwable cause) {
+        super(message, cause);
+    }
+}
