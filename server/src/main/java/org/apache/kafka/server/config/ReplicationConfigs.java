@@ -131,7 +131,7 @@ public class ReplicationConfigs {
 
     public static final String MIRROR_ADMIN_LISTENER_NAME_CONFIG = "mirror.admin.listener.name";
     public static final String MIRROR_ADMIN_LISTENER_NAME_DOC = "Name of listener used for cluster mirror admin communication on destination cluster. " +
-            "If this is unset, it defaults to the value of inter.broker.listener.name.";
+            "If this is unset, it defaults to the value of " + INTER_BROKER_LISTENER_NAME_CONFIG + ".";
 
     public static final String REPLICA_SELECTOR_CLASS_CONFIG = "replica.selector.class";
     public static final String REPLICA_SELECTOR_CLASS_DOC = "The fully qualified class name that implements ReplicaSelector. This is used by the broker to find the preferred read replica. By default, we use an implementation that returns the leader.";

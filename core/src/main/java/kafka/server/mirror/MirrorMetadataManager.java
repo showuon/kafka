@@ -166,9 +166,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     private volatile MetadataImage metadataImage = MetadataImage.EMPTY;
 
-    private volatile MirrorStateSender mirrorStateSender;
-    private final Map<String, Admin> srcAdmins = new ConcurrentHashMap<>();
-    private volatile Admin dstAdmin;
+    private volatile MirrorStateSender mirrorStateSender; // raw WriteMirrorStates/ReadMirrorStates RPCs to coord brokers
+    private final Map<String, Admin> srcAdmins = new ConcurrentHashMap<>(); // source cluster metadata discovery (one per mirror)
+    private volatile Admin dstAdmin; // group offset and ACLs sync
 
     private final Map<String, Uuid> sourceClusterIds = new ConcurrentHashMap<>();
     private final Map<String, Map<TopicPartition, ClusterMirrorUtils.LeaderInfo>> sourceLeaders = new ConcurrentHashMap<>();
@@ -260,11 +260,15 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         return false;
     }
 
-    /** Wires in the state transitioner, tombstone handler, and coordinator partition finders. */
+    /**
+     * Called by ClusterMirrorCoordinator on startup.
+     * Creates and starts the MirrorStateSender used for WriteMirrorStates and ReadMirrorStates RPCs.
+     * Wires in the state transitioner, tombstone handler, and coordinator partition finders.
+     */
     public void initialize(ClusterMirrorUtils.StateTransitioner stateTransitioner,
                            Consumer<String> tombStoneHandler,
-                           Function<ClusterMirrorRecordKey, Integer> coordinatorPartitionByKeyFinder,
-                           Function<String, Integer> coordinatorPartitionByNameFinder) {
+                           Function<ClusterMirrorRecordKey, Integer> coordPartitionByKeyFinder,
+                           Function<String, Integer> coordPartitionByNameFinder) {
         if (mirrorStateSender == null) {
             mirrorStateSender = new MirrorStateSender(MirrorStateSender.class.getSimpleName(),
                     NetworkUtils.buildNetworkClient(MirrorMetadataManager.class.getSimpleName(), brokerConfig, metrics, time, new LogContext(name())),
@@ -274,8 +278,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
         this.stateTransitioner = Optional.of(stateTransitioner);
         this.mirrorDeletionHandler = Optional.of(tombStoneHandler);
-        this.coordPartitionFinderByKey = Optional.of(coordinatorPartitionByKeyFinder);
-        this.coordPartitionFinderByName = Optional.of(coordinatorPartitionByNameFinder);
+        this.coordPartitionFinderByKey = Optional.of(coordPartitionByKeyFinder);
+        this.coordPartitionFinderByName = Optional.of(coordPartitionByNameFinder);
 
         this.isInitialized = true;
     }
@@ -1592,7 +1596,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     // Visible for testing
     static Properties buildDestAdminClientProps(KafkaConfig brokerConfig) {
         ListenerName mirrorAdminListener = brokerConfig.mirrorAdminListenerName();
-        Endpoint endpoint = (Endpoint) brokerConfig.effectiveAdvertisedBrokerListeners()
+        Endpoint endpoint = brokerConfig.effectiveAdvertisedBrokerListeners()
                 .filter(e -> e.listener().equals(mirrorAdminListener.value()))
                 .head();
 
@@ -1611,14 +1615,13 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         String mirrorAdminSaslMechanism = brokerConfig.saslMechanismMirrorAdminProtocol();
         if (securityProtocol == SecurityProtocol.SASL_SSL || securityProtocol == SecurityProtocol.SASL_PLAINTEXT) {
             props.put(SaslConfigs.SASL_MECHANISM, mirrorAdminSaslMechanism);
-            // To avoid overwriting it below
-            configs.remove(SaslConfigs.SASL_MECHANISM);
         }
 
         String saslMechanismConfigPrefix = mirrorAdminListener.saslMechanismConfigPrefix(mirrorAdminSaslMechanism);
         Map<String, ?> saslMechanismConfigs = brokerConfig.originalsWithPrefix(saslMechanismConfigPrefix, true);
 
         securityConfigs.forEach(key -> {
+            if (key.equals(SaslConfigs.SASL_MECHANISM)) return;
             if (saslMechanismConfigs.containsKey(key)) {
                 props.put(key, saslMechanismConfigs.get(key));
             } else if (configs.containsKey(key)) {
