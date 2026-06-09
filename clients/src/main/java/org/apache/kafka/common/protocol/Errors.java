@@ -60,6 +60,7 @@ import org.apache.kafka.common.errors.InconsistentTopicIdException;
 import org.apache.kafka.common.errors.InconsistentVoterSetException;
 import org.apache.kafka.common.errors.IneligibleReplicaException;
 import org.apache.kafka.common.errors.InvalidClusterMirrorNameException;
+import org.apache.kafka.common.errors.InvalidClusterMirrorStateException;
 import org.apache.kafka.common.errors.InvalidCommitOffsetSizeException;
 import org.apache.kafka.common.errors.InvalidConfigurationException;
 import org.apache.kafka.common.errors.InvalidFetchSessionEpochException;
@@ -440,7 +441,8 @@ public enum Errors {
     MIRROR_TOPIC_NOT_PAUSED(141, "The mirror topic is not paused.", MirrorTopicNotPausedException::new),
     MIRROR_TOPIC_BEING_STOPPED(142, "The mirror topic is being stopped.", MirrorTopicBeingStoppedException::new),
     CLUSTER_MIRROR_NOT_EMPTY(143, "The cluster mirror still has active or non-stopped topics.", ClusterMirrorNotEmptyException::new),
-    CLUSTER_MIRROR_AUTHORIZATION_FAILED(144, "Cluster mirror authorization failed.", ClusterMirrorAuthorizationException::new);
+    CLUSTER_MIRROR_AUTHORIZATION_FAILED(144, "Cluster mirror authorization failed.", ClusterMirrorAuthorizationException::new),
+    INVALID_CLUSTER_MIRROR_STATES(145, "Cluster mirror partition states are not in the expected states.", InvalidClusterMirrorStateException::new);
 
     private static final Logger log = LoggerFactory.getLogger(Errors.class);
 

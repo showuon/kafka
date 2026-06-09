@@ -1423,7 +1423,7 @@ class Partition(val topicPartition: TopicPartition,
     metadataCache match {
       case kraftMetadataCache: KRaftMetadataCache =>
         val topicImage = kraftMetadataCache.currentImage().topics().getTopic(topic)
-        if (topicImage != null && topicImage.mirrorName() != null) {
+        if (topicImage != null && topicImage.mirrorName() != null && !topicImage.mirrorName().isBlank) {
           Optional.of(topicImage.mirrorName())
         } else {
           Optional.empty()

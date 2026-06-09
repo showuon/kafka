@@ -43,7 +43,6 @@ import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.acl.AclBinding;
 import org.apache.kafka.common.acl.AclBindingFilter;
 import org.apache.kafka.common.config.ConfigResource;
-import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.errors.SecurityDisabledException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
@@ -66,6 +65,8 @@ import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.CreateTopicsResponse;
 import org.apache.kafka.common.requests.DeleteAclsRequest;
+import org.apache.kafka.common.requests.DeleteClusterMirrorRequest;
+import org.apache.kafka.common.requests.DeleteClusterMirrorResponse;
 import org.apache.kafka.common.requests.IncrementalAlterConfigsRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.ReadMirrorStatesRequest;
@@ -1542,9 +1543,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * Reads partition states from remote coordinators, batching requests per coordinator node.
      * Updates local cache (lastMirrorEpochs, partitionStates) with each response.
      */
-    private void readStatesFromRemoteCoordinator(String mirrorName,
-                                                 Map<String, Set<Integer>> partitions,
-                                                 Consumer<ReadMirrorStatesResponse> callback) {
+    void readStatesFromRemoteCoordinator(String mirrorName,
+                                         Map<String, Set<Integer>> partitions,
+                                         Consumer<ReadMirrorStatesResponse> callback) {
         log.debug("Reading states from remote coordinator: {} {}", mirrorName, partitions);
 
         // Group partitions by coordinator node for batching
@@ -1627,13 +1628,17 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             parts.forEach(part -> {
                 ClusterMirrorUtils.PartitionKey pk = new ClusterMirrorUtils.PartitionKey(mirrorName, tp, part);
                 ReadMirrorStatesResponseData.PartitionResult partitionResult = new ReadMirrorStatesResponseData.PartitionResult();
-                partitionResult.setPartitionIndex(part);
-                partitionResult.setLastMirrorEpoch(lastMirrorEpochs.getOrDefault(pk, -1));
-                partitionResult.setState(partitionStates.getOrDefault(pk, MirrorPartitionState.UNKNOWN).value());
-                partitionResult.setPreviousState(
-                        partitionPreviousStates.getOrDefault(pk, MirrorPartitionState.UNKNOWN).value());
-                partitionResult.setRetryAttempt(
-                        failedRetryAttempts.getOrDefault(new TopicPartition(tp, part), 0).shortValue());
+                if (!isLocalCoordinator(mirrorName, tp, part)) {
+                    partitionResult.setErrorCode(Errors.NOT_COORDINATOR.code());
+                } else {
+                    partitionResult.setPartitionIndex(part);
+                    partitionResult.setLastMirrorEpoch(lastMirrorEpochs.getOrDefault(pk, -1));
+                    partitionResult.setState(partitionStates.getOrDefault(pk, MirrorPartitionState.UNKNOWN).value());
+                    partitionResult.setPreviousState(
+                            partitionPreviousStates.getOrDefault(pk, MirrorPartitionState.UNKNOWN).value());
+                    partitionResult.setRetryAttempt(
+                            failedRetryAttempts.getOrDefault(new TopicPartition(tp, part), 0).shortValue());
+                }
                 partitionResults.add(partitionResult);
             });
             topicResult.setPartitions(partitionResults);
@@ -1949,6 +1954,89 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             }
         });
         return result;
+    }
+
+    /**
+     * Verifies that all partitions for the given mirror are in STOPPED state.
+     * Invokes the callback with {@code Optional.empty()} if all partitions are STOPPED,
+     * or {@code Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATES)} if any are not.
+     */
+    void deleteClusterMirror(String mirrorName, Consumer<Optional<Errors>> callback) {
+        Set<String> mirroredTopics = getConfiguredTopics(mirrorName, true, true);
+        Map<String, Set<Integer>> remotePartitions = new HashMap<>();
+
+        MetadataImage curImage = metadataImage;
+        for (String topic : mirroredTopics) {
+           int partitionSize = curImage.topics().getTopic(topic).partitions().size();
+           for (int i = 0; i < partitionSize; i++) {
+               if (isLocalCoordinator(mirrorName, topic, i)) {
+                   MirrorPartitionState state = partitionStates.getOrDefault(new ClusterMirrorUtils.PartitionKey(mirrorName, topic, i), MirrorPartitionState.UNKNOWN);
+                   if (state != MirrorPartitionState.STOPPED) {
+                       log.error("Partition {}-{} is not in STOPPED state. Current state: {}.", topic, i, state);
+                       callback.accept(Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATES));
+                       return;
+                   }
+               } else {
+                   remotePartitions.computeIfAbsent(topic, k -> new HashSet<>()).add(i);
+               }
+           }
+        }
+
+        if (remotePartitions.isEmpty()) {
+            sendDeleteClusterMirror(mirrorName, callback);
+            return;
+        }
+
+        readStatesFromRemoteCoordinator(mirrorName, remotePartitions, response -> {
+            if (response.data().errorCode() != Errors.NONE.code()) {
+                log.error("Error returned from read states from remote coordinator. Error code: {} and message: {}",
+                        response.data().errorCode(), response.data().errorMessage());
+                callback.accept(Optional.of(Errors.forCode(response.data().errorCode())));
+                return;
+            }
+
+            for (var topicResult : response.data().topics()) {
+                for (var partitionResult : topicResult.partitions()) {
+                    if (partitionResult.errorCode() != Errors.NONE.code()) {
+                        log.error("Error returned from read states from remote coordinator for partition {}-{}. Error code: {}",
+                                topicResult.name(), partitionResult.partitionIndex(), partitionResult.errorCode());
+                        callback.accept(Optional.of(Errors.forCode(partitionResult.errorCode())));
+                        return;
+                    }
+                    if (partitionResult.state() != MirrorPartitionState.STOPPED.value()) {
+                        log.error("Partition {}-{} is not in STOPPED state. Current state: {}.",
+                                topicResult.name(), partitionResult.partitionIndex(), MirrorPartitionState.fromValue(partitionResult.state()));
+                        callback.accept(Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATES));
+                        return;
+                    }
+                }
+            }
+            sendDeleteClusterMirror(mirrorName, callback);
+        });
+    }
+
+    private void sendDeleteClusterMirror(String mirrorName, Consumer<Optional<Errors>> callback) {
+        channelManager.sendRequest(
+                new DeleteClusterMirrorRequest.Builder(mirrorName),
+                new ControllerRequestCompletionHandler() {
+                    @Override
+                    public void onTimeout() {
+                        log.warn("DeleteClusterMirror request timed out");
+                    }
+
+                    @Override
+                    public void onComplete(ClientResponse response) {
+                        if (response.responseBody() instanceof DeleteClusterMirrorResponse deleteClusterMirrorResponse) {
+                            if (deleteClusterMirrorResponse.data().errorCode() != Errors.NONE.code()) {
+                                log.error("Error returned from delete cluster mirror request. Error code: {} and message: {}",
+                                        deleteClusterMirrorResponse.data().errorCode(), deleteClusterMirrorResponse.data().errorMessage());
+                                callback.accept(Optional.of(Errors.forCode(deleteClusterMirrorResponse.data().errorCode())));
+                                return;
+                            }
+                            callback.accept(Optional.empty());
+                        }
+                    }
+                });
     }
 
     Uuid getSourceClusterId(String mirrorName) {
