@@ -527,7 +527,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
         for (String mirrorName : mirrors) {
             try {
-                describeSourceClusterId(mirrorName);
+                validateSourceClusterId(mirrorName);
                 var topicsState = syncSourceTopicsState(mirrorName);
                 syncCoordinatorMetadata(mirrorName, topicsState);
             } catch (Exception e) {
@@ -546,28 +546,24 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         });
     }
 
-    private void describeSourceClusterId(String mirrorName) {
+    private void validateSourceClusterId(String mirrorName) {
         Admin srcAdmin = getOrCreateSourceAdmin(mirrorName);
         try {
             var clusterResult = srcAdmin.describeCluster();
             String clusterId = clusterResult.clusterId().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
-            validateSourceClusterId(mirrorName, clusterId);
+            if (clusterId != null && !clusterId.isEmpty()) {
+                Uuid newClusterId = Uuid.fromString(clusterId);
+                Uuid previousClusterId = sourceClusterIds.put(mirrorName, newClusterId);
+                if (previousClusterId != null && !previousClusterId.equals(newClusterId)) {
+                    throw new IllegalStateException("Source cluster ID changed for mirror " + mirrorName
+                            + ": expected " + previousClusterId + ", got " + newClusterId
+                            + ". This may indicate a misconfiguration or that the source cluster has been replaced.");
+                }
+            }
         } catch (IllegalStateException e) {
             throw e;
         } catch (Exception e) {
             log.warn("Failed to describe source cluster for mirror {}", mirrorName, e);
-        }
-    }
-
-    private void validateSourceClusterId(String mirrorName, String clusterId) {
-        if (clusterId != null && !clusterId.isEmpty()) {
-            Uuid newClusterId = Uuid.fromString(clusterId);
-            Uuid previousClusterId = sourceClusterIds.put(mirrorName, newClusterId);
-            if (previousClusterId != null && !previousClusterId.equals(newClusterId)) {
-                throw new IllegalStateException("Source cluster ID changed for mirror " + mirrorName
-                        + ": expected " + previousClusterId + ", got " + newClusterId
-                        + ". This may indicate a misconfiguration or that the source cluster has been replaced.");
-            }
         }
     }
 
