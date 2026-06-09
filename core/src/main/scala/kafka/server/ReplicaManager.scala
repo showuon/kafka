@@ -2698,7 +2698,7 @@ class ReplicaManager(val config: KafkaConfig,
 
     if (errorPartitionAndOffsets.nonEmpty) {
       mirrorMetadataManager.foreach(_.scheduleSourceClusterMetadataUpdate(mirrorName))
-      errorPartitionAndOffsets.foreach { tp => mirrorMetadataManager.foreach(_.transitionTo(mirrorName, tp, MirrorPartitionState.FAILED)) }
+      mirrorMetadataManager.foreach(_.transitionTo(mirrorName, errorPartitionAndOffsets.asJava, MirrorPartitionState.FAILED))
     }
   }
 

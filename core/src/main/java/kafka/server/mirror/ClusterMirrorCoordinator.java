@@ -145,7 +145,7 @@ public class ClusterMirrorCoordinator {
         log.info("Starting up.");
 
         metadataManager.initialize(
-                (mirrorName, tp, state) -> transitionTo(mirrorName, Set.of(tp), state),
+                (mirrorName, tp, state) -> transitionTo(mirrorName, tp, state),
                 this::tombstoneMirrorRecords,
                 this::getCoordinatorPartitionByKey,
                 this::getCoordinatorPartitionByName);

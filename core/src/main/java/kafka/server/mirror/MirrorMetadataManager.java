@@ -132,8 +132,8 @@ import static org.apache.kafka.controller.ConfigurationControlManager.STOPPED_TO
  * Bridges the local destination cluster and remote source clusters for Cluster Mirroring.
  *
  * Implements {@link MetadataPublisher} to detect leadership and config changes, triggering
- * partition state transitions. Manages remote cluster connections using {@link MirrorSourceSender}
- * and periodically syncs topic metadata, configs, group offsets, and ACLs from source clusters.
+ * partition state transitions.
+ * Periodically syncs topic metadata, configs, group offsets, and ACLs from source clusters using {@link Admin}.
  * Maintains in-memory caches of partition states and last mirror epochs. Routes state reads/writes
  * to the appropriate coordinator broker.
  *
@@ -440,7 +440,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     /** Transitions a mirror partition to the given state via the configured state transitioner. */
-    public void transitionTo(String mirrorName, TopicPartition topicPartition, MirrorPartitionState state) {
+    public void transitionTo(String mirrorName, Set<TopicPartition> topicPartition, MirrorPartitionState state) {
         stateTransitioner.ifPresent(st -> st.transitionTo(mirrorName, topicPartition, state));
     }
 
@@ -504,23 +504,23 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         stateTransitioner.ifPresent(t -> {
             if (stopRequested) {
                 if (curState != MirrorPartitionState.STOPPED) {
-                    t.transitionTo(mirrorName, tp, MirrorPartitionState.STOPPING);
+                    t.transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.STOPPING);
                 } else {
-                    t.transitionTo(mirrorName, tp, MirrorPartitionState.STOPPED);
+                    t.transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.STOPPED);
                 }
             } else if (pauseRequested) {
                 if (curState != MirrorPartitionState.PAUSED) {
-                    t.transitionTo(mirrorName, tp, MirrorPartitionState.PAUSING);
+                    t.transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.PAUSING);
                 } else {
-                    t.transitionTo(mirrorName, tp, MirrorPartitionState.PAUSED);
+                    t.transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.PAUSED);
                 }
             } else if (curState == MirrorPartitionState.PAUSED) {
-                t.transitionTo(mirrorName, tp, MirrorPartitionState.MIRRORING);
+                t.transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.MIRRORING);
             } else if (curState == MirrorPartitionState.UNKNOWN
                     || curState == MirrorPartitionState.STOPPED) {
-                t.transitionTo(mirrorName, tp, MirrorPartitionState.LOG_TRUNCATION);
+                t.transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.LOG_TRUNCATION);
             } else {
-                t.transitionTo(mirrorName, tp, fetchedState != null ? fetchedState : curState);
+                t.transitionTo(mirrorName, Set.of(tp), fetchedState != null ? fetchedState : curState);
             }
         });
     }
@@ -755,7 +755,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 Set.copyOf(partitionStates.keySet()).stream()
                         .filter(key -> key.mirrorName().equals(mirrorName) && key.topic().equals(name))
                         .forEach(key -> stateTransitioner.ifPresent(t ->
-                                t.transitionTo(mirrorName, new TopicPartition(key.topic(), key.partition()), MirrorPartitionState.STOPPING)));
+                                t.transitionTo(mirrorName, Set.of(new TopicPartition(key.topic(), key.partition())), MirrorPartitionState.STOPPING)));
             }
         });
     }
@@ -794,7 +794,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             var partition = topicImage.partitions().get(tp.partition());
             if (partition != null && partition.leader == nodeId) {
                 log.info("Source leader for {} discovered after initial onMetadataUpdate, transitioning to LOG_TRUNCATION", tp);
-                stateTransitioner.ifPresent(t -> t.transitionTo(mirrorName, tp, MirrorPartitionState.LOG_TRUNCATION));
+                stateTransitioner.ifPresent(t -> t.transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.LOG_TRUNCATION));
             }
         });
     }
