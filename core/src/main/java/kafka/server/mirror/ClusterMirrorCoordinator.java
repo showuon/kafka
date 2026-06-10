@@ -1020,7 +1020,7 @@ public class ClusterMirrorCoordinator {
     }
 
     public void deleteClusterMirror(String mirrorName, Consumer<Optional<Errors>> callback) {
-        metadataManager.deleteClusterMirror(mirrorName, callback);
+        metadataManager.validateStatesAndForwardToController(mirrorName, callback);
     }
 
     /** Maps a mirror record key to a __mirror_state partition index. */

@@ -1961,7 +1961,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * Invokes the callback with {@code Optional.empty()} if all partitions are STOPPED,
      * or {@code Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATES)} if any are not.
      */
-    void deleteClusterMirror(String mirrorName, Consumer<Optional<Errors>> callback) {
+    void validateStatesAndForwardToController(String mirrorName, Consumer<Optional<Errors>> callback) {
         Set<String> mirroredTopics = getConfiguredTopics(mirrorName, true, true);
         Map<String, Set<Integer>> remotePartitions = new HashMap<>();
 
