@@ -23,7 +23,6 @@ import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.ClusterMirrorDescription;
 import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.internals.Topic;
@@ -145,7 +144,7 @@ public class ClusterMirrorCoordinator {
         log.info("Starting up.");
 
         metadataManager.initialize(
-                (mirrorName, tp, state) -> transitionTo(mirrorName, Set.of(tp), state),
+                (mirrorName, tp, state) -> transitionTo(mirrorName, tp, state),
                 this::tombstoneMirrorRecords,
                 this::getCoordinatorPartitionByKey,
                 this::getCoordinatorPartitionByName);
@@ -172,7 +171,6 @@ public class ClusterMirrorCoordinator {
         // in-flight periodicSync admin calls (describeCluster, describeTopics)
         // fail immediately instead of blocking for up to requestTimeoutMs each.
         metadataManager.closeSourceAdmins();
-
         try {
             scheduler.shutdown();
         } catch (InterruptedException e) {
@@ -820,7 +818,7 @@ public class ClusterMirrorCoordinator {
     private CompletableFuture<Map<TopicPartition, ProduceResponse.PartitionResponse>> writeMirrorPidReset(
             String mirrorName, Set<TopicPartition> topicPartitions) {
         CompletableFuture<Map<TopicPartition, ProduceResponse.PartitionResponse>> writePidResetFuture = new CompletableFuture<>();
-        Uuid sourceClusterId = metadataManager.getSourceClusterId(mirrorName);
+        String sourceClusterId = metadataManager.getSourceClusterId(mirrorName);
         if (sourceClusterId == null) {
             log.warn("Source cluster ID not available for mirror {}. Skipping PID reset barrier.", mirrorName);
             writePidResetFuture.complete(Map.of());
@@ -828,7 +826,7 @@ public class ClusterMirrorCoordinator {
         }
         MirrorPidResetRecord record = new MirrorPidResetRecord()
             .setVersion(ControlRecordUtils.MIRROR_PID_RESET_CURRENT_VERSION)
-            .setSourceClusterId(sourceClusterId.toString());
+            .setSourceClusterId(sourceClusterId);
         long timestamp = time.milliseconds();
         for (TopicPartition tp : topicPartitions) {
             try {
@@ -1010,7 +1008,7 @@ public class ClusterMirrorCoordinator {
     }
 
     /** Returns the source cluster ID for the given mirror. */
-    public Uuid getSourceClusterId(String mirrorName) {
+    public String getSourceClusterId(String mirrorName) {
         return metadataManager.getSourceClusterId(mirrorName);
     }
 
@@ -1019,7 +1017,10 @@ public class ClusterMirrorCoordinator {
         return metadataManager.getMirrorStates(mirrorName);
     }
 
-    /** Maps a mirror record key to a __mirror_state partition index. */
+    /**
+     * Maps a mirror record key to a __mirror_state partition index.
+     * Used by MirrorMetadataManager to route WriteMirrorStates and ReadMirrorStates RPCs to the correct coordinator broker.
+     */
     public int getCoordinatorPartitionByKey(ClusterMirrorRecordKey key) {
         if (!isRunning.get()) {
             throw Errors.COORDINATOR_NOT_AVAILABLE.exception();
@@ -1027,6 +1028,11 @@ public class ClusterMirrorCoordinator {
         return Utils.abs(key.asCoordinatorKey().hashCode()) % brokerConfig.mirrorConfig().stateTopicNumPartitions();
     }
 
+    /**
+     * Maps a mirror name to a __mirror_state partition index.
+     * Used by MirrorMetadataManager to check whether the local broker is the coordinator for a given mirror
+     * and needs to periodicaly refresh its metadata from the source cluster.
+     */
     private int getCoordinatorPartitionByName(String mirrorName) {
         if (!isRunning.get()) {
             throw Errors.COORDINATOR_NOT_AVAILABLE.exception();
