@@ -663,16 +663,10 @@ public class ClusterMirrorCoordinator {
             String mirrorName, TopicPartition topicPartition, MirrorPartitionState newState) {
         CompletableFuture<Optional<TopicPartition>> future = new CompletableFuture<>();
         // no need to write a record for the same state again
-        MirrorPartitionState currentState = metadataManager.getPartitionState(mirrorName, topicPartition);
-        if (currentState == newState) {
+        if (metadataManager.getPartitionState(mirrorName, topicPartition) == newState) {
             future.complete(Optional.of(topicPartition));
             return future;
         }
-        if (!MirrorPartitionState.isValidTransition(currentState, newState)) {
-            future.completeExceptionally(new InvalidClusterMirrorStateException("Invalid state transition: " + currentState + "-> " + newState));
-            return future;
-        }
-
         if (isLocalCoordinator(mirrorName, topicPartition.topic(), topicPartition.partition())) {
             // this is the leader of the coordinator (async disk I/O operation)
             var mirrorTopicPartition = new TopicPartition(Topic.MIRROR_STATE_TOPIC_NAME,
