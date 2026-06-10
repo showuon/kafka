@@ -260,6 +260,7 @@ public class ReplicationControlManager {
         private final TimelineHashMap<Integer, PartitionRegistration> parts;
         private final String mirrorName;
         private final int mirrorState;
+        private final long lastMirrorStateChangeOffset;
         private final SnapshotRegistry snapshotRegistry;
 
         TopicControlInfo(String name, SnapshotRegistry snapshotRegistry, Uuid id) {
@@ -269,15 +270,17 @@ public class ReplicationControlManager {
             this.parts = new TimelineHashMap<>(snapshotRegistry, 0);
             this.mirrorName = null;
             this.mirrorState = -1;
+            this.lastMirrorStateChangeOffset = -1;
         }
 
-        TopicControlInfo(TopicControlInfo copyTopicInfo, String mirrorName, int mirrorState) {
+        TopicControlInfo(TopicControlInfo copyTopicInfo, String mirrorName, int mirrorState, long lastMirrorStateChangeOffset) {
             this.name = copyTopicInfo.name;
             this.id = copyTopicInfo.id;
             this.snapshotRegistry = copyTopicInfo.snapshotRegistry;
             this.parts = copyTopicInfo.parts;
             this.mirrorName = mirrorName;
             this.mirrorState = mirrorState;
+            this.lastMirrorStateChangeOffset = lastMirrorStateChangeOffset;
         }
 
         public String name() {
@@ -298,6 +301,10 @@ public class ReplicationControlManager {
 
         public int mirrorState() {
             return mirrorState;
+        }
+
+        public long lastMirrorStateChangeOffset() {
+            return lastMirrorStateChangeOffset;
         }
 
         public SnapshotRegistry snapshotRegistry() {
@@ -602,14 +609,14 @@ public class ReplicationControlManager {
         log.info("Replayed RemoveTopicRecord for topic {} with ID {}.", topic.name, record.topicId());
     }
 
-    public void replay(MirrorTopicStateChangeRecord record) {
+    public void replay(MirrorTopicStateChangeRecord record, long offset) {
         TopicControlInfo topicInfo = topics.get(record.topicId());
         if (topicInfo == null) {
             throw new UnknownTopicIdException("Can't find topic with ID " + record.topicId() +
                     " to update cluster mirror state.");
         } else {
-            topics.put(record.topicId(), new TopicControlInfo(topicInfo, record.mirrorName(), record.desiredState()));
-            log.info("Replayed MirrorTopicStateChangeRecord for topic {} with ID {}, mirror name {} and state {}.", topicInfo.name, record.topicId(), record.mirrorName(), record.desiredState());
+            topics.put(record.topicId(), new TopicControlInfo(topicInfo, record.mirrorName(), record.desiredState(), offset));
+            log.info("Replayed MirrorTopicStateChangeRecord for topic {} with ID {}, mirror name {}, state {} in offset {}.", topicInfo.name, record.topicId(), record.mirrorName(), record.desiredState(), offset);
         }
     }
 

@@ -1282,7 +1282,7 @@ public final class QuorumController implements Controller {
                 replicationControl.replay((ClearElrRecord) message);
                 break;
             case MIRROR_TOPIC_STATE_CHANGE_RECORD:
-                replicationControl.replay((MirrorTopicStateChangeRecord)  message);
+                replicationControl.replay((MirrorTopicStateChangeRecord) message, offset);
                 break;
             default:
                 throw new RuntimeException("Unhandled record type " + type);
@@ -1845,10 +1845,11 @@ public final class QuorumController implements Controller {
     @Override
     public CompletableFuture<DeleteClusterMirrorResponseData> deleteClusterMirror(
             ControllerRequestContext context,
-            String mirrorName
+            String mirrorName,
+            long brokerMetadataOffset
     ) {
         return appendWriteEvent("deleteClusterMirror", context.deadlineNs(),
-                () -> configurationControl.deleteClusterMirror(mirrorName, replicationControl));
+                () -> configurationControl.deleteClusterMirror(mirrorName, brokerMetadataOffset, replicationControl));
     }
 
     @Override

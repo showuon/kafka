@@ -402,7 +402,8 @@ class ControllerApis(
       throw new UnsupportedVersionException("Cluster mirroring requires mirror.version >= 1.")
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
-    controller.deleteClusterMirror(context, mirrorName)
+    val brokerMetadataOffset = deleteMirrorRequest.data().brokerMetadataOffset()
+    controller.deleteClusterMirror(context, mirrorName, brokerMetadataOffset)
       .handle[Unit] { (response, exception) =>
         if (exception != null) {
           requestHelper.handleError(request, exception)

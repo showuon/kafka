@@ -1966,6 +1966,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         Map<String, Set<Integer>> remotePartitions = new HashMap<>();
 
         MetadataImage curImage = metadataImage;
+        long brokerMetadataOffset = curImage.offset();
         for (String topic : mirroredTopics) {
            int partitionSize = curImage.topics().getTopic(topic).partitions().size();
            for (int i = 0; i < partitionSize; i++) {
@@ -1983,7 +1984,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         }
 
         if (remotePartitions.isEmpty()) {
-            sendDeleteClusterMirror(mirrorName, callback);
+            sendDeleteClusterMirror(mirrorName, brokerMetadataOffset, callback);
             return;
         }
 
@@ -2011,13 +2012,13 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                     }
                 }
             }
-            sendDeleteClusterMirror(mirrorName, callback);
+            sendDeleteClusterMirror(mirrorName, brokerMetadataOffset, callback);
         });
     }
 
-    private void sendDeleteClusterMirror(String mirrorName, Consumer<Optional<Errors>> callback) {
+    private void sendDeleteClusterMirror(String mirrorName, long brokerMetadataOffset, Consumer<Optional<Errors>> callback) {
         channelManager.sendRequest(
-                new DeleteClusterMirrorRequest.Builder(mirrorName),
+                new DeleteClusterMirrorRequest.Builder(mirrorName, brokerMetadataOffset),
                 new ControllerRequestCompletionHandler() {
                     @Override
                     public void onTimeout() {

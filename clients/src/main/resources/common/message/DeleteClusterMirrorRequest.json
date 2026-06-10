@@ -23,6 +23,8 @@
   "flexibleVersions": "0+",
   "fields": [
     { "name": "MirrorName", "type": "string", "versions": "0+", "entityType": "mirrorName",
-      "about": "The cluster mirror name to delete."}
+      "about": "The cluster mirror name to delete."},
+    { "name": "BrokerMetadataOffset", "type": "int64", "versions": "0+", "default": "-1",
+      "about": "The broker metadata offset at which partition states were validated. Used to detect stale delete requests when concurrent start/stop operations have modified mirror state. -1 if not set."}
   ]
 }

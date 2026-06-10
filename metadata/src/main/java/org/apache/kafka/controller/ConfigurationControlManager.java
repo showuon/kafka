@@ -573,7 +573,7 @@ public class ConfigurationControlManager {
         return ControllerResult.atomicOf(outputRecords, data);
     }
 
-    ControllerResult<DeleteClusterMirrorResponseData> deleteClusterMirror(String mirrorName, ReplicationControlManager replicationControl) {
+    ControllerResult<DeleteClusterMirrorResponseData> deleteClusterMirror(String mirrorName, long brokerMetadataOffset, ReplicationControlManager replicationControl) {
         List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
         DeleteClusterMirrorResponseData data = new DeleteClusterMirrorResponseData();
 
@@ -586,8 +586,27 @@ public class ConfigurationControlManager {
             return ControllerResult.of(records, data);
         }
 
-        // Precondition: no active/paused topics
         Set<ReplicationControlManager.TopicControlInfo> topicControlInfos = replicationControl.getMirrorTopics();
+
+        // Fencing check: reject if any topic's mirror state was modified after the broker's
+        // metadata snapshot, since the broker's partition-state validation may be stale.
+        if (brokerMetadataOffset >= 0) {
+            for (ReplicationControlManager.TopicControlInfo topicInfo : topicControlInfos) {
+                String curMirrorName = topicInfo.mirrorName();
+                if (curMirrorName == null || curMirrorName.isBlank()) continue;
+                if (curMirrorName.equals(mirrorName)
+                        && topicInfo.lastMirrorStateChangeOffset() > brokerMetadataOffset) {
+                    data.setErrorCode(Errors.INVALID_CLUSTER_MIRROR_STATES.code());
+                    data.setErrorMessage("Mirror state for topic '" + topicInfo.name()
+                            + "' changed after broker validated partition states (broker offset: "
+                            + brokerMetadataOffset + ", last change offset: "
+                            + topicInfo.lastMirrorStateChangeOffset() + ")");
+                    return ControllerResult.of(records, data);
+                }
+            }
+        }
+
+        // Precondition: no active/paused topics
         for (ReplicationControlManager.TopicControlInfo topicInfo: topicControlInfos) {
             String curMirrorName = topicInfo.mirrorName();
             if (curMirrorName == null || curMirrorName.isBlank()) continue;
