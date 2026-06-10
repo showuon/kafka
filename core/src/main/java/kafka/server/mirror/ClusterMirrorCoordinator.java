@@ -24,6 +24,7 @@ import org.apache.kafka.clients.admin.ClusterMirrorDescription;
 import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.compress.Compression;
+import org.apache.kafka.common.errors.InvalidClusterMirrorStateException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.message.MirrorPidResetRecord;
@@ -662,10 +663,16 @@ public class ClusterMirrorCoordinator {
             String mirrorName, TopicPartition topicPartition, MirrorPartitionState newState) {
         CompletableFuture<Optional<TopicPartition>> future = new CompletableFuture<>();
         // no need to write a record for the same state again
-        if (metadataManager.getPartitionState(mirrorName, topicPartition) == newState) {
+        MirrorPartitionState currentState = metadataManager.getPartitionState(mirrorName, topicPartition);
+        if (currentState == newState) {
             future.complete(Optional.of(topicPartition));
             return future;
         }
+        if (!MirrorPartitionState.isValidTransition(currentState, newState)) {
+            future.completeExceptionally(new InvalidClusterMirrorStateException("Invalid state transition: " + currentState + "-> " + newState));
+            return future;
+        }
+
         if (isLocalCoordinator(mirrorName, topicPartition.topic(), topicPartition.partition())) {
             // this is the leader of the coordinator (async disk I/O operation)
             var mirrorTopicPartition = new TopicPartition(Topic.MIRROR_STATE_TOPIC_NAME,
