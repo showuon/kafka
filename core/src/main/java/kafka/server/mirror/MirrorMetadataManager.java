@@ -464,6 +464,18 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             ClusterMirrorConfig.MIRROR_GROUPS_INCLUDE_CONFIG, ClusterMirrorConfig.MIRROR_GROUPS_EXCLUDE_CONFIG,
             ClusterMirrorConfig.MIRROR_ACL_INCLUDE_CONFIG);
 
+    private void cleanupDeletedMirrorStates() {
+        Set<String> configuredMirrors = getConfiguredMirrors();
+        Set<String> staleMirrors = partitionStates.keySet().stream()
+            .map(ClusterMirrorUtils.PartitionKey::mirrorName)
+            .filter(name -> !configuredMirrors.contains(name))
+            .collect(Collectors.toSet());
+        for (String mirrorName : staleMirrors) {
+            log.info("Found stale partition states for deleted mirror '{}'. Writing tombstones.", mirrorName);
+            mirrorDeletionHandler.ifPresent(h -> h.accept(mirrorName));
+        }
+    }
+
     private Set<String> maybeRecreateSourceConnection(MetadataDelta delta, MetadataImage newImage) {
         Set<String> reconnectedMirrors = new HashSet<>();
         if (delta.configsDelta() != null) {
@@ -483,6 +495,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
                         if (connectionConfigChanged || mirrorDeleted) {
                             sourceLeaders.remove(mirrorName);
+                            sourceClusterIds.remove(mirrorName);
                             Admin admin = srcAdmins.remove(mirrorName);
                             if (admin != null) {
                                 admin.close();
@@ -542,7 +555,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
 
     /** Periodic metadata sync entry point. */
-    void periodicSync() {
+    void periodicSyncAndCleanup() {
         Set<String> mirrors = getConfiguredMirrors();
         if (mirrors.isEmpty()) {
             return;
@@ -559,6 +572,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 log.error("Failed to sync metadata for mirror {}", mirrorName, e);
             }
         }
+
+        cleanupDeletedMirrorStates();
 
         // TODO: This is incremented on every metadata refresh for testing purpose, as we don't have error handling at this stage
         metadataRefreshError.incrementAndGet();
@@ -1661,8 +1676,36 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         partitionPreviousStates.remove(key);
     }
 
+    void removeMirrorStates(String mirrorName) {
+        partitionStates.keySet().removeIf(key -> {
+            if (key.mirrorName().equals(mirrorName)) {
+                MirrorPartitionState oldState = partitionStates.get(key);
+                if (oldState != null) {
+                    partitionStateCounts.computeIfAbsent(oldState, s -> new AtomicLong()).decrementAndGet();
+                }
+                partitionPreviousStates.remove(key);
+                return true;
+            }
+            return false;
+        });
+    }
+
     void removeLastMirrorEpochs(String mirrorName) {
         lastMirrorEpochs.keySet().removeIf(key -> key.mirrorName().equals(mirrorName));
+    }
+
+    void removeStateForPartitions(Set<TopicPartition> partitions) {
+        partitions.forEach(tp -> {
+            pendingPartitionStates.remove(tp);
+            failedRetryAttempts.remove(tp);
+        });
+        pendingLeaderEpochBumps.removeIf(bump -> {
+            boolean affected = bump.partitionToEpoch().keySet().stream().anyMatch(partitions::contains);
+            if (affected) {
+                bump.future().cancel(false);
+            }
+            return affected;
+        });
     }
 
     private long partitionStateCount(MirrorPartitionState state) {
@@ -1971,18 +2014,13 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         if (cached != null) {
             return cached;
         }
-        Admin srcAdmin = getOrCreateSourceAdmin(mirrorName);
+
         try {
-            cached = srcAdmin.describeCluster()
-                .clusterId().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
-            if (cached != null && !cached.isEmpty()) {
-                sourceClusterIds.put(mirrorName, cached);
-                return cached;
-            }
+            validateSourceClusterId(mirrorName);
         } catch (Exception e) {
             log.warn("Failed to resolve source cluster ID for mirror {}", mirrorName, e);
         }
-        return null;
+        return sourceClusterIds.get(mirrorName);
     }
 
     /** Groups loaded partition states by mirror and state, then invokes the callback for each group. */
