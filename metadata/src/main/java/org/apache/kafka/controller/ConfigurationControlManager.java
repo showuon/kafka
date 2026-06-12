@@ -444,7 +444,7 @@ public class ConfigurationControlManager {
                 }
             }
 
-            ReplicationControlManager.TopicControlInfo topicInfo = replicationControl.getTopic(topic.topicId());
+            ReplicationControlManager.TopicControlInfo topicInfo = replicationControl.getTopic(topicId);
             // no previous mirror name, so skip this validation
             if (topicInfo != null) {
                 String currMirrorNameValue = topicInfo.mirrorName();
