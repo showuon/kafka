@@ -444,7 +444,7 @@ public class ConfigurationControlManager {
                 }
             }
 
-            ReplicationControlManager.TopicControlInfo topicInfo = replicationControl.getTopic(topic.topicId());
+            ReplicationControlManager.TopicControlInfo topicInfo = replicationControl.getTopic(topicId);
             // no previous mirror name, so skip this validation
             if (topicInfo != null) {
                 String currMirrorNameValue = topicInfo.mirrorName();
@@ -458,7 +458,7 @@ public class ConfigurationControlManager {
 
             records.add(new ApiMessageAndVersion(
                     new MirrorTopicStateChangeRecord()
-                            .setTopicId(topic.topicId())
+                            .setTopicId(topicId)
                             .setMirrorName(mirrorName)
                             .setDesiredState((byte) MIRRORING),
                     (short) 0));
