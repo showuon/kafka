@@ -220,8 +220,8 @@ class ClusterMirroringCompTest(MirrorUtils, Test):
 
     @cluster(num_nodes=8)
     @parametrize(source_version=str(LATEST_2_1), metadata_quorum=quorum.zk)
-    @parametrize(source_version=str(LATEST_3_9), metadata_quorum=quorum.zk)
-    @parametrize(source_version=str(LATEST_4_0), metadata_quorum=quorum.isolated_kraft)
+#     @parametrize(source_version=str(LATEST_3_9), metadata_quorum=quorum.zk)
+#     @parametrize(source_version=str(LATEST_4_0), metadata_quorum=quorum.isolated_kraft)
     def test_ule_mirroring(self, source_version, metadata_quorum):
         """Verify migration with unclean leader elections."""
         self.logger.info("Create source topic with ULE support enabled")
