@@ -154,6 +154,11 @@ import static org.apache.kafka.controller.ReplicationControlManager.STOPPED;
  */
 @SuppressWarnings({"ClassDataAbstractionCoupling", "ClassFanOutComplexity"})
 public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
+    private static final Set<String> NON_CONNECTION_CONFIGS = Set.of(
+            ClusterMirrorConfig.MIRROR_TOPICS_INCLUDE_CONFIG, ClusterMirrorConfig.MIRROR_TOPICS_EXCLUDE_CONFIG,
+            ClusterMirrorConfig.MIRROR_GROUPS_INCLUDE_CONFIG, ClusterMirrorConfig.MIRROR_GROUPS_EXCLUDE_CONFIG,
+            ClusterMirrorConfig.MIRROR_ACL_INCLUDE_CONFIG);
+
     private final Logger log;
     private volatile boolean isInitialized = false;
     private final String name;
@@ -183,7 +188,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private final Map<MirrorPartitionState, AtomicLong> partitionStateCounts = new ConcurrentHashMap<>();
 
     private Optional<ClusterMirrorUtils.StateTransitioner> stateTransitioner = Optional.empty();
-    private Optional<Consumer<String>> mirrorDeletionHandler = Optional.empty();
+    private Optional<Consumer<String>> tombstoneWriter = Optional.empty();
     private Optional<Function<ClusterMirrorRecordKey, Integer>> coordPartitionFinderByKey = Optional.empty();
     private Optional<Function<String, Integer>> coordPartitionFinderByName = Optional.empty();
 
@@ -282,7 +287,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         }
 
         this.stateTransitioner = Optional.of(stateTransitioner);
-        this.mirrorDeletionHandler = Optional.of(tombStoneHandler);
+        this.tombstoneWriter = Optional.of(tombStoneHandler);
         this.coordPartitionFinderByKey = Optional.of(coordPartitionByKeyFinder);
         this.coordPartitionFinderByName = Optional.of(coordPartitionByNameFinder);
 
@@ -459,12 +464,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         stateTransitioner.ifPresent(st -> st.transitionTo(mirrorName, topicPartition, state));
     }
 
-    private static final Set<String> NON_CONNECTION_CONFIGS = Set.of(
-            ClusterMirrorConfig.MIRROR_TOPICS_INCLUDE_CONFIG, ClusterMirrorConfig.MIRROR_TOPICS_EXCLUDE_CONFIG,
-            ClusterMirrorConfig.MIRROR_GROUPS_INCLUDE_CONFIG, ClusterMirrorConfig.MIRROR_GROUPS_EXCLUDE_CONFIG,
-            ClusterMirrorConfig.MIRROR_ACL_INCLUDE_CONFIG);
-
-    private void cleanupDeletedMirrorStates() {
+    private void retryPendingTombstoneWrites() {
+        if (tombstoneWriter.isEmpty()) {
+            log.warn("Mirror deletion handler not configured. Tombstone record writes will be skipped.");
+            return;
+        }
         Set<String> configuredMirrors = getConfiguredMirrors();
         Set<String> staleMirrors = partitionStates.keySet().stream()
             .map(ClusterMirrorUtils.PartitionKey::mirrorName)
@@ -472,7 +476,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             .collect(Collectors.toSet());
         for (String mirrorName : staleMirrors) {
             log.info("Found stale partition states for deleted mirror '{}'. Writing tombstones.", mirrorName);
-            mirrorDeletionHandler.ifPresent(h -> h.accept(mirrorName));
+            tombstoneWriter.ifPresent(h -> h.accept(mirrorName));
         }
     }
 
@@ -487,7 +491,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                                 .configProperties(e.getKey()).isEmpty();
                         if (mirrorDeleted) {
                             log.info("Mirror '{}' has been deleted. Writing tombstone records.", mirrorName);
-                            mirrorDeletionHandler.ifPresent(h -> h.accept(mirrorName));
+                            tombstoneWriter.ifPresent(h -> h.accept(mirrorName));
                         }
 
                         boolean connectionConfigChanged = e.getValue().changes().keySet().stream()
@@ -555,7 +559,10 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
 
     /** Periodic metadata sync entry point. */
-    void periodicSyncAndCleanup() {
+    void periodicSync() {
+        // retry the pending tombstone writes first to make sure they are all clean up even if no mirror existed
+        retryPendingTombstoneWrites();
+
         Set<String> mirrors = getConfiguredMirrors();
         if (mirrors.isEmpty()) {
             return;
@@ -572,8 +579,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 log.error("Failed to sync metadata for mirror {}", mirrorName, e);
             }
         }
-
-        cleanupDeletedMirrorStates();
 
         // TODO: This is incremented on every metadata refresh for testing purpose, as we don't have error handling at this stage
         metadataRefreshError.incrementAndGet();
@@ -1677,17 +1682,10 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     void removeMirrorStates(String mirrorName) {
-        partitionStates.keySet().removeIf(key -> {
-            if (key.mirrorName().equals(mirrorName)) {
-                MirrorPartitionState oldState = partitionStates.get(key);
-                if (oldState != null) {
-                    partitionStateCounts.computeIfAbsent(oldState, s -> new AtomicLong()).decrementAndGet();
-                }
-                partitionPreviousStates.remove(key);
-                return true;
-            }
-            return false;
-        });
+        partitionStates.keySet().stream()
+            .filter(key -> key.mirrorName().equals(mirrorName))
+            .toList()
+            .forEach(this::removePartitionState);
     }
 
     void removeLastMirrorEpochs(String mirrorName) {
@@ -1700,11 +1698,12 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             failedRetryAttempts.remove(tp);
         });
         pendingLeaderEpochBumps.removeIf(bump -> {
-            boolean affected = bump.partitionToEpoch().keySet().stream().anyMatch(partitions::contains);
-            if (affected) {
+            bump.partitionToEpoch().keySet().removeAll(partitions);
+            if (bump.partitionToEpoch().isEmpty()) {
                 bump.future().cancel(false);
+                return true;
             }
-            return affected;
+            return false;
         });
     }
 
@@ -1770,7 +1769,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             topicStates.add(topicState);
         });
 
-        pendingLeaderEpochBumps.add(new ClusterMirrorUtils.LeaderEpochBump(future, Collections.unmodifiableMap(partitionMinEpochs)));
+        pendingLeaderEpochBumps.add(new ClusterMirrorUtils.LeaderEpochBump(future, new ConcurrentHashMap<>(partitionMinEpochs)));
         maybeCompletePendingEpochBumps(); // already-met condition is detected immediately (e.g. epoch 11 vs target 0)
 
         channelManager.sendRequest(new BumpLeaderEpochsRequest.Builder(
@@ -1992,6 +1991,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                     @Override
                     public void onTimeout() {
                         log.warn("DeleteClusterMirror request timed out");
+                        callback.accept(Optional.of(Errors.REQUEST_TIMED_OUT));
                     }
 
                     @Override
