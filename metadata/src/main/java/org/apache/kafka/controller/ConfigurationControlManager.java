@@ -458,7 +458,7 @@ public class ConfigurationControlManager {
 
             records.add(new ApiMessageAndVersion(
                     new MirrorTopicStateChangeRecord()
-                            .setTopicId(topic.topicId())
+                            .setTopicId(topicId)
                             .setMirrorName(mirrorName)
                             .setDesiredState((byte) MIRRORING),
                     (short) 0));
