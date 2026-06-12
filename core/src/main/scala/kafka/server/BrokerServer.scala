@@ -553,6 +553,8 @@ class BrokerServer(
       // Register parts of the broker that can be reconfigured via dynamic configs.  This needs to
       // be done before we publish the dynamic configs, so that we don't miss anything.
       config.dynamicConfig.addReconfigurables(this)
+      config.dynamicConfig.addBrokerReconfigurable(
+        new DynamicClusterMirrorConfig(replicaManager, clusterMirrorCoordinator))
 
       // Install all the metadata publishers.
       FutureUtils.waitWithLogging(logger.underlying, logIdent,
