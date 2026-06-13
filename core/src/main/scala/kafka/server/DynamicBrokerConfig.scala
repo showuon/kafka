@@ -309,6 +309,7 @@ class DynamicBrokerConfig(private val kafkaConfig: KafkaConfig) extends Logging 
     addBrokerReconfigurable(kafkaServer.socketServer)
     addBrokerReconfigurable(new DynamicProducerStateManagerConfig(kafkaServer.logManager.producerStateManagerConfig))
     addBrokerReconfigurable(new DynamicRemoteLogConfig(kafkaServer))
+    addBrokerReconfigurable(new DynamicClusterMirrorConfig(kafkaServer.replicaManager, kafkaServer.clusterMirrorCoordinator))
   }
 
   /**
@@ -1140,7 +1141,7 @@ class DynamicClusterMirrorConfig(replicaManager: ReplicaManager,
     val newFetchers = newConfig.mirrorConfig.numReplicaFetchers
     val oldFetchers = replicaManager.config.mirrorConfig.numReplicaFetchers
     if (newFetchers != oldFetchers) {
-      val errorMsg = s"Dynamic thread count update validation failed for ${ClusterMirrorConfig.NUM_REPLICA_FETCHERS_CONFIG}=$newFetchers"
+      val errorMsg = s"Dynamic thread count update validation failed for ${ClusterMirrorConfig.MIRROR_NUM_REPLICA_FETCHERS_CONFIG}=$newFetchers"
       if (newFetchers <= 0)
         throw new ConfigException(s"$errorMsg, value should be at least 1")
       if (newFetchers < oldFetchers / 2)
@@ -1151,7 +1152,7 @@ class DynamicClusterMirrorConfig(replicaManager: ReplicaManager,
 
     val newInterval = newConfig.mirrorConfig.metadataRefreshIntervalMs
     if (newInterval < 0)
-      throw new ConfigException(s"${ClusterMirrorConfig.METADATA_REFRESH_INTERVAL_MS_CONFIG} must be >= 0")
+      throw new ConfigException(s"${ClusterMirrorConfig.MIRROR_METADATA_REFRESH_INTERVAL_MS_CONFIG} must be >= 0")
   }
 
   override def reconfigure(oldConfig: KafkaConfig, newConfig: KafkaConfig): Unit = {
@@ -1160,13 +1161,13 @@ class DynamicClusterMirrorConfig(replicaManager: ReplicaManager,
 
     if (newMirrorConfig.numReplicaFetchers != oldMirrorConfig.numReplicaFetchers) {
       replicaManager.mirrorFetcherManager.resizeThreadPool(newMirrorConfig.numReplicaFetchers)
-      info(s"Updated ${ClusterMirrorConfig.NUM_REPLICA_FETCHERS_CONFIG} " +
+      info(s"Updated ${ClusterMirrorConfig.MIRROR_NUM_REPLICA_FETCHERS_CONFIG} " +
         s"from ${oldMirrorConfig.numReplicaFetchers} to ${newMirrorConfig.numReplicaFetchers}")
     }
 
     if (newMirrorConfig.metadataRefreshIntervalMs != oldMirrorConfig.metadataRefreshIntervalMs) {
       coordinator.rescheduleMetadataRefresh(newMirrorConfig.metadataRefreshIntervalMs)
-      info(s"Updated ${ClusterMirrorConfig.METADATA_REFRESH_INTERVAL_MS_CONFIG} " +
+      info(s"Updated ${ClusterMirrorConfig.MIRROR_METADATA_REFRESH_INTERVAL_MS_CONFIG} " +
         s"from ${oldMirrorConfig.metadataRefreshIntervalMs} to ${newMirrorConfig.metadataRefreshIntervalMs}")
     }
   }
@@ -1174,7 +1175,7 @@ class DynamicClusterMirrorConfig(replicaManager: ReplicaManager,
 
 object DynamicClusterMirrorConfig {
   val ReconfigurableConfigs: Set[String] = Set(
-    ClusterMirrorConfig.NUM_REPLICA_FETCHERS_CONFIG,
-    ClusterMirrorConfig.METADATA_REFRESH_INTERVAL_MS_CONFIG
+    ClusterMirrorConfig.MIRROR_NUM_REPLICA_FETCHERS_CONFIG,
+    ClusterMirrorConfig.MIRROR_METADATA_REFRESH_INTERVAL_MS_CONFIG
   )
 }

@@ -216,8 +216,8 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
       }
       mirrorFetcherThreadMap.filterInPlace((key, _) => key.fetcherId < newSize)
       addFetcherForPartitions(allPartitions)
-      shutdownIdleFetcherThreads()
     }
+    shutdownIdleFetcherThreads()
     excessThreads.foreach(_.shutdown())
   }
 
