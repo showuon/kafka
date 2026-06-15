@@ -106,7 +106,6 @@ import org.slf4j.Logger;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -1936,19 +1935,19 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         MetadataImage curImage = metadataImage;
         long brokerMetadataOffset = curImage.offset();
         for (String topic : mirroredTopics) {
-           int partitionSize = curImage.topics().getTopic(topic).partitions().size();
-           for (int i = 0; i < partitionSize; i++) {
-               if (isLocalCoordinator(mirrorName, topic, i)) {
-                   MirrorPartitionState state = partitionStates.getOrDefault(new ClusterMirrorUtils.PartitionKey(mirrorName, topic, i), MirrorPartitionState.UNKNOWN);
-                   if (state != MirrorPartitionState.STOPPED) {
-                       log.error("Partition {}-{} is not in STOPPED state. Current state: {}.", topic, i, state);
-                       callback.accept(Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATES));
-                       return;
-                   }
-               } else {
-                   remotePartitions.computeIfAbsent(topic, k -> new HashSet<>()).add(i);
-               }
-           }
+            int partitionSize = curImage.topics().getTopic(topic).partitions().size();
+            for (int i = 0; i < partitionSize; i++) {
+                if (isLocalCoordinator(mirrorName, topic, i)) {
+                    MirrorPartitionState state = partitionStates.getOrDefault(new ClusterMirrorUtils.PartitionKey(mirrorName, topic, i), MirrorPartitionState.UNKNOWN);
+                    if (state != MirrorPartitionState.STOPPED) {
+                        log.error("Partition {}-{} is not in STOPPED state. Current state: {}.", topic, i, state);
+                        callback.accept(Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATES));
+                        return;
+                    }
+                } else {
+                    remotePartitions.computeIfAbsent(topic, k -> new HashSet<>()).add(i);
+                }
+            }
         }
 
         if (remotePartitions.isEmpty()) {

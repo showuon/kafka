@@ -189,7 +189,7 @@ public final class TopicDelta {
      * @param brokerId the broker id
      * @return the LocalReplicaChanges that cover changes in the broker
      */
-    @SuppressWarnings("checkstyle:cyclomaticComplexity")
+    @SuppressWarnings({"checkstyle:cyclomaticComplexity", "checkstyle:NPathComplexity"})
     public LocalReplicaChanges localChanges(int brokerId) {
         Set<TopicPartition> deletes = new HashSet<>();
         Map<TopicPartition, LocalReplicaChanges.PartitionInfo> electedLeaders = new HashMap<>();
