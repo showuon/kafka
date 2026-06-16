@@ -250,21 +250,29 @@ public class ClusterMirrorCoordinator {
                             short version = record.key().getShort();
                             if (version == CoordinatorRecordType.LAST_MIRROR_EPOCHS.id()) {
                                 String clusterName = readMirrorNameFromKey(record.key());
-                                Map<String, Map<Integer, Integer>> offsets = readLastMirrorEpochsValue(record.value());
-                                metadataManager.updateLastMirrorEpochs(clusterName, offsets, Map.of());
+                                if (record.hasValue()) {
+                                    Map<String, Map<Integer, Integer>> offsets = readLastMirrorEpochsValue(record.value());
+                                    metadataManager.updateLastMirrorEpochs(clusterName, offsets, Map.of());
+                                } else {
+                                    metadataManager.removeLastMirrorEpochs(clusterName);
+                                }
                             } else if (version == CoordinatorRecordType.MIRROR_PARTITION_STATE.id()) {
                                 String clusterName = readMirrorNameFromKey(record.key());
-                                ClusterMirrorUtils.PartitionStateLogEntry value = readMirrorPartitionStateValue(record.value());
-                                ClusterMirrorUtils.PartitionKey pk = new ClusterMirrorUtils.PartitionKey(
-                                        clusterName, value.topic(), value.partition());
-                                metadataManager.updatePartitionState(pk, value.state());
-                                TopicPartition tp = new TopicPartition(value.topic(), value.partition());
-                                if (value.state() == MirrorPartitionState.FAILED && value.retryAttempt() > 0) {
-                                    metadataManager.failedRetryAttempts().put(tp, value.retryAttempt());
-                                    metadataManager.partitionPreviousStates().put(pk, value.previousState());
+                                if (record.hasValue()) {
+                                    ClusterMirrorUtils.PartitionStateLogEntry value = readMirrorPartitionStateValue(record.value());
+                                    ClusterMirrorUtils.PartitionKey pk = new ClusterMirrorUtils.PartitionKey(
+                                            clusterName, value.topic(), value.partition());
+                                    metadataManager.updatePartitionState(pk, value.state());
+                                    TopicPartition tp = new TopicPartition(value.topic(), value.partition());
+                                    if (value.state() == MirrorPartitionState.FAILED && value.retryAttempt() > 0) {
+                                        metadataManager.failedRetryAttempts().put(tp, value.retryAttempt());
+                                        metadataManager.partitionPreviousStates().put(pk, value.previousState());
+                                    } else {
+                                        metadataManager.failedRetryAttempts().remove(tp);
+                                        metadataManager.partitionPreviousStates().remove(pk);
+                                    }
                                 } else {
-                                    metadataManager.failedRetryAttempts().remove(tp);
-                                    metadataManager.partitionPreviousStates().remove(pk);
+                                    metadataManager.removeMirrorStates(clusterName);
                                 }
                             } else {
                                 throw new IllegalArgumentException("Unknown cluster mirror log key version " + version);
@@ -913,25 +921,41 @@ public class ClusterMirrorCoordinator {
     private void tombstoneMirrorRecords(String mirrorName) {
         Map<TopicPartition, MirrorPartitionState> states = metadataManager.getMirrorStates(mirrorName);
         // Collect local coordinator partitions that need tombstones
-        Set<Integer> localCoordPartitions = new HashSet<>();
+        Map<Integer, Set<TopicPartition>> coordPartitionToMirrorPartitions = new HashMap<>();
         states.forEach((tp, state) -> {
             if (isLocalCoordinator(mirrorName, tp.topic(), tp.partition())) {
-                localCoordPartitions.add(getCoordinatorPartitionByKey(
-                    new ClusterMirrorRecordKey(mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition())));
+                coordPartitionToMirrorPartitions.computeIfAbsent(getCoordinatorPartitionByKey(
+                    new ClusterMirrorRecordKey(mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition())),
+                        v -> new HashSet<>()).add(tp);
             }
         });
 
-        // Write one partition state tombstone and one offset tombstone per coordinator partition
+        // We can safely remove these caches here and only keep partitionStates for failed write below
+        // so cleanupDeletedMirrorStates can pick up and retry.
+        metadataManager.removeLastMirrorEpochs(mirrorName);
+        metadataManager.removeStateForPartitions(states.keySet());
+
+        if (coordPartitionToMirrorPartitions.isEmpty()) {
+            // No local coordinator partitions — clear cached entries
+            states.keySet().forEach(tp ->
+                metadataManager.removePartitionState(
+                    new ClusterMirrorUtils.PartitionKey(mirrorName, tp.topic(), tp.partition())));
+            return;
+        }
+
         var timestamp = time.milliseconds();
         var stateTombstone = CoordinatorRecord.tombstone(new MirrorPartitionStateKey().setMirrorName(mirrorName));
-        var offsetTombstone = CoordinatorRecord.tombstone(new LastMirrorEpochsKey().setMirrorName(mirrorName));
+        var lmeTombstone = CoordinatorRecord.tombstone(new LastMirrorEpochsKey().setMirrorName(mirrorName));
 
-        for (int coordPartition : localCoordPartitions) {
+        // Write one partition state tombstone and one offset tombstone per coordinator partition
+        for (Map.Entry<Integer, Set<TopicPartition>> entry : coordPartitionToMirrorPartitions.entrySet()) {
+            int coordPartition = entry.getKey();
+            Set<TopicPartition> tps = entry.getValue();
             var mirrorTopicPartition = new TopicPartition(Topic.MIRROR_STATE_TOPIC_NAME, coordPartition);
             var mirrorTopicIdPartition = replicaManager.topicIdPartition(mirrorTopicPartition);
             var memRecord = MemoryRecords.withRecords(Compression.NONE,
                 new SimpleRecord(timestamp, serde.serializeKey(stateTombstone), serde.serializeValue(stateTombstone)),
-                new SimpleRecord(timestamp, serde.serializeKey(offsetTombstone), serde.serializeValue(offsetTombstone))
+                new SimpleRecord(timestamp, serde.serializeKey(lmeTombstone), serde.serializeValue(lmeTombstone))
             );
             replicaManager.appendRecords(
                 Duration.ofSeconds(5).toMillis(),
@@ -939,18 +963,25 @@ public class ClusterMirrorCoordinator {
                 true,
                 AppendOrigin.COORDINATOR,
                 CollectionConverters.asScala(Map.of(mirrorTopicIdPartition, memRecord)),
-                partitionResponses -> null,
+                response -> {
+                    response.foreach(res -> {
+                        ProduceResponse.PartitionResponse partitionRes = res._2;
+                        if (partitionRes.error.code() != Errors.NONE.code()) {
+                            log.warn("Failed to write tombstone to {}: {}. Will retry later.",
+                                mirrorTopicPartition, partitionRes.error.message());
+                        } else {
+                            tps.forEach(tp -> metadataManager.removePartitionState(
+                                new ClusterMirrorUtils.PartitionKey(mirrorName, tp.topic(), tp.partition())));
+                        }
+                        return null;
+                    });
+                    return null;
+                },
                 ignored -> null,
                 RequestLocal.noCaching(),
                 CollectionConverters.asScala(Map.of())
             );
         }
-
-        // Clean up in-memory caches
-        states.keySet().forEach(tp ->
-            metadataManager.removePartitionState(
-                new ClusterMirrorUtils.PartitionKey(mirrorName, tp.topic(), tp.partition())));
-        metadataManager.removeLastMirrorEpochs(mirrorName);
     }
 
     private String readMirrorNameFromKey(ByteBuffer buffer) {
