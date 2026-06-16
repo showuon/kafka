@@ -189,7 +189,7 @@ public final class TopicDelta {
      * @param brokerId the broker id
      * @return the LocalReplicaChanges that cover changes in the broker
      */
-    @SuppressWarnings("checkstyle:cyclomaticComplexity")
+    @SuppressWarnings({"checkstyle:cyclomaticComplexity", "checkstyle:NPathComplexity"})
     public LocalReplicaChanges localChanges(int brokerId) {
         Set<TopicPartition> deletes = new HashSet<>();
         Map<TopicPartition, LocalReplicaChanges.PartitionInfo> electedLeaders = new HashMap<>();
@@ -199,8 +199,8 @@ public final class TopicDelta {
         Map<TopicIdPartition, Uuid> directoryIds = new HashMap<>();
         Map<Uuid, LocalReplicaChanges.MirrorTopicState> mirrorTopicChanges = new HashMap<>();
 
-        if (mirrorName != null && !mirrorName.equals(image.mirrorName()) ||
-                clusterMirrorTopicChangeState != null && clusterMirrorTopicChangeState != image.clusterMirrorTopicChangeState()) {
+        if (mirrorName != null && !mirrorName.isBlank() && !mirrorName.equals(image.mirrorName()) ||
+                clusterMirrorTopicChangeState != null && clusterMirrorTopicChangeState != -1 && clusterMirrorTopicChangeState != image.clusterMirrorTopicChangeState()) {
             mirrorTopicChanges.put(image.id(), new LocalReplicaChanges.MirrorTopicState(mirrorName, clusterMirrorTopicChangeState));
         }
 

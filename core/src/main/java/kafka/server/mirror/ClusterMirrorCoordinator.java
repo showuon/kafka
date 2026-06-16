@@ -1017,6 +1017,11 @@ public class ClusterMirrorCoordinator {
         return metadataManager.getMirrorStates(mirrorName);
     }
 
+    public void deleteClusterMirror(String mirrorName, Consumer<Optional<Errors>> callback) {
+        metadataManager.validateStatesAndForwardToController(mirrorName, callback);
+    }
+
+    /** Maps a mirror record key to a __mirror_state partition index. */
     /**
      * Maps a mirror record key to a __mirror_state partition index.
      * Used by MirrorMetadataManager to route WriteMirrorStates and ReadMirrorStates RPCs to the correct coordinator broker.

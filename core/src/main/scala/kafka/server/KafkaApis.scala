@@ -369,7 +369,14 @@ class KafkaApis(val requestChannel: RequestChannel,
       requestHelper.sendMaybeThrottle(request, new DeleteClusterMirrorResponse(new DeleteClusterMirrorResponseData().setErrorCode(Errors.UNSUPPORTED_VERSION.code)))
       return
     }
-    forwardToController(request)
+    val mirrorName = request.body[DeleteClusterMirrorRequest].data().mirrorName()
+    clusterMirrorCoordinator.deleteClusterMirror(mirrorName, errOpt => {
+      if (errOpt.isPresent) {
+        requestHelper.sendMaybeThrottle(request, new DeleteClusterMirrorResponse(new DeleteClusterMirrorResponseData().setErrorCode(errOpt.get().code()).setErrorMessage(errOpt.get().message())))
+      } else {
+        requestHelper.sendMaybeThrottle(request, new DeleteClusterMirrorResponse(new DeleteClusterMirrorResponseData()))
+      }
+    })
   }
 
   def handleListClusterMirrorsRequest(request: RequestChannel.Request): Unit = {
