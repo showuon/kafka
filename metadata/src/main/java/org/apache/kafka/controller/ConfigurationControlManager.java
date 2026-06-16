@@ -86,6 +86,7 @@ public class ConfigurationControlManager {
     public static final ConfigResource DEFAULT_NODE = new ConfigResource(Type.BROKER, "");
     public static final String STOPPED_TOPIC_SUFFIX = ".stopped";
     public static final String PAUSED_TOPIC_SUFFIX = ".paused";
+    private static final byte MIRROR_EMPTY_DESIRED_STATE = -1;
 
     private final Logger log;
     private final SnapshotRegistry snapshotRegistry;
@@ -630,7 +631,7 @@ public class ConfigurationControlManager {
                     new MirrorTopicStateChangeRecord()
                         .setTopicId(topicInfo.topicId())
                         .setMirrorName("")
-                        .setDesiredState((byte) -1),
+                        .setDesiredState(MIRROR_EMPTY_DESIRED_STATE),
                     (short) 0));
             }
         }
