@@ -23,6 +23,8 @@
   "flexibleVersions": "0+",
   "fields": [
     { "name": "MirrorName", "type": "string", "versions": "0+", "entityType": "mirrorName",
-      "about": "The cluster mirror name to delete."}
+      "about": "The cluster mirror name to delete."},
+    { "name": "StateValidationOffset", "type": "int64", "versions": "0+", "default": "-1",
+      "about": "Metadata log offset at which partition states were confirmed STOPPED. -1 to skip fencing."}
   ]
 }
