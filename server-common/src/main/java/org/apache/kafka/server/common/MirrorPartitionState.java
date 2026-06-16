@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package kafka.server.mirror;
+package org.apache.kafka.server.common;
 
 /**
  * Represents the lifecycle states of a mirror partition.

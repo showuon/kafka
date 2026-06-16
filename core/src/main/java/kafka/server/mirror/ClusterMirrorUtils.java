@@ -24,6 +24,7 @@ import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.server.common.ClusterMirrorVersion;
+import org.apache.kafka.server.common.MirrorPartitionState;
 import org.apache.kafka.server.config.ClusterMirrorConfig;
 import org.apache.kafka.server.network.BrokerEndPoint;
 

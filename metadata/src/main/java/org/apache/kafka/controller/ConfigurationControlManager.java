@@ -78,9 +78,7 @@ import static org.apache.kafka.common.metadata.MetadataRecordType.CONFIG_RECORD;
 import static org.apache.kafka.common.protocol.Errors.CLUSTER_MIRROR_ALREADY_EXISTS;
 import static org.apache.kafka.common.protocol.Errors.INVALID_CONFIG;
 import static org.apache.kafka.controller.QuorumController.MAX_RECORDS_PER_USER_OP;
-import static org.apache.kafka.controller.ReplicationControlManager.MIRRORING;
-import static org.apache.kafka.controller.ReplicationControlManager.PAUSED;
-import static org.apache.kafka.controller.ReplicationControlManager.STOPPED;
+import org.apache.kafka.server.common.MirrorPartitionState;
 
 public class ConfigurationControlManager {
     public static final ConfigResource DEFAULT_NODE = new ConfigResource(Type.BROKER, "");
@@ -282,7 +280,7 @@ public class ConfigurationControlManager {
             }
 
             // no-op if the topic is still in STOPPING change state
-            if (currMirrorStateChange == STOPPED) {
+            if (currMirrorStateChange == MirrorPartitionState.STOPPED.value()) {
                 topicRes.setName(topic);
                 topicResList.add(topicRes);
                 continue;
@@ -292,7 +290,7 @@ public class ConfigurationControlManager {
                     new MirrorTopicStateChangeRecord()
                             .setTopicId(topicId)
                             .setMirrorName(mirrorName)
-                            .setDesiredState((byte) STOPPED),
+                            .setDesiredState(MirrorPartitionState.STOPPED.value()),
                     (short) 0));
 
             topicRes.setName(topic);
@@ -333,7 +331,7 @@ public class ConfigurationControlManager {
             }
 
             // Don't allow to pause a topic when stopping/stopped
-            if (currMirrorStateChange == STOPPED) {
+            if (currMirrorStateChange == MirrorPartitionState.STOPPED.value()) {
                 topicRes.setErrorCode(Errors.MIRROR_TOPIC_BEING_STOPPED.code()).setName(topic);
                 topicResList.add(topicRes);
                 continue;
@@ -343,7 +341,7 @@ public class ConfigurationControlManager {
                 new MirrorTopicStateChangeRecord()
                     .setTopicId(topicId)
                     .setMirrorName(mirrorName)
-                    .setDesiredState((byte) PAUSED),
+                    .setDesiredState(MirrorPartitionState.PAUSED.value()),
                 (short) 0));
         }
         data.setTopics(topicResList);
@@ -382,7 +380,7 @@ public class ConfigurationControlManager {
                 continue;
             }
 
-            if (currMirrorStateChange != PAUSED) {
+            if (currMirrorStateChange != MirrorPartitionState.PAUSED.value()) {
                 topicRes.setErrorCode(Errors.MIRROR_TOPIC_NOT_PAUSED.code()).setName(topic);
                 topicResList.add(topicRes);
                 continue;
@@ -392,7 +390,7 @@ public class ConfigurationControlManager {
                 new MirrorTopicStateChangeRecord()
                     .setTopicId(topicId)
                     .setMirrorName(mirrorName)
-                    .setDesiredState((byte) MIRRORING),
+                    .setDesiredState(MirrorPartitionState.MIRRORING.value()),
                 (short) 0));
         }
         data.setTopics(topicResList);
@@ -450,7 +448,7 @@ public class ConfigurationControlManager {
             if (topicInfo != null) {
                 String currMirrorNameValue = topicInfo.mirrorName();
                 int currMirrorStateChange = topicInfo.mirrorState();
-                if (currMirrorNameValue != null && !currMirrorNameValue.isBlank() && currMirrorStateChange != STOPPED) {
+                if (currMirrorNameValue != null && !currMirrorNameValue.isBlank() && currMirrorStateChange != MirrorPartitionState.STOPPED.value()) {
                     topicRes.setErrorCode(Errors.TOPIC_ALREADY_IN_CLUSTER_MIRROR.code()).setName(topicName);
                     topicResList.add(topicRes);
                     continue;
@@ -461,7 +459,7 @@ public class ConfigurationControlManager {
                     new MirrorTopicStateChangeRecord()
                             .setTopicId(topicId)
                             .setMirrorName(mirrorName)
-                            .setDesiredState((byte) MIRRORING),
+                            .setDesiredState(MirrorPartitionState.MIRRORING.value()),
                     (short) 0));
 
             topicRes.setName(topicName);
@@ -534,7 +532,7 @@ public class ConfigurationControlManager {
                 records.add(new ApiMessageAndVersion(new MirrorTopicStateChangeRecord()
                     .setTopicId(topicInfo.topicId())
                     .setMirrorName(mirrorName)
-                    .setDesiredState((byte) STOPPED), (short) 0));
+                    .setDesiredState(MirrorPartitionState.STOPPED.value()), (short) 0));
             }
         });
     }
@@ -613,7 +611,7 @@ public class ConfigurationControlManager {
             String curMirrorName = topicInfo.mirrorName();
             if (curMirrorName == null || curMirrorName.isBlank()) continue;
             int desiredMirrorState = topicInfo.mirrorState();
-            if (curMirrorName.equals(mirrorName) && (desiredMirrorState == PAUSED || desiredMirrorState == MIRRORING)) {
+            if (curMirrorName.equals(mirrorName) && (desiredMirrorState == MirrorPartitionState.PAUSED.value() || desiredMirrorState == MirrorPartitionState.MIRRORING.value())) {
                 data.setErrorCode(Errors.CLUSTER_MIRROR_NOT_EMPTY.code());
                 data.setErrorMessage("Mirror '" + mirrorName + "' still has active or paused topic '"
                         + topicInfo.name() + "'");
@@ -626,7 +624,7 @@ public class ConfigurationControlManager {
             String curMirrorName = topicInfo.mirrorName();
             if (curMirrorName == null || curMirrorName.isBlank()) continue;
             int desiredMirrorState = topicInfo.mirrorState();
-            if (curMirrorName.equals(mirrorName) && desiredMirrorState == STOPPED) {
+            if (curMirrorName.equals(mirrorName) && desiredMirrorState == MirrorPartitionState.STOPPED.value()) {
                 records.add(new ApiMessageAndVersion(
                     new MirrorTopicStateChangeRecord()
                         .setTopicId(topicInfo.topicId())

@@ -54,6 +54,7 @@ import org.apache.kafka.coordinator.mirror.generated.MirrorPartitionStateKey;
 import org.apache.kafka.coordinator.mirror.generated.MirrorPartitionStateValue;
 import org.apache.kafka.metadata.MetadataCache;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.common.MirrorPartitionState;
 import org.apache.kafka.server.common.RequestLocal;
 import org.apache.kafka.server.storage.log.FetchIsolation;
 import org.apache.kafka.server.util.Scheduler;

@@ -134,8 +134,8 @@ import static org.apache.kafka.clients.CommonClientConfigs.BOOTSTRAP_SERVERS_CON
 import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
 import static org.apache.kafka.controller.ConfigurationControlManager.PAUSED_TOPIC_SUFFIX;
 import static org.apache.kafka.controller.ConfigurationControlManager.STOPPED_TOPIC_SUFFIX;
-import static org.apache.kafka.controller.ReplicationControlManager.PAUSED;
-import static org.apache.kafka.controller.ReplicationControlManager.STOPPED;
+
+import org.apache.kafka.server.common.MirrorPartitionState;
 
 /**
  * Bridges the local destination cluster and remote source clusters for Cluster Mirroring.
@@ -360,8 +360,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             TopicImage topicImage = newImage.topics().getTopic(tp.topic());
             String rawMirrorName = topicImage.mirrorName();
             int mirrorStateChange = topicImage.clusterMirrorTopicChangeState();
-            boolean stopRequested = mirrorStateChange == STOPPED;
-            boolean pauseRequested = mirrorStateChange == PAUSED;
+            boolean stopRequested = mirrorStateChange == MirrorPartitionState.STOPPED.value();
+            boolean pauseRequested = mirrorStateChange == MirrorPartitionState.PAUSED.value();
             String mirrorName = ClusterMirrorUtils.originalMirrorName(rawMirrorName);
 
             ClusterMirrorUtils.PartitionKey key = new ClusterMirrorUtils.PartitionKey(mirrorName, tp.topic(), tp.partition());
