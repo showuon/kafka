@@ -42,7 +42,7 @@ public class DeleteClusterMirrorRequest extends AbstractRequest {
                   ApiKeys.DELETE_CLUSTER_MIRROR.latestVersion());
             this.data = new DeleteClusterMirrorRequestData()
                     .setMirrorName(mirrorName)
-                    .setBrokerMetadataOffset(brokerMetadataOffset);
+                    .setStateValidationOffset(brokerMetadataOffset);
         }
 
         @Override

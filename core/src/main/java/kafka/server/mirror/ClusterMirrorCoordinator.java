@@ -24,7 +24,6 @@ import org.apache.kafka.clients.admin.ClusterMirrorDescription;
 import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.compress.Compression;
-import org.apache.kafka.common.errors.InvalidClusterMirrorStateException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.message.MirrorPidResetRecord;
