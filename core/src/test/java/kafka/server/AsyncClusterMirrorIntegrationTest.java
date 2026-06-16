@@ -16,13 +16,16 @@
  */
 package kafka.server;
 
+import kafka.utils.TestUtils;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.AlterConfigOp;
 import org.apache.kafka.clients.admin.ClusterMirrorDescription;
 import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.clients.admin.CreateClusterMirrorOptions;
+import org.apache.kafka.clients.admin.DeleteClusterMirrorOptions;
 import org.apache.kafka.clients.admin.DescribeClusterMirrorsOptions;
+import org.apache.kafka.clients.admin.ListConfigResourcesOptions;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.admin.StartMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.StopMirrorTopicsOptions;
@@ -36,12 +39,18 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.test.KafkaClusterTestKit;
 import org.apache.kafka.common.test.TestKitNodes;
+import org.apache.kafka.coordinator.common.runtime.CoordinatorRecord;
 import org.apache.kafka.coordinator.group.GroupCoordinatorConfig;
+import org.apache.kafka.coordinator.mirror.ClusterMirrorRecordKey;
+import org.apache.kafka.coordinator.mirror.ClusterMirrorRecordSerde;
+import org.apache.kafka.coordinator.mirror.generated.LastMirrorEpochsKey;
+import org.apache.kafka.coordinator.mirror.generated.MirrorPartitionStateKey;
 import org.apache.kafka.server.config.ClusterMirrorConfig;
 import org.apache.kafka.server.config.ServerConfigs;
 import org.apache.kafka.server.config.ServerLogConfigs;
@@ -61,6 +70,8 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 
+import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
+import static org.apache.kafka.test.TestUtils.DEFAULT_MAX_WAIT_MS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -471,6 +482,69 @@ public class AsyncClusterMirrorIntegrationTest {
                 "mirror.topics.include should contain 'orders-.*' after startMirrorTopics with includePatterns");
     }
 
+    /**
+     * Tests that a mirror can be deleted after all its topics are stopped, and that
+     * the mirror no longer appears in listClusterMirrors after deletion.
+     * And the internal topic __mirror_state contains the tombstone records in the last batch.
+     */
+    @Test
+    void testDeleteClusterMirror() throws Exception {
+        String topic = "delete-mirror-topic";
+
+        var result = srcAdmin.createTopics(List.of(
+                new NewTopic(topic, 1, (short) 1)));
+
+        result.all().get(30, TimeUnit.SECONDS);
+
+        Uuid topicId = result.topicId(topic).get();
+
+        // Create mirror with auto-discovery via mirror.topics.include
+        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
+                "bootstrap.servers", singleSourceBootstrapServer,
+                ClusterMirrorConfig.MIRROR_TOPICS_INCLUDE_CONFIG, topic
+        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+
+        waitForMirrorLagZero(topic);
+        var listConfigResult = dstAdmin.listConfigResources(Set.of(ConfigResource.Type.CLUSTER_MIRROR), new ListConfigResourcesOptions()).all().get(30, TimeUnit.SECONDS);
+        assertEquals(1, listConfigResult.size());
+
+        // Verify mirror is listed before deletion
+        var listingsBefore = dstAdmin.listClusterMirrors().all().get(30, TimeUnit.SECONDS);
+        assertTrue(listingsBefore.stream().anyMatch(l -> MIRROR_NAME.equals(l.mirrorName())),
+                "Mirror should be listed before deletion");
+
+        // Stop all topics — required precondition for deletion
+        dstAdmin.stopMirrorTopics(MIRROR_NAME, Set.of(topic), new StopMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+
+        waitForMirrorState(topic, "STOPPED");
+
+        dstAdmin.deleteClusterMirror(MIRROR_NAME, new DeleteClusterMirrorOptions())
+                .all().get(30, TimeUnit.SECONDS);
+
+        // Verify the mirror is no longer listed after deletion
+        waitForListMirrorEmpty();
+        listConfigResult = dstAdmin.listConfigResources(Set.of(ConfigResource.Type.CLUSTER_MIRROR), new ListConfigResourcesOptions()).all().get(30, TimeUnit.SECONDS);
+        assertTrue(listConfigResult.isEmpty());
+
+        // Verify the __mirror_state topic contains the tombstone records for both `MirrorPartitionStateKey` and `LastMirrorEpochsKey` types
+
+        // 1. get the partition index hosting the metadata for the mirrored topic partition
+        int partInd = dstCluster.brokers().get(0).clusterMirrorCoordinator().getCoordinatorPartitionByKey(new ClusterMirrorRecordKey(MIRROR_NAME, topicId, 0));
+        // 2. get the partition leader
+        int leaderMirrorStatePartition = dstCluster.brokers().get(0).metadataCache().getLeaderAndIsr(MIRROR_STATE_TOPIC_NAME, partInd).get().leader();
+        // 3. get the last batch of the partition
+        var lastBatch = dstCluster.brokers().get(leaderMirrorStatePartition).replicaManager().getLog(new TopicPartition(MIRROR_STATE_TOPIC_NAME, partInd)).get().activeSegment().log().lastBatch().get();
+        // 4. deserialize the records in the last batch
+        List<CoordinatorRecord> records = new ArrayList<>();
+        ClusterMirrorRecordSerde serde = new ClusterMirrorRecordSerde();
+        lastBatch.forEach(record -> records.add(serde.deserialize(record.key(), record.value())));
+        // 5. make sure the last batch contains 2 tombstone records: MirrorPartitionState record and LastMirrorEpochs record
+        assertEquals(2, records.size());
+        assertTrue(records.get(0).key().apiKey() == new MirrorPartitionStateKey().apiKey() && records.get(0).value() == null);
+        assertTrue(records.get(1).key().apiKey() == new LastMirrorEpochsKey().apiKey() && records.get(1).value() == null);
+    }
+
     private void produceRecords(KafkaClusterTestKit cluster, String topic,
                                 int startIndex, int count) {
         Properties props = new Properties();
@@ -570,6 +644,17 @@ public class AsyncClusterMirrorIntegrationTest {
             TimeUnit.MILLISECONDS.sleep(1_000);
         }
         throw new AssertionError("Mirror partitions for " + topicPattern + " did not reach state " + state + " within timeout");
+    }
+
+    private void waitForListMirrorEmpty() {
+        TestUtils.waitUntilTrue(() -> {
+            try {
+                var listMirror = dstAdmin.listClusterMirrors().all().get(30, TimeUnit.SECONDS);
+                return listMirror.isEmpty();
+            } catch (Exception e) {
+                return false;
+            }
+        }, () -> "Cluster Mirror is not deleted successfully", DEFAULT_MAX_WAIT_MS, 100);
     }
 
     private void waitForMirrorLagZero(String... topicPatterns) throws Exception {
