@@ -1923,7 +1923,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         return result;
     }
 
-    /**
+    /*
+     * Optimistic locking: broker validates partitions, controller validates no concurrent changes before update.
      * Verifies that all partitions for the given mirror are in STOPPED state.
      * Invokes the callback with {@code Optional.empty()} if all partitions are STOPPED,
      * or {@code Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATES)} if any are not.
@@ -1935,7 +1936,14 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         MetadataImage curImage = metadataImage;
         long brokerMetadataOffset = curImage.offset();
         for (String topic : mirroredTopics) {
-            int partitionSize = curImage.topics().getTopic(topic).partitions().size();
+            TopicImage topicImage = curImage.topics().getTopic(topic);
+            if (topicImage == null || topicImage.clusterMirrorTopicChangeState() != MirrorPartitionState.STOPPED.value()) {
+                log.error("The desired mirror state of topic {} is not in STOPPED state.", topic);
+                callback.accept(Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATES));
+                return;
+            }
+            int partitionSize = topicImage.partitions().size();
+
             for (int i = 0; i < partitionSize; i++) {
                 if (isLocalCoordinator(mirrorName, topic, i)) {
                     MirrorPartitionState state = partitionStates.getOrDefault(new ClusterMirrorUtils.PartitionKey(mirrorName, topic, i), MirrorPartitionState.UNKNOWN);

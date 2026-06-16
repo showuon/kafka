@@ -16,15 +16,15 @@
  */
 package org.apache.kafka.common.errors;
 
-public class InvalidClusterMirrorStateException extends AuthorizationException {
+public class InvalidMirrorNameException extends ApiException {
 
     private static final long serialVersionUID = 1L;
 
-    public InvalidClusterMirrorStateException(String message) {
+    public InvalidMirrorNameException(String message) {
         super(message);
     }
 
-    public InvalidClusterMirrorStateException(String message, Throwable cause) {
+    public InvalidMirrorNameException(String message, Throwable cause) {
         super(message, cause);
     }
 }
