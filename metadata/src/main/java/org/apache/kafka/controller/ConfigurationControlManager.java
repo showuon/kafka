@@ -44,6 +44,7 @@ import org.apache.kafka.metadata.KafkaConfigSchema;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.EligibleLeaderReplicasVersion;
 import org.apache.kafka.server.common.MirrorPartitionState;
+import org.apache.kafka.server.config.MirrorFilterUtils;
 import org.apache.kafka.server.mutable.BoundedList;
 import org.apache.kafka.server.policy.AlterConfigPolicy;
 import org.apache.kafka.server.policy.AlterConfigPolicy.RequestMetadata;
@@ -68,6 +69,7 @@ import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static org.apache.kafka.clients.admin.AlterConfigOp.OpType.APPEND;
 import static org.apache.kafka.clients.admin.AlterConfigOp.OpType.DELETE;
@@ -241,7 +243,7 @@ public class ConfigurationControlManager {
         data.setMirrorName(mirrorName);
 
         if (!patterns.isEmpty()) {
-            ApiError patternError = updatePatternsAndStopExcluded(mirrorName, records, replicationControl, (includeSet, excludeSet) -> {
+            ApiError patternError = updatePatternsAndStopExcluded(mirrorName, records, Set.of(), replicationControl, (includeSet, excludeSet) -> {
                 for (String pattern : patterns) {
                     if (!includeSet.remove(pattern)) {
                         excludeSet.add(pattern);
@@ -408,21 +410,25 @@ public class ConfigurationControlManager {
         StartMirrorTopicsResponseData data = new StartMirrorTopicsResponseData();
         data.setMirrorName(mirrorName);
 
-        if (!includePatterns.isEmpty() || !excludePatterns.isEmpty()) {
-            ApiError patternError = updatePatternsAndStopExcluded(mirrorName, records, replicationControl, (includeSet, excludeSet) -> {
-                for (String pattern : includePatterns) {
-                    includeSet.add(pattern);
-                    excludeSet.remove(pattern);
-                }
-                for (String pattern : excludePatterns) {
-                    excludeSet.add(pattern);
-                    includeSet.remove(pattern);
-                }
-            });
-            if (patternError.isFailure()) {
-                data.setErrorCode(patternError.error().code());
-                return ControllerResult.of(records, data);
+        Set<String> topicNames = topics.stream().map(StartMirrorTopicsRequestData.TopicData::topicName).collect(Collectors.toSet());
+        ApiError patternError = updatePatternsAndStopExcluded(mirrorName, records, topicNames, replicationControl, (includeSet, excludeSet) -> {
+            // auto-include explicitly started topics so validation works fine
+            for (String topicName : topicNames) {
+                includeSet.add(topicName);
+                excludeSet.remove(topicName);
             }
+            for (String pattern : includePatterns) {
+                includeSet.add(pattern);
+                excludeSet.remove(pattern);
+            }
+            for (String pattern : excludePatterns) {
+                excludeSet.add(pattern);
+                includeSet.remove(pattern);
+            }
+        });
+        if (patternError.isFailure()) {
+            data.setErrorCode(patternError.error().code());
+            return ControllerResult.of(records, data);
         }
 
         List<StartMirrorTopicsResponseData.TopicResult> topicResList = new ArrayList<>();
@@ -430,8 +436,21 @@ public class ConfigurationControlManager {
             StartMirrorTopicsResponseData.TopicResult topicRes = new StartMirrorTopicsResponseData.TopicResult();
             String topicName = topic.topicName();
 
-            // create a random uuid if the provided topic id is ZERO_UUID (i.e. the source topic has no topic ID attached)
+            // When topic ID and partition count are missing, the caller only provided the topic
+            // name without metatata (see StartMirrorTopicsOptions). The topic was already added
+            // to mirror.topics.include above, so discoverTopicsByPattern will fetch the metadata
+            // from the source and create it at the next metadata refresh.
+            if (topic.topicId().equals(Uuid.ZERO_UUID) && topic.numPartitions() <= 0) {
+                log.warn("Topic {} for mirror {} has no topic ID or partition info and will be" +
+                        " created at the next metadata refresh", topicName, mirrorName);
+                topicRes.setName(topicName);
+                topicResList.add(topicRes);
+                continue;
+            }
+
+            // For pre-2.8 sources (ZERO_UUID) with partition info, assign a random UUID
             Uuid topicId = topic.topicId().equals(Uuid.ZERO_UUID) ? Uuid.randomUuid() : topic.topicId();
+
             if (topic.numPartitions() > 0) {
                 ApiError createError = replicationControl.createMirrorTopic(
                         topicName, topicId, topic.numPartitions(), records);
@@ -444,7 +463,6 @@ public class ConfigurationControlManager {
             }
 
             ReplicationControlManager.TopicControlInfo topicInfo = replicationControl.getTopic(topicId);
-            // no previous mirror name, so skip this validation
             if (topicInfo != null) {
                 String currMirrorNameValue = topicInfo.mirrorName();
                 int currMirrorStateChange = topicInfo.mirrorState();
@@ -487,9 +505,12 @@ public class ConfigurationControlManager {
      * Updates mirror.topics.include/exclude on the MIRROR config resource,
      * then stops any active topics that now match the updated exclude pattern.
      */
-    private ApiError updatePatternsAndStopExcluded(String mirrorName, List<ApiMessageAndVersion> records,
+    private ApiError updatePatternsAndStopExcluded(String mirrorName,
+                                                   List<ApiMessageAndVersion> records,
+                                                   Set<String> topics,
                                                    ReplicationControlManager replicationControl,
-                                                   BiConsumer<Set<String>, Set<String>> mutator) {
+                                                   BiConsumer<Set<String>,
+                                                   Set<String>> mutator) {
         ConfigResource mirrorResource = new ConfigResource(Type.CLUSTER_MIRROR, mirrorName);
         TimelineHashMap<String, String> mirrorConfigs = configData.get(mirrorResource);
 
@@ -500,6 +521,11 @@ public class ConfigurationControlManager {
         Set<String> excludeSet = parseCsvToSet(currentExclude);
         mutator.accept(includeSet, excludeSet);
 
+        ApiError topicsInPatternsError = validateTopicsInPatterns(topics, includeSet, excludeSet);
+        if (topicsInPatternsError.isFailure()) {
+            return topicsInPatternsError;
+        }
+
         Map<String, Entry<OpType, String>> ops = Map.of(
                 "mirror.topics.include", new AbstractMap.SimpleImmutableEntry<>(SET, String.join(",", includeSet)),
                 "mirror.topics.exclude", new AbstractMap.SimpleImmutableEntry<>(SET, String.join(",", excludeSet)));
@@ -509,6 +535,30 @@ public class ConfigurationControlManager {
         }
         records.addAll(result.records());
         stopExcludedTopics(mirrorName, excludeSet, records, replicationControl);
+        return ApiError.NONE;
+    }
+
+    // validate the topics is not excluded by the excludeSet pattern, and is included in includeSet pattern
+    private ApiError validateTopicsInPatterns(Set<String> topics, Set<String> includeSet, Set<String> excludeSet) {
+        if (topics.isEmpty()) {
+            return ApiError.NONE;
+        }
+        Pattern includePatterns = MirrorFilterUtils.compilePatternList(includeSet.stream().toList());
+        Pattern excludePatterns = MirrorFilterUtils.compilePatternList(excludeSet.stream().toList());
+
+        if (excludePatterns != null) {
+            boolean topicExcluded = topics.stream().anyMatch(topic -> excludePatterns.matcher(topic).matches());
+            if (topicExcluded) {
+                return new ApiError(Errors.INVALID_REQUEST, "Unable to start the topics to mirror because some topics are excluded by exclude patterns: " + excludeSet);
+            }
+        }
+        if (includePatterns != null) {
+            boolean topicNotIncluded = topics.stream().anyMatch(topic -> !includePatterns.matcher(topic).matches());
+            if (topicNotIncluded) {
+                return new ApiError(Errors.INVALID_REQUEST, "Unable to start the topics to mirror because some topics are not included in include patterns: " + includeSet);
+            }
+        }
+
         return ApiError.NONE;
     }
 
