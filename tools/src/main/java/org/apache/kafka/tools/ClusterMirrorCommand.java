@@ -34,7 +34,6 @@ import org.apache.kafka.clients.admin.ResumeMirrorTopicsResult;
 import org.apache.kafka.clients.admin.StartMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.StopMirrorTopicsOptions;
 import org.apache.kafka.common.config.ConfigResource;
-import org.apache.kafka.common.message.StartMirrorTopicsRequestData;
 import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.server.config.MirrorFilterUtils;
@@ -141,8 +140,6 @@ public abstract class ClusterMirrorCommand {
             var mirrorConfigEntries = describeMirrorConfig(mirrorName);
             Properties sourceConfig = toProperties(mirrorConfigEntries);
 
-            // Resolve currently matching topics from source with metadata
-            Map<String, StartMirrorTopicsRequestData.TopicData> topicMetadata;
             Set<String> matchingTopicNames;
             try (Admin sourceAdmin = Admin.create(sourceConfig)) {
                 Set<String> allSourceTopics = sourceAdmin.listTopics().names().get();
@@ -152,25 +149,12 @@ public abstract class ClusterMirrorCommand {
                         .filter(t -> includePattern != null && includePattern.matcher(t).matches())
                         .filter(t -> excludePattern == null || !excludePattern.matcher(t).matches())
                         .collect(Collectors.toSet());
-
-                if (matchingTopicNames.isEmpty()) {
-                    topicMetadata = Map.of();
-                } else {
-                    var descriptions = sourceAdmin.describeTopics(matchingTopicNames).allTopicNames().get();
-                    topicMetadata = new HashMap<>();
-                    descriptions.forEach((name, desc) ->
-                            topicMetadata.put(name, new StartMirrorTopicsRequestData.TopicData()
-                                    .setTopicName(name)
-                                    .setTopicId(desc.topicId())
-                                    .setNumPartitions(desc.partitions().size())));
-                }
             }
 
             adminClient.startMirrorTopics(mirrorName, matchingTopicNames,
                     new StartMirrorTopicsOptions()
                             .includePatterns(topicPatterns)
-                            .excludePatterns(excludePatterns)
-                            .topicMetadata(topicMetadata))
+                            .excludePatterns(excludePatterns))
                     .all().get();
             if (!matchingTopicNames.isEmpty()) {
                 System.out.printf("Started %d mirror topic(s) in mirror %s: %s%n",

@@ -161,7 +161,7 @@ public class AsyncClusterMirrorIntegrationTest {
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleSourceBootstrapServer
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(TOPIC_NAME), new StartMirrorTopicsOptions().includePatterns(List.of(TOPIC_NAME)))
+        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(TOPIC_NAME), new StartMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
         waitForMirrorLagZero(TOPIC_NAME);
 
@@ -194,7 +194,7 @@ public class AsyncClusterMirrorIntegrationTest {
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleSourceBootstrapServer
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(topic), new StartMirrorTopicsOptions().includePatterns(List.of(topic)))
+        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(topic), new StartMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
         waitForMirrorLagZero(topic);
 
@@ -238,7 +238,7 @@ public class AsyncClusterMirrorIntegrationTest {
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleSourceBootstrapServer
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(TOPIC_NAME), new StartMirrorTopicsOptions().includePatterns(List.of(TOPIC_NAME)))
+        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(TOPIC_NAME), new StartMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
         waitForMirrorLagZero(TOPIC_NAME);
 
@@ -321,7 +321,7 @@ public class AsyncClusterMirrorIntegrationTest {
      * from being mirrored even when mirror.topics.include=.* matches everything.
      */
     @Test
-    void testMirrorTopicsExcludeDefaultInternalTopics() throws Exception {
+    void testMirrorTopicsExcludeInternalTopics() throws Exception {
         String userTopic = "user-events";
         String internalTopic = "__test-internal";
 
@@ -375,7 +375,7 @@ public class AsyncClusterMirrorIntegrationTest {
      * Tests that a mix of literal and regex patterns in mirror.topics.include works.
      */
     @Test
-    void testMirrorTopicsIncludeMixedLiteralAndRegex() throws Exception {
+    void testMirrorTopicsIncludeLiteralAndRegex() throws Exception {
         String literalTopic = "payments";
         String regexMatchedTopic = "orders-eu";
         String unmatchedTopic = "logs-app";
@@ -452,7 +452,7 @@ public class AsyncClusterMirrorIntegrationTest {
      * persists patterns to mirror.topics.include via KafkaAdminClient.
      */
     @Test
-    void testStartMirrorTopicsWithIncludePatterns() throws Exception {
+    void testStartMirrorTopicsWithInclude() throws Exception {
         String topic = "orders-us";
 
         srcAdmin.createTopics(List.of(
@@ -492,21 +492,20 @@ public class AsyncClusterMirrorIntegrationTest {
     void testDeleteClusterMirror() throws Exception {
         String topic = "delete-mirror-topic";
 
-        var result = srcAdmin.createTopics(List.of(
-                new NewTopic(topic, 1, (short) 1)));
-
+        var result = srcAdmin.createTopics(List.of(new NewTopic(topic, 1, (short) 1)));
         result.all().get(30, TimeUnit.SECONDS);
 
         Uuid topicId = result.topicId(topic).get();
 
-        // Create mirror with auto-discovery via mirror.topics.include
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer,
-                ClusterMirrorConfig.MIRROR_TOPICS_INCLUDE_CONFIG, topic
+                "bootstrap.servers", singleSourceBootstrapServer
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(topic), new StartMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
 
         waitForMirrorLagZero(topic);
-        var listConfigResult = dstAdmin.listConfigResources(Set.of(ConfigResource.Type.CLUSTER_MIRROR), new ListConfigResourcesOptions()).all().get(30, TimeUnit.SECONDS);
+        var listConfigResult = dstAdmin.listConfigResources(Set.of(ConfigResource.Type.CLUSTER_MIRROR),
+                new ListConfigResourcesOptions()).all().get(30, TimeUnit.SECONDS);
         assertEquals(1, listConfigResult.size());
 
         // Verify mirror is listed before deletion
@@ -525,17 +524,21 @@ public class AsyncClusterMirrorIntegrationTest {
 
         // Verify the mirror is no longer listed after deletion
         waitForListMirrorEmpty();
-        listConfigResult = dstAdmin.listConfigResources(Set.of(ConfigResource.Type.CLUSTER_MIRROR), new ListConfigResourcesOptions()).all().get(30, TimeUnit.SECONDS);
+        listConfigResult = dstAdmin.listConfigResources(Set.of(ConfigResource.Type.CLUSTER_MIRROR),
+                new ListConfigResourcesOptions()).all().get(30, TimeUnit.SECONDS);
         assertTrue(listConfigResult.isEmpty());
 
         // Verify the __mirror_state topic contains the tombstone records for both `MirrorPartitionStateKey` and `LastMirrorEpochsKey` types
 
         // 1. get the partition index hosting the metadata for the mirrored topic partition
-        int partInd = dstCluster.brokers().get(0).clusterMirrorCoordinator().getCoordinatorPartitionByKey(new ClusterMirrorRecordKey(MIRROR_NAME, topicId, 0));
+        int partInd = dstCluster.brokers().get(0).clusterMirrorCoordinator()
+                .getCoordinatorPartitionByKey(new ClusterMirrorRecordKey(MIRROR_NAME, topicId, 0));
         // 2. get the partition leader
-        int leaderMirrorStatePartition = dstCluster.brokers().get(0).metadataCache().getLeaderAndIsr(MIRROR_STATE_TOPIC_NAME, partInd).get().leader();
+        int leaderMirrorStatePartition = dstCluster.brokers().get(0).metadataCache()
+                .getLeaderAndIsr(MIRROR_STATE_TOPIC_NAME, partInd).get().leader();
         // 3. get the last batch of the partition
-        var lastBatch = dstCluster.brokers().get(leaderMirrorStatePartition).replicaManager().getLog(new TopicPartition(MIRROR_STATE_TOPIC_NAME, partInd)).get().activeSegment().log().lastBatch().get();
+        var lastBatch = dstCluster.brokers().get(leaderMirrorStatePartition).replicaManager()
+                .getLog(new TopicPartition(MIRROR_STATE_TOPIC_NAME, partInd)).get().activeSegment().log().lastBatch().get();
         // 4. deserialize the records in the last batch
         List<CoordinatorRecord> records = new ArrayList<>();
         ClusterMirrorRecordSerde serde = new ClusterMirrorRecordSerde();

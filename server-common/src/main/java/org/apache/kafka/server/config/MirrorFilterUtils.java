@@ -27,7 +27,6 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public final class MirrorFilterUtils {
-
     private MirrorFilterUtils() {}
 
     /**
