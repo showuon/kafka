@@ -502,8 +502,8 @@ public class AsyncClusterMirrorIntegrationTest {
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
         dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(topic), new StartMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
-
         waitForMirrorLagZero(topic);
+
         var listConfigResult = dstAdmin.listConfigResources(Set.of(ConfigResource.Type.CLUSTER_MIRROR),
                 new ListConfigResourcesOptions()).all().get(30, TimeUnit.SECONDS);
         assertEquals(1, listConfigResult.size());
@@ -513,37 +513,36 @@ public class AsyncClusterMirrorIntegrationTest {
         assertTrue(listingsBefore.stream().anyMatch(l -> MIRROR_NAME.equals(l.mirrorName())),
                 "Mirror should be listed before deletion");
 
-        // Stop all topics — required precondition for deletion
+        // Stop all topics (required precondition for deletion)
         dstAdmin.stopMirrorTopics(MIRROR_NAME, Set.of(topic), new StopMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
-
         waitForMirrorState(topic, "STOPPED");
 
         dstAdmin.deleteClusterMirror(MIRROR_NAME, new DeleteClusterMirrorOptions())
                 .all().get(30, TimeUnit.SECONDS);
+        waitForListMirrorEmpty();
 
         // Verify the mirror is no longer listed after deletion
-        waitForListMirrorEmpty();
         listConfigResult = dstAdmin.listConfigResources(Set.of(ConfigResource.Type.CLUSTER_MIRROR),
                 new ListConfigResourcesOptions()).all().get(30, TimeUnit.SECONDS);
         assertTrue(listConfigResult.isEmpty());
 
-        // Verify the __mirror_state topic contains the tombstone records for both `MirrorPartitionStateKey` and `LastMirrorEpochsKey` types
-
-        // 1. get the partition index hosting the metadata for the mirrored topic partition
-        int partInd = dstCluster.brokers().get(0).clusterMirrorCoordinator()
+        // Verify that the __mirror_state topic contains the tombstone records
+        // for both `MirrorPartitionStateKey` and `LastMirrorEpochsKey` types
+        // 1. Get the partition index hosting the metadata for the mirrored topic partition
+        int partId = dstCluster.brokers().get(0).clusterMirrorCoordinator()
                 .getCoordinatorPartitionByKey(new ClusterMirrorRecordKey(MIRROR_NAME, topicId, 0));
-        // 2. get the partition leader
+        // 2. Get the partition leader
         int leaderMirrorStatePartition = dstCluster.brokers().get(0).metadataCache()
-                .getLeaderAndIsr(MIRROR_STATE_TOPIC_NAME, partInd).get().leader();
-        // 3. get the last batch of the partition
+                .getLeaderAndIsr(MIRROR_STATE_TOPIC_NAME, partId).get().leader();
+        // 3. Get the last batch of the partition
         var lastBatch = dstCluster.brokers().get(leaderMirrorStatePartition).replicaManager()
-                .getLog(new TopicPartition(MIRROR_STATE_TOPIC_NAME, partInd)).get().activeSegment().log().lastBatch().get();
-        // 4. deserialize the records in the last batch
+                .getLog(new TopicPartition(MIRROR_STATE_TOPIC_NAME, partId)).get().activeSegment().log().lastBatch().get();
+        // 4. Deserialize the records in the last batch
         List<CoordinatorRecord> records = new ArrayList<>();
         ClusterMirrorRecordSerde serde = new ClusterMirrorRecordSerde();
         lastBatch.forEach(record -> records.add(serde.deserialize(record.key(), record.value())));
-        // 5. make sure the last batch contains 2 tombstone records: MirrorPartitionState record and LastMirrorEpochs record
+        // 5. Make sure the last batch contains the 2 tombstone records
         assertEquals(2, records.size());
         assertTrue(records.get(0).key().apiKey() == new MirrorPartitionStateKey().apiKey() && records.get(0).value() == null);
         assertTrue(records.get(1).key().apiKey() == new LastMirrorEpochsKey().apiKey() && records.get(1).value() == null);
