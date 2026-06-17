@@ -383,26 +383,12 @@ class ClusterMirroringTest(MirrorUtils, Test):
         )
         MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.client_node, "my-mirror", "MIRRORING", ["my-topic"])
 
-        self.logger.info("describe_mirror_config: %s",
-                         self.dest_kafka.describe_mirror_config(self.client_node, "my-mirror"))
-        self.logger.info("list_cluster_mirror: %s",
-                         self.dest_kafka.list_cluster_mirror(self.client_node))
-        self.logger.info("describe_cluster_mirror: %s",
-                         self.dest_kafka.describe_cluster_mirror(self.client_node))
-
         self.logger.info("Alter config with invalid config (should fail)")
         self.dest_kafka.alter_mirror_config(self.client_node, "my-mirror", "invalid.config=foo")
 
         self.logger.info("Alter config with valid bootstrap.servers pointing to source broker 1 (triggers reconnection)")
         new_bootstrap = "%s:9092" % self.source_kafka.nodes[1].account.hostname
         self.dest_kafka.alter_mirror_config(self.client_node, "my-mirror", "bootstrap.servers=%s" % new_bootstrap)
-
-        self.logger.info("describe_mirror_config: %s",
-                         self.dest_kafka.describe_mirror_config(self.client_node, "my-mirror"))
-        self.logger.info("list_cluster_mirror: %s",
-                         self.dest_kafka.list_cluster_mirror(self.client_node))
-        self.logger.info("describe_cluster_mirror: %s",
-                         self.dest_kafka.describe_cluster_mirror(self.client_node))
 
         self.logger.info("Verify mirroring still works after config change")
         MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.client_node, "my-mirror", "MIRRORING", ["my-topic"])
@@ -550,8 +536,6 @@ class ClusterMirroringTest(MirrorUtils, Test):
         self.logger.info("Verify orders-eu is not re-discovered after two more metadata refresh cycles")
         MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.client_node, "my-mirror")
 
-        self.logger.info("describe_cluster_mirror: %s",
-                         self.dest_kafka.describe_cluster_mirror(self.client_node))
         count_eu = MirrorUtils.consume_messages(self.logger, self.dest_kafka, self.client_node, "orders-eu", timeout_ms=5000)
         assert count_eu == 3, \
             "Expected orders-eu to remain at 3 messages (not re-discovered), got %d" % count_eu
@@ -772,7 +756,6 @@ class ClusterMirroringTest(MirrorUtils, Test):
 
         self.logger.info("Start cluster mirror on destination")
         mirror_cfg = MirrorConfig(self.source_kafka.bootstrap_servers())
-
         wait_until(
             lambda: self.dest_kafka.create_cluster_mirror(
                 self.client_node, "new-mirror", mirror_cfg),
@@ -796,8 +779,8 @@ class ClusterMirroringTest(MirrorUtils, Test):
         self.logger.info("Send 1 message via source broker 1")
         MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "my-topic", 1,
                              bootstrap_servers=MirrorUtils.broker_bootstrap(src_broker1))
-        MirrorUtils.wait_mirror_lag_zero(self.logger, self.dest_kafka, self.client_node, "new-mirror", ["my-topic"],
-                                  err_msg="Mirror did not catch up after broker 0 stopped")
+        MirrorUtils.wait_mirror_lag_zero(self.logger, self.dest_kafka, self.client_node,
+                        "new-mirror", ["my-topic"], err_msg="Mirror did not catch up after broker 0 stopped")
         ClusterMirroringTest.log_hashes(
             self.logger, self.source_kafka, self.dest_kafka, "my-topic",
             "After source broker 0 stopped (broker 0 should be out of sync)")
@@ -814,17 +797,16 @@ class ClusterMirroringTest(MirrorUtils, Test):
         self.logger.info("Send 2 messages via source broker 0")
         MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "my-topic", 2,
                              bootstrap_servers=MirrorUtils.broker_bootstrap(src_broker0))
-        MirrorUtils.wait_mirror_lag_zero(self.logger, self.dest_kafka, self.client_node, "new-mirror", ["my-topic"],
-                                  err_msg="Mirror did not catch up after ULE 1")
+        MirrorUtils.wait_mirror_lag_zero(self.logger, self.dest_kafka, self.client_node,
+                        "new-mirror", ["my-topic"], err_msg="Mirror did not catch up after ULE 1")
         ClusterMirroringTest.log_hashes(
             self.logger, self.source_kafka, self.dest_kafka, "my-topic",
             "After ULE 1 (broker 1 should be out of sync)")
 
         self.logger.info("Failover: stop mirror so destination topic becomes writable")
         self.dest_kafka.stop_cluster_mirror_topics(self.client_node, "new-mirror", "my-topic")
-        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.client_node, "new-mirror", "STOPPED", ["my-topic"])
-        self.logger.info("describe_cluster_mirror: %s",
-                         self.dest_kafka.describe_cluster_mirror(self.client_node))
+        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.client_node,
+                        "new-mirror", "STOPPED", ["my-topic"])
 
         self.logger.info("Send 2 messages via destination broker 0")
         MirrorUtils.produce_messages(self.logger, self.dest_kafka, self.client_node, "my-topic", 2)
@@ -846,9 +828,7 @@ class ClusterMirroringTest(MirrorUtils, Test):
             "After ULE 2 (broker 1 should have the most up to date data)")
 
         self.logger.info("Failback: source now mirrors from destination")
-        # Mirror stays in LOG_TRUNCATION until all source replicas rejoin ISR for LME truncation
         mirror_cfg = MirrorConfig(self.dest_kafka.bootstrap_servers())
-
         wait_until(
             lambda: self.source_kafka.create_cluster_mirror(
                 self.client_node, "new-mirror", mirror_cfg),
@@ -861,18 +841,18 @@ class ClusterMirroringTest(MirrorUtils, Test):
             timeout_sec=120, backoff_sec=2,
             err_msg="Failed to start reverse mirror topics",
         )
-        MirrorUtils.wait_mirror_state(self.logger, self.source_kafka, self.client_node, "new-mirror", "LOG_TRUNCATION", ["my-topic"])
+        # Mirror stays in LOG_TRUNCATION until all source replicas rejoin ISR for LME truncation
+        MirrorUtils.wait_mirror_state(self.logger, self.source_kafka, self.client_node,
+                        "new-mirror", "LOG_TRUNCATION", ["my-topic"])
 
         self.logger.info("Start the stopped source broker so all replicas rejoin ISR for LME truncation")
         self.source_kafka.start_node(src_broker0)
-        MirrorUtils.wait_mirror_state(self.logger, self.source_kafka, self.client_node, "new-mirror", "MIRRORING", ["my-topic"],
-                               err_msg="Reverse mirror did not reach MIRRORING state")
-        self.logger.info("describe_cluster_mirror: %s",
-                         self.source_kafka.describe_cluster_mirror(self.client_node))
+        MirrorUtils.wait_mirror_state(self.logger, self.source_kafka, self.client_node,
+                        "new-mirror", "MIRRORING", ["my-topic"], err_msg="Reverse mirror did not reach MIRRORING state")
 
         self.logger.info("Wait for reverse mirror to catch up")
-        MirrorUtils.wait_mirror_lag_zero(self.logger, self.source_kafka, self.client_node, "new-mirror", ["my-topic"],
-                                         err_msg="Reverse mirror did not catch up")
+        MirrorUtils.wait_mirror_lag_zero(self.logger, self.source_kafka, self.client_node,
+                         "new-mirror", ["my-topic"], err_msg="Reverse mirror did not catch up")
 
         self.logger.info("Poll until log segment hashes converge (dest is source of truth after failback)")
         MirrorUtils.wait_for_log_convergence(self.logger, self.dest_kafka, self.source_kafka, topics)

@@ -344,6 +344,7 @@ class Partition(val topicPartition: TopicPartition,
   @volatile var assignmentState: AssignmentState = SimpleAssignmentState(Seq.empty)
   @volatile var onComplete: Optional[Consumer[TopicPartition]] = Optional.empty()
   @volatile var onCaughtup: Optional[Consumer[TopicPartition]] = Optional.empty()
+  @volatile var truncationWaitForAllReplicas: Boolean = false
 
   // Logs belonging to this partition. Majority of time it will be only one log, but if log directory
   // is getting changed (as a result of ReplicaAlterLogDirs command), we may have two logs until copy
@@ -1253,7 +1254,11 @@ class Partition(val topicPartition: TopicPartition,
       onCaughtup = onCaughtupCallback
     }
 
-    if (waitForAllReplicas && assignmentState.replicationFactor > partitionState.isr.size) {
+    if (waitForAllReplicas) {
+      truncationWaitForAllReplicas = true
+    }
+
+    if (truncationWaitForAllReplicas && assignmentState.replicationFactor > partitionState.isr.size) {
         info(s"Not completing truncation because 'mirror.support.unclean.leader.election' is enabled and" +
           s" partition ISR doesn't contain all replicas (ISR=${partitionState.isr}, replicationFactor=${assignmentState.replicationFactor})")
         return false
@@ -1300,6 +1305,7 @@ class Partition(val topicPartition: TopicPartition,
       onComplete.ifPresent(callback => {
         callback.accept(topicPartition)
         onComplete = Optional.empty()
+        truncationWaitForAllReplicas = false
       })
       true
     }
