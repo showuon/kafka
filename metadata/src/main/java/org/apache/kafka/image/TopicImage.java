@@ -48,10 +48,12 @@ public record TopicImage(String name, Uuid id, String mirrorName, int clusterMir
         writer.write(0, new TopicRecord().
             setName(name).
             setTopicId(id));
-        writer.write(0, new MirrorTopicStateChangeRecord().
-                setTopicId(id).
-                setMirrorName(mirrorName).
-                setDesiredState((byte) clusterMirrorTopicChangeState));
+        if (mirrorName != null && !mirrorName.isBlank()) {
+            writer.write(0, new MirrorTopicStateChangeRecord().
+                    setTopicId(id).
+                    setMirrorName(mirrorName).
+                    setDesiredState((byte) clusterMirrorTopicChangeState));
+        }
         for (Entry<Integer, PartitionRegistration> entry : partitions.entrySet()) {
             int partitionId = entry.getKey();
             PartitionRegistration partition = entry.getValue();
