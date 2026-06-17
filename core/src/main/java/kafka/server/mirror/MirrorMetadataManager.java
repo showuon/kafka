@@ -556,17 +556,14 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
 
-    /** Periodic metadata sync entry point. */
-    void periodicSync() {
-        // retry the pending tombstone writes first to make sure they are all clean up even if no mirror existed
-        retryPendingTombstoneWrites();
-
+    /** Periodic metadata refresh entry point. */
+    void runMetadataRefresh() {
         Set<String> mirrors = getConfiguredMirrors();
         if (mirrors.isEmpty()) {
             return;
         }
 
-        log.info("Syncing metadata for mirrors: {}", mirrors);
+        log.info("Running metadata refresh for mirrors: {}", mirrors);
 
         for (String mirrorName : mirrors) {
             try {
@@ -574,7 +571,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 var topicsState = syncSourceTopicsState(mirrorName);
                 syncCoordinatorMetadata(mirrorName, topicsState);
             } catch (Exception e) {
-                log.error("Failed to sync metadata for mirror {}", mirrorName, e);
+                log.error("Failed to refresh metadata for mirror {}", mirrorName, e);
             }
         }
 
@@ -951,7 +948,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private void syncGroupOffsets(String mirrorName, ClusterMirrorConfig mirrorConfig) {
         Admin srcAdmin = getOrCreateSourceAdmin(mirrorName);
 
-        Set<String> mirrorTopics = getConfiguredTopics(mirrorName, false);
+        Set<String> mirrorTopics = getConfiguredTopics(mirrorName, false, false);
         if (mirrorTopics.isEmpty()) {
             return;
         }

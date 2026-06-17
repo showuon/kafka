@@ -30,6 +30,7 @@ import org.apache.kafka.server.network.BrokerEndPoint
 
 import scala.collection.{Map, mutable}
 import scala.collection.concurrent.TrieMap
+import scala.jdk.OptionConverters._
 
 /**
  * Manages {@link MirrorFetcherThread}s, assigning partitions from different mirrors
@@ -136,19 +137,19 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
     val threadName = s"MirrorFetcherThread-$fetcherId-${srcEndpoint.id}-$mirrorName"
     val logContext = new LogContext(s"[MirrorFetcher id=${brokerConfig.brokerId}, fetcherId=$fetcherId, leaderId=${srcEndpoint.id}, mirrorName=$mirrorName] ")
 
-    val sender = if (mirrorName.nonEmpty) {
-      val mirrorProperties = metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName))
-      info(s"Using mirror properties for $mirrorName: ${mirrorProperties.keySet()}")
-      val mirrorConfig = ClusterMirrorConfig.fromProperties(mirrorProperties)
-      val clientId = s"fetcherId-$fetcherId-mirrorName-$mirrorName"
-      ClusterMirrorUtils.createSender(srcEndpoint, mirrorConfig, brokerConfig, metrics, time, clientId, logContext)
-    } else {
+    if (mirrorName.isEmpty) {
       throw new IllegalArgumentException("Mirror name must be provided for remote fetchers")
     }
+    val mirrorProperties = metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName))
+    info(s"Using mirror properties for $mirrorName: ${mirrorProperties.keySet()}")
+    val mirrorConfig = ClusterMirrorConfig.fromProperties(mirrorProperties)
+    val clientId = s"fetcherId-$fetcherId-mirrorName-$mirrorName"
+    val sender = ClusterMirrorUtils.createSender(srcEndpoint, mirrorConfig, metrics, time, clientId, logContext)
     val fetchSessionHandler = new FetchSessionHandler(logContext, srcEndpoint.id)
     val endpoint: LeaderEndPoint = new RemoteLeaderEndPoint(logContext.logPrefix, sender, fetchSessionHandler, brokerConfig,
-      replicaManager, quotaManager, metadataVersionSupplier, brokerEpochSupplier, isClusterMirror = true)
-    val mirrorFetchBackoffMs = brokerConfig.mirrorConfig.fetchBackoffMs.toInt
+      replicaManager, quotaManager, metadataVersionSupplier, brokerEpochSupplier, isClusterMirror = true,
+      mirrorConfig = Some(mirrorConfig))
+    val mirrorFetchBackoffMs = mirrorConfig.fetchBackoffMs().toInt
     new MirrorFetcherThread(threadName, endpoint, brokerConfig, failedPartitions, replicaManager,
       quotaManager, logContext.logPrefix, mirrorName, mirrorFetchBackoffMs)
   }
@@ -188,6 +189,36 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
       fetchersToShutdown
     }
     idleFetchers.foreach(_.shutdown())
+  }
+
+  override def resizeThreadPool(newSize: Int): Unit = {
+    val excessThreads = new mutable.ArrayBuffer[MirrorFetcherThread]()
+    this.synchronized {
+      if (isClosed) return
+      val currentSize = updateNumFetchers(newSize)
+      if (newSize == currentSize) return
+      info(s"Resizing mirror fetcher thread pool from $currentSize to $newSize")
+      val allPartitions = mutable.Map[TopicPartition, InitialFetchState]()
+      for ((key, thread) <- mirrorFetcherThreadMap) {
+        val partitionStates = thread.removeAllPartitions()
+        if (key.fetcherId >= newSize) {
+          thread.initiateShutdown()
+          excessThreads += thread
+        }
+        partitionStates.foreachEntry { (topicPartition, state) =>
+          allPartitions += topicPartition -> InitialFetchState(state.topicId.toScala,
+            thread.leader.brokerEndPoint(),
+            currentLeaderEpoch = state.currentLeaderEpoch,
+            initOffset = state.fetchOffset,
+            mirrorName = state.mirrorName(),
+            mirrorLeaderEpoch = state.mirrorLeaderEpoch())
+        }
+      }
+      mirrorFetcherThreadMap.filterInPlace((key, _) => key.fetcherId < newSize)
+      addFetcherForPartitions(allPartitions)
+    }
+    shutdownIdleFetcherThreads()
+    excessThreads.foreach(_.shutdown())
   }
 
   override def closeAllFetchers(): Unit = {
