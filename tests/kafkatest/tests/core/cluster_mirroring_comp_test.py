@@ -178,9 +178,9 @@ class ClusterMirroringCompTest(MirrorUtils, Test):
         self.logger.info("Waiting for all partitions to reach MIRRORING with zero lag")
         MirrorUtils.wait_mirror_lag_zero(self.logger,
             self.dest_kafka, self.dest_client_node, "my-mirror", topics=list(topics.keys()))
+        MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.dest_client_node, "my-mirror")
 
         self.logger.info("Verifying consumer group offset sync")
-        MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.dest_client_node, "my-mirror")
         wait_until(
             lambda: "my-topic-a" in MirrorUtils.describe_consumer_group(
                 self.dest_kafka, "my-group", self.dest_client_node),
