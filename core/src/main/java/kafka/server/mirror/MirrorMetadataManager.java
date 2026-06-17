@@ -94,6 +94,7 @@ import org.apache.kafka.image.publisher.MetadataPublisher;
 import org.apache.kafka.metadata.MetadataCache;
 import org.apache.kafka.metadata.authorizer.StandardAcl;
 import org.apache.kafka.server.common.ControllerRequestCompletionHandler;
+import org.apache.kafka.server.common.MirrorPartitionState;
 import org.apache.kafka.server.common.NodeToControllerChannelManager;
 import org.apache.kafka.server.config.ClusterMirrorConfig;
 import org.apache.kafka.server.metrics.KafkaMetricsGroup;
@@ -134,8 +135,6 @@ import static org.apache.kafka.clients.CommonClientConfigs.BOOTSTRAP_SERVERS_CON
 import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
 import static org.apache.kafka.controller.ConfigurationControlManager.PAUSED_TOPIC_SUFFIX;
 import static org.apache.kafka.controller.ConfigurationControlManager.STOPPED_TOPIC_SUFFIX;
-
-import org.apache.kafka.server.common.MirrorPartitionState;
 
 /**
  * Bridges the local destination cluster and remote source clusters for Cluster Mirroring.
