@@ -24,6 +24,7 @@ import org.apache.kafka.common.config.SecurityConfig;
 import org.apache.kafka.common.config.SslConfigs;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.network.SocketServerConfigs;
+import org.apache.kafka.server.util.MirrorFilterUtils;
 
 import java.util.Arrays;
 import java.util.List;

@@ -97,9 +97,9 @@ import org.apache.kafka.server.common.ControllerRequestCompletionHandler;
 import org.apache.kafka.server.common.MirrorPartitionState;
 import org.apache.kafka.server.common.NodeToControllerChannelManager;
 import org.apache.kafka.server.config.ClusterMirrorConfig;
-import org.apache.kafka.server.config.MirrorFilterUtils;
 import org.apache.kafka.server.metrics.KafkaMetricsGroup;
 import org.apache.kafka.server.util.KafkaScheduler;
+import org.apache.kafka.server.util.MirrorFilterUtils;
 import org.apache.kafka.server.util.RequestAndCompletionHandler;
 import org.apache.kafka.storage.internals.log.UnifiedLog;
 
