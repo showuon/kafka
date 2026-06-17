@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import time
-
 from ducktape.mark import parametrize
 from ducktape.mark.resource import cluster
 from ducktape.tests.test import Test
