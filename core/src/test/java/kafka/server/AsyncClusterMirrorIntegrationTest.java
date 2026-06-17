@@ -160,7 +160,7 @@ public class AsyncClusterMirrorIntegrationTest {
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleSourceBootstrapServer
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(TOPIC_NAME), new StartMirrorTopicsOptions())
+        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(TOPIC_NAME), new StartMirrorTopicsOptions().includePatterns(List.of(TOPIC_NAME)))
                 .all().get(30, TimeUnit.SECONDS);
         waitForMirrorLagZero(TOPIC_NAME);
 
@@ -193,7 +193,7 @@ public class AsyncClusterMirrorIntegrationTest {
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleSourceBootstrapServer
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(topic), new StartMirrorTopicsOptions())
+        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(topic), new StartMirrorTopicsOptions().includePatterns(List.of(topic)))
                 .all().get(30, TimeUnit.SECONDS);
         waitForMirrorLagZero(topic);
 
@@ -237,7 +237,7 @@ public class AsyncClusterMirrorIntegrationTest {
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleSourceBootstrapServer
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(TOPIC_NAME), new StartMirrorTopicsOptions())
+        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(TOPIC_NAME), new StartMirrorTopicsOptions().includePatterns(List.of(TOPIC_NAME)))
                 .all().get(30, TimeUnit.SECONDS);
         waitForMirrorLagZero(TOPIC_NAME);
 

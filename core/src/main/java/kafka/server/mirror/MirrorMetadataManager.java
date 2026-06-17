@@ -97,6 +97,7 @@ import org.apache.kafka.server.common.ControllerRequestCompletionHandler;
 import org.apache.kafka.server.common.MirrorPartitionState;
 import org.apache.kafka.server.common.NodeToControllerChannelManager;
 import org.apache.kafka.server.config.ClusterMirrorConfig;
+import org.apache.kafka.server.config.MirrorFilterUtils;
 import org.apache.kafka.server.metrics.KafkaMetricsGroup;
 import org.apache.kafka.server.util.KafkaScheduler;
 import org.apache.kafka.server.util.RequestAndCompletionHandler;
@@ -1160,7 +1161,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
             log.debug("Describe ACLs response from remote cluster {}: {}", mirrorName, sourceAcls);
 
-            List<ClusterMirrorConfig.AclRule> aclIncludeRules = mirrorConfig.aclIncludeRules();
+            List<MirrorFilterUtils.AclRule> aclIncludeRules = mirrorConfig.aclIncludeRules();
             var allRemoteAcls = sourceAcls.stream()
                     .filter(acl -> aclIncludeRules.stream().anyMatch(rule -> rule.matches(acl)))
                     .toList();

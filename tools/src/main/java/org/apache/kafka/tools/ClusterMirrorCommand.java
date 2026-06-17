@@ -38,6 +38,7 @@ import org.apache.kafka.common.message.StartMirrorTopicsRequestData;
 import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.server.config.ClusterMirrorConfig;
+import org.apache.kafka.server.config.MirrorFilterUtils;
 import org.apache.kafka.server.util.CommandDefaultOptions;
 import org.apache.kafka.server.util.CommandLineUtils;
 
@@ -146,8 +147,8 @@ public abstract class ClusterMirrorCommand {
             Set<String> matchingTopicNames;
             try (Admin sourceAdmin = Admin.create(sourceConfig)) {
                 Set<String> allSourceTopics = sourceAdmin.listTopics().names().get();
-                Pattern includePattern = ClusterMirrorConfig.compilePatternList(topicPatterns);
-                Pattern excludePattern = ClusterMirrorConfig.compilePatternList(excludePatterns);
+                Pattern includePattern = MirrorFilterUtils.compilePatternList(topicPatterns);
+                Pattern excludePattern = MirrorFilterUtils.compilePatternList(excludePatterns);
                 matchingTopicNames = allSourceTopics.stream()
                         .filter(t -> includePattern != null && includePattern.matcher(t).matches())
                         .filter(t -> excludePattern == null || !excludePattern.matcher(t).matches())
@@ -232,7 +233,7 @@ public abstract class ClusterMirrorCommand {
 
         private Set<String> resolveTopicsOnDestination(List<String> patterns) throws Exception {
             Set<String> allTopics = adminClient.listTopics().names().get();
-            Pattern compiled = ClusterMirrorConfig.compilePatternList(patterns);
+            Pattern compiled = MirrorFilterUtils.compilePatternList(patterns);
             if (compiled == null) return Set.of();
             return allTopics.stream()
                     .filter(t -> compiled.matcher(t).matches())
