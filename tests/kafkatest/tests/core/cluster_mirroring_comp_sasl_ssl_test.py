@@ -215,14 +215,9 @@ class ClusterMirroringCompSaslSslTest(MirrorUtils, Test):
                          count[0], topic, expected_count)
             return expected_count is None or count[0] >= expected_count
 
-        # When expected_count is set, retry consumption because the high watermark on
-        # destination replicas may not have advanced yet when mirror lag reaches zero.
         if expected_count is not None:
-            deadline = time.time() + wait_timeout_sec
-            try_consume()
-            while count[0] < expected_count and time.time() < deadline:
-                time.sleep(5)
-                try_consume()
+            wait_until(try_consume, timeout_sec=wait_timeout_sec, backoff_sec=5,
+                       err_msg="Expected %d messages on %s, got %d" % (expected_count, topic, count[0]))
         else:
             try_consume()
         return count[0]
