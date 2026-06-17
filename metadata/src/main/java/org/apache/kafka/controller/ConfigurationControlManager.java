@@ -328,9 +328,10 @@ public class ConfigurationControlManager {
                 continue;
             }
 
-            // Don't allow to pause a topic when stopping/stopped
             if (currMirrorStateChange == MirrorPartitionState.STOPPED.value()) {
-                topicRes.setErrorCode(Errors.MIRROR_TOPIC_BEING_STOPPED.code()).setName(topic);
+                topicRes.setErrorCode(Errors.MIRROR_TOPIC_BEING_STOPPED.code()).setName(topic)
+                        .setErrorMessage("Topic '" + topic + "' is in "
+                                + MirrorPartitionState.fromValue((byte) currMirrorStateChange) + " state");
                 topicResList.add(topicRes);
                 continue;
             }
@@ -379,7 +380,9 @@ public class ConfigurationControlManager {
             }
 
             if (currMirrorStateChange != MirrorPartitionState.PAUSED.value()) {
-                topicRes.setErrorCode(Errors.MIRROR_TOPIC_NOT_PAUSED.code()).setName(topic);
+                topicRes.setErrorCode(Errors.MIRROR_TOPIC_NOT_PAUSED.code()).setName(topic)
+                        .setErrorMessage("Topic '" + topic + "' is in "
+                                + MirrorPartitionState.fromValue((byte) currMirrorStateChange) + " state");
                 topicResList.add(topicRes);
                 continue;
             }
@@ -463,7 +466,9 @@ public class ConfigurationControlManager {
                 String currMirrorNameValue = topicInfo.mirrorName();
                 int currMirrorStateChange = topicInfo.mirrorState();
                 if (currMirrorNameValue != null && !currMirrorNameValue.isBlank() && currMirrorStateChange != MirrorPartitionState.STOPPED.value()) {
-                    topicRes.setErrorCode(Errors.TOPIC_ALREADY_IN_CLUSTER_MIRROR.code()).setName(topicName);
+                    topicRes.setErrorCode(Errors.TOPIC_ALREADY_IN_CLUSTER_MIRROR.code()).setName(topicName)
+                            .setErrorMessage("Topic '" + topicName + "' is already in mirror '" + currMirrorNameValue
+                                    + "' in " + MirrorPartitionState.fromValue((byte) currMirrorStateChange) + " state");
                     topicResList.add(topicRes);
                     continue;
                 }
