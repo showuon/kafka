@@ -37,7 +37,6 @@ import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.message.StartMirrorTopicsRequestData;
 import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.common.utils.Utils;
-import org.apache.kafka.server.config.ClusterMirrorConfig;
 import org.apache.kafka.server.config.MirrorFilterUtils;
 import org.apache.kafka.server.util.CommandDefaultOptions;
 import org.apache.kafka.server.util.CommandLineUtils;
