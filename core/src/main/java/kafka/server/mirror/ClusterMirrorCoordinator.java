@@ -519,7 +519,6 @@ public class ClusterMirrorCoordinator {
                                     Consumer<WriteMirrorStatesResponse> callback) {
         List<CompletableFuture<Optional<TopicPartition>>> updateMirrorPartitionStateFutures = new ArrayList<>();
 
-        String updatedMirrorName = ClusterMirrorUtils.originalMirrorName(mirrorName);
         Map<String, Map<Integer, Integer>> offsets = new HashMap<>();
         Map<String, Set<Integer>> tps = new HashMap<>();
         topicMetadata.forEach((topic, partitions) -> {
@@ -528,7 +527,7 @@ public class ClusterMirrorCoordinator {
                 TopicPartition tp = new TopicPartition(topic, partition.partition());
                 partitionIndices.add(tp.partition());
                 if (partition.state() != null && partition.state() != MirrorPartitionState.UNKNOWN) {
-                    updateMirrorPartitionStateFutures.add(updateMirrorPartitionState(updatedMirrorName, tp, partition.state()));
+                    updateMirrorPartitionStateFutures.add(updateMirrorPartitionState(mirrorName, tp, partition.state()));
                 }
                 if (partition.leaderEpoch() != -1) {
                     offsets.putIfAbsent(topic, new HashMap<>());
@@ -539,7 +538,7 @@ public class ClusterMirrorCoordinator {
         });
 
         // Execute in parallel for efficiency, but wait for all partition state updates first, THEN wait for LME update
-        CompletableFuture<Void> updateLastMirrorEpochsFuture = updateLastMirrorEpochs(updatedMirrorName, offsets);
+        CompletableFuture<Void> updateLastMirrorEpochsFuture = updateLastMirrorEpochs(mirrorName, offsets);
         CompletableFuture.allOf(updateMirrorPartitionStateFutures.toArray(CompletableFuture[]::new))
             .thenCompose(v -> updateLastMirrorEpochsFuture)
             .whenComplete((v, e) -> {
@@ -1065,7 +1064,6 @@ public class ClusterMirrorCoordinator {
         metadataManager.validateStatesAndForwardToController(mirrorName, callback);
     }
 
-    /** Maps a mirror record key to a __mirror_state partition index. */
     /**
      * Maps a mirror record key to a __mirror_state partition index.
      * Used by MirrorMetadataManager to route WriteMirrorStates and ReadMirrorStates RPCs to the correct coordinator broker.

@@ -24,20 +24,20 @@ import org.apache.kafka.image.node.TopicImageNode;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.PartitionRegistration;
+import org.apache.kafka.server.common.MirrorPartitionState;
 
 import java.util.Collections;
 import java.util.Map;
 import java.util.Map.Entry;
-
 
 /**
  * Represents a topic in the metadata image.
  *
  * This class is thread-safe.
  */
-public record TopicImage(String name, Uuid id, String mirrorName, int clusterMirrorTopicChangeState, Map<Integer, PartitionRegistration> partitions) {
+public record TopicImage(String name, Uuid id, String mirrorName, int desiredMirrorState, Map<Integer, PartitionRegistration> partitions) {
     public TopicImage(String name, Uuid id, Map<Integer, PartitionRegistration> partitions) {
-        this(name, id, "", -1, partitions);
+        this(name, id, "", MirrorPartitionState.UNKNOWN.value(), partitions);
     }
 
     public TopicImage {
@@ -52,7 +52,7 @@ public record TopicImage(String name, Uuid id, String mirrorName, int clusterMir
             writer.write(0, new MirrorTopicStateChangeRecord().
                     setTopicId(id).
                     setMirrorName(mirrorName).
-                    setDesiredState((byte) clusterMirrorTopicChangeState));
+                    setDesiredState((byte) desiredMirrorState));
         }
         for (Entry<Integer, PartitionRegistration> entry : partitions.entrySet()) {
             int partitionId = entry.getKey();

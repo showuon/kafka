@@ -407,7 +407,7 @@ public class AsyncClusterMirrorIntegrationTest {
 
     /**
      * Tests that a stopped topic is not re-discovered by discoverTopicsByPattern,
-     * because mirror.name with STOPPED_TOPIC_SUFFIX keeps it in getConfiguredTopics.
+     * because the STOPPED desired state keeps it in getConfiguredTopics.
      */
     @Test
     void testStopMirrorTopicPreventsRediscovery() throws Exception {

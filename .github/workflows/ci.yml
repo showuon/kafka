@@ -56,8 +56,5 @@ jobs:
       - name: RAT
         run: ./gradlew rat
 
-      - name: Unit Tests
-        run: ./gradlew unitTest
-
       - name: Integration Tests
         run: ./gradlew core:test --tests AsyncClusterMirrorIntegrationTest

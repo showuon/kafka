@@ -34,7 +34,7 @@ import org.apache.kafka.common.requests.OffsetsForLeaderEpochResponse.{UNDEFINED
 import org.apache.kafka.common.requests._
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.common.{DirectoryId, IsolationLevel, TopicIdPartition, TopicPartition, Uuid, PartitionState => JPartitionState}
-import org.apache.kafka.controller.ConfigurationControlManager
+import org.apache.kafka.server.common.MirrorPartitionState
 import org.apache.kafka.metadata.{LeaderAndIsr, LeaderRecoveryState, MetadataCache}
 import org.apache.kafka.server.common.RequestLocal
 import org.apache.kafka.server.log.remote.TopicPartitionLog
@@ -799,7 +799,7 @@ class Partition(val topicPartition: TopicPartition,
 
         // don't update the leader epoch if the partition is a mirrored leader, we'll update it when receiving batches
         // from source cluster leader
-        if (getMirrorName().isEmpty || getMirrorName().get().endsWith(ConfigurationControlManager.STOPPED_TOPIC_SUFFIX)) {
+        if (getMirrorName().isEmpty || getDesiredMirrorState() == MirrorPartitionState.STOPPED.value()) {
           leaderLog.assignEpochStartOffset(partitionState.leaderEpoch, leaderEpochStartOffset)
         }
 
@@ -1435,6 +1435,15 @@ class Partition(val topicPartition: TopicPartition,
           Optional.empty()
         }
       case _ => Optional.empty()
+    }
+  }
+
+  def getDesiredMirrorState(): Byte = {
+    metadataCache match {
+      case kraftMetadataCache: KRaftMetadataCache if (kraftMetadataCache.currentImage() != null && kraftMetadataCache.currentImage().topics() != null) =>
+        val topicImage = kraftMetadataCache.currentImage().topics().getTopic(topic)
+        if (topicImage != null) topicImage.desiredMirrorState().toByte else MirrorPartitionState.UNKNOWN.value()
+      case _ => MirrorPartitionState.UNKNOWN.value()
     }
   }
 

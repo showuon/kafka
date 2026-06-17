@@ -135,5 +135,5 @@ public final class LocalReplicaChanges {
         }
     }
 
-    public record MirrorTopicState(String mirrorName, int mirrorStateChange) { }
+    public record MirrorTopicState(String mirrorName, int desiredMirrorState) { }
 }

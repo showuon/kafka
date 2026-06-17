@@ -25,6 +25,7 @@ import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.metadata.PartitionRegistration;
 import org.apache.kafka.metadata.Replicas;
+import org.apache.kafka.server.common.MirrorPartitionState;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -42,7 +43,7 @@ public final class TopicDelta {
     private final Map<Integer, PartitionRegistration> partitionChanges = new HashMap<>();
     private final Map<Integer, Integer> partitionToUncleanLeaderElectionCount = new HashMap<>();
     private final Map<Integer, Integer> partitionToElrElectionCount = new HashMap<>();
-    private Integer clusterMirrorTopicChangeState;
+    private Integer desiredMirrorState;
     private String mirrorName;
 
     public TopicDelta(TopicImage image) {
@@ -108,7 +109,7 @@ public final class TopicDelta {
 
     public void replay(MirrorTopicStateChangeRecord record) {
         mirrorName = record.mirrorName();
-        clusterMirrorTopicChangeState = (int) record.desiredState();
+        desiredMirrorState = (int) record.desiredState();
     }
 
     private void updateElectionStats(int partitionId, PartitionRegistration prevPartition, int newLeader, byte newLeaderRecoveryState) {
@@ -160,7 +161,7 @@ public final class TopicDelta {
             }
         }
 
-        int newMirrorState = clusterMirrorTopicChangeState == null ? image.clusterMirrorTopicChangeState() : clusterMirrorTopicChangeState;
+        int newMirrorState = desiredMirrorState == null ? image.desiredMirrorState() : desiredMirrorState;
         String newMirrorName =  mirrorName == null ? image.mirrorName() : mirrorName;
 
         return new TopicImage(
@@ -182,6 +183,7 @@ public final class TopicDelta {
      *   <li>followers: partitions for which the broker is now a follower or follower with isr or replica updates (partition epoch bump on follower)</li>
      *   <li>topicIds: a map of topic names to topic IDs in leaders and followers changes</li>
      *   <li>directoryIds: partitions for which directory id changes or newly added to the broker</li>
+     *   <li>mirrorTopicStates: topics for which the mirror name or desired mirror state changed</li>
      * </ul>
      * <p>
      * Leader epoch bumps are a strict subset of all partition epoch bumps, so all partitions in electedLeaders will be in leaders.
@@ -199,9 +201,13 @@ public final class TopicDelta {
         Map<TopicIdPartition, Uuid> directoryIds = new HashMap<>();
         Map<Uuid, LocalReplicaChanges.MirrorTopicState> mirrorTopicChanges = new HashMap<>();
 
-        if (mirrorName != null && !mirrorName.isBlank() && !mirrorName.equals(image.mirrorName()) ||
-                clusterMirrorTopicChangeState != null && clusterMirrorTopicChangeState != -1 && clusterMirrorTopicChangeState != image.clusterMirrorTopicChangeState()) {
-            mirrorTopicChanges.put(image.id(), new LocalReplicaChanges.MirrorTopicState(mirrorName, clusterMirrorTopicChangeState));
+        boolean mirrorNameChanged = mirrorName != null && !mirrorName.isBlank()
+                && !mirrorName.equals(image.mirrorName());
+        boolean mirrorStateChanged = desiredMirrorState != null
+                && desiredMirrorState != MirrorPartitionState.UNKNOWN.value()
+                && desiredMirrorState != image.desiredMirrorState();
+        if (mirrorNameChanged || mirrorStateChanged) {
+            mirrorTopicChanges.put(image.id(), new LocalReplicaChanges.MirrorTopicState(mirrorName, desiredMirrorState));
         }
 
         for (Entry<Integer, PartitionRegistration> entry : partitionChanges.entrySet()) {

@@ -84,9 +84,6 @@ import static org.apache.kafka.controller.QuorumController.MAX_RECORDS_PER_USER_
 
 public class ConfigurationControlManager {
     public static final ConfigResource DEFAULT_NODE = new ConfigResource(Type.BROKER, "");
-    public static final String STOPPED_TOPIC_SUFFIX = ".stopped";
-    public static final String PAUSED_TOPIC_SUFFIX = ".paused";
-    private static final byte MIRROR_EMPTY_DESIRED_STATE = -1;
 
     private final Logger log;
     private final SnapshotRegistry snapshotRegistry;
@@ -594,13 +591,6 @@ public class ConfigurationControlManager {
         List<ApiMessageAndVersion> outputRecords = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
         CreateClusterMirrorResponseData data = new CreateClusterMirrorResponseData();
 
-        if (mirrorName.endsWith(STOPPED_TOPIC_SUFFIX) || mirrorName.endsWith(PAUSED_TOPIC_SUFFIX)) {
-            data.setErrorCode(Errors.INVALID_CLUSTER_MIRROR_NAME.code());
-            data.setErrorMessage("Mirror name must not end with '"
-                + STOPPED_TOPIC_SUFFIX + "' or '" + PAUSED_TOPIC_SUFFIX + "'");
-            return ControllerResult.of(List.of(), data);
-        }
-
         ConfigResource configResource = new ConfigResource(Type.CLUSTER_MIRROR, mirrorName);
         final Map<String, String> existingConfig = getConfigs(configResource);
         if (!existingConfig.isEmpty()) {
@@ -679,7 +669,7 @@ public class ConfigurationControlManager {
                     new MirrorTopicStateChangeRecord()
                         .setTopicId(topicInfo.topicId())
                         .setMirrorName("")
-                        .setDesiredState(MIRROR_EMPTY_DESIRED_STATE),
+                        .setDesiredState(MirrorPartitionState.UNKNOWN.value()),
                     (short) 0));
             }
         }
