@@ -320,7 +320,9 @@ public class ConfigurationControlManager {
             if (topicInfo != null) {
                 String currMirrorNameValue = topicInfo.mirrorName();
                 int currMirrorStateChange = topicInfo.mirrorState();
-                if (currMirrorNameValue != null && !currMirrorNameValue.isBlank() && currMirrorStateChange != MirrorPartitionState.STOPPED.value()) {
+                if (currMirrorNameValue != null && !currMirrorNameValue.isBlank()
+                        && currMirrorStateChange != MirrorPartitionState.STOPPED.value()
+                        && currMirrorStateChange != MirrorPartitionState.MIRRORING.value()) {
                     topicRes.setErrorCode(Errors.TOPIC_ALREADY_IN_CLUSTER_MIRROR.code()).setName(topicName)
                             .setErrorMessage("Topic '" + topicName + "' is already in mirror '" + currMirrorNameValue
                                     + "' in " + MirrorPartitionState.fromValue((byte) currMirrorStateChange) + " state");

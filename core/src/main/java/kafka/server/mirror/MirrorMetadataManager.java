@@ -163,18 +163,16 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private final int nodeId;
 
     private final KafkaConfig brokerConfig;
-    private final NodeToControllerChannelManager channelManager;
+    private final NodeToControllerChannelManager controllerChannel;
+    private volatile MirrorStateSender mirrorStateSender;
+    private final Map<String, Admin> srcAdmins = new ConcurrentHashMap<>();
+    private volatile Admin dstAdmin;
     private final Supplier<ReplicaManager> replicaManagerSupplier;
+    private volatile MetadataImage metadataImage = MetadataImage.EMPTY;
     private final MetadataCache metadataCache;
     private final KafkaScheduler scheduler;
     private final Metrics metrics;
     private final Time time;
-
-    private volatile MetadataImage metadataImage = MetadataImage.EMPTY;
-
-    private volatile MirrorStateSender mirrorStateSender; // raw WriteMirrorStates/ReadMirrorStates RPCs to coord brokers
-    private final Map<String, Admin> srcAdmins = new ConcurrentHashMap<>(); // source cluster metadata discovery (one per mirror)
-    private volatile Admin dstAdmin; // group offset and ACLs sync
 
     // Map from mirror name to cluster id. The cluster id is represented as a String because KIP-78
     // does not mandate the use of UUIDs for it and assuming so may break compatibility with existing clusters.
@@ -205,7 +203,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     public MirrorMetadataManager(
         KafkaConfig brokerConfig,
-        NodeToControllerChannelManager channelManager,
+        NodeToControllerChannelManager controllerChannel,
         Supplier<ReplicaManager> replicaManagerSupplier,
         MetadataCache metadataCache,
         KafkaScheduler scheduler,
@@ -217,7 +215,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         this.log = new LogContext(name).logger(MirrorMetadataManager.class);
         this.nodeId = brokerConfig.nodeId();
 
-        this.channelManager = channelManager;
+        this.controllerChannel = controllerChannel;
         this.replicaManagerSupplier = replicaManagerSupplier;
         this.metadataCache = metadataCache;
 
@@ -804,7 +802,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 }
             }
         };
-        channelManager.sendRequest(
+        controllerChannel.sendRequest(
                 new CreateTopicsRequest.Builder(createTopicsData),
                 requestCompletionHandler);
     }
@@ -812,7 +810,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private void maybeScalePartitions(CreatePartitionsRequestData.CreatePartitionsTopicCollection topics) {
         if (!topics.isEmpty()) {
             log.debug("Detected partition count change, sending CreatePartitionsRequest: {}", topics);
-            channelManager.sendRequest(new CreatePartitionsRequest.Builder(
+            controllerChannel.sendRequest(new CreatePartitionsRequest.Builder(
                     new CreatePartitionsRequestData()
                             .setTopics(topics)
                             .setValidateOnly(false)
@@ -999,7 +997,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                         .setResourceName(resource.name()).setConfigs(alterableConfigSet);
                 data.resources().add(alterConfigsResource);
             }
-            channelManager.sendRequest(new IncrementalAlterConfigsRequest.Builder(data), new TimeoutHandler(log));
+            controllerChannel.sendRequest(new IncrementalAlterConfigsRequest.Builder(data), new TimeoutHandler(log));
         }
     }
 
@@ -1277,7 +1275,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                                     .setOperation(aclBinding.entry().operation().code())
                                     .setPermissionType(aclBinding.entry().permissionType().code()))
                     .toList();
-            channelManager.sendRequest(
+            controllerChannel.sendRequest(
                     new CreateAclsRequest.Builder(new CreateAclsRequestData().setCreations(requestData)),
                     new TimeoutHandler(log)
             );
@@ -1296,7 +1294,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                                     .setOperation(aclBinding.entry().operation().code())
                                     .setPermissionType(aclBinding.entry().permissionType().code()))
                     .toList();
-            channelManager.sendRequest(
+            controllerChannel.sendRequest(
                     new DeleteAclsRequest.Builder(new DeleteAclsRequestData().setFilters(requestData)),
                     new TimeoutHandler(log)
             );
@@ -1358,7 +1356,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
         // TODO: creation failures from auto-discovery are silently lost here (fire-and-forget).
         //  Add per-topic status tracking so describeMirror can surface failed topics to users.
-        channelManager.sendRequest(
+        controllerChannel.sendRequest(
                 new StartMirrorTopicsRequest.Builder(data),
                 new TimeoutHandler(log)
         );
@@ -1383,7 +1381,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         log.info("Stopping {} topic(s) matching mirror.topics.exclude for mirror {}: {}",
                 excludedTopics.size(), mirrorName, excludedTopics);
 
-        channelManager.sendRequest(
+        controllerChannel.sendRequest(
                 new StopMirrorTopicsRequest.Builder(mirrorName, excludedTopics),
                 new TimeoutHandler(log)
         );
@@ -1770,7 +1768,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         pendingLeaderEpochBumps.add(new ClusterMirrorUtils.LeaderEpochBump(future, new ConcurrentHashMap<>(partitionMinEpochs)));
         maybeCompletePendingEpochBumps(); // already-met condition is detected immediately (e.g. epoch 11 vs target 0)
 
-        channelManager.sendRequest(new BumpLeaderEpochsRequest.Builder(
+        controllerChannel.sendRequest(new BumpLeaderEpochsRequest.Builder(
                 new BumpLeaderEpochsRequestData().setTopics(topicStates)
         ), new ControllerRequestCompletionHandler() {
             @Override
@@ -1819,6 +1817,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             }
             collectEpochBumpTargets(ts, topicPartitions, leaderEpochFromMetadata);
         }
+        leaderEpochFromMetadata.keySet().removeIf(tp ->
+                partitionStates.getOrDefault(new PartitionKey(mirrorName, tp.topic(), tp.partition()),
+                        MirrorPartitionState.UNKNOWN) == MirrorPartitionState.FAILED);
         if (!leaderEpochFromMetadata.isEmpty()) {
             log.info("Bumping leader epoch for partitions {}", leaderEpochFromMetadata);
         }
@@ -1993,7 +1994,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     private void sendDeleteClusterMirror(String mirrorName, long brokerMetadataOffset, Consumer<Optional<Errors>> callback) {
-        channelManager.sendRequest(
+        controllerChannel.sendRequest(
                 new DeleteClusterMirrorRequest.Builder(mirrorName, brokerMetadataOffset),
                 new ControllerRequestCompletionHandler() {
                     @Override

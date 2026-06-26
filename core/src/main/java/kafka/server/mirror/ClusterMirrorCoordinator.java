@@ -78,6 +78,7 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -98,6 +99,7 @@ import static org.apache.kafka.common.utils.Utils.require;
  * partitions it leads in that topic. Writes targeting a remote coordinator
  * are forwarded via {@link MirrorMetadataManager}.
  */
+@SuppressWarnings("ClassDataAbstractionCoupling")
 public class ClusterMirrorCoordinator {
     private final Logger log;
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
@@ -108,6 +110,7 @@ public class ClusterMirrorCoordinator {
     private final MetadataCache metadataCache;
     private final ClusterMirrorRecordSerde serde = new ClusterMirrorRecordSerde();
     private volatile ScheduledFuture<?> metadataRefreshFuture;
+    private final Map<TopicPartition, ScheduledFuture<?>> pendingRetryFutures = new ConcurrentHashMap<>();
     private final Scheduler scheduler;
     private final Metrics metrics;
     private final Time time;
@@ -388,6 +391,10 @@ public class ClusterMirrorCoordinator {
                 || newState == MirrorPartitionState.STOPPED
                 || newState == MirrorPartitionState.PAUSED) {
             metadataManager.failedPartitionInfo().remove(tp);
+            ScheduledFuture<?> pending = pendingRetryFutures.remove(tp);
+            if (pending != null) {
+                pending.cancel(false);
+            }
         }
     }
 
@@ -411,7 +418,9 @@ public class ClusterMirrorCoordinator {
             long delay = failedRetryBackoff.backoff(attempt);
             MirrorPartitionState targetState = fpi != null ? fpi.previousState() : MirrorPartitionState.MIRRORING;
             log.info("Scheduling retry attempt #{} for partition {} in {} ms with target state {}.", attempt, tp, delay, targetState);
-            scheduler.scheduleOnce("MirrorFailedRetry-" + tp, () -> transitionTo(mirrorName, Set.of(tp), targetState, null), delay);
+            ScheduledFuture<?> future = scheduler.scheduleOnce("MirrorFailedRetry-" + tp,
+                    () -> transitionTo(mirrorName, Set.of(tp), targetState, null), delay);
+            pendingRetryFutures.put(tp, future);
         });
     }
 
