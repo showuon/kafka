@@ -306,7 +306,7 @@ public class ClusterMirrorCoordinator {
         switch (newState) {
             case LOG_TRUNCATION:
                 log.info("LOG_TRUNCATION for topics {}.", topicPartitions);
-                scheduleTruncation(mirrorName, topicPartitions);
+                scheduleTruncationAndDetectCircularMirror(mirrorName, topicPartitions);
                 break;
             case EPOCH_FENCING:
                 log.info("EPOCH_FENCING for topics {}.", topicPartitions);
@@ -750,11 +750,16 @@ public class ClusterMirrorCoordinator {
     }
 
     /** Schedules truncation to align replicas with last mirrored epoch. */
-    private void scheduleTruncation(String mirrorName, Set<TopicPartition> topicPartitions) {
+    private void scheduleTruncationAndDetectCircularMirror(String mirrorName, Set<TopicPartition> topicPartitions) {
         final Consumer<TopicPartition> truncateCallback =
             partition -> transitionTo(mirrorName, Set.of(partition), MirrorPartitionState.MIRRORING, null);
         scheduler.scheduleOnce("LastMirrorEpochsTruncation",
             () -> {
+                if (metadataManager.detectCircularMirror(mirrorName, topicPartitions)) {
+                    transitionTo(mirrorName, topicPartitions, MirrorPartitionState.FAILED);
+                    return;
+                }
+
                 try {
                     metadataManager.truncateToLastMirrorEpochs(mirrorName, topicPartitions)
                         .whenComplete((descriptions, error) -> {
@@ -774,11 +779,32 @@ public class ClusterMirrorCoordinator {
 
                             ClusterMirrorDesc description = descriptions.get(mirrorName);
                             if (description == null) {
-                                log.warn("Mirror {} not found in source cluster. Replication will be one-way without failback",
+                                log.info("Mirror {} not found in source cluster. Replication will be one-way without failback",
                                     mirrorName);
                                 Map<TopicPartition, Integer> epochs = topicPartitions.stream()
                                     .collect(Collectors.toMap(tp -> tp, tp -> -1));
                                 replicaManager.maybeTruncateForLeaderEpoch(epochs, truncateCallback);
+                                return;
+                            }
+
+                            Set<ClusterMirrorDescription.LeaderState> states = description.topics().get(mirrorName);
+                            if (states == null || states.isEmpty()) {
+                                log.info("Mirror {} contains empty mirror states. Truncating all logs.", mirrorName);
+                                Map<TopicPartition, Integer> epochs = topicPartitions.stream()
+                                        .collect(Collectors.toMap(tp -> tp, tp -> -1));
+                                replicaManager.maybeTruncateForLeaderEpoch(epochs, truncateCallback);
+                                return;
+                            }
+
+                            // verify all partition states are in STOPPED or UNKNOWN (default) state
+                            Set<TopicPartition> invalidPartitions = states.stream().filter(state -> topicPartitions.contains(state.topicPartition())
+                                    && !state.state().equals(MirrorPartitionState.STOPPED.name())
+                                    && !state.state().equals(MirrorPartitionState.UNKNOWN.name())
+                            ).map(ClusterMirrorDescription.LeaderState::topicPartition).collect(Collectors.toSet());
+                            if (!invalidPartitions.isEmpty()) {
+                                log.error("Found mirrored topic partitions [{}] in source cluster is not in STOPPED or UNKNOWN state with the mirror name {}." +
+                                        "Moving to FAILED state and try again later.", invalidPartitions, mirrorName);
+                                transitionTo(mirrorName, topicPartitions, MirrorPartitionState.FAILED);
                                 return;
                             }
 
@@ -1048,6 +1074,10 @@ public class ClusterMirrorCoordinator {
     /** Returns the number of active mirrored topics for the given mirror. */
     public int getActiveTopicCount(String mirrorName) {
         return metadataManager.getActiveTopicCount(mirrorName);
+    }
+
+    public Set<String> getConfiguredTopics(String mirrorName, boolean includePaused, boolean includeStopped) {
+        return metadataManager.getConfiguredTopics(mirrorName, true, false);
     }
 
     /** Returns the source cluster bootstrap servers for the given mirror. */

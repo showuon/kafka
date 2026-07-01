@@ -26,4 +26,17 @@ import org.apache.kafka.common.annotation.InterfaceStability;
  */
 @InterfaceStability.Evolving
 public class ListClusterMirrorsOptions extends AbstractOptions<ListClusterMirrorsOptions> {
+    private boolean shouldListMirroredTopics = false;
+
+    /**
+     * Set whether the response should include mirrored topic names for each mirror.
+     */
+    public ListClusterMirrorsOptions shouldListMirroredTopics(boolean shouldListMirroredTopics) {
+        this.shouldListMirroredTopics = shouldListMirroredTopics;
+        return this;
+    }
+
+    public boolean shouldListMirroredTopics() {
+        return shouldListMirroredTopics;
+    }
 }

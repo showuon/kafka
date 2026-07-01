@@ -27,11 +27,13 @@ import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.AlterConfigOp;
-import org.apache.kafka.clients.admin.ClusterMirrorDesc;
+import org.apache.kafka.clients.admin.ClusterMirrorDescription;
+import org.apache.kafka.clients.admin.ClusterMirrorListing;
 import org.apache.kafka.clients.admin.Config;
 import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.clients.admin.DescribeClusterMirrorsResult;
 import org.apache.kafka.clients.admin.GroupListing;
+import org.apache.kafka.clients.admin.ListClusterMirrorsOptions;
 import org.apache.kafka.clients.admin.ListConsumerGroupOffsetsSpec;
 import org.apache.kafka.clients.admin.ListGroupsOptions;
 import org.apache.kafka.clients.admin.ListShareGroupOffsetsSpec;
@@ -161,6 +163,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private volatile boolean isInitialized = false;
     private final String name;
     private final int nodeId;
+    private final String localClusterId;
 
     private final KafkaConfig brokerConfig;
     private final NodeToControllerChannelManager channelManager;
@@ -210,9 +213,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         MetadataCache metadataCache,
         KafkaScheduler scheduler,
         Metrics metrics,
-        Time time
+        Time time,
+        String localClusterId
     ) {
         this.brokerConfig = brokerConfig;
+        this.localClusterId = localClusterId;
         this.name = "[" + MirrorMetadataManager.class.getSimpleName() + " id=" + brokerConfig.nodeId() + "] ";
         this.log = new LogContext(name).logger(MirrorMetadataManager.class);
         this.nodeId = brokerConfig.nodeId();
@@ -668,6 +673,47 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         } catch (Exception e) {
             log.warn("Failed to describe source cluster for mirror {}", mirrorName, e);
         }
+    }
+
+    /**
+     * Checks whether mirroring the given partitions from the source cluster would create a circular
+     * replication loop.
+     *
+     * @return true if the given partitions would create a circular replication loop, false otherwise
+     */
+    boolean detectCircularMirror(String mirrorName, Set<TopicPartition> topicPartitions) {
+        Admin srcAdmin = getOrCreateSourceAdmin(mirrorName);
+        try {
+            // list the mirrors in the source cluster including topics not in STOPPING/STOPPED
+            Collection<ClusterMirrorListing> sourceMirrors = srcAdmin
+                    .listClusterMirrors(new ListClusterMirrorsOptions().shouldListMirroredTopics(true))
+                    .all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
+
+            Set<String> topicNames = topicPartitions.stream()
+                    .map(TopicPartition::topic)
+                    .collect(Collectors.toSet());
+
+            // for each mirror, find the circular mirror if:
+            // 1. the cluster id is the same as the local cluster id
+            // 2. the mirrored topics overlap with the topics to be mirrored
+            for (ClusterMirrorListing sourceMirror : sourceMirrors) {
+                if (!localClusterId.equals(sourceMirror.sourceClusterId())) {
+                    continue;
+                }
+                Set<String> overlapping = new HashSet<>(sourceMirror.topics());
+                overlapping.retainAll(topicNames);
+                if (!overlapping.isEmpty()) {
+                    log.error("Circular mirror detected: topic(s) [" + overlapping
+                            + "] are mirroring from this cluster by mirror '" + sourceMirror.mirrorName() + "' on the source cluster.");
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            log.error("Failed to check for circular mirroring on source cluster for mirror " + mirrorName + ". Will try again later. error:", e);
+            return true;
+        }
+
+        return false;
     }
 
     /**
