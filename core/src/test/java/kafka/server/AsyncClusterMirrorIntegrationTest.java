@@ -84,6 +84,7 @@ public class AsyncClusterMirrorIntegrationTest {
     private static final String TOPIC_NAME = "my-topic-async";
     private static final long METADATA_REFRESH_INTERVAL_MS = 5_000L;
     private static final String MIRROR_NAME = "my-mirror";
+    private static final String ANOTHER_MIRROR_NAME = "my-another-mirror";
 
     private KafkaClusterTestKit srcCluster;
     private KafkaClusterTestKit dstCluster;
@@ -91,6 +92,7 @@ public class AsyncClusterMirrorIntegrationTest {
     private Admin dstAdmin;
 
     private String singleSourceBootstrapServer;
+    private String singleDestinationBootstrapServer;
 
     @BeforeEach
     void beforeEach() throws Exception {
@@ -100,6 +102,13 @@ public class AsyncClusterMirrorIntegrationTest {
                         .setNumBrokerNodes(2)
                         .setNumControllerNodes(1)
                         .build())
+                .setConfigProp(ClusterMirrorConfig.MIRROR_NUM_REPLICA_FETCHERS_CONFIG, "2")
+                .setConfigProp(ClusterMirrorConfig.MIRROR_METADATA_REFRESH_INTERVAL_MS_CONFIG,
+                        String.valueOf(METADATA_REFRESH_INTERVAL_MS))
+                .setConfigProp(ServerLogConfigs.AUTO_CREATE_TOPICS_ENABLE_CONFIG, "false")
+                .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_NUM_PARTITIONS_CONFIG, "3")
+                .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_REPLICATION_FACTOR_CONFIG, "1")
+                .setConfigProp(GroupCoordinatorConfig.OFFSETS_TOPIC_REPLICATION_FACTOR_CONFIG, "1")
                 .setConfigProp(ServerConfigs.UNSTABLE_API_VERSIONS_ENABLE_CONFIG, "true")
                 .setConfigProp(ServerConfigs.UNSTABLE_FEATURE_VERSIONS_ENABLE_CONFIG, "true")
                 .build();
@@ -119,6 +128,7 @@ public class AsyncClusterMirrorIntegrationTest {
                 .setConfigProp(ClusterMirrorConfig.MIRROR_METADATA_REFRESH_INTERVAL_MS_CONFIG,
                         String.valueOf(METADATA_REFRESH_INTERVAL_MS))
                 .setConfigProp(ServerLogConfigs.AUTO_CREATE_TOPICS_ENABLE_CONFIG, "false")
+                .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_NUM_PARTITIONS_CONFIG, "3")
                 .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_REPLICATION_FACTOR_CONFIG, "1")
                 .setConfigProp(GroupCoordinatorConfig.OFFSETS_TOPIC_REPLICATION_FACTOR_CONFIG, "1")
 
@@ -136,6 +146,7 @@ public class AsyncClusterMirrorIntegrationTest {
         dstCluster.format();
         dstCluster.startup();
         dstCluster.waitForReadyBrokers();
+        singleDestinationBootstrapServer = dstCluster.bootstrapServers().split(",")[0];
 
         srcAdmin = Admin.create(Map.of(
                 AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, srcCluster.bootstrapServers()
@@ -210,7 +221,7 @@ public class AsyncClusterMirrorIntegrationTest {
         // Stop the mirror topic
         dstAdmin.stopMirrorTopics(MIRROR_NAME, Set.of(topic), new StopMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(topic, "STOPPED");
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topic, "STOPPED", Optional.empty());
 
         // Consume all records from the destination with a stable consumer group
         consumeRecords(dstCluster, topic, recordCount, groupId);
@@ -443,7 +454,7 @@ public class AsyncClusterMirrorIntegrationTest {
         // Stop orders-eu (sets mirror.name to test-mirror.stopped)
         dstAdmin.stopMirrorTopics(MIRROR_NAME, Set.of(topicB), new StopMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(topicB, "STOPPED");
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topicB, "STOPPED", Optional.empty());
 
         // Produce more data to both topics (only orders-us should receive new records)
         produceRecords(srcCluster, topicA, 20, 20);
@@ -525,7 +536,7 @@ public class AsyncClusterMirrorIntegrationTest {
         // Stop all topics (required precondition for deletion)
         dstAdmin.stopMirrorTopics(MIRROR_NAME, Set.of(topic), new StopMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(topic, "STOPPED");
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topic, "STOPPED", Optional.empty());
 
         dstAdmin.deleteClusterMirror(MIRROR_NAME, new DeleteClusterMirrorOptions())
                 .all().get(30, TimeUnit.SECONDS);
@@ -580,10 +591,44 @@ public class AsyncClusterMirrorIntegrationTest {
         waitForFailedWithRetriesExhausted(topic, 2);
     }
 
+    /**
+     * Circular mirror detection test.
+     * A -> B with mirror name "MIRROR_NAME" on TOPIC_NAME
+     * B -> A with mirror name "ANOTHER_MIRROR_NAME" on TOPIC_NAME
+     * The B should not enter MIRRORING state while the A is in MIRRORING state.
+     */
+    @Test
+    void testCircularMirrorDetection() throws Exception {
+        // Create topic
+        srcAdmin.createTopics(List.of(
+                new NewTopic(TOPIC_NAME, 1, (short) 1)
+        )).all().get(30, TimeUnit.SECONDS);
+
+        // Create mirror and add topic my-topic-async
+        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
+                "bootstrap.servers", singleSourceBootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(TOPIC_NAME), new StartMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+        waitForMirrorLagZero(TOPIC_NAME);
+
+        // Create mirror and add topic my-topic-async with another mirror name, we should also be able to detect the circular mirror
+        srcAdmin.createClusterMirror(ANOTHER_MIRROR_NAME, Map.of(
+                "bootstrap.servers", singleDestinationBootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+        srcAdmin.startMirrorTopics(ANOTHER_MIRROR_NAME, Set.of(TOPIC_NAME), new StartMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+
+        // verify the dst <- src mirror is still MIRRORING
+        waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "MIRRORING", Optional.empty());
+        // verify the src <- dst mirror is FAILED with the expected error message
+        waitForMirrorState(srcAdmin, ANOTHER_MIRROR_NAME, TOPIC_NAME, "FAILED", Optional.of("Detected circular mirroring for mirror:my-another-mirror"));
+    }
+
     private void waitForFailedWithRetriesExhausted(String topicPattern, int maxAttempts) throws Exception {
         long deadline = System.currentTimeMillis() + 120_000;
         while (System.currentTimeMillis() < deadline) {
-            if (allPartitionsSatisfy(topicPattern,
+            if (allPartitionsSatisfy(dstAdmin, topicPattern,
                     s -> "FAILED".equals(s.state()) && s.retryAttempt() >= maxAttempts)) {
                 return;
             }
@@ -671,11 +716,21 @@ public class AsyncClusterMirrorIntegrationTest {
     }
 
     private boolean allPartitionsSatisfy(
-            String topicPattern, Predicate<ClusterMirrorDesc.LeaderStateDesc> condition) throws Exception {
-        var result = dstAdmin.describeClusterMirrors(
-                List.of(MIRROR_NAME), new DescribeClusterMirrorsOptions());
+            Admin admin,
+            String topicPattern,
+            Predicate<ClusterMirrorDesc.LeaderStateDesc> condition) throws Exception {
+        return allPartitionsSatisfy(admin, topicPattern, MIRROR_NAME, condition);
+    }
+
+    private boolean allPartitionsSatisfy(
+            Admin admin,
+            String topicPattern,
+            String mirrorName,
+            Predicate<ClusterMirrorDesc.LeaderStateDesc> condition) throws Exception {
+        var result = admin.describeClusterMirrors(
+                List.of(mirrorName), new DescribeClusterMirrorsOptions());
         var descriptions = result.allDescriptions().get(5, TimeUnit.SECONDS);
-        ClusterMirrorDesc desc = descriptions.get(MIRROR_NAME);
+        ClusterMirrorDesc desc = descriptions.get(mirrorName);
         if (desc == null) return false;
         var pattern = java.util.regex.Pattern.compile(topicPattern);
         var matched = desc.topics().entrySet().stream()
@@ -685,10 +740,15 @@ public class AsyncClusterMirrorIntegrationTest {
                 && matched.stream().allMatch(e -> e.getValue().stream().allMatch(condition));
     }
 
-    private void waitForMirrorState(String topicPattern, String state) throws Exception {
+    private void waitForMirrorState(Admin admin, String mirrorName, String topicPattern, String state, Optional<String> errorMsg) throws Exception {
         long deadline = System.currentTimeMillis() + 30_000;
         while (System.currentTimeMillis() < deadline) {
-            if (allPartitionsSatisfy(topicPattern, s -> state.equals(s.state()))) return;
+            // make sure the mirror is in the desired state and the error message is as expected if provided
+            if (allPartitionsSatisfy(admin, topicPattern, mirrorName,
+                    s -> state.equals(s.state())
+                            && (errorMsg.isEmpty()
+                            || s.errorMessage() != null && s.errorMessage().contains(errorMsg.get()))))
+                return;
             TimeUnit.MILLISECONDS.sleep(1_000);
         }
         throw new AssertionError("Mirror partitions for " + topicPattern + " did not reach state " + state + " within timeout");
@@ -706,11 +766,15 @@ public class AsyncClusterMirrorIntegrationTest {
     }
 
     private void waitForMirrorLagZero(String... topicPatterns) throws Exception {
+        waitForMirrorLagZero(dstAdmin, topicPatterns);
+    }
+
+    private void waitForMirrorLagZero(Admin admin, String... topicPatterns) throws Exception {
         long deadline = System.currentTimeMillis() + 30_000;
         while (System.currentTimeMillis() < deadline) {
             boolean allReady = true;
             for (String pattern : topicPatterns) {
-                if (!allPartitionsSatisfy(pattern, s -> s.lag() == 0 && "MIRRORING".equals(s.state()))) {
+                if (!allPartitionsSatisfy(admin, pattern, s -> s.lag() == 0 && "MIRRORING".equals(s.state()))) {
                     allReady = false;
                     break;
                 }

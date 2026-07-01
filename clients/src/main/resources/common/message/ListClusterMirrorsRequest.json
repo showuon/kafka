@@ -22,7 +22,7 @@
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
-    { "name": "ShouldListMirroredTopics", "type": "bool", "versions": "0+", "default": "false",
-      "about": "If true, the response will include mirrored topic names for each mirror." }
+    { "name": "IncludeTopicNames", "type": "bool", "versions": "0+", "default": "false",
+      "about": "If true, the response will include mirror topic names." }
   ]
 }

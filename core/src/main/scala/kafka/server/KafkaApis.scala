@@ -388,7 +388,7 @@ class KafkaApis(val requestChannel: RequestChannel,
   def handleListClusterMirrorsRequest(request: RequestChannel.Request): Unit = {
     val listMirrorsRequest = request.body[ListClusterMirrorsRequest]
     val responseData = new ListClusterMirrorsResponseData()
-    val shouldListTopics = listMirrorsRequest.data.shouldListMirroredTopics
+    val shouldIncludeTopicNames = listMirrorsRequest.data.includeTopicNames()
 
     if (ClusterMirrorUtils.isClusterMirroringEnabled(apiVersionManager.features.finalizedFeatures)) {
       val mirrors = new util.ArrayList[ListClusterMirrorsResponseData.ListedMirror]()
@@ -402,8 +402,8 @@ class KafkaApis(val requestChannel: RequestChannel,
             clusterMirrorCoordinator.getSourceBootstrap(mirrorName) else "")
           .setSourceClusterId(if (sourceClusterId != null) sourceClusterId else "")
           .setTopicCount(clusterMirrorCoordinator.getActiveTopicCount(mirrorName))
-        if (shouldListTopics) {
-          listedMirror.setTopics(new util.ArrayList[String](clusterMirrorCoordinator.getConfiguredTopics(mirrorName, true, false)))
+        if (shouldIncludeTopicNames) {
+          listedMirror.setTopicNames(new util.ArrayList[String](clusterMirrorCoordinator.getConfiguredTopics(mirrorName, true, false)))
         }
         mirrors.add(listedMirror)
       })
