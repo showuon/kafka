@@ -689,7 +689,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                     .listClusterMirrors(new ListClusterMirrorsOptions().shouldListMirroredTopics(true))
                     .all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
 
-
             Set<String> topicNames = topicPartitions.stream()
                     .map(TopicPartition::topic)
                     .collect(Collectors.toSet());
@@ -709,12 +708,19 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                     return true;
                 }
             }
+            return false;
+        } catch (ExecutionException e) {
+            if (e.getCause() instanceof UnsupportedVersionException) {
+                log.info("Source cluster does not support listClusterMirrors. Skipping circular mirror check.");
+                return false;
+            } else {
+                log.error("Circular mirror detection failed when list cluster mirror for mirror {}. Will try again later.", mirrorName, e);
+            }
         } catch (Exception e) {
             log.error("Circular mirror detection failed for mirror {}. Will try again later.", mirrorName, e);
-            return true;
         }
 
-        return false;
+        return true;
     }
 
     /**
