@@ -443,7 +443,7 @@ public enum Errors {
     CLUSTER_MIRROR_NOT_EMPTY(143, "The cluster mirror still has active or non-stopped topics.", ClusterMirrorNotEmptyException::new),
     CLUSTER_MIRROR_AUTHORIZATION_FAILED(144, "Cluster mirror authorization failed.", ClusterMirrorAuthorizationException::new),
     INVALID_CLUSTER_MIRROR_STATES(145, "Cluster mirror partition states are not in the expected states.", InvalidMirrorStateException::new),
-    MIRROR_TOPIC_NOT_STOPPED(146, "The mirror topic is not stopped.", MirrorTopicNotStoppedException::new);
+    MIRROR_TOPIC_NOT_STOPPED(146, "The mirror topic is not in stopped state.", MirrorTopicNotStoppedException::new);
 
     private static final Logger log = LoggerFactory.getLogger(Errors.class);
 

@@ -861,7 +861,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 Set.copyOf(partitionStates.keySet()).stream()
                         .filter(key -> key.mirrorName().equals(mirrorName) && key.topic().equals(name))
                         .forEach(key -> stateTransitioner.ifPresent(t ->
-                                t.transitionTo(mirrorName, Set.of(new TopicPartition(key.topic(), key.partition())), MirrorPartitionState.FAILED, "The source topic is deleted.")));
+                                t.transitionTo(mirrorName, Set.of(new TopicPartition(key.topic(), key.partition())),
+                                        MirrorPartitionState.FAILED, "The source topic is deleted.")));
             }
         });
     }

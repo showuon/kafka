@@ -358,7 +358,9 @@ public class ConfigurationControlManager {
                 topicResList.add(topicRes);
                 continue;
             } else if (nonStoppedState) {
-                topicRes.setErrorCode(Errors.MIRROR_TOPIC_NOT_STOPPED.code());
+                topicRes.setErrorCode(Errors.MIRROR_TOPIC_NOT_STOPPED.code())
+                        .setErrorMessage("Topic '" + topicName + "' is in "
+                                + MirrorPartitionState.fromValue((byte) existingTopic.mirrorState()) + " state");
                 topicResList.add(topicRes);
                 continue;
             }
