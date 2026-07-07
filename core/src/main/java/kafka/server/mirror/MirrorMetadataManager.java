@@ -123,6 +123,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -173,6 +174,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private final KafkaScheduler scheduler;
     private final Metrics metrics;
     private final Time time;
+    private volatile ScheduledFuture<?> metadataRefreshFuture;
 
     private Optional<ClusterMirrorUtils.StateTransitioner> stateTransitioner = Optional.empty();
     private Optional<Consumer<String>> tombstoneWriter = Optional.empty();
@@ -287,7 +289,20 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         this.coordPartitionFinderByKey = Optional.of(coordPartitionByKeyFinder);
         this.coordPartitionFinderByName = Optional.of(coordPartitionByNameFinder);
 
+        metadataRefreshFuture = scheduler.schedule("MirrorMetadataRefresh",
+                this::runMetadataRefresh, 0, brokerConfig.mirrorConfig().metadataRefreshIntervalMs());
+
         this.isInitialized = true;
+    }
+
+    public void rescheduleMetadataRefresh(long newIntervalMs) {
+        ScheduledFuture<?> oldFuture = metadataRefreshFuture;
+        if (oldFuture != null) {
+            oldFuture.cancel(false);
+        }
+        metadataRefreshFuture = scheduler.schedule("MirrorMetadataRefresh",
+                this::runMetadataRefresh, newIntervalMs, newIntervalMs);
+        log.info("Rescheduled metadata refresh with interval {} ms", newIntervalMs);
     }
 
     private Admin getOrCreateSourceAdmin(String mirrorName) {

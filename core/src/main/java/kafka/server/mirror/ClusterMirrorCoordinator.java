@@ -107,7 +107,6 @@ public class ClusterMirrorCoordinator {
     private final MirrorMetadataManager metadataManager;
     private final MetadataCache metadataCache;
     private final ClusterMirrorRecordSerde serde = new ClusterMirrorRecordSerde();
-    private volatile ScheduledFuture<?> metadataRefreshFuture;
     private final Scheduler scheduler;
     private final Metrics metrics;
     private final Time time;
@@ -156,20 +155,11 @@ public class ClusterMirrorCoordinator {
 
         scheduler.startup();
 
-        metadataRefreshFuture = scheduler.schedule("MirrorMetadataRefresh",
-                metadataManager::runMetadataRefresh, 0, brokerConfig.mirrorConfig().metadataRefreshIntervalMs());
-
         log.info("Startup complete.");
     }
 
     public void rescheduleMetadataRefresh(long newIntervalMs) {
-        ScheduledFuture<?> oldFuture = metadataRefreshFuture;
-        if (oldFuture != null) {
-            oldFuture.cancel(false);
-        }
-        metadataRefreshFuture = scheduler.schedule("MirrorMetadataRefresh",
-                metadataManager::runMetadataRefresh, newIntervalMs, newIntervalMs);
-        log.info("Rescheduled metadata refresh with interval {} ms", newIntervalMs);
+        metadataManager.rescheduleMetadataRefresh(newIntervalMs);
     }
 
     /** Shuts down the coordinator scheduler and mirror state sender. */
@@ -779,6 +769,8 @@ public class ClusterMirrorCoordinator {
                             }
 
                             if (epochs.size() != topicPartitions.size()) {
+                                log.warn("The returned epoch size is not equal to the requested epoch size for mirror. " +
+                                        "Requested topic partitions: {}, returned epochs: {}", topicPartitions, epochs);
                                 topicPartitions.forEach(partition -> {
                                     if (!epochs.containsKey(partition)) {
                                         epochs.put(partition, -1);

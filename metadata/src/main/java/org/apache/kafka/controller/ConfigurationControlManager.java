@@ -298,9 +298,12 @@ public class ConfigurationControlManager {
             topicRes.setName(topicName);
 
             ReplicationControlManager.TopicControlInfo existingTopic = replicationControl.getTopicByName(topicName);
+            ReplicationControlManager.TopicControlInfo existingIdTopic = replicationControl.getTopic(topic.id());
             boolean hasRequestTopicId = !topic.id().equals(Uuid.ZERO_UUID);
             boolean topicIdMismatch = existingTopic != null && hasRequestTopicId
                     && !existingTopic.topicId().equals(topic.id());
+            boolean topicNameMismatch = existingIdTopic != null && hasRequestTopicId
+                    && !existingIdTopic.name().equals(topicName);
             boolean activeInOtherMirror = existingTopic != null && existingTopic.mirrorName() != null
                     && !existingTopic.mirrorName().isBlank()
                     && existingTopic.mirrorState() != MirrorPartitionState.STOPPED.value();
@@ -309,6 +312,12 @@ public class ConfigurationControlManager {
                 topicRes.setErrorCode(Errors.INCONSISTENT_TOPIC_ID.code())
                         .setErrorMessage("Topic id " + topic.id() + " in the request doesn't match " +
                                 "the existing topic id " + existingTopic.topicId() + " for topic " + topicName);
+            }
+
+            if (topicNameMismatch) {
+                topicRes.setErrorCode(Errors.TOPIC_ALREADY_EXISTS.code())
+                        .setErrorMessage("Topic id " + topic.id() + " with topic name " + topic.name() +
+                                " in the request is already used by topic name " + existingIdTopic.name());
             }
 
             if (activeInOtherMirror) {
