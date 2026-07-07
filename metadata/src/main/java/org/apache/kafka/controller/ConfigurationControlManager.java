@@ -307,6 +307,10 @@ public class ConfigurationControlManager {
             boolean activeInOtherMirror = existingTopic != null && existingTopic.mirrorName() != null
                     && !existingTopic.mirrorName().isBlank()
                     && existingTopic.mirrorState() != MirrorPartitionState.STOPPED.value();
+            boolean startedState = existingTopic != null
+                    && existingTopic.mirrorState() == MirrorPartitionState.MIRRORING.value();
+            boolean nonStoppedState = existingTopic != null
+                    && existingTopic.mirrorState() != MirrorPartitionState.STOPPED.value();
 
             if (topicIdMismatch) {
                 topicRes.setErrorCode(Errors.INCONSISTENT_TOPIC_ID.code())
@@ -348,6 +352,15 @@ public class ConfigurationControlManager {
                     topicResList.add(topicRes);
                     continue;
                 }
+            }
+
+            if (startedState) {
+                topicResList.add(topicRes);
+                continue;
+            } else if (nonStoppedState) {
+                topicRes.setErrorCode(Errors.MIRROR_TOPIC_NOT_STOPPED.code());
+                topicResList.add(topicRes);
+                continue;
             }
 
             records.add(new ApiMessageAndVersion(
@@ -422,6 +435,10 @@ public class ConfigurationControlManager {
                 continue;
             }
 
+            if (currMirrorStateChange == MirrorPartitionState.PAUSED.value()) {
+                topicRes.setName(topic).setErrorCode(Errors.MIRROR_TOPIC_ALREADY_PAUSED.code());
+            }
+
             records.add(new ApiMessageAndVersion(
                     new MirrorTopicStateChangeRecord()
                             .setTopicId(topicId)
@@ -474,6 +491,12 @@ public class ConfigurationControlManager {
                 continue;
             }
 
+            if (currMirrorStateChange == MirrorPartitionState.PAUSED.value()) {
+                topicRes.setErrorCode(Errors.NONE.code()).setName(topic);
+                topicResList.add(topicRes);
+                continue;
+            }
+
             records.add(new ApiMessageAndVersion(
                 new MirrorTopicStateChangeRecord()
                     .setTopicId(topicId)
@@ -515,7 +538,11 @@ public class ConfigurationControlManager {
                 continue;
             }
 
-            if (currMirrorStateChange != MirrorPartitionState.PAUSED.value()) {
+            if (currMirrorStateChange == MirrorPartitionState.MIRRORING.value()) {
+                // it's already in mirroring state, skip it
+                topicResList.add(topicRes);
+                continue;
+            } else if (currMirrorStateChange != MirrorPartitionState.PAUSED.value()) {
                 topicRes.setErrorCode(Errors.MIRROR_TOPIC_NOT_PAUSED.code()).setName(topic)
                         .setErrorMessage("Topic '" + topic + "' is in "
                                 + MirrorPartitionState.fromValue((byte) currMirrorStateChange) + " state");
