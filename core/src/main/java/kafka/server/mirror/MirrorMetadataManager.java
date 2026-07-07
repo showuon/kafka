@@ -781,7 +781,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         }
 
         maybeScalePartitions(createPartitionsTopics);
-        maybeStopDeletedTopics(mirrorName, topicInfos);
+        maybeFailDeletedTopics(mirrorName, topicInfos);
         maybeStartMissedPartitions(mirrorName);
     }
 
@@ -834,7 +834,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         }
     }
 
-    private void maybeStopDeletedTopics(String mirrorName, List<SourceTopicState> topicInfos) {
+    private void maybeFailDeletedTopics(String mirrorName, List<SourceTopicState> topicInfos) {
         List<String> deletedSourceTopicNames = new ArrayList<>(topicInfos.stream()
                 .filter(ti -> !ti.exists())
                 .map(SourceTopicState::topic).toList());
@@ -861,7 +861,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 Set.copyOf(partitionStates.keySet()).stream()
                         .filter(key -> key.mirrorName().equals(mirrorName) && key.topic().equals(name))
                         .forEach(key -> stateTransitioner.ifPresent(t ->
-                                t.transitionTo(mirrorName, Set.of(new TopicPartition(key.topic(), key.partition())), MirrorPartitionState.STOPPING, null)));
+                                t.transitionTo(mirrorName, Set.of(new TopicPartition(key.topic(), key.partition())), MirrorPartitionState.FAILED, "The source topic is deleted.")));
             }
         });
     }
