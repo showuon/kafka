@@ -1072,7 +1072,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             for (var entry : allOffsets.entrySet()) {
                 String groupId = entry.getKey();
                 if (activeDestGroups.get().contains(groupId)) {
-                    log.debug("Skipping consumer group offset sync for group {} in mirror {}: active on destination", groupId, mirrorName);
+                    log.warn("Skipping consumer group offset sync for group {} in mirror {}: active on destination", groupId, mirrorName);
                     continue;
                 }
 
@@ -1163,7 +1163,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             for (var entry : allOffsets.entrySet()) {
                 String groupId = entry.getKey();
                 if (activeDestGroups.get().contains(groupId)) {
-                    log.debug("Skipping share group offset sync for group {} in mirror {}: active on destination", groupId, mirrorName);
+                    log.warn("Skipping share group offset sync for group {} in mirror {}: active on destination", groupId, mirrorName);
                     continue;
                 }
 
