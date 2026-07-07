@@ -137,8 +137,8 @@ public class ClusterMirrorCoordinator {
         return optLeaderAndIsr.isPresent() && optLeaderAndIsr.get().leader() == brokerConfig.nodeId();
     }
 
-    /** Starts the coordinator scheduler and mirror state sender. */
-    public void startup() {
+    /** Starts the coordinator. */
+    public void start() {
         if (!isRunning.compareAndSet(false, true)) {
             log.warn("Is already running.");
             return;
@@ -147,21 +147,16 @@ public class ClusterMirrorCoordinator {
         log.info("Starting up.");
 
         metadataManager.initialize(
+                brokerConfig.mirrorConfig().metadataRefreshIntervalMs(),
                 (mirrorName, tp, state, errorMessage) -> transitionTo(mirrorName, tp, state, errorMessage),
                 this::tombstoneMirrorRecords,
                 this::getCoordinatorPartitionByKey,
                 this::getCoordinatorPartitionByName);
 
-        scheduler.startup();
-
         log.info("Startup complete.");
     }
 
-    public void rescheduleMetadataRefresh(long newIntervalMs) {
-        metadataManager.rescheduleMetadataRefresh(newIntervalMs);
-    }
-
-    /** Shuts down the coordinator scheduler and mirror state sender. */
+    /** Shuts down the coordinator. */
     public void shutdown() {
         if (!isRunning.compareAndSet(true, false)) {
             log.warn("Is already shutting down.");
@@ -1022,6 +1017,11 @@ public class ClusterMirrorCoordinator {
         } else {
             throw new IllegalStateException("Unsupported partition state value version: " + version);
         }
+    }
+
+    /** Cancels any existing refresh task and schedules a new one at the given interval. */
+    public void scheduleMetadataRefresh(long intervalMs) {
+        metadataManager.scheduleMetadataRefresh(intervalMs);
     }
 
     /** Returns the set of all configured mirror names. */

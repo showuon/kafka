@@ -298,6 +298,7 @@ public class ConfigurationControlManager {
 
             ReplicationControlManager.TopicControlInfo existingTopic = replicationControl.getTopicByName(topicName);
             ReplicationControlManager.TopicControlInfo existingIdTopic = replicationControl.getTopic(topic.id());
+
             boolean hasRequestTopicId = !topic.id().equals(Uuid.ZERO_UUID);
             boolean topicIdMismatch = existingTopic != null && hasRequestTopicId
                     && !existingTopic.topicId().equals(topic.id());
@@ -305,10 +306,13 @@ public class ConfigurationControlManager {
                     && !existingIdTopic.name().equals(topicName);
             boolean activeInOtherMirror = existingTopic != null && existingTopic.mirrorName() != null
                     && !existingTopic.mirrorName().isBlank()
+                    && !existingTopic.mirrorName().equals(mirrorName)
                     && existingTopic.mirrorState() != MirrorPartitionState.STOPPED.value();
-            boolean startedState = existingTopic != null
+            boolean startedState = existingTopic != null && existingTopic.mirrorName() != null
+                    && existingTopic.mirrorName().equals(mirrorName)
                     && existingTopic.mirrorState() == MirrorPartitionState.MIRRORING.value();
-            boolean nonStoppedState = existingTopic != null
+            boolean nonStoppedState = existingTopic != null && existingTopic.mirrorName() != null
+                    && existingTopic.mirrorName().equals(mirrorName)
                     && existingTopic.mirrorState() != MirrorPartitionState.STOPPED.value();
 
             if (topicIdMismatch) {
@@ -437,6 +441,8 @@ public class ConfigurationControlManager {
 
             if (currMirrorStateChange == MirrorPartitionState.PAUSED.value()) {
                 topicRes.setName(topic).setErrorCode(Errors.MIRROR_TOPIC_ALREADY_PAUSED.code());
+                topicResList.add(topicRes);
+                continue;
             }
 
             records.add(new ApiMessageAndVersion(

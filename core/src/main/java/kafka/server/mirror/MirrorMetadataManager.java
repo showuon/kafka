@@ -143,10 +143,10 @@ import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
  * Bridges the local destination cluster and remote source clusters for Cluster Mirroring.
  *
  * Implements {@link MetadataPublisher} to detect leadership and config changes, triggering
- * partition state transitions.
- * Periodically syncs topic metadata, configs, group offsets, and ACLs from source clusters using {@link Admin}.
- * Maintains in-memory caches of partition states and last mirror epochs. Routes state reads/writes
- * to the appropriate coordinator broker.
+ * mirrror partition state transitions.
+ * Periodically syncs topic metadata, configs, group offsets, and ACLs from source clusters
+ * using {@link Admin}. Maintains in-memory caches of partition states and last mirror epochs.
+ * Routes state reads/writes to the appropriate coordinator broker.
  *
  * Source topic metadata and broker discovery run on every broker so that all brokers keep an
  * up to date view of source partition leaders. Coordinator level sync (topic configs, group
@@ -273,7 +273,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * Creates and starts the MirrorStateSender used for WriteMirrorStates and ReadMirrorStates RPCs.
      * Wires in the state transitioner, tombstone handler, and coordinator partition finders.
      */
-    public void initialize(ClusterMirrorUtils.StateTransitioner stateTransitioner,
+    public void initialize(long metadataRefreshIntervalMs,
+                           ClusterMirrorUtils.StateTransitioner stateTransitioner,
                            Consumer<String> tombStoneHandler,
                            Function<ClusterMirrorRecordKey, Integer> coordPartitionByKeyFinder,
                            Function<String, Integer> coordPartitionByNameFinder) {
@@ -288,21 +289,19 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         this.tombstoneWriter = Optional.of(tombStoneHandler);
         this.coordPartitionFinderByKey = Optional.of(coordPartitionByKeyFinder);
         this.coordPartitionFinderByName = Optional.of(coordPartitionByNameFinder);
-
-        metadataRefreshFuture = scheduler.schedule("MirrorMetadataRefresh",
-                this::runMetadataRefresh, 0, brokerConfig.mirrorConfig().metadataRefreshIntervalMs());
+        scheduleMetadataRefresh(metadataRefreshIntervalMs);
 
         this.isInitialized = true;
     }
 
-    public void rescheduleMetadataRefresh(long newIntervalMs) {
+    void scheduleMetadataRefresh(long intervalMs) {
         ScheduledFuture<?> oldFuture = metadataRefreshFuture;
         if (oldFuture != null) {
             oldFuture.cancel(false);
         }
         metadataRefreshFuture = scheduler.schedule("MirrorMetadataRefresh",
-                this::runMetadataRefresh, newIntervalMs, newIntervalMs);
-        log.info("Rescheduled metadata refresh with interval {} ms", newIntervalMs);
+                this::runMetadataRefresh, intervalMs, intervalMs);
+        log.info("Scheduled metadata refresh with interval {} ms", intervalMs);
     }
 
     private Admin getOrCreateSourceAdmin(String mirrorName) {
