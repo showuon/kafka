@@ -230,7 +230,7 @@ public class AsyncClusterMirrorIntegrationTest {
         // Failover: stop forward mirror, produce on dst
         dstAdmin.stopMirrorTopics(forwardMirror, Set.of(topic), new StopMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, forwardMirror, topic, "STOPPED");
+        waitForMirrorState(dstAdmin, forwardMirror, topic, "STOPPED", Optional.empty());
         produceRecords(dstCluster, topic, 10, 5);
 
         // Sending a describeClusterMirror request with LME lookup info
@@ -918,18 +918,18 @@ public class AsyncClusterMirrorIntegrationTest {
 //        throw new AssertionError("Mirror " + mirrorName + " lag did not reach zero for " + List.of(topicPatterns));
 //    }
 
-    private void waitForFailedWithRetriesExhausted(String topicPattern, int maxAttempts) throws Exception {
-        long deadline = System.currentTimeMillis() + 120_000;
-        while (System.currentTimeMillis() < deadline) {
-            if (allPartitionsSatisfy(dstAdmin, MIRROR_NAME, topicPattern,
-                    s -> "FAILED".equals(s.state()) && s.retryAttempt() >= maxAttempts)) {
-                return;
-            }
-            TimeUnit.MILLISECONDS.sleep(1_000);
-        }
-        throw new AssertionError("Mirror partitions for " + topicPattern
-                + " did not exhaust retries within timeout");
-    }
+//    private void waitForFailedWithRetriesExhausted(String topicPattern, int maxAttempts) throws Exception {
+//        long deadline = System.currentTimeMillis() + 120_000;
+//        while (System.currentTimeMillis() < deadline) {
+//            if (allPartitionsSatisfy(dstAdmin, MIRROR_NAME, topicPattern,
+//                    s -> "FAILED".equals(s.state()) && s.retryAttempt() >= maxAttempts)) {
+//                return;
+//            }
+//            TimeUnit.MILLISECONDS.sleep(1_000);
+//        }
+//        throw new AssertionError("Mirror partitions for " + topicPattern
+//                + " did not exhaust retries within timeout");
+//    }
 
 //    private void waitForListMirrorEmpty() {
 //        TestUtils.waitUntilTrue(() -> {

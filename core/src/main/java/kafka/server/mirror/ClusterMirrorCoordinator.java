@@ -767,45 +767,6 @@ public class ClusterMirrorCoordinator {
                                 return;
                             }
 
-//                            ClusterMirrorDesc description = descriptions.get(mirrorName);
-//                            if (description == null) {
-//                                log.info("Mirror {} not found in source cluster. Replication will be one-way without failback",
-//                                    mirrorName);
-//                                Map<TopicPartition, Integer> epochs = topicPartitions.stream()
-//                                    .collect(Collectors.toMap(tp -> tp, tp -> -1));
-//                                replicaManager.maybeTruncateForLeaderEpoch(epochs, truncateCallback);
-//                                return;
-//                            }
-//
-//                            Set<ClusterMirrorDesc.LeaderStateDesc> states = description.topics().get(mirrorName);
-//                            if (states == null || states.isEmpty()) {
-//                                log.info("Mirror {} contains empty mirror states. Truncating all logs.", mirrorName);
-//                                Map<TopicPartition, Integer> epochs = topicPartitions.stream()
-//                                        .collect(Collectors.toMap(tp -> tp, tp -> -1));
-//                                replicaManager.maybeTruncateForLeaderEpoch(epochs, truncateCallback);
-//                                return;
-//                            }
-//
-//                            // verify all partition states are in STOPPED or UNKNOWN (default) state
-//                            Set<TopicPartition> invalidPartitions = states.stream().filter(state -> topicPartitions.contains(state.topicPartition())
-//                                    && !state.state().equals(MirrorPartitionState.STOPPED.name())
-//                                    && !state.state().equals(MirrorPartitionState.UNKNOWN.name())
-//                            ).map(ClusterMirrorDesc.LeaderStateDesc::topicPartition).collect(Collectors.toSet());
-//                            if (!invalidPartitions.isEmpty()) {
-//                                String errorMsg = String.format("Partitions %s are not in STOPPED or UNKNOWN state on the source cluster for mirror %s. " +
-//                                        "Moving to FAILED state.", mirrorName, invalidPartitions);
-//                                log.error(errorMsg);
-//                                transitionTo(mirrorName, topicPartitions, MirrorPartitionState.FAILED, errorMsg);
-//                                return;
-//                            }
-//
-//                            Map<TopicPartition, Integer> epochs = new HashMap<>();
-//                            description.topics().forEach((topicName, leaderState) -> {
-//                                leaderState.forEach(leaderStateEntry -> {
-//                                    epochs.put(leaderStateEntry.topicPartition(), leaderStateEntry.lastMirrorEpoch());
-//                                });
-//                            });
-
                             // if the source cluster doesn't have mirror info, no result will be returned.
                             if (epochs.size() != topicPartitions.size()) {
                                 log.warn("The returned epoch size is not equal to the requested epoch size for mirror. " +

@@ -354,8 +354,7 @@ class BrokerServer(
         metadataCache,
         mirrorScheduler,
         metrics,
-        time,
-        clusterId
+        time
       )
 
       this._replicaManager = new ReplicaManager(

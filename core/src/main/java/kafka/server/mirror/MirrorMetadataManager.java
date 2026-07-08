@@ -28,6 +28,7 @@ import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.AlterConfigOp;
+import org.apache.kafka.clients.admin.ClusterMirrorListing;
 import org.apache.kafka.clients.admin.Config;
 import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.clients.admin.DescribeClusterMirrorsOptions;
@@ -167,7 +168,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private final String clusterId;
     private final KafkaConfig brokerConfig;
     private final int nodeId;
-    private final String clusterId;
 
     private final NodeToControllerChannelManager channelManager;
     private final Supplier<ReplicaManager> replicaManagerSupplier;
@@ -213,12 +213,10 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         MetadataCache metadataCache,
         KafkaScheduler scheduler,
         Metrics metrics,
-        Time time,
-        String clusterId
+        Time time
     ) {
         this.clusterId = clusterId;
         this.brokerConfig = brokerConfig;
-        this.clusterId = clusterId;
         this.name = "[" + MirrorMetadataManager.class.getSimpleName() + " id=" + brokerConfig.nodeId() + "] ";
         this.log = new LogContext(name).logger(MirrorMetadataManager.class);
         this.nodeId = brokerConfig.nodeId();
