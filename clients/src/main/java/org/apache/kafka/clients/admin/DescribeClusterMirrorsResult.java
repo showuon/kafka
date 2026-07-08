@@ -18,8 +18,10 @@
 package org.apache.kafka.clients.admin;
 
 import org.apache.kafka.common.KafkaFuture;
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.annotation.InterfaceStability;
 
+import java.util.Collections;
 import java.util.Map;
 
 /**
@@ -30,9 +32,16 @@ import java.util.Map;
 @InterfaceStability.Evolving
 public class DescribeClusterMirrorsResult {
     private final KafkaFuture<Map<String, ClusterMirrorDesc>> future;
+    private final KafkaFuture<Map<Uuid, Map<Integer, Integer>>> lookupEpochsFuture;
 
     DescribeClusterMirrorsResult(KafkaFuture<Map<String, ClusterMirrorDesc>> future) {
+        this(future, KafkaFuture.completedFuture(Collections.emptyMap()));
+    }
+
+    DescribeClusterMirrorsResult(KafkaFuture<Map<String, ClusterMirrorDesc>> future,
+                                 KafkaFuture<Map<Uuid, Map<Integer, Integer>>> lookupEpochsFuture) {
         this.future = future;
+        this.lookupEpochsFuture = lookupEpochsFuture;
     }
 
     /**
@@ -40,5 +49,13 @@ public class DescribeClusterMirrorsResult {
      */
     public KafkaFuture<Map<String, ClusterMirrorDesc>> allDescriptions() {
         return future;
+    }
+
+    /**
+     * Return a future containing last mirror epoch lookup results.
+     * Keyed by topicId, then partitionIndex to lastMirrorEpoch.
+     */
+    public KafkaFuture<Map<Uuid, Map<Integer, Integer>>> lookupEpochs() {
+        return lookupEpochsFuture;
     }
 }

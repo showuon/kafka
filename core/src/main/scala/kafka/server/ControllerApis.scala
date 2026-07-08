@@ -29,6 +29,7 @@ import kafka.server.logger.RuntimeLoggerManager
 import kafka.server.metadata.KRaftMetadataCache
 import kafka.server.mirror.ClusterMirrorUtils
 import kafka.utils.Logging
+import org.apache.kafka.clients.CommonClientConfigs
 import org.apache.kafka.clients.admin.{AlterConfigOp, EndpointType}
 import org.apache.kafka.common.Uuid.ZERO_UUID
 import org.apache.kafka.common.acl.AclOperation.{ALTER, ALTER_CONFIGS, CLUSTER_ACTION, CREATE, CREATE_TOKENS, DELETE, DESCRIBE, DESCRIBE_CONFIGS}
@@ -200,20 +201,28 @@ class ControllerApis(
   }
 
   def handleCreateClusterMirror(request: RequestChannel.Request): CompletableFuture[Unit] = {
-    val mirrorName = request.body[CreateClusterMirrorRequest].data().mirrorName()
+    val createRequest = request.body[CreateClusterMirrorRequest]
+    val mirrorName = createRequest.data().mirrorName()
     if (!authHelper.authorize(request.context, CREATE, CLUSTER_MIRROR, mirrorName))
       throw new ClusterMirrorAuthorizationException(s"Request $request needs CREATE permission on ClusterMirror:$mirrorName.")
     if (!ClusterMirrorUtils.isClusterMirroringEnabled(apiVersionManager.features.finalizedFeatures))
       throw new UnsupportedVersionException("Cluster mirroring requires mirror.version >= 1.")
-    val createMirrorRequest = request.body[CreateClusterMirrorRequest]
+
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal, OptionalLong.empty())
     val altersByName = new util.HashMap[String, Entry[AlterConfigOp.OpType, String]]()
-    createMirrorRequest.data().config.forEach { config =>
+    createRequest.data().config.forEach { config =>
       altersByName.put(config.name, new util.AbstractMap.SimpleEntry[AlterConfigOp.OpType, String](
         AlterConfigOp.OpType.forId(0), config.value))
     }
+    if (!altersByName.containsKey(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG)) {
+      throw new InvalidRequestException(s"Missing required config ${CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG} in CreateClusterMirrorRequest")
+    }
 
-    controller.createClusterMirror(context, createMirrorRequest.data().mirrorName(), altersByName)
+    if (!altersByName.containsKey(CommonClientConfigs.MIRROR_SOURCE_CLUSTER_ID_CONFIG)) {
+      throw new InvalidRequestException(s"Missing required config ${CommonClientConfigs.MIRROR_SOURCE_CLUSTER_ID_CONFIG} in CreateClusterMirrorRequest")
+    }
+
+    controller.createClusterMirror(context, createRequest.data().mirrorName(), altersByName)
       .thenCompose[CreateClusterMirrorResponseData] { response =>
         maybeCreateMirrorStateTopic(request.context, request.session, request.header)
           .thenApply[CreateClusterMirrorResponseData](_ => response)
@@ -279,21 +288,22 @@ class ControllerApis(
   }
 
   def handleStartMirrorTopics(request: RequestChannel.Request): CompletableFuture[Unit] = {
-    val startMirrorTopicsRequest = request.body[StartMirrorTopicsRequest]
-    val mirrorName = startMirrorTopicsRequest.data().mirrorName()
+    val startRequest = request.body[StartMirrorTopicsRequest]
+    val mirrorName = startRequest.data().mirrorName()
     if (!authHelper.authorize(request.context, ALTER, CLUSTER_MIRROR, mirrorName))
       throw new ClusterMirrorAuthorizationException(s"Request $request needs ALTER permission on ClusterMirror:$mirrorName.")
     if (!ClusterMirrorUtils.isClusterMirroringEnabled(apiVersionManager.features.finalizedFeatures))
       throw new UnsupportedVersionException("Cluster mirroring requires mirror.version >= 1.")
-    val wireTopics = startMirrorTopicsRequest.data().topics()
+
+    val wireTopics = startRequest.data().topics()
     val unauthorizedTopics = wireTopics.asScala.map(_.topicName()).filterNot(topic =>
       authHelper.authorize(request.context, ALTER_CONFIGS, TOPIC, topic, logIfDenied = false)).toSet
     if (unauthorizedTopics.nonEmpty)
       throw new TopicAuthorizationException(unauthorizedTopics.asJava)
     val topics = wireTopics.asScala.map(t =>
       new Controller.MirrorTopicMetadata(t.topicName(), t.topicId(), t.numPartitions())).toList.asJava
-    val includePatterns = startMirrorTopicsRequest.data().includePatterns()
-    val excludePatterns = startMirrorTopicsRequest.data().excludePatterns()
+    val includePatterns = startRequest.data().includePatterns()
+    val excludePatterns = startRequest.data().excludePatterns()
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
     controller.startMirrorTopics(context, mirrorName, topics,
@@ -311,21 +321,22 @@ class ControllerApis(
   }
 
   def handleStopMirrorTopics(request: RequestChannel.Request): CompletableFuture[Unit] = {
-    val stopMirrorTopicsRequest = request.body[StopMirrorTopicsRequest]
-    val mirrorName = stopMirrorTopicsRequest.data().mirrorName()
+    val stopRequest = request.body[StopMirrorTopicsRequest]
+    val mirrorName = stopRequest.data().mirrorName()
     if (!authHelper.authorize(request.context, ALTER, CLUSTER_MIRROR, mirrorName))
       throw new ClusterMirrorAuthorizationException(s"Request $request needs ALTER permission on ClusterMirror:$mirrorName.")
     if (!ClusterMirrorUtils.isClusterMirroringEnabled(apiVersionManager.features.finalizedFeatures))
       throw new UnsupportedVersionException("Cluster mirroring requires mirror.version >= 1.")
+
     val topics: util.Set[String] = new util.HashSet[String]()
-    stopMirrorTopicsRequest.data().topics().forEach( topic => {
+    stopRequest.data().topics().forEach( topic => {
         topics.add(topic.topicName())
     })
     val unauthorizedTopics = topics.asScala.filterNot(topic =>
       authHelper.authorize(request.context, ALTER_CONFIGS, TOPIC, topic, logIfDenied = false))
     if (unauthorizedTopics.nonEmpty)
       throw new TopicAuthorizationException(unauthorizedTopics.asJava)
-    val patterns = stopMirrorTopicsRequest.data().patterns()
+    val patterns = stopRequest.data().patterns()
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
     controller.stopMirrorTopics(context, mirrorName, topics, patterns)
@@ -348,6 +359,7 @@ class ControllerApis(
       throw new ClusterMirrorAuthorizationException(s"Request $request needs ALTER permission on ClusterMirror:$mirrorName.")
     if (!ClusterMirrorUtils.isClusterMirroringEnabled(apiVersionManager.features.finalizedFeatures))
       throw new UnsupportedVersionException("Cluster mirroring requires mirror.version >= 1.")
+
     val topics: util.Set[String] = new util.HashSet[String]()
     pauseRequest.data().topics().forEach(topic => topics.add(topic.topicName()))
     val unauthorizedTopics = topics.asScala.filterNot(topic =>
@@ -375,6 +387,7 @@ class ControllerApis(
       throw new ClusterMirrorAuthorizationException(s"Request $request needs ALTER permission on ClusterMirror:$mirrorName.")
     if (!ClusterMirrorUtils.isClusterMirroringEnabled(apiVersionManager.features.finalizedFeatures))
       throw new UnsupportedVersionException("Cluster mirroring requires mirror.version >= 1.")
+
     val topics: util.Set[String] = new util.HashSet[String]()
     resumeRequest.data().topics().forEach(topic => topics.add(topic.topicName()))
     val unauthorizedTopics = topics.asScala.filterNot(topic =>
@@ -402,6 +415,7 @@ class ControllerApis(
       throw new ClusterMirrorAuthorizationException(s"Request $request needs ALTER permission on ClusterMirror:$mirrorName.")
     if (!ClusterMirrorUtils.isClusterMirroringEnabled(apiVersionManager.features.finalizedFeatures))
       throw new UnsupportedVersionException("Cluster mirroring requires mirror.version >= 1.")
+
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
     val brokerMetadataOffset = deleteMirrorRequest.data().stateValidationOffset()

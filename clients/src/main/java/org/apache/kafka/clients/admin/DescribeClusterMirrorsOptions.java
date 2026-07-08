@@ -18,6 +18,10 @@
 package org.apache.kafka.clients.admin;
 
 import org.apache.kafka.common.annotation.InterfaceStability;
+import org.apache.kafka.common.message.DescribeClusterMirrorsRequestData;
+
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Options for {@link Admin#describeClusterMirrors(java.util.Collection, DescribeClusterMirrorsOptions)}.
@@ -28,6 +32,8 @@ import org.apache.kafka.common.annotation.InterfaceStability;
 public class DescribeClusterMirrorsOptions extends AbstractOptions<DescribeClusterMirrorsOptions> {
 
     private boolean includeAuthorizedOperations = false;
+    private String clusterId;
+    private List<DescribeClusterMirrorsRequestData.LastMirrorEpochLookup> lastMirrorEpochLookups = Collections.emptyList();
 
     /**
      * Set whether authorized operations should be included in the response.
@@ -45,5 +51,23 @@ public class DescribeClusterMirrorsOptions extends AbstractOptions<DescribeClust
      */
     public boolean includeAuthorizedOperations() {
         return includeAuthorizedOperations;
+    }
+
+    public DescribeClusterMirrorsOptions clusterId(String clusterId) {
+        this.clusterId = clusterId;
+        return this;
+    }
+
+    public String clusterId() {
+        return clusterId;
+    }
+
+    public DescribeClusterMirrorsOptions lastMirrorEpochLookups(List<DescribeClusterMirrorsRequestData.LastMirrorEpochLookup> lastMirrorEpochLookups) {
+        this.lastMirrorEpochLookups = lastMirrorEpochLookups;
+        return this;
+    }
+
+    public List<DescribeClusterMirrorsRequestData.LastMirrorEpochLookup> lastMirrorEpochLookups() {
+        return lastMirrorEpochLookups;
     }
 }
