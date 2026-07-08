@@ -685,51 +685,69 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     /**
-     * Checks whether mirroring the given partitions from the source cluster would create a circular
-     * replication loop.
+     * Lists the mirrors configured on the source cluster (including mirrored topics), so callers
+     * can reuse the same listing for circular-mirror detection and other validations (e.g.
+     * cross-checking a last mirror epoch lookup result) without issuing multiple requests.
      *
-     * @return true if the given partitions would create a circular replication loop, false otherwise
+     * @return the source mirrors, or an empty list if the source cluster doesn't support the
+     *         ListClusterMirrors API (circular-mirror detection is then skipped)
+     * @throws RuntimeException if the listing could not be retrieved for any other reason
      */
-    boolean hasCircularMirror(String mirrorName, Set<TopicPartition> topicPartitions) {
+    Collection<ClusterMirrorListing> listSourceClusterMirrors(String mirrorName) {
         Admin srcAdmin = getOrCreateSourceAdmin(mirrorName);
         try {
             // list the mirrors in the source cluster including topics not in STOPPING/STOPPED
-            Collection<ClusterMirrorListing> sourceMirrors = srcAdmin
+            return srcAdmin
                     .listClusterMirrors(new ListClusterMirrorsOptions().shouldListMirroredTopics(true))
                     .all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
-
-            Set<String> topicNames = topicPartitions.stream()
-                    .map(TopicPartition::topic)
-                    .collect(Collectors.toSet());
-
-            // for each mirror, find the circular mirror if:
-            // 1. the cluster id is the same as the local cluster id
-            // 2. the mirrored topics overlap with the topics to be mirrored
-            for (ClusterMirrorListing sourceMirror : sourceMirrors) {
-                if (!clusterId.equals(sourceMirror.sourceClusterId())) {
-                    continue;
-                }
-                Set<String> overlapping = new HashSet<>(sourceMirror.topics());
-                overlapping.retainAll(topicNames);
-                if (!overlapping.isEmpty()) {
-                    log.error("Circular mirror detected for mirror {}: mirror {} on the source cluster is already mirroring back topic(s) {}",
-                            mirrorName, sourceMirror.mirrorName(), overlapping);
-                    return true;
-                }
-            }
-            return false;
         } catch (ExecutionException e) {
             if (e.getCause() instanceof UnsupportedVersionException) {
-                log.info("Source cluster does not support listClusterMirrors. Skipping circular mirror check.");
-                return false;
-            } else {
-                log.error("Circular mirror detection failed when list cluster mirror for mirror {}. Will try again later.", mirrorName, e);
+                log.info("Source cluster does not support listClusterMirrors for mirror {}. Skipping circular mirror check.", mirrorName);
+                return List.of();
             }
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            throw new IllegalStateException("Failed to list cluster mirrors from source for mirror "
+                    + mirrorName + ": " + cause.getMessage(), cause);
         } catch (Exception e) {
-            log.error("Circular mirror detection failed for mirror {}. Will try again later.", mirrorName, e);
+            throw new IllegalStateException("Failed to list cluster mirrors from source for mirror "
+                    + mirrorName + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Checks whether mirroring the given partitions from the source cluster would create a circular
+     * replication loop, based on the mirrors currently configured on the source cluster.
+     *
+     * @param sourceMirrors mirrors configured on the source cluster, as returned by
+     *                      {@link #listSourceClusterMirrors(String)}
+     * @return true if the given partitions would create a circular replication loop, false otherwise
+     */
+    boolean hasCircularMirror(String mirrorName, Set<TopicPartition> topicPartitions,
+                              Collection<ClusterMirrorListing> sourceMirrors) {
+        if (sourceMirrors.isEmpty()) {
+            return false;
         }
 
-        return true;
+        Set<String> topicNames = topicPartitions.stream()
+                .map(TopicPartition::topic)
+                .collect(Collectors.toSet());
+
+        // for each mirror, find the circular mirror if:
+        // 1. the cluster id is the same as the local cluster id
+        // 2. the mirrored topics overlap with the topics to be mirrored
+        for (ClusterMirrorListing sourceMirror : sourceMirrors) {
+            if (!clusterId.equals(sourceMirror.sourceClusterId())) {
+                continue;
+            }
+            Set<String> overlapping = new HashSet<>(sourceMirror.topics());
+            overlapping.retainAll(topicNames);
+            if (!overlapping.isEmpty()) {
+                log.error("Circular mirror detected for mirror {}: mirror {} on the source cluster is already mirroring back topic(s) {}",
+                        mirrorName, sourceMirror.mirrorName(), overlapping);
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
