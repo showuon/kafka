@@ -235,7 +235,7 @@ public abstract class ClusterMirrorCommand {
             listings.sort(Comparator.comparing(ClusterMirrorListing::mirrorName));
 
             // Print header
-            System.out.printf("%-30s %-10s %-26s %-50s%n", "MIRROR", "TOPICS", "SOURCE-CLUSTER-ID", "SOURCE-BOOTSTRAP");
+            System.out.printf("%-30s %-10s %-26s %-50s%n", "MIRROR", "TOPICS", "SOURCE-CLUSTER-ID", "SOURCE-BOOTSTRAP-SERVER");
 
             // Print each mirror
             for (ClusterMirrorListing listing : listings) {
@@ -314,8 +314,7 @@ public abstract class ClusterMirrorCommand {
                             mirrorName, topic,
                             state.topicPartition().partition(),
                             state.sourceOffset(), state.destinationOffset(), state.lag(),
-                            state.state(), state.retryAttempt(), state.errorMessage(),
-                            state.lastMirrorEpoch()));
+                            state.state(), state.retryAttempt(), state.errorMessage()));
                     }
                 }
             }
@@ -403,8 +402,7 @@ public abstract class ClusterMirrorCommand {
 
         private record PartitionInfo(String mirror, String topic, int partition,
                                      long sourceOffset, long destinationOffset, long lag,
-                                     String state, short retryAttempt, String errorMessage,
-                                     int lastMirrorEpoch) { }
+                                     String state, short retryAttempt, String errorMessage) { }
     }
 
     private static final class MirrorCommandOptions extends CommandDefaultOptions {
