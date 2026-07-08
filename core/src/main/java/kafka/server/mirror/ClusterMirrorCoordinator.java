@@ -745,10 +745,12 @@ public class ClusterMirrorCoordinator {
             partition -> transitionTo(mirrorName, Set.of(partition), MirrorPartitionState.MIRRORING, null);
         scheduler.scheduleOnce("LastMirrorEpochTruncation",
             () -> {
+                Collection<ClusterMirrorListing> sourceMirrors;
                 try {
-                    Collection<ClusterMirrorListing> sourceMirrors = metadataManager.listSourceClusterMirrors(mirrorName);
+                    sourceMirrors = metadataManager.listSourceClusterMirrors(mirrorName);
                     if (metadataManager.hasCircularMirror(mirrorName, topicPartitions, sourceMirrors)) {
-                        transitionTo(mirrorName, topicPartitions, MirrorPartitionState.FAILED, "Detected circular mirroring for mirror:" + mirrorName, true);
+                        // should make it as a terminal error
+                        transitionTo(mirrorName, topicPartitions, MirrorPartitionState.FAILED, "Detected circular mirroring for mirror:" + mirrorName);
                         return;
                     }
                 } catch (Exception e) {
@@ -757,7 +759,7 @@ public class ClusterMirrorCoordinator {
                     return;
                 }
 
-                metadataManager.sendLastMirrorEpochLookup(mirrorName, topicPartitions)
+                metadataManager.sendLastMirrorEpochLookup(mirrorName, topicPartitions, sourceMirrors)
                     .whenComplete((epochs, rawError) -> {
                         if (rawError != null) {
                             Throwable error = rawError instanceof CompletionException && rawError.getCause() != null
@@ -775,7 +777,6 @@ public class ClusterMirrorCoordinator {
                             return;
                         }
 
-                        // TODO: validate `epochs` against `sourceMirrors` (reused from the circular-mirror check above).
 
                         // if the source cluster doesn't have mirror info, no result will be returned.
                         if (epochs.size() != topicPartitions.size()) {

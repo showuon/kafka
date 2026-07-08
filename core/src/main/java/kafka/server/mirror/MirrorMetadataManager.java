@@ -28,6 +28,7 @@ import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.AlterConfigOp;
+import org.apache.kafka.clients.admin.ClusterMirrorDesc;
 import org.apache.kafka.clients.admin.ClusterMirrorListing;
 import org.apache.kafka.clients.admin.Config;
 import org.apache.kafka.clients.admin.ConfigEntry;
@@ -2160,32 +2161,51 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         return result;
     }
 
+    // validate the source
+    private void validateSourcePartitionsAreStopped(Map<String, ClusterMirrorDesc> sourceDescription, Collection<ClusterMirrorListing> sourceMirrors, Set<TopicPartition> topicPartitionSet) {
+        Set<TopicPartition> partitionsNotStopped = new HashSet<>();
+        List<String> localClusterSourceMirrors = sourceMirrors.stream()
+                .filter( sm -> sm.sourceClusterId().equals(clusterId))
+                .map(ClusterMirrorListing::mirrorName)
+                .toList();
+
+        // for each localClusterSourceMirrors, I want to check the state in sourceDescription (mirrorName -> cluster mirror description)
+        // and make sure all topicPartitionSet all in STOPPED state in the sourceDescription.
+    }
+
     /** Looks up last mirror epochs from the source cluster for failback truncation. */
     CompletionStage<Map<TopicPartition, Integer>> sendLastMirrorEpochLookup(
-            String mirrorName, Set<TopicPartition> topicPartitionSet) {
+            String mirrorName, Set<TopicPartition> topicPartitionSet, Collection<ClusterMirrorListing> sourceMirrors) {
         Admin admin = getOrCreateSourceAdmin(mirrorName);
         List<DescribeClusterMirrorsRequestData.LastMirrorEpochLookup> lookups = buildLastMirrorEpochLookups(topicPartitionSet);
         log.info("Last mirror epoch lookup request for mirror {}: {}", mirrorName, lookups);
         DescribeClusterMirrorsOptions options = new DescribeClusterMirrorsOptions()
                 .clusterId(clusterId)
                 .lastMirrorEpochLookups(lookups);
-        DescribeClusterMirrorsResult result = admin.describeClusterMirrors(List.of(mirrorName), options);
+        // describe for all mirrors and last mirror epoch lookups
+        DescribeClusterMirrorsResult result = admin.describeClusterMirrors(List.of(), options);
 
-        return result.lookupEpochs().toCompletionStage().toCompletableFuture()
-                .thenApply(lookupEpochs -> {
-                    Map<TopicPartition, Integer> epochs = new HashMap<>();
-                    if (!lookupEpochs.isEmpty()) {
-                        lookupEpochs.forEach((topicId, partitionEpochs) -> {
-                            Optional<String> topicName = metadataCache.getTopicName(topicId);
-                            topicName.ifPresent(name ->
-                                    partitionEpochs.forEach((partIdx, lme) ->
-                                            epochs.put(new TopicPartition(name, partIdx), lme)));
-                        });
-                    }
-                    log.info("Last mirror epoch lookup response for mirror {}: {}", mirrorName, epochs);
-                    return epochs;
-                })
-                .orTimeout(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
+        var describeFuture = result.allDescriptions().toCompletionStage().toCompletableFuture();
+        var lookupEpochsFuture = result.lookupEpochs().toCompletionStage().toCompletableFuture();
+        return describeFuture.thenApply(desc -> {
+                validateSourcePartitionsAreStopped(desc, sourceMirrors, topicPartitionSet);
+                return null;
+            })
+            .thenCompose(__ -> lookupEpochsFuture)
+            .thenApply(lookupEpochs -> {
+                Map<TopicPartition, Integer> epochs = new HashMap<>();
+                if (!lookupEpochs.isEmpty()) {
+                    lookupEpochs.forEach((topicId, partitionEpochs) -> {
+                        Optional<String> topicName = metadataCache.getTopicName(topicId);
+                        topicName.ifPresent(name ->
+                                partitionEpochs.forEach((partIdx, lme) ->
+                                        epochs.put(new TopicPartition(name, partIdx), lme)));
+                    });
+                }
+                log.info("Last mirror epoch lookup response for mirror {}: {}", mirrorName, epochs);
+                return epochs;
+            })
+            .orTimeout(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
     }
 
     /**
