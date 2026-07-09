@@ -2161,16 +2161,43 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         return result;
     }
 
-    // validate the source
-    private void validateSourcePartitionsAreStopped(Map<String, ClusterMirrorDesc> sourceDescription, Collection<ClusterMirrorListing> sourceMirrors, Set<TopicPartition> topicPartitionSet) {
+    // validate the topic partitions to be mirrored are all STOPPED in the source cluster if they were mirrored from this local cluster
+    private void validateSourcePartitionsAreStopped(
+            Map<String, ClusterMirrorDesc> sourceDescription,
+            Collection<ClusterMirrorListing> sourceMirrors,
+            Set<TopicPartition> topicPartitionToBeMirrored) {
         Set<TopicPartition> partitionsNotStopped = new HashSet<>();
         List<String> localClusterSourceMirrors = sourceMirrors.stream()
                 .filter( sm -> sm.sourceClusterId().equals(clusterId))
                 .map(ClusterMirrorListing::mirrorName)
                 .toList();
 
-        // for each localClusterSourceMirrors, I want to check the state in sourceDescription (mirrorName -> cluster mirror description)
-        // and make sure all topicPartitionSet all in STOPPED state in the sourceDescription.
+        for (String mirrorName : localClusterSourceMirrors) {
+            ClusterMirrorDesc desc = sourceDescription.get(mirrorName);
+            if (desc == null) {
+                continue;
+            }
+            for (TopicPartition tp : topicPartitionToBeMirrored) {
+                Set<ClusterMirrorDesc.LeaderStateDesc> leaderStates = desc.topics().get(tp.topic());
+                if (leaderStates == null) {
+                    continue;
+                }
+                boolean notStopped = leaderStates.stream()
+                        .anyMatch(lsd -> lsd.topicPartition().equals(tp)
+                                && (!MirrorPartitionState.STOPPED.name().equals(lsd.state())));
+                if (notStopped) {
+                    partitionsNotStopped.add(tp);
+                }
+            }
+        }
+
+        if (!partitionsNotStopped.isEmpty()) {
+            log.error("Source mirror(s) {} mirroring from this cluster ({}) have not stopped for partition(s) {}",
+                    localClusterSourceMirrors, clusterId, partitionsNotStopped);
+            throw new IllegalStateException("Source mirror(s) " + localClusterSourceMirrors
+                    + " mirroring from this cluster (" + clusterId + ") have not stopped for partition(s) "
+                    + partitionsNotStopped + ".");
+        }
     }
 
     /** Looks up last mirror epochs from the source cluster for failback truncation. */
