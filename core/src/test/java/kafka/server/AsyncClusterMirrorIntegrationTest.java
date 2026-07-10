@@ -84,10 +84,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @Timeout(value = 180, unit = TimeUnit.SECONDS)
 public class AsyncClusterMirrorIntegrationTest {
-    private static final String TOPIC_NAME = "my-topic-async";
+    private static final String TOPIC_NAME = "my-topic";
     private static final long METADATA_REFRESH_INTERVAL_MS = 5_000L;
     private static final String MIRROR_NAME = "my-mirror";
-    private static final String ANOTHER_MIRROR_NAME = "my-another-mirror";
+    private static final String ANOTHER_MIRROR_NAME = "new-mirror";
 
     private KafkaClusterTestKit srcCluster;
     private KafkaClusterTestKit dstCluster;
@@ -655,13 +655,13 @@ public class AsyncClusterMirrorIntegrationTest {
     }
 
     /**
-     * Circular mirror detection test.
+     * Mirror loop detection test.
      * A -> B with mirror name "MIRROR_NAME" on TOPIC_NAME
      * B -> A with mirror name "ANOTHER_MIRROR_NAME" on TOPIC_NAME
      * The B should not enter MIRRORING state while the A is in MIRRORING state.
      */
     @Test
-    void testCircularMirrorDetection() throws Exception {
+    void testMirrorLoopDetection() throws Exception {
         // Create topic
         srcAdmin.createTopics(List.of(
                 new NewTopic(TOPIC_NAME, 1, (short) 1)
@@ -675,7 +675,8 @@ public class AsyncClusterMirrorIntegrationTest {
                 .all().get(30, TimeUnit.SECONDS);
         waitForMirrorLagZero(dstAdmin, MIRROR_NAME, TOPIC_NAME);
 
-        // Create mirror and add topic my-topic-async with another mirror name, we should also be able to detect the circular mirror
+        // Create mirror and add topic my-topic with another mirror name,
+        // we should also be able to detect the mirror loop
         srcAdmin.createClusterMirror(ANOTHER_MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleDestinationBootstrapServer
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
@@ -685,7 +686,8 @@ public class AsyncClusterMirrorIntegrationTest {
         // verify the dst <- src mirror is still MIRRORING
         waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "MIRRORING");
         // verify the src <- dst mirror is FAILED with the expected error message
-        waitForMirrorState(srcAdmin, ANOTHER_MIRROR_NAME, TOPIC_NAME, "FAILED", Optional.of("Detected circular mirroring for mirror:my-another-mirror"));
+        waitForMirrorState(srcAdmin, ANOTHER_MIRROR_NAME, TOPIC_NAME, "FAILED",
+                Optional.of("Detected mirror loop for mirror new-mirror"));
     }
 
     /*
@@ -801,20 +803,6 @@ public class AsyncClusterMirrorIntegrationTest {
         }
     }
 
-    private void waitForMirrorState(Admin admin, String mirrorName, String topicPattern, String state, Optional<String> errorMsg) throws Exception {
-        long deadline = System.currentTimeMillis() + 30_000;
-        while (System.currentTimeMillis() < deadline) {
-            // make sure the mirror is in the desired state and the error message is as expected if provided
-            if (allPartitionsSatisfy(admin, mirrorName, topicPattern,
-                    s -> state.equals(s.state())
-                            && (errorMsg.isEmpty()
-                            || s.errorMessage() != null && s.errorMessage().contains(errorMsg.get()))))
-                return;
-            TimeUnit.MILLISECONDS.sleep(1_000);
-        }
-        throw new AssertionError("Mirror partitions for " + topicPattern + " did not reach state " + state + " within timeout");
-    }
-
     private void appendToTopicsInclude(String mirrorName, String pattern) throws Exception {
         ConfigResource mirrorResource = new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName);
         var configResult = dstAdmin.describeConfigs(List.of(mirrorResource)).all().get(30, TimeUnit.SECONDS);
@@ -852,6 +840,20 @@ public class AsyncClusterMirrorIntegrationTest {
 
     private void waitForMirrorState(Admin admin, String mirrorName, String topicPattern, String state) throws Exception {
         waitForMirrorState(admin, mirrorName, topicPattern, state, Optional.empty());
+    }
+
+    private void waitForMirrorState(Admin admin, String mirrorName, String topicPattern, String state, Optional<String> errorMsg) throws Exception {
+        long deadline = System.currentTimeMillis() + 30_000;
+        while (System.currentTimeMillis() < deadline) {
+            // make sure the mirror is in the desired state and the error message is as expected if provided
+            if (allPartitionsSatisfy(admin, mirrorName, topicPattern,
+                    s -> state.equals(s.state())
+                            && (errorMsg.isEmpty()
+                            || s.errorMessage() != null && s.errorMessage().contains(errorMsg.get()))))
+                return;
+            TimeUnit.MILLISECONDS.sleep(1_000);
+        }
+        throw new AssertionError("Mirror partitions for " + topicPattern + " did not reach state " + state + " within timeout");
     }
 
     private void waitForMirrorLagZero(Admin admin, String mirrorName, String... topicPatterns) throws Exception {

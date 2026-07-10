@@ -91,14 +91,12 @@ import static kafka.server.mirror.ClusterMirrorUtils.NON_RETRYABLE_ATTEMPT;
 import static org.apache.kafka.common.utils.Utils.require;
 
 /**
- * Coordinates partition-level state transitions for Cluster Mirroring.
- * Persists partition state and last mirror epochs in {@code __mirror_state} topic.
+ * Coordinates partition-level state transitions for Cluster Mirroring, persisting partition
+ * state and last mirror epochs to the {@code __mirror_state} topic.
  *
- * Coordinator load is distributed across the cluster by hashing each mirror
- * record key (mirror name + topic id + partition) to a partition of the
- * {@code __mirror_state} topic. Each broker is the coordinator for the
- * partitions it leads in that topic. Writes targeting a remote coordinator
- * are forwarded via {@link MirrorMetadataManager}.
+ * <p>Load is distributed by hashing each record key (mirror name + topic id + partition) to a
+ * {@code __mirror_state} partition. Each broker coordinates the partitions it leads in that
+ * topic; writes targeting a remote coordinator are forwarded via {@link MirrorMetadataManager}.
  */
 public class ClusterMirrorCoordinator {
     private final Logger log;
@@ -200,7 +198,7 @@ public class ClusterMirrorCoordinator {
         metadataManager.clearCache();
     }
 
-    // Replays the mirror state log to rebuild in-memory partition states, epochs, and retry metadata.
+    /** Replays the mirror state log to rebuild in-memory partition states, epochs, and retry metadata. */
     private void loadMirrorMetadata(TopicPartition topicPartition) {
         log.info("Loading mirror metadata from {}.", topicPartition);
         long logEndOffset = replicaManager.getLogEndOffset(topicPartition).getOrElse(() -> -1L);
@@ -356,17 +354,17 @@ public class ClusterMirrorCoordinator {
     private void restoreFailedState(TopicPartition tp, MirrorPartitionState state, int retryAttempt,
                                     String errorMessage, MirrorPartitionState previousState) {
         if (state == MirrorPartitionState.FAILED) {
-            metadataManager.failedPartitionInfo().put(tp,
+            metadataManager.getFailedPartitionInfo().put(tp,
                     new FailedPartitionInfo(retryAttempt, errorMessage, previousState));
         } else {
-            metadataManager.failedPartitionInfo().remove(tp);
+            metadataManager.getFailedPartitionInfo().remove(tp);
         }
     }
 
     private void updateFailedState(TopicPartition tp, MirrorPartitionState currentState,
                                    MirrorPartitionState newState, String errorMessage, boolean nonRetryable) {
         if (newState == MirrorPartitionState.FAILED) {
-            metadataManager.failedPartitionInfo().compute(tp, (key, existing) -> {
+            metadataManager.getFailedPartitionInfo().compute(tp, (key, existing) -> {
                 int attempt;
                 if (nonRetryable) {
                     attempt = NON_RETRYABLE_ATTEMPT;
@@ -381,7 +379,7 @@ public class ClusterMirrorCoordinator {
         } else if (newState == MirrorPartitionState.LOG_TRUNCATION
                 || newState == MirrorPartitionState.STOPPED
                 || newState == MirrorPartitionState.PAUSED) {
-            metadataManager.failedPartitionInfo().remove(tp);
+            metadataManager.getFailedPartitionInfo().remove(tp);
         }
     }
 
@@ -389,7 +387,7 @@ public class ClusterMirrorCoordinator {
     private void scheduleFailedRetries(String mirrorName, Set<TopicPartition> topicPartitions) {
         int maxAttempts = brokerConfig.mirrorConfig().failedRetryMaxAttempts();
         topicPartitions.forEach(tp -> {
-            FailedPartitionInfo fpi = metadataManager.failedPartitionInfo().get(tp);
+            FailedPartitionInfo fpi = metadataManager.getFailedPartitionInfo().get(tp);
             int attempt = fpi != null ? fpi.retryAttempt() : 1;
             if (attempt == NON_RETRYABLE_ATTEMPT) {
                 log.debug("Skipping retry for partition {} because it is in non-retryable failed state, requires manual intervention.", tp);
@@ -424,6 +422,7 @@ public class ClusterMirrorCoordinator {
         transitionTo(mirrorName, topicPartitions, newState, errorMessage, false);
     }
 
+    /** Validates and persists a partition state transition, triggering follow-up actions on success. */
     public void transitionTo(String mirrorName, Set<TopicPartition> topicPartitions,
                              MirrorPartitionState newState, String errorMessage, boolean nonRetryable) {
         topicPartitions.forEach(tp -> {
@@ -581,7 +580,6 @@ public class ClusterMirrorCoordinator {
             });
     }
 
-    /** Reads partition states for the given mirror from the coordinator. */
     public void getTopicMetadata(String mirrorName,
                                  Map<String, Set<Integer>> partitions,
                                  Consumer<ReadMirrorStatesResponse> callback) {
@@ -772,9 +770,9 @@ public class ClusterMirrorCoordinator {
                 Collection<ClusterMirrorListing> sourceMirrors;
                 try {
                     sourceMirrors = metadataManager.listSourceClusterMirrors(mirrorName);
-                    if (metadataManager.hasCircularMirror(mirrorName, topicPartitions, sourceMirrors)) {
+                    if (metadataManager.hasMirrorLoop(mirrorName, topicPartitions, sourceMirrors)) {
                         // should make it as a terminal error
-                        transitionTo(mirrorName, topicPartitions, MirrorPartitionState.FAILED, "Detected circular mirroring for mirror:" + mirrorName);
+                        transitionTo(mirrorName, topicPartitions, MirrorPartitionState.FAILED, "Detected mirror loop for mirror " + mirrorName);
                         return;
                     }
 
@@ -902,19 +900,13 @@ public class ClusterMirrorCoordinator {
         return writePidResetFuture;
     }
 
-    /** Returns the cached last mirror epochs for the given mirror. */
-    public Map<TopicPartition, Integer> getLastMirrorEpochs(String mirrorName) {
-        return metadataManager.getLastMirrorEpochs(mirrorName);
-    }
-
-    /** Local-only LME lookup for failback truncation. */
     public Map<String, Map<TopicPartition, Integer>> processLastMirrorEpochLookup(
             Map<String, Map<String, Set<Integer>>> mirrorPartitions) {
         return metadataManager.processLastMirrorEpochLookup(mirrorPartitions);
     }
 
     private CoordinatorRecord buildPartitionStateRecord(String mirrorName, TopicPartition topicPartition, MirrorPartitionState state) {
-        FailedPartitionInfo fpi = metadataManager.failedPartitionInfo().get(topicPartition);
+        FailedPartitionInfo fpi = metadataManager.getFailedPartitionInfo().get(topicPartition);
         var key = new MirrorPartitionStateKey().setMirrorName(mirrorName);
         var val = new MirrorPartitionStateValue()
                 .setTopicName(topicPartition.topic())
@@ -1053,46 +1045,40 @@ public class ClusterMirrorCoordinator {
         }
     }
 
-    /** Cancels any existing refresh task and schedules a new one at the given interval. */
     public void scheduleMetadataRefresh(long intervalMs) {
         metadataManager.scheduleMetadataRefresh(intervalMs);
     }
 
-    /** Returns the set of all configured mirror names. */
+    public String getSourceBootstrap(String mirrorName) {
+        return metadataManager.getSourceBootstrap(mirrorName);
+    }
+
+    public String getSourceClusterId(String mirrorName) {
+        return metadataManager.getSourceClusterId(mirrorName);
+    }
+
     public Set<String> getConfiguredMirrors() {
         return metadataManager.getConfiguredMirrors();
     }
 
-    /** Returns the number of active mirrored topics for the given mirror. */
-    public int getActiveTopicCount(String mirrorName) {
-        return metadataManager.getActiveTopicCount(mirrorName);
+    public Map<TopicPartition, MirrorPartitionState> getMirrorStates(String mirrorName) {
+        return metadataManager.getMirrorStates(mirrorName);
     }
 
     public Set<String> getConfiguredTopics(String mirrorName, boolean includePaused, boolean includeStopped) {
         return metadataManager.getConfiguredTopics(mirrorName, includePaused, includeStopped);
     }
 
-    /** Returns the source cluster bootstrap servers for the given mirror. */
-    public String getSourceBootstrap(String mirrorName) {
-        return metadataManager.getSourceBootstrap(mirrorName);
-    }
-
-    /** Returns the source cluster ID for the given mirror. */
-    public String getSourceClusterId(String mirrorName) {
-        return metadataManager.getSourceClusterId(mirrorName);
-    }
-
-    /** Returns the current partition states for all partitions in the given mirror. */
-    public Map<TopicPartition, MirrorPartitionState> getMirrorStates(String mirrorName) {
-        return metadataManager.getMirrorStates(mirrorName);
+    public int getActiveTopicCount(String mirrorName) {
+        return metadataManager.getActiveTopicCount(mirrorName);
     }
 
     public Map<TopicPartition, FailedPartitionInfo> getFailedPartitionInfo() {
-        return metadataManager.failedPartitionInfo();
+        return metadataManager.getFailedPartitionInfo();
     }
 
     public void deleteClusterMirror(String mirrorName, Consumer<Optional<Errors>> callback) {
-        metadataManager.validateStatesAndForwardToController(mirrorName, callback);
+        metadataManager.validateStoppedAndDelete(mirrorName, callback);
     }
 
     /**
