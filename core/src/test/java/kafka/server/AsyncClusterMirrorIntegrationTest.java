@@ -230,7 +230,7 @@ public class AsyncClusterMirrorIntegrationTest {
         // Failover: stop forward mirror, produce on dst
         dstAdmin.stopMirrorTopics(forwardMirror, Set.of(topic), new StopMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, forwardMirror, topic, "STOPPED", Optional.empty());
+        waitForMirrorState(dstAdmin, forwardMirror, topic, "STOPPED");
         produceRecords(dstCluster, topic, 10, 5);
 
         // Sending a describeClusterMirror request with LME lookup info
@@ -284,7 +284,7 @@ public class AsyncClusterMirrorIntegrationTest {
         // Stop the mirror topic
         dstAdmin.stopMirrorTopics(MIRROR_NAME, Set.of(topic), new StopMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, topic, "STOPPED", Optional.empty());
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topic, "STOPPED");
 
         // Consume all records from the destination with a stable consumer group
         consumeRecords(dstCluster, topic, recordCount, groupId);
@@ -517,7 +517,7 @@ public class AsyncClusterMirrorIntegrationTest {
         // Stop orders-eu (sets mirror.name to test-mirror.stopped)
         dstAdmin.stopMirrorTopics(MIRROR_NAME, Set.of(topicB), new StopMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, topicB, "STOPPED", Optional.empty());
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topicB, "STOPPED");
 
         // Produce more data to both topics (only orders-us should receive new records)
         produceRecords(srcCluster, topicA, 20, 20);
@@ -599,7 +599,7 @@ public class AsyncClusterMirrorIntegrationTest {
         // Stop all topics (required precondition for deletion)
         dstAdmin.stopMirrorTopics(MIRROR_NAME, Set.of(topic), new StopMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, topic, "STOPPED", Optional.empty());
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topic, "STOPPED");
 
         dstAdmin.deleteClusterMirror(MIRROR_NAME, new DeleteClusterMirrorOptions())
                 .all().get(30, TimeUnit.SECONDS);
@@ -673,7 +673,7 @@ public class AsyncClusterMirrorIntegrationTest {
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
         dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(TOPIC_NAME), new StartMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorLagZero(TOPIC_NAME);
+        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, TOPIC_NAME);
 
         // Create mirror and add topic my-topic-async with another mirror name, we should also be able to detect the circular mirror
         srcAdmin.createClusterMirror(ANOTHER_MIRROR_NAME, Map.of(
@@ -683,22 +683,9 @@ public class AsyncClusterMirrorIntegrationTest {
                 .all().get(30, TimeUnit.SECONDS);
 
         // verify the dst <- src mirror is still MIRRORING
-        waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "MIRRORING", Optional.empty());
+        waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "MIRRORING");
         // verify the src <- dst mirror is FAILED with the expected error message
         waitForMirrorState(srcAdmin, ANOTHER_MIRROR_NAME, TOPIC_NAME, "FAILED", Optional.of("Detected circular mirroring for mirror:my-another-mirror"));
-    }
-
-    private void waitForFailedWithRetriesExhausted(String topicPattern, int maxAttempts) throws Exception {
-        long deadline = System.currentTimeMillis() + 120_000;
-        while (System.currentTimeMillis() < deadline) {
-            if (allPartitionsSatisfy(dstAdmin, topicPattern,
-                    s -> "FAILED".equals(s.state()) && s.retryAttempt() >= maxAttempts)) {
-                return;
-            }
-            TimeUnit.MILLISECONDS.sleep(1_000);
-        }
-        throw new AssertionError("Mirror partitions for " + topicPattern
-                + " did not exhaust retries within timeout");
     }
 
     private void produceRecords(KafkaClusterTestKit cluster, String topic,
@@ -778,36 +765,11 @@ public class AsyncClusterMirrorIntegrationTest {
         }
     }
 
-    private boolean allPartitionsSatisfy(
-            Admin admin,
-            String topicPattern,
-            Predicate<ClusterMirrorDesc.LeaderStateDesc> condition) throws Exception {
-        return allPartitionsSatisfy(admin, topicPattern, MIRROR_NAME, condition);
-    }
-
-    private boolean allPartitionsSatisfy(
-            Admin admin,
-            String topicPattern,
-            String mirrorName,
-            Predicate<ClusterMirrorDesc.LeaderStateDesc> condition) throws Exception {
-        var result = admin.describeClusterMirrors(
-                List.of(mirrorName), new DescribeClusterMirrorsOptions());
-        var descriptions = result.allDescriptions().get(5, TimeUnit.SECONDS);
-        ClusterMirrorDesc desc = descriptions.get(mirrorName);
-        if (desc == null) return false;
-        var pattern = java.util.regex.Pattern.compile(topicPattern);
-        var matched = desc.topics().entrySet().stream()
-                .filter(e -> pattern.matcher(e.getKey()).matches())
-                .toList();
-        return !matched.isEmpty()
-                && matched.stream().allMatch(e -> e.getValue().stream().allMatch(condition));
-    }
-
     private void waitForMirrorState(Admin admin, String mirrorName, String topicPattern, String state, Optional<String> errorMsg) throws Exception {
         long deadline = System.currentTimeMillis() + 30_000;
         while (System.currentTimeMillis() < deadline) {
             // make sure the mirror is in the desired state and the error message is as expected if provided
-            if (allPartitionsSatisfy(admin, topicPattern, mirrorName,
+            if (allPartitionsSatisfy(admin, mirrorName, topicPattern,
                     s -> state.equals(s.state())
                             && (errorMsg.isEmpty()
                             || s.errorMessage() != null && s.errorMessage().contains(errorMsg.get()))))
@@ -815,47 +777,6 @@ public class AsyncClusterMirrorIntegrationTest {
             TimeUnit.MILLISECONDS.sleep(1_000);
         }
         throw new AssertionError("Mirror partitions for " + topicPattern + " did not reach state " + state + " within timeout");
-    }
-
-    private void waitForListMirrorEmpty() {
-        TestUtils.waitUntilTrue(() -> {
-            try {
-                var listMirror = dstAdmin.listClusterMirrors().all().get(30, TimeUnit.SECONDS);
-                return listMirror.isEmpty();
-            } catch (Exception e) {
-                return false;
-            }
-        }, () -> "Cluster Mirror is not deleted successfully", DEFAULT_MAX_WAIT_MS, 100);
-    }
-
-    private void waitForMirrorLagZero(String... topicPatterns) throws Exception {
-        waitForMirrorLagZero(dstAdmin, topicPatterns);
-    }
-
-    private void waitForMirrorLagZero(Admin admin, String... topicPatterns) throws Exception {
-        long deadline = System.currentTimeMillis() + 30_000;
-        while (System.currentTimeMillis() < deadline) {
-            boolean allReady = true;
-            for (String pattern : topicPatterns) {
-                if (!allPartitionsSatisfy(admin, pattern, s -> s.lag() == 0 && "MIRRORING".equals(s.state()))) {
-                    allReady = false;
-                    break;
-                }
-            }
-            if (allReady) return;
-            TimeUnit.MILLISECONDS.sleep(1_000);
-        }
-        throw new AssertionError("Mirror lag did not reach zero for " + List.of(topicPatterns) + " within timeout");
-    }
-
-    private static void closeQuietly(AutoCloseable closeable) {
-        if (closeable != null) {
-            try {
-                closeable.close();
-            } catch (Exception e) {
-                // ignore
-            }
-        }
     }
 
     private void appendToTopicsInclude(String mirrorName, String pattern) throws Exception {
@@ -877,80 +798,76 @@ public class AsyncClusterMirrorIntegrationTest {
         ))).all().get(30, TimeUnit.SECONDS);
     }
 
-//    private boolean allPartitionsSatisfy(Admin admin, String mirrorName,
-//                                         String topicPattern, Predicate<ClusterMirrorDesc.LeaderStateDesc> condition) throws Exception {
-//        var result = admin.describeClusterMirrors(
-//                List.of(mirrorName), new DescribeClusterMirrorsOptions());
-//        var descriptions = result.allDescriptions().get(5, TimeUnit.SECONDS);
-//        ClusterMirrorDesc desc = descriptions.get(mirrorName);
-//        if (desc == null) return false;
-//        var pattern = java.util.regex.Pattern.compile(topicPattern);
-//        var matched = desc.topics().entrySet().stream()
-//                .filter(e -> pattern.matcher(e.getKey()).matches())
-//                .toList();
-//        return !matched.isEmpty()
-//                && matched.stream().allMatch(e -> e.getValue().stream().allMatch(condition));
-//    }
+    private boolean allPartitionsSatisfy(Admin admin, String mirrorName,
+                                         String topicPattern, Predicate<ClusterMirrorDesc.LeaderStateDesc> condition) throws Exception {
+        var result = admin.describeClusterMirrors(
+                List.of(mirrorName), new DescribeClusterMirrorsOptions());
+        var descriptions = result.allDescriptions().get(5, TimeUnit.SECONDS);
+        ClusterMirrorDesc desc = descriptions.get(mirrorName);
+        System.out.println("!!! Described mirror: " + desc);
+        if (desc == null) return false;
+        var pattern = java.util.regex.Pattern.compile(topicPattern);
+        var matched = desc.topics().entrySet().stream()
+                .filter(e -> pattern.matcher(e.getKey()).matches())
+                .toList();
+        return !matched.isEmpty()
+                && matched.stream().allMatch(e -> e.getValue().stream().allMatch(condition));
+    }
 
-//    private void waitForMirrorState(Admin admin, String mirrorName, String topicPattern, String state) throws Exception {
-//        long deadline = System.currentTimeMillis() + 30_000;
-//        while (System.currentTimeMillis() < deadline) {
-//            if (allPartitionsSatisfy(admin, mirrorName, topicPattern, s -> state.equals(s.state()))) return;
-//            TimeUnit.MILLISECONDS.sleep(1_000);
-//        }
-//        throw new AssertionError("Mirror " + mirrorName + " did not reach state " + state + " for " + topicPattern);
-//    }
+    private void waitForMirrorState(Admin admin, String mirrorName, String topicPattern, String state) throws Exception {
+        waitForMirrorState(admin, mirrorName, topicPattern, state, Optional.empty());
+    }
 
-//    private void waitForMirrorLagZero(Admin admin, String mirrorName, String... topicPatterns) throws Exception {
-//        long deadline = System.currentTimeMillis() + 60_000;
-//        while (System.currentTimeMillis() < deadline) {
-//            boolean allReady = true;
-//            for (String tp : topicPatterns) {
-//                if (!allPartitionsSatisfy(admin, mirrorName, tp,
-//                        s -> s.lag() == 0 && "MIRRORING".equals(s.state()))) {
-//                    allReady = false;
-//                    break;
-//                }
-//            }
-//            if (allReady) return;
-//            TimeUnit.MILLISECONDS.sleep(1_000);
-//        }
-//        throw new AssertionError("Mirror " + mirrorName + " lag did not reach zero for " + List.of(topicPatterns));
-//    }
+    private void waitForMirrorLagZero(Admin admin, String mirrorName, String... topicPatterns) throws Exception {
+        long deadline = System.currentTimeMillis() + 60_000;
+        while (System.currentTimeMillis() < deadline) {
+            boolean allReady = true;
+            for (String tp : topicPatterns) {
+                if (!allPartitionsSatisfy(admin, mirrorName, tp,
+                        s -> s.lag() == 0 && "MIRRORING".equals(s.state()))) {
+                    allReady = false;
+                    break;
+                }
+            }
+            if (allReady) return;
+            TimeUnit.MILLISECONDS.sleep(1_000);
+        }
+        throw new AssertionError("Mirror " + mirrorName + " lag did not reach zero for " + List.of(topicPatterns));
+    }
 
-//    private void waitForFailedWithRetriesExhausted(String topicPattern, int maxAttempts) throws Exception {
-//        long deadline = System.currentTimeMillis() + 120_000;
-//        while (System.currentTimeMillis() < deadline) {
-//            if (allPartitionsSatisfy(dstAdmin, MIRROR_NAME, topicPattern,
-//                    s -> "FAILED".equals(s.state()) && s.retryAttempt() >= maxAttempts)) {
-//                return;
-//            }
-//            TimeUnit.MILLISECONDS.sleep(1_000);
-//        }
-//        throw new AssertionError("Mirror partitions for " + topicPattern
-//                + " did not exhaust retries within timeout");
-//    }
+    private void waitForFailedWithRetriesExhausted(String topicPattern, int maxAttempts) throws Exception {
+        long deadline = System.currentTimeMillis() + 120_000;
+        while (System.currentTimeMillis() < deadline) {
+            if (allPartitionsSatisfy(dstAdmin, MIRROR_NAME, topicPattern,
+                    s -> "FAILED".equals(s.state()) && s.retryAttempt() >= maxAttempts)) {
+                return;
+            }
+            TimeUnit.MILLISECONDS.sleep(1_000);
+        }
+        throw new AssertionError("Mirror partitions for " + topicPattern
+                + " did not exhaust retries within timeout");
+    }
 
-//    private void waitForListMirrorEmpty() {
-//        TestUtils.waitUntilTrue(() -> {
-//            try {
-//                var listMirror = dstAdmin.listClusterMirrors().all().get(30, TimeUnit.SECONDS);
-//                return listMirror.isEmpty();
-//            } catch (Exception e) {
-//                return false;
-//            }
-//        }, () -> "Cluster Mirror is not deleted successfully", DEFAULT_MAX_WAIT_MS, 100);
-//    }
+    private void waitForListMirrorEmpty() {
+        TestUtils.waitUntilTrue(() -> {
+            try {
+                var listMirror = dstAdmin.listClusterMirrors().all().get(30, TimeUnit.SECONDS);
+                return listMirror.isEmpty();
+            } catch (Exception e) {
+                return false;
+            }
+        }, () -> "Cluster Mirror is not deleted successfully", DEFAULT_MAX_WAIT_MS, 100);
+    }
 
-//    private static void closeQuietly(AutoCloseable closeable) {
-//        if (closeable != null) {
-//            try {
-//                closeable.close();
-//            } catch (Exception e) {
-//                // ignore
-//            }
-//        }
-//    }
+    private static void closeQuietly(AutoCloseable closeable) {
+        if (closeable != null) {
+            try {
+                closeable.close();
+            } catch (Exception e) {
+                // ignore
+            }
+        }
+    }
 
     private long getCommittedOffset(Admin admin, String groupId, TopicPartition tp) throws Exception {
         long deadline = System.currentTimeMillis() + 30_000;
