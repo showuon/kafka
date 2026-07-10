@@ -23,6 +23,6 @@
   "flexibleVersions": "0+",
   "fields": [
     { "name": "IncludeTopicNames", "type": "bool", "versions": "0+", "default": "false",
-      "about": "If true, the response will include mirror topic names." }
+      "about": "If true, the response will include mirror topic names for each mirror." }
   ]
 }

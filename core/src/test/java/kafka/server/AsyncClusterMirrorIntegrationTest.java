@@ -84,10 +84,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @Timeout(value = 180, unit = TimeUnit.SECONDS)
 public class AsyncClusterMirrorIntegrationTest {
-    private static final String TOPIC_NAME = "my-topic-async";
     private static final long METADATA_REFRESH_INTERVAL_MS = 5_000L;
     private static final String MIRROR_NAME = "my-mirror";
-    private static final String ANOTHER_MIRROR_NAME = "my-another-mirror";
+    private static final String OTHER_MIRROR_NAME = "new-mirror";
+    private static final String TOPIC_NAME = "my-topic";
 
     private KafkaClusterTestKit srcCluster;
     private KafkaClusterTestKit dstCluster;
@@ -655,19 +655,19 @@ public class AsyncClusterMirrorIntegrationTest {
     }
 
     /**
-     * Circular mirror detection test.
+     * Mirror loop detection test.
      * A -> B with mirror name "MIRROR_NAME" on TOPIC_NAME
      * B -> A with mirror name "ANOTHER_MIRROR_NAME" on TOPIC_NAME
      * The B should not enter MIRRORING state while the A is in MIRRORING state.
      */
     @Test
-    void testCircularMirrorDetection() throws Exception {
+    void testMirrorLoopDetection() throws Exception {
         // Create topic
         srcAdmin.createTopics(List.of(
                 new NewTopic(TOPIC_NAME, 1, (short) 1)
         )).all().get(30, TimeUnit.SECONDS);
 
-        // Create mirror and add topic my-topic-async
+        // Create mirror and add topic my-topic
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleSourceBootstrapServer
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
@@ -675,17 +675,17 @@ public class AsyncClusterMirrorIntegrationTest {
                 .all().get(30, TimeUnit.SECONDS);
         waitForMirrorLagZero(dstAdmin, MIRROR_NAME, TOPIC_NAME);
 
-        // Create mirror and add topic my-topic-async with another mirror name, we should also be able to detect the circular mirror
-        srcAdmin.createClusterMirror(ANOTHER_MIRROR_NAME, Map.of(
+        // Create mirror and add topic my-topic with another mirror name
+        srcAdmin.createClusterMirror(OTHER_MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleDestinationBootstrapServer
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        srcAdmin.startMirrorTopics(ANOTHER_MIRROR_NAME, Set.of(TOPIC_NAME), new StartMirrorTopicsOptions())
+        srcAdmin.startMirrorTopics(OTHER_MIRROR_NAME, Set.of(TOPIC_NAME), new StartMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
 
         // verify the dst <- src mirror is still MIRRORING
         waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "MIRRORING");
         // verify the src <- dst mirror is FAILED with the expected error message
-        waitForMirrorState(srcAdmin, ANOTHER_MIRROR_NAME, TOPIC_NAME, "FAILED", Optional.of("Detected circular mirroring for mirror:my-another-mirror"));
+        waitForMirrorState(srcAdmin, OTHER_MIRROR_NAME, TOPIC_NAME, "FAILED", Optional.of("Detected mirror loop for mirror"));
     }
 
     /*
