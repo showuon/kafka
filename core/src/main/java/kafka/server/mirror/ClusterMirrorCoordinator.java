@@ -753,45 +753,41 @@ public class ClusterMirrorCoordinator {
                         transitionTo(mirrorName, topicPartitions, MirrorPartitionState.FAILED, "Detected circular mirroring for mirror:" + mirrorName);
                         return;
                     }
+
+                    metadataManager.sendLastMirrorEpochLookup(mirrorName, topicPartitions, sourceMirrors)
+                        .whenComplete((epochs, rawError) -> {
+                            if (rawError != null) {
+                                Throwable error = rawError instanceof CompletionException && rawError.getCause() != null
+                                        ? rawError.getCause() : rawError;
+                                if (error instanceof UnsupportedVersionException) {
+                                    log.warn("Source cluster doesn't support DescribeClusterMirror API. " +
+                                        "Replication will be one-way without failback");
+                                    Map<TopicPartition, Integer> fallback = topicPartitions.stream()
+                                        .collect(Collectors.toMap(tp -> tp, tp -> -1));
+                                    replicaManager.maybeTruncateForLeaderEpoch(fallback, truncateCallback);
+                                } else {
+                                    log.warn("Failed to truncate to last mirrored epoch for mirror {}", mirrorName, error);
+                                    transitionTo(mirrorName, topicPartitions, MirrorPartitionState.FAILED, error.getMessage());
+                                }
+                                return;
+                            }
+
+                            if (epochs.size() != topicPartitions.size()) {
+                                log.warn("The returned epoch size is not equal to the requested epoch size for mirror. " +
+                                        "Requested topic partitions: {}, returned epochs: {}", topicPartitions, epochs);
+                                topicPartitions.forEach(partition -> {
+                                    if (!epochs.containsKey(partition)) {
+                                        epochs.put(partition, -1);
+                                    }
+                                });
+                            }
+
+                            replicaManager.maybeTruncateForLeaderEpoch(epochs, truncateCallback);
+                        });
                 } catch (Exception e) {
                     log.warn("Failed to truncate to last mirror epochs for mirror {}", mirrorName, e);
                     transitionTo(mirrorName, topicPartitions, MirrorPartitionState.FAILED, e.getMessage());
-                    return;
                 }
-
-                metadataManager.sendLastMirrorEpochLookup(mirrorName, topicPartitions, sourceMirrors)
-                    .whenComplete((epochs, rawError) -> {
-                        if (rawError != null) {
-                            Throwable error = rawError instanceof CompletionException && rawError.getCause() != null
-                                    ? rawError.getCause() : rawError;
-                            if (error instanceof UnsupportedVersionException) {
-                                log.warn("Source cluster doesn't support DescribeClusterMirror API. " +
-                                    "Replication will be one-way without failback");
-                                Map<TopicPartition, Integer> fallback = topicPartitions.stream()
-                                    .collect(Collectors.toMap(tp -> tp, tp -> -1));
-                                replicaManager.maybeTruncateForLeaderEpoch(fallback, truncateCallback);
-                            } else {
-                                log.warn("Failed to truncate to last mirrored epoch for mirror {}", mirrorName, error);
-                                transitionTo(mirrorName, topicPartitions, MirrorPartitionState.FAILED, error.getMessage());
-                            }
-                            return;
-                        }
-
-
-                        // if the source cluster doesn't have mirror info, no result will be returned.
-                        if (epochs.size() != topicPartitions.size()) {
-                            log.warn("The returned epoch size is not equal to the requested epoch size for mirror. " +
-                                    "Requested topic partitions: {}, returned epochs: {}", topicPartitions, epochs);
-                            topicPartitions.forEach(partition -> {
-                                if (!epochs.containsKey(partition)) {
-                                    epochs.put(partition, -1);
-                                }
-                            });
-                        }
-
-                        replicaManager.maybeTruncateForLeaderEpoch(epochs, truncateCallback);
-                    });
-
             }, 0);
     }
 

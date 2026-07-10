@@ -686,13 +686,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     /**
-     * Lists the mirrors configured on the source cluster (including mirrored topics), so callers
-     * can reuse the same listing for circular-mirror detection and other validations (e.g.
-     * cross-checking a last mirror epoch lookup result) without issuing multiple requests.
+     * Lists the mirrors configured on the source cluster (including mirrored topics)
      *
-     * @return the source mirrors, or an empty list if the source cluster doesn't support the
-     *         ListClusterMirrors API (circular-mirror detection is then skipped)
-     * @throws RuntimeException if the listing could not be retrieved for any other reason
+     * @return the source mirrors
      */
     Collection<ClusterMirrorListing> listSourceClusterMirrors(String mirrorName) {
         Admin srcAdmin = getOrCreateSourceAdmin(mirrorName);
@@ -2167,6 +2163,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             Collection<ClusterMirrorListing> sourceMirrors,
             Set<TopicPartition> topicPartitionToBeMirrored) {
         Set<TopicPartition> partitionsNotStopped = new HashSet<>();
+        // get all source cluster mirror names that the source cluster id is local cluster id
         List<String> localClusterSourceMirrors = sourceMirrors.stream()
                 .filter( sm -> sm.sourceClusterId().equals(clusterId))
                 .map(ClusterMirrorListing::mirrorName)
@@ -2177,6 +2174,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             if (desc == null) {
                 continue;
             }
+            // validate each partition state is in STOPPED state
             for (TopicPartition tp : topicPartitionToBeMirrored) {
                 Set<ClusterMirrorDesc.LeaderStateDesc> leaderStates = desc.topics().get(tp.topic());
                 if (leaderStates == null) {
