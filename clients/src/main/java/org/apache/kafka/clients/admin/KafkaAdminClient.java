@@ -5179,8 +5179,7 @@ public class KafkaAdminClient extends AdminClient {
         final long now = time.milliseconds();
         final long deadline = calcDeadlineMs(now, options.timeoutMs());
 
-        // We query one broker for static metadata (mirror names, topic counts, bootstrap servers)
-        // Data comes from metadata cache
+        // We query one broker
         runnable.call(new Call("listClusterMirrors", deadline, new LeastLoadedNodeProvider()) {
             @Override
             ListClusterMirrorsRequest.Builder createRequest(int timeoutMs) {
@@ -5225,6 +5224,8 @@ public class KafkaAdminClient extends AdminClient {
         final KafkaFutureImpl<Map<Uuid, Map<Integer, Integer>>> lineageAll = new KafkaFutureImpl<>();
         final long nowMetadata = time.milliseconds();
         final long deadline = calcDeadlineMs(nowMetadata, options.timeoutMs());
+
+        // We fan-out to all brokers
         runnable.call(new Call("findAllBrokers", deadline, new LeastLoadedNodeProvider()) {
             @Override
             MetadataRequest.Builder createRequest(int timeoutMs) {

@@ -1758,7 +1758,8 @@ public interface Admin extends AutoCloseable {
     }
 
     /**
-     * List the cluster mirrors available in the cluster.
+     * List the cluster mirrors available in the cluster. The request is sent to a single
+     * broker because mirror configuration is available from the replicated metadata log.
      *
      * @param options The options to use when listing the mirrors.
      * @return The ListClusterMirrorsResult.
