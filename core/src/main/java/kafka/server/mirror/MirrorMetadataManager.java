@@ -2075,7 +2075,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         return failedPartitionInfo;
     }
 
-    public Map<TopicPartition, MirrorPartitionState> pendingPartitionStates() {
+    public Map<TopicPartition   , MirrorPartitionState> pendingPartitionStates() {
         return pendingPartitionStates;
     }
 
