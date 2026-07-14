@@ -33,7 +33,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
-import static org.apache.kafka.common.record.RecordBatch.NO_PARTITION_LEADER_EPOCH;
 import static org.apache.kafka.metadata.LeaderConstants.NO_LEADER_CHANGE;
 
 public class PartitionRegistration {
@@ -255,18 +254,16 @@ public class PartitionRegistration {
 
         if (record.leader() == NO_LEADER_CHANGE) {
             newLeader = leader;
-            newLeaderEpoch = leaderEpoch;
         } else {
             newLeader = record.leader();
-            newLeaderEpoch = leaderEpoch + 1;
         }
 
-        // We should bump the leader epoch when leaderEpoch is assigned (from bump_leader_epoch request), even if no_leader_change
-        if (record.minLeaderEpoch() != NO_PARTITION_LEADER_EPOCH) {
-            // If it's coming from bump leader epoch request, we should bump to a leader epoch >= record.minLeaderEpoch(), ex:
-            // current leader epoch is 0, record.minLeaderEpoch is 2, we should bump to 3
-            // current leader epoch is 2, record.minLeaderEpoch is 0, we should bump to 2
-            newLeaderEpoch = Math.max(record.minLeaderEpoch() + 1, newLeaderEpoch);
+        // The leader epoch is computed by the controller and stored explicitly in the
+        // record. When set (!= -1), use it directly. When not set, keep the current epoch.
+        if (record.leaderEpoch() != -1) {
+            newLeaderEpoch = record.leaderEpoch();
+        } else {
+            newLeaderEpoch = leaderEpoch;
         }
 
         LeaderRecoveryState newLeaderRecoveryState = leaderRecoveryState.changeTo(record.leaderRecoveryState());

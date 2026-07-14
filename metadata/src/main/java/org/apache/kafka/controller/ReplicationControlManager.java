@@ -772,8 +772,7 @@ public class ReplicationControlManager {
                             featureControl.metadataVersionOrThrow(),
                             getTopicEffectiveMinIsr(topicName)
                     )
-                            // set the min leader epoch for each partition
-                            .setMinLeaderEpoch(leaderEpochs.getOrDefault(partitionId, NO_PARTITION_LEADER_EPOCH))
+                            .setTargetLeaderEpoch(leaderEpochs.getOrDefault(partitionId, NO_PARTITION_LEADER_EPOCH))
                             .setDefaultDirProvider(clusterDescriber);
 
                     builder.build().ifPresent(records::add);

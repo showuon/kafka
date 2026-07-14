@@ -436,7 +436,8 @@ public class PartitionChangeBuilderTest {
                 setTopicId(FOO_ID).
                 setPartitionId(0).
                 setIsr(List.of(2, 3)).
-                setLeader(2), version)),
+                setLeader(2).
+                setLeaderEpoch(101), version)),
             createFooBuilder(version).setTargetIsrWithBrokerStates(AlterPartitionRequest.
                 newIsrToSimpleNewIsrWithBrokerEpochs(List.of(2, 3))).build());
     }
@@ -465,6 +466,7 @@ public class PartitionChangeBuilderTest {
                 setReplicas(List.of(2, 3, 4)).
                 setIsr(List.of(2, 3, 4)).
                 setLeader(2).
+                setLeaderEpoch(101).
                 setRemovingReplicas(List.of()).
                 setAddingReplicas(List.of());
         if (version >= 1) {
@@ -487,6 +489,7 @@ public class PartitionChangeBuilderTest {
                 setPartitionId(0).
                 setReplicas(List.of(1, 2, 3)).
                 setLeader(1).
+                setLeaderEpoch(101).
                 setRemovingReplicas(List.of()).
                 setAddingReplicas(List.of());
         if (version >= 1) {
@@ -515,7 +518,8 @@ public class PartitionChangeBuilderTest {
                 setPartitionId(0).
                 setReplicas(List.of(1, 2)).
                 setIsr(List.of(2, 1)).
-                setLeader(1);
+                setLeader(1).
+                setLeaderEpoch(101);
         if (version >= 1) {
             Map<Integer, Uuid> dirs = DirectoryId.createAssignmentMap(FOO.replicas, FOO.directories);
             expectedRecord.setDirectories(List.of(dirs.get(1), dirs.get(2)));
@@ -560,6 +564,7 @@ public class PartitionChangeBuilderTest {
                 .setPartitionId(0)
                 .setIsr(List.of(2))
                 .setLeader(2)
+                .setLeaderEpoch(101)
                 .setLeaderRecoveryState(LeaderRecoveryState.RECOVERING.value()),
             version
         );
@@ -574,6 +579,7 @@ public class PartitionChangeBuilderTest {
             .setPartitionId(0)
             .setIsr(List.of(1))
             .setLeader(1)
+            .setLeaderEpoch(101)
             .setLeaderRecoveryState(LeaderRecoveryState.RECOVERING.value());
 
         if (version >= 2) {
@@ -768,7 +774,8 @@ public class PartitionChangeBuilderTest {
                 setIsr(List.of(2, 3)).
                 setRemovingReplicas(List.of()).
                 setAddingReplicas(List.of()).
-                setLeader(NO_LEADER),
+                setLeader(NO_LEADER).
+                setLeaderEpoch(1),
                 (short) 0)),
             partitionChangeBuilder.setTargetIsr(List.of(0, 1, 2, 3)).
                 build());
@@ -1000,6 +1007,7 @@ public class PartitionChangeBuilderTest {
                         setTopicId(FOO_ID).
                         setPartitionId(0).
                         setLeader(1).
+                        setLeaderEpoch(101).
                         setReplicas(List.of(3, 1, 5, 4)).
                         setDirectories(List.of(
                                 Uuid.fromString("fM5NKyWTQHqEihjIkUl99Q"),
@@ -1081,6 +1089,7 @@ public class PartitionChangeBuilderTest {
                 .setIsr(List.of(3))
                 .setEligibleLeaderReplicas(List.of(1))
                 .setLeader(3)
+                .setLeaderEpoch(101)
                 .setLeaderRecoveryState(LeaderRecoveryState.NO_CHANGE),
             version
         );
@@ -1128,6 +1137,7 @@ public class PartitionChangeBuilderTest {
             .setPartitionId(0)
             .setIsr(List.of())
             .setLeader(-1)
+            .setLeaderEpoch(101)
             .setLeaderRecoveryState(LeaderRecoveryState.NO_CHANGE)
             .setEligibleLeaderReplicas(List.of(1, 2, 3, 4));
 
@@ -1187,6 +1197,7 @@ public class PartitionChangeBuilderTest {
                 .setPartitionId(0)
                 .setIsr(List.of(1))
                 .setLeader(1)
+                .setLeaderEpoch(101)
                 .setLeaderRecoveryState(LeaderRecoveryState.RECOVERING.value())
                 .setLastKnownElr(List.of()),
             version
