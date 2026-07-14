@@ -27,7 +27,7 @@
     { "name": "Topics", "type": "[]Topic", "versions": "0+",
       "about": "The mirror topics for which we want to store the last mirror epochs.",  "fields": [
       { "name": "TopicId", "type": "Uuid", "versions": "0+",
-        "about": "The topic Id." },
+        "about": "The unique topic ID." },
       { "name": "Partitions", "type": "[]Partition", "versions": "0+",
         "about": "Each partition to record the last mirror epochs.", "fields": [
         { "name": "PartitionIndex", "type": "int32", "versions": "0+",
