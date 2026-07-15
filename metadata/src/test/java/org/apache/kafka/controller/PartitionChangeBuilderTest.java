@@ -432,12 +432,15 @@ public class PartitionChangeBuilderTest {
     @ParameterizedTest
     @MethodSource("partitionChangeRecordVersions")
     public void testIsrChangeAndLeaderChange(short version) {
-        assertEquals(Optional.of(new ApiMessageAndVersion(new PartitionChangeRecord().
+        PartitionChangeRecord expectedRecord = new PartitionChangeRecord().
                 setTopicId(FOO_ID).
                 setPartitionId(0).
                 setIsr(List.of(2, 3)).
-                setLeader(2).
-                setLeaderEpoch(101), version)),
+                setLeader(2);
+        if (version >= 3) {
+            expectedRecord.setLeaderEpoch(101);
+        }
+        assertEquals(Optional.of(new ApiMessageAndVersion(expectedRecord, version)),
             createFooBuilder(version).setTargetIsrWithBrokerStates(AlterPartitionRequest.
                 newIsrToSimpleNewIsrWithBrokerEpochs(List.of(2, 3))).build());
     }
@@ -466,9 +469,11 @@ public class PartitionChangeBuilderTest {
                 setReplicas(List.of(2, 3, 4)).
                 setIsr(List.of(2, 3, 4)).
                 setLeader(2).
-                setLeaderEpoch(101).
                 setRemovingReplicas(List.of()).
                 setAddingReplicas(List.of());
+        if (version >= 3) {
+            expectedRecord.setLeaderEpoch(101);
+        }
         if (version >= 1) {
             Map<Integer, Uuid> dirs = DirectoryId.createAssignmentMap(BAR.replicas, BAR.directories);
             expectedRecord.setDirectories(List.of(dirs.get(2), dirs.get(3), dirs.get(4)));
@@ -489,12 +494,14 @@ public class PartitionChangeBuilderTest {
                 setPartitionId(0).
                 setReplicas(List.of(1, 2, 3)).
                 setLeader(1).
-                setLeaderEpoch(101).
                 setRemovingReplicas(List.of()).
                 setAddingReplicas(List.of());
         if (version >= 1) {
             Map<Integer, Uuid> dirs = DirectoryId.createAssignmentMap(BAR.replicas, BAR.directories);
             expectedRecord.setDirectories(List.of(dirs.get(1), dirs.get(2), dirs.get(3)));
+        }
+        if (version >= 3) {
+            expectedRecord.setLeaderEpoch(101);
         }
         assertEquals(Optional.of(new ApiMessageAndVersion(expectedRecord, version)),
             createBarBuilder(version).
@@ -518,11 +525,13 @@ public class PartitionChangeBuilderTest {
                 setPartitionId(0).
                 setReplicas(List.of(1, 2)).
                 setIsr(List.of(2, 1)).
-                setLeader(1).
-                setLeaderEpoch(101);
+                setLeader(1);
         if (version >= 1) {
             Map<Integer, Uuid> dirs = DirectoryId.createAssignmentMap(FOO.replicas, FOO.directories);
             expectedRecord.setDirectories(List.of(dirs.get(1), dirs.get(2)));
+        }
+        if (version >= 3) {
+            expectedRecord.setLeaderEpoch(101);
         }
         assertEquals(Optional.of(new ApiMessageAndVersion(expectedRecord, version)),
             createFooBuilder(version).
@@ -558,16 +567,16 @@ public class PartitionChangeBuilderTest {
     @ParameterizedTest
     @MethodSource("partitionChangeRecordVersions")
     public void testUncleanLeaderElection(short version) {
-        ApiMessageAndVersion expectedRecord = new ApiMessageAndVersion(
-            new PartitionChangeRecord()
+        PartitionChangeRecord fooRecord = new PartitionChangeRecord()
                 .setTopicId(FOO_ID)
                 .setPartitionId(0)
                 .setIsr(List.of(2))
                 .setLeader(2)
-                .setLeaderEpoch(101)
-                .setLeaderRecoveryState(LeaderRecoveryState.RECOVERING.value()),
-            version
-        );
+                .setLeaderRecoveryState(LeaderRecoveryState.RECOVERING.value());
+        if (version >= 3) {
+            fooRecord.setLeaderEpoch(101);
+        }
+        ApiMessageAndVersion expectedRecord = new ApiMessageAndVersion(fooRecord, version);
         assertEquals(
             Optional.of(expectedRecord),
             createFooBuilder(version).setElection(Election.UNCLEAN)
@@ -579,8 +588,10 @@ public class PartitionChangeBuilderTest {
             .setPartitionId(0)
             .setIsr(List.of(1))
             .setLeader(1)
-            .setLeaderEpoch(101)
             .setLeaderRecoveryState(LeaderRecoveryState.RECOVERING.value());
+        if (version >= 3) {
+            record.setLeaderEpoch(101);
+        }
 
         if (version >= 2) {
             // The test partition has ELR, so unclean election will clear these fields.
@@ -774,8 +785,7 @@ public class PartitionChangeBuilderTest {
                 setIsr(List.of(2, 3)).
                 setRemovingReplicas(List.of()).
                 setAddingReplicas(List.of()).
-                setLeader(NO_LEADER).
-                setLeaderEpoch(1),
+                setLeader(NO_LEADER),
                 (short) 0)),
             partitionChangeBuilder.setTargetIsr(List.of(0, 1, 2, 3)).
                 build());
@@ -1007,7 +1017,6 @@ public class PartitionChangeBuilderTest {
                         setTopicId(FOO_ID).
                         setPartitionId(0).
                         setLeader(1).
-                        setLeaderEpoch(101).
                         setReplicas(List.of(3, 1, 5, 4)).
                         setDirectories(List.of(
                                 Uuid.fromString("fM5NKyWTQHqEihjIkUl99Q"),
@@ -1089,7 +1098,6 @@ public class PartitionChangeBuilderTest {
                 .setIsr(List.of(3))
                 .setEligibleLeaderReplicas(List.of(1))
                 .setLeader(3)
-                .setLeaderEpoch(101)
                 .setLeaderRecoveryState(LeaderRecoveryState.NO_CHANGE),
             version
         );
@@ -1137,7 +1145,6 @@ public class PartitionChangeBuilderTest {
             .setPartitionId(0)
             .setIsr(List.of())
             .setLeader(-1)
-            .setLeaderEpoch(101)
             .setLeaderRecoveryState(LeaderRecoveryState.NO_CHANGE)
             .setEligibleLeaderReplicas(List.of(1, 2, 3, 4));
 
@@ -1197,7 +1204,6 @@ public class PartitionChangeBuilderTest {
                 .setPartitionId(0)
                 .setIsr(List.of(1))
                 .setLeader(1)
-                .setLeaderEpoch(101)
                 .setLeaderRecoveryState(LeaderRecoveryState.RECOVERING.value())
                 .setLastKnownElr(List.of()),
             version

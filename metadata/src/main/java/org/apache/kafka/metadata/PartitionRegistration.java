@@ -258,10 +258,13 @@ public class PartitionRegistration {
             newLeader = record.leader();
         }
 
-        // The leader epoch is computed by the controller and stored explicitly in the
-        // record. When set (!= -1), use it directly. When not set, keep the current epoch.
+        // For v3+ records, the controller sets leaderEpoch explicitly. For older records
+        // (v0-v2), leaderEpoch defaults to -1 and we fall back to implicit derivation:
+        // leader change = epoch + 1, no leader change = epoch unchanged.
         if (record.leaderEpoch() != -1) {
             newLeaderEpoch = record.leaderEpoch();
+        } else if (record.leader() != NO_LEADER_CHANGE) {
+            newLeaderEpoch = leaderEpoch + 1;
         } else {
             newLeaderEpoch = leaderEpoch;
         }

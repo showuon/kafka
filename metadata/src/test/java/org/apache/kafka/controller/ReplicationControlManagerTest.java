@@ -3042,8 +3042,7 @@ public class ReplicationControlManagerTest {
                 .setPartitionId(0)
                 .setTopicId(topicId)
                 .setIsr(List.of(1, 2))
-                .setLeader(1)
-                .setLeaderEpoch(1),
+                .setLeader(1),
             (short) 0));
 
         assertEquals(expectedRecords, result.records());
