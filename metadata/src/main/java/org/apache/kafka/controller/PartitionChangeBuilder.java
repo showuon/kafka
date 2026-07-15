@@ -497,7 +497,7 @@ public class PartitionChangeBuilder {
             return;
         }
         if (targetLeaderEpoch >= 0) {
-            record.setLeaderEpoch(Math.max(targetLeaderEpoch + 1, partition.leaderEpoch + 1));
+            record.setLeaderEpoch(Math.max(targetLeaderEpoch + 1, partition.leaderEpoch));
         } else if (record.leader() != NO_LEADER_CHANGE) {
             record.setLeaderEpoch(partition.leaderEpoch + 1);
         }
