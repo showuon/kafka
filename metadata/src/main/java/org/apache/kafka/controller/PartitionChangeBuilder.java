@@ -489,6 +489,9 @@ public class PartitionChangeBuilder {
      * increments by 1. Otherwise, the epoch is left unchanged (default -1).
      */
     private void computeLeaderEpoch(PartitionChangeRecord record) {
+        if (metadataVersion.partitionChangeRecordVersion() < 3) {
+            return;
+        }
         if (targetLeaderEpoch >= 0) {
             record.setLeaderEpoch(Math.max(targetLeaderEpoch + 1, partition.leaderEpoch + 1));
         } else if (record.leader() != NO_LEADER_CHANGE) {

@@ -262,6 +262,8 @@ public class PartitionRegistration {
         // record. When set (!= -1), use it directly. When not set, keep the current epoch.
         if (record.leaderEpoch() != -1) {
             newLeaderEpoch = record.leaderEpoch();
+        } else if (record.leader() != NO_LEADER_CHANGE) {
+            newLeaderEpoch = leaderEpoch + 1;
         } else {
             newLeaderEpoch = leaderEpoch;
         }
