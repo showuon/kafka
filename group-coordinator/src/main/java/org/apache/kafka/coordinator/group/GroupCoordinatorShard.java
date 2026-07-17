@@ -794,7 +794,7 @@ public class GroupCoordinatorShard implements CoordinatorShard<CoordinatorRecord
         AlterShareGroupOffsetsRequestData alterShareGroupOffsetsRequestData
     ) {
         List<CoordinatorRecord> records = new ArrayList<>();
-        ShareGroup group = groupMetadataManager.shareGroup(groupId, Long.MAX_VALUE, true);
+        ShareGroup group = groupMetadataManager.shareGroup(groupId);
         group.validateOffsetsAlterable();
 
         Map.Entry<AlterShareGroupOffsetsResponseData, InitializeShareGroupStateParameters> response = groupMetadataManager.completeAlterShareGroupOffsets(
