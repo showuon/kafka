@@ -239,7 +239,7 @@ public class AsyncClusterMirrorIntegrationTest {
                 .setTopicId(topicId)
                 .setPartitions(List.of(0));
         String srcClusterId = srcCluster.controllers().values().stream().findFirst().get().clusterId();
-        DescribeClusterMirrorsResult describeClusterMirrors = dstAdmin.describeClusterMirrors(List.of(reverseMirror),
+        DescribeClusterMirrorsResult describeClusterMirrors = dstAdmin.describeClusterMirrors(List.of(),
                 new DescribeClusterMirrorsOptions().clusterId(srcClusterId).lastMirrorEpochLookups(List.of(lastMirrorEpochLookup)));
         Map<Uuid, Map<Integer, Integer>> lookupEpochs = describeClusterMirrors.lookupEpochs().get(30, TimeUnit.SECONDS);
         assertEquals(1, lookupEpochs.size(), "Should have one lookup result");
