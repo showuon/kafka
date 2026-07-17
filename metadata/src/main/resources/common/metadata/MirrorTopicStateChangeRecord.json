@@ -22,7 +22,7 @@
   "fields": [
     { "name": "TopicId", "type": "uuid", "versions": "0+",
       "about": "The unique topic ID." },
-    { "name": "MirrorName", "type": "string", "versions": "0+", "entityType": "mirrorName",
+    { "name": "MirrorName", "type": "string", "versions": "0+", "entityType": "mirrorName", "nullableVersions": "0+",
       "about": "The cluster mirror name." },
     { "name": "DesiredState", "type": "int8", "versions": "0+",
       "about": "The desired state for all mirror partitions." }
