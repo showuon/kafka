@@ -255,10 +255,15 @@ public class ClusterMirrorCoordinator {
                             require(record.hasKey(), "Mirror log's key should not be null");
                             short version = record.key().getShort();
                             if (version == CoordinatorRecordType.LAST_MIRROR_EPOCHS.id()) {
-                                String clusterName = readMirrorNameFromKey(record.key());
+                                LastMirrorEpochsKey key = readLastMirrorEpochsKey(record.key());
+                                String clusterName = key.mirrorName();
                                 if (record.hasValue()) {
-                                    Map<String, Map<Integer, Integer>> offsets = readLastMirrorEpochsValue(record.value());
-                                    metadataManager.updateLastMirrorEpochs(clusterName, offsets);
+                                    int lastMirrorEpoch = readLastMirrorEpochsValue(record.value());
+                                    Optional<String> topicName = metadataCache.getTopicName(key.topicId());
+                                    if (topicName.isPresent()) {
+                                        metadataManager.updateLastMirrorEpoch(
+                                                new PartitionKey(clusterName, topicName.get(), key.partition()), lastMirrorEpoch);
+                                    }
                                 } else {
                                     metadataManager.removeLastMirrorEpochs(clusterName);
                                 }
@@ -666,17 +671,25 @@ public class ClusterMirrorCoordinator {
         }
 
         // Update in-memory cache once with all offsets
-        var updatedOffsets = metadataManager.updateLastMirrorEpochs(mirrorName, partitionOffsets);
+        metadataManager.updateLastMirrorEpochs(mirrorName, partitionOffsets);
+
 
         // Write to local coordinator partitions (one append per coordinator partition)
-        localByCoordPartition.forEach((coordPartition, tps) -> {
-            var mirrorTopicPartition = new TopicPartition(Topic.MIRROR_STATE_TOPIC_NAME, coordPartition);
-            var mirrorTopicIdPartition = replicaManager.topicIdPartition(mirrorTopicPartition);
-            var record = buildLastMirrorEpochsRecord(mirrorName, updatedOffsets);
-            var keyBytes = serde.serializeKey(record);
-            var valueBytes = serde.serializeValue(record);
+        if (!localByCoordPartition.isEmpty()) {
             var timestamp = time.milliseconds();
-            var memRecord = MemoryRecords.withRecords(Compression.NONE, new SimpleRecord(timestamp, keyBytes, valueBytes));
+            Map<TopicIdPartition, MemoryRecords> entriesPerPartition = new HashMap<>();
+            localByCoordPartition.forEach((coordPartition, tps) -> {
+                var mirrorTopicPartition = new TopicPartition(Topic.MIRROR_STATE_TOPIC_NAME, coordPartition);
+                var mirrorTopicIdPartition = replicaManager.topicIdPartition(mirrorTopicPartition);
+                List<SimpleRecord> simpleRecords = new ArrayList<>();
+                tps.forEach(tp -> {
+                    int epoch = partitionOffsets.get(tp.topic()).get(tp.partition());
+                    var record = buildLastMirrorEpochsRecord(mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition(), epoch);
+                    simpleRecords.add(new SimpleRecord(timestamp, serde.serializeKey(record), serde.serializeValue(record)));
+                });
+                entriesPerPartition.put(mirrorTopicIdPartition,
+                        MemoryRecords.withRecords(Compression.NONE, simpleRecords.toArray(new SimpleRecord[0])));
+            });
 
             replicaManager.appendRecords(
                     // TODO: replace this with Cluster Mirror specific timeout
@@ -684,7 +697,7 @@ public class ClusterMirrorCoordinator {
                     (short) -1, // request ack from all ISR
                     true,
                     AppendOrigin.COORDINATOR,
-                    CollectionConverters.asScala(Map.of(mirrorTopicIdPartition, memRecord)),
+                    CollectionConverters.asScala(entriesPerPartition),
                     response -> {
                         response.foreach(res -> {
                             ProduceResponse.PartitionResponse partitionRes = res._2;
@@ -705,7 +718,7 @@ public class ClusterMirrorCoordinator {
                     RequestLocal.noCaching(),
                     CollectionConverters.asScala(Map.of())
             );
-        });
+        }
 
         // Write to remote coordinator (batched by coordinator node internally)
         if (!remoteTopicMetadata.isEmpty()) {
@@ -952,22 +965,12 @@ public class ClusterMirrorCoordinator {
         return CoordinatorRecord.record(key, apiVersion);
     }
 
-    private CoordinatorRecord buildLastMirrorEpochsRecord(String mirrorName, Map<PartitionKey, Integer> offsets) {
-        Map<Uuid, Map<Integer, Integer>> grouped = new HashMap<>();
-        offsets.forEach((pk, value) -> grouped.computeIfAbsent(metadataCache.getTopicId(pk.topic()), k -> new HashMap<>()).put(pk.partition(), value));
-
-        var key = new LastMirrorEpochsKey().setMirrorName(mirrorName);
-        var val = new LastMirrorEpochsValue();
-        var topics = new ArrayList<LastMirrorEpochsValue.Topic>();
-        grouped.forEach((topicId, partitionOffsets) -> {
-            var top = new LastMirrorEpochsValue.Topic().setTopicId(topicId);
-            List<LastMirrorEpochsValue.Partition> partitions = new ArrayList<>();
-            partitionOffsets.forEach((partition, offset) ->
-                    partitions.add(new LastMirrorEpochsValue.Partition().setPartitionIndex(partition).setLastMirrorEpoch(offset)));
-            top.setPartitions(partitions);
-            topics.add(top);
-        });
-        val.setTopics(topics);
+    private CoordinatorRecord buildLastMirrorEpochsRecord(String mirrorName, Uuid topicId, int partition, int epoch) {
+        var key = new LastMirrorEpochsKey()
+                .setMirrorName(mirrorName)
+                .setTopicId(topicId)
+                .setPartition(partition);
+        var val = new LastMirrorEpochsValue().setLastMirrorEpoch(epoch);
         var apiVersion = new ApiMessageAndVersion(val, LastMirrorEpochsValue.HIGHEST_SUPPORTED_VERSION);
         return CoordinatorRecord.record(key, apiVersion);
     }
@@ -998,10 +1001,8 @@ public class ClusterMirrorCoordinator {
         }
 
         var timestamp = time.milliseconds();
-        var lmeTombstone = CoordinatorRecord.tombstone(new LastMirrorEpochsKey().setMirrorName(mirrorName));
 
-        // Write one partition state tombstone per mirrored topic partition, plus one offset
-        // tombstone per coordinator partition
+        // Write one partition state tombstone and one LME tombstone per mirrored topic partition
         for (Map.Entry<Integer, Set<TopicPartition>> entry : coordPartitionToMirrorPartitions.entrySet()) {
             int coordPartition = entry.getKey();
             Set<TopicPartition> tps = entry.getValue();
@@ -1009,13 +1010,18 @@ public class ClusterMirrorCoordinator {
             var mirrorTopicIdPartition = replicaManager.topicIdPartition(mirrorTopicPartition);
             List<SimpleRecord> simpleRecords = new ArrayList<>();
             for (TopicPartition tp : tps) {
+                Uuid topicId = metadataCache.getTopicId(tp.topic());
                 var stateTombstone = CoordinatorRecord.tombstone(new MirrorPartitionStateKey()
                         .setMirrorName(mirrorName)
-                        .setTopicId(metadataCache.getTopicId(tp.topic()))
+                        .setTopicId(topicId)
                         .setPartition(tp.partition()));
                 simpleRecords.add(new SimpleRecord(timestamp, serde.serializeKey(stateTombstone), serde.serializeValue(stateTombstone)));
+                var lmeTombstone = CoordinatorRecord.tombstone(new LastMirrorEpochsKey()
+                        .setMirrorName(mirrorName)
+                        .setTopicId(topicId)
+                        .setPartition(tp.partition()));
+                simpleRecords.add(new SimpleRecord(timestamp, serde.serializeKey(lmeTombstone), serde.serializeValue(lmeTombstone)));
             }
-            simpleRecords.add(new SimpleRecord(timestamp, serde.serializeKey(lmeTombstone), serde.serializeValue(lmeTombstone)));
             var memRecord = MemoryRecords.withRecords(Compression.NONE, simpleRecords.toArray(new SimpleRecord[0]));
             replicaManager.appendRecords(
                 Duration.ofSeconds(5).toMillis(),
@@ -1044,33 +1050,18 @@ public class ClusterMirrorCoordinator {
         }
     }
 
-    private String readMirrorNameFromKey(ByteBuffer buffer) {
+    private LastMirrorEpochsKey readLastMirrorEpochsKey(ByteBuffer buffer) {
         short version = buffer.getShort();
-        if (version == CoordinatorRecordType.LAST_MIRROR_EPOCHS.id()) {
-            return new LastMirrorEpochsKey(new ByteBufferAccessor(buffer), version).mirrorName();
-        } else if (version == CoordinatorRecordType.MIRROR_PARTITION_STATE.id()) {
-            return new MirrorPartitionStateKey(new ByteBufferAccessor(buffer), version).mirrorName();
-        } else {
-            throw new IllegalArgumentException("Unknown cluster mirror log key version " + version);
-        }
+        return new LastMirrorEpochsKey(new ByteBufferAccessor(buffer), version);
     }
 
-    private Map<String, Map<Integer, Integer>> readLastMirrorEpochsValue(ByteBuffer buffer) {
-        Map<String, Map<Integer, Integer>> offsets = new HashMap<>();
+    private int readLastMirrorEpochsValue(ByteBuffer buffer) {
         short version = buffer.getShort();
         if (version <= LastMirrorEpochsValue.HIGHEST_SUPPORTED_VERSION && version >= LastMirrorEpochsValue.LOWEST_SUPPORTED_VERSION) {
-            LastMirrorEpochsValue value = new LastMirrorEpochsValue(new ByteBufferAccessor(buffer), version);
-            value.topics().forEach(t -> {
-                Optional<String> topicName = metadataCache.getTopicName(t.topicId());
-                if (topicName.isEmpty()) return;
-                Map<Integer, Integer> partitions = new HashMap<>();
-                t.partitions().forEach(p -> partitions.put(p.partitionIndex(), p.lastMirrorEpoch()));
-                offsets.put(topicName.get(), partitions);
-            });
+            return new LastMirrorEpochsValue(new ByteBufferAccessor(buffer), version).lastMirrorEpoch();
         } else {
             throw new IllegalStateException("Unsupported last mirrored epochs value version: " + version);
         }
-        return offsets;
     }
 
     private MirrorPartitionStateKey readMirrorPartitionStateKey(ByteBuffer buffer) {

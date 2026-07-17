@@ -2420,15 +2420,14 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         return result;
     }
 
-    /** Upserts added partitions, returning the full epoch map for record serialization. */
-    Map<PartitionKey, Integer> updateLastMirrorEpochs(
-            String clusterName, Map<String, Map<Integer, Integer>> addedEpochs) {
-        addedEpochs.forEach((topic, partitionOffsets) -> {
-            partitionOffsets.forEach((partition, offset) -> {
-                lastMirrorEpochs.put(new PartitionKey(clusterName, topic, partition), offset);
-            });
-        });
-        return lastMirrorEpochs;
+    void updateLastMirrorEpochs(String clusterName, Map<String, Map<Integer, Integer>> addedEpochs) {
+        addedEpochs.forEach((topic, partitionOffsets) ->
+            partitionOffsets.forEach((partition, offset) ->
+                    lastMirrorEpochs.put(new PartitionKey(clusterName, topic, partition), offset)));
+    }
+
+    void updateLastMirrorEpoch(PartitionKey key, int epoch) {
+        lastMirrorEpochs.put(key, epoch);
     }
 
     private record TimeoutHandler(Logger log) implements ControllerRequestCompletionHandler {
