@@ -480,6 +480,13 @@ class KafkaApis(val requestChannel: RequestChannel,
     }
 
     val describeAll = describeMirrorsRequest.data.mirrorNames.isEmpty
+    if (!describeAll && (describeMirrorsRequest.data.clusterId != null || !describeMirrorsRequest.data.lastMirrorEpochLookups().isEmpty)) {
+      responseData.setErrorCode(Errors.INVALID_REQUEST.code)
+        .setErrorMessage("When specifying clusterId or lastMirrorEpochLookups the mirrors should be empty to query all mirrors.")
+      requestHelper.sendMaybeThrottle(request, new DescribeClusterMirrorsResponse(responseData))
+      return
+    }
+
     val requestedMirrors = if (describeAll) {
       clusterMirrorCoordinator.getConfiguredMirrors().asScala.toSeq
     } else {
