@@ -263,14 +263,18 @@ public class ClusterMirrorCoordinator {
                                     metadataManager.removeLastMirrorEpochs(clusterName);
                                 }
                             } else if (version == CoordinatorRecordType.MIRROR_PARTITION_STATE.id()) {
-                                String clusterName = readMirrorNameFromKey(record.key());
+                                MirrorPartitionStateKey key = readMirrorPartitionStateKey(record.key());
+                                String clusterName = key.mirrorName();
                                 if (record.hasValue()) {
-                                    ClusterMirrorUtils.PartitionStateLogEntry value = readMirrorPartitionStateValue(record.value());
-                                    if (value != null) {
-                                        PartitionKey pk = new PartitionKey(clusterName, value.topic(), value.partition());
-                                        metadataManager.updatePartitionState(pk, value.state());
-                                        TopicPartition tp = new TopicPartition(value.topic(), value.partition());
-                                        restoreFailedState(tp, value.state(), value.retryAttempt(), value.errorMessage(), value.previousState());
+                                    MirrorPartitionStateValue value = readMirrorPartitionStateValue(record.value());
+                                    Optional<String> topicName = metadataCache.getTopicName(key.topicId());
+                                    if (topicName.isPresent()) {
+                                        MirrorPartitionState state = MirrorPartitionState.fromValue(value.state());
+                                        PartitionKey pk = new PartitionKey(clusterName, topicName.get(), key.partition());
+                                        metadataManager.updatePartitionState(pk, state);
+                                        TopicPartition tp = new TopicPartition(topicName.get(), key.partition());
+                                        restoreFailedState(tp, state, value.retryAttempt(), value.errorMessage(),
+                                                MirrorPartitionState.fromValue(value.previousState()));
                                     }
                                 } else {
                                     metadataManager.removeMirrorStates(clusterName);
@@ -931,10 +935,11 @@ public class ClusterMirrorCoordinator {
 
     private CoordinatorRecord buildPartitionStateRecord(String mirrorName, TopicPartition topicPartition, MirrorPartitionState state) {
         FailedPartitionInfo fpi = metadataManager.failedPartitionInfo().get(topicPartition);
-        var key = new MirrorPartitionStateKey().setMirrorName(mirrorName);
-        var val = new MirrorPartitionStateValue()
+        var key = new MirrorPartitionStateKey()
+                .setMirrorName(mirrorName)
                 .setTopicId(metadataCache.getTopicId(topicPartition.topic()))
-                .setPartition(topicPartition.partition())
+                .setPartition(topicPartition.partition());
+        var val = new MirrorPartitionStateValue()
                 .setState(state.value())
                 .setPreviousState(fpi != null ? fpi.previousState().value() : MirrorPartitionState.UNKNOWN.value())
                 .setRetryAttempt(fpi != null ? (short) fpi.retryAttempt() : (short) 0)
@@ -989,19 +994,25 @@ public class ClusterMirrorCoordinator {
         }
 
         var timestamp = time.milliseconds();
-        var stateTombstone = CoordinatorRecord.tombstone(new MirrorPartitionStateKey().setMirrorName(mirrorName));
         var lmeTombstone = CoordinatorRecord.tombstone(new LastMirrorEpochsKey().setMirrorName(mirrorName));
 
-        // Write one partition state tombstone and one offset tombstone per coordinator partition
+        // Write one partition state tombstone per mirrored topic partition, plus one offset
+        // tombstone per coordinator partition
         for (Map.Entry<Integer, Set<TopicPartition>> entry : coordPartitionToMirrorPartitions.entrySet()) {
             int coordPartition = entry.getKey();
             Set<TopicPartition> tps = entry.getValue();
             var mirrorTopicPartition = new TopicPartition(Topic.MIRROR_STATE_TOPIC_NAME, coordPartition);
             var mirrorTopicIdPartition = replicaManager.topicIdPartition(mirrorTopicPartition);
-            var memRecord = MemoryRecords.withRecords(Compression.NONE,
-                new SimpleRecord(timestamp, serde.serializeKey(stateTombstone), serde.serializeValue(stateTombstone)),
-                new SimpleRecord(timestamp, serde.serializeKey(lmeTombstone), serde.serializeValue(lmeTombstone))
-            );
+            List<SimpleRecord> simpleRecords = new ArrayList<>();
+            for (TopicPartition tp : tps) {
+                var stateTombstone = CoordinatorRecord.tombstone(new MirrorPartitionStateKey()
+                        .setMirrorName(mirrorName)
+                        .setTopicId(metadataCache.getTopicId(tp.topic()))
+                        .setPartition(tp.partition()));
+                simpleRecords.add(new SimpleRecord(timestamp, serde.serializeKey(stateTombstone), serde.serializeValue(stateTombstone)));
+            }
+            simpleRecords.add(new SimpleRecord(timestamp, serde.serializeKey(lmeTombstone), serde.serializeValue(lmeTombstone)));
+            var memRecord = MemoryRecords.withRecords(Compression.NONE, simpleRecords.toArray(new SimpleRecord[0]));
             replicaManager.appendRecords(
                 Duration.ofSeconds(5).toMillis(),
                 (short) -1,
@@ -1058,16 +1069,15 @@ public class ClusterMirrorCoordinator {
         return offsets;
     }
 
-    private ClusterMirrorUtils.PartitionStateLogEntry readMirrorPartitionStateValue(ByteBuffer buffer) {
+    private MirrorPartitionStateKey readMirrorPartitionStateKey(ByteBuffer buffer) {
+        short version = buffer.getShort();
+        return new MirrorPartitionStateKey(new ByteBufferAccessor(buffer), version);
+    }
+
+    private MirrorPartitionStateValue readMirrorPartitionStateValue(ByteBuffer buffer) {
         short version = buffer.getShort();
         if (version <= MirrorPartitionStateValue.HIGHEST_SUPPORTED_VERSION && version >= MirrorPartitionStateValue.LOWEST_SUPPORTED_VERSION) {
-            MirrorPartitionStateValue value = new MirrorPartitionStateValue(new ByteBufferAccessor(buffer), version);
-            Optional<String> topicName = metadataCache.getTopicName(value.topicId());
-            if (topicName.isEmpty()) return null;
-            return new ClusterMirrorUtils.PartitionStateLogEntry(topicName.get(), value.partition(),
-                    MirrorPartitionState.fromValue(value.state()),
-                    MirrorPartitionState.fromValue(value.previousState()), value.retryAttempt(),
-                    value.errorMessage());
+            return new MirrorPartitionStateValue(new ByteBufferAccessor(buffer), version);
         } else {
             throw new IllegalStateException("Unsupported partition state value version: " + version);
         }

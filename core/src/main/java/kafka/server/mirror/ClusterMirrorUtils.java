@@ -75,10 +75,6 @@ public final class ClusterMirrorUtils {
 
     public record PartitionStateInfo(int partition, MirrorPartitionState state, Integer leaderEpoch) { }
 
-    public record PartitionStateLogEntry(String topic, int partition, MirrorPartitionState state,
-                                         MirrorPartitionState previousState, int retryAttempt,
-                                         String errorMessage) { }
-
     public record PartitionKey(String mirrorName, String topic, int partition) { }
 
     public record LeaderEpochBump(CompletableFuture<Void> future, Map<TopicPartition, Integer> partitionToEpoch) { }
