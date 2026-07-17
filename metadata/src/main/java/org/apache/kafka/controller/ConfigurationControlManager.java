@@ -666,7 +666,7 @@ public class ConfigurationControlManager {
                 records.add(new ApiMessageAndVersion(
                     new MirrorTopicStateChangeRecord()
                         .setTopicId(topicInfo.topicId())
-                        .setMirrorName("")
+                        .setMirrorName(null)
                         .setDesiredState(MirrorPartitionState.UNKNOWN.value()),
                     (short) 0));
             }

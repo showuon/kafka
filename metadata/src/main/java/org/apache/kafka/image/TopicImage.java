@@ -37,7 +37,7 @@ import java.util.Map.Entry;
  */
 public record TopicImage(String name, Uuid id, String mirrorName, int desiredMirrorState, Map<Integer, PartitionRegistration> partitions) {
     public TopicImage(String name, Uuid id, Map<Integer, PartitionRegistration> partitions) {
-        this(name, id, "", MirrorPartitionState.UNKNOWN.value(), partitions);
+        this(name, id, null, MirrorPartitionState.UNKNOWN.value(), partitions);
     }
 
     public TopicImage {
