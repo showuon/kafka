@@ -277,7 +277,11 @@ public class ClusterMirrorCoordinator {
                                                 MirrorPartitionState.fromValue(value.previousState()));
                                     }
                                 } else {
-                                    metadataManager.removeMirrorStates(clusterName);
+                                    Optional<String> topicName = metadataCache.getTopicName(key.topicId());
+                                    if (topicName.isPresent()) {
+                                        PartitionKey pk = new PartitionKey(clusterName, topicName.get(), key.partition());
+                                        metadataManager.removePartitionState(pk);
+                                    }
                                 }
                             } else {
                                 throw new IllegalArgumentException("Unknown cluster mirror log key version " + version);
@@ -1071,7 +1075,11 @@ public class ClusterMirrorCoordinator {
 
     private MirrorPartitionStateKey readMirrorPartitionStateKey(ByteBuffer buffer) {
         short version = buffer.getShort();
-        return new MirrorPartitionStateKey(new ByteBufferAccessor(buffer), version);
+        if (version <= MirrorPartitionStateValue.HIGHEST_SUPPORTED_VERSION && version >= MirrorPartitionStateValue.LOWEST_SUPPORTED_VERSION) {
+            return new MirrorPartitionStateKey(new ByteBufferAccessor(buffer), version);
+        } else {
+            throw new IllegalStateException("Unsupported partition state key version: " + version);
+        }
     }
 
     private MirrorPartitionStateValue readMirrorPartitionStateValue(ByteBuffer buffer) {
