@@ -265,7 +265,11 @@ public class ClusterMirrorCoordinator {
                                                 new PartitionKey(clusterName, topicName.get(), key.partition()), lastMirrorEpoch);
                                     }
                                 } else {
-                                    metadataManager.removeLastMirrorEpochs(clusterName);
+                                    Optional<String> topicName = metadataCache.getTopicName(key.topicId());
+                                    if (topicName.isPresent()) {
+                                        PartitionKey pk = new PartitionKey(clusterName, topicName.get(), key.partition());
+                                        metadataManager.removePartitionState(pk);
+                                    }
                                 }
                             } else if (version == CoordinatorRecordType.MIRROR_PARTITION_STATE.id()) {
                                 MirrorPartitionStateKey key = readMirrorPartitionStateKey(record.key());
@@ -672,7 +676,6 @@ public class ClusterMirrorCoordinator {
 
         // Update in-memory cache once with all offsets
         metadataManager.updateLastMirrorEpochs(mirrorName, partitionOffsets);
-
 
         // Write to local coordinator partitions (one append per coordinator partition)
         if (!localByCoordPartition.isEmpty()) {
