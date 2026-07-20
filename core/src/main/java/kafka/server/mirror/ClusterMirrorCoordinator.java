@@ -86,7 +86,10 @@ import java.util.OptionalInt;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -206,6 +209,7 @@ public class ClusterMirrorCoordinator {
     }
 
     // Replays the mirror state log to rebuild in-memory partition states, epochs, and retry metadata.
+    @SuppressWarnings({ "CyclomaticComplexity" })
     private void loadMirrorMetadata(TopicPartition topicPartition) {
         log.info("Loading mirror metadata from {}.", topicPartition);
         long logEndOffset = replicaManager.getLogEndOffset(topicPartition).getOrElse(() -> -1L);
@@ -645,6 +649,25 @@ public class ClusterMirrorCoordinator {
         return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
     }
 
+    // check if the all LME writing completes and decide if the future should complete successfully or exceptionally with retry.
+    private void maybeFinishLmeWriting(String mirrorName,
+                                       AtomicInteger remaining,
+                                       AtomicReference<Throwable> firstError,
+                                       Map<String, Map<Integer, Integer>> failedOffsets,
+                                       CompletableFuture<Void> future) {
+        if (remaining.decrementAndGet() == 0) {
+            if (!failedOffsets.isEmpty()) {
+                // TODO: handle failure, we can't retry forever
+                log.error("Failed to write LMEs for mirror {} partitions {}, retrying", mirrorName, failedOffsets);
+                scheduler.scheduleOnce("LmeWriteRetry-" + mirrorName,
+                        () -> updateLastMirrorEpochs(mirrorName, failedOffsets), 100);
+                future.completeExceptionally(firstError.get());
+            } else {
+                future.complete(null);
+            }
+        }
+    };
+
     /** Persists last mirror epochs to local or remote coordinators. */
     public CompletableFuture<Void> updateLastMirrorEpochs(String mirrorName, Map<String, Map<Integer, Integer>> partitionOffsets) {
         CompletableFuture<Void> future = new CompletableFuture<>();
@@ -677,6 +700,17 @@ public class ClusterMirrorCoordinator {
         // Update in-memory cache once with all offsets
         metadataManager.updateLastMirrorEpochs(mirrorName, partitionOffsets);
 
+        // Track completion number across every outstanding write (one unit per local coordinator partition batch,
+        // for remote write, one topic-partition is one unit)
+        int totalUnits = localByCoordPartition.size();
+        for (Set<ClusterMirrorUtils.PartitionStateInfo> parts : remoteTopicMetadata.values()) {
+            totalUnits += parts.size();
+        }
+
+        AtomicInteger remaining = new AtomicInteger(totalUnits);
+        Map<String, Map<Integer, Integer>> failedOffsets = new ConcurrentHashMap<>();
+        AtomicReference<Throwable> firstError = new AtomicReference<>();
+
         // Write to local coordinator partitions (one append per coordinator partition)
         if (!localByCoordPartition.isEmpty()) {
             var timestamp = time.milliseconds();
@@ -703,16 +737,17 @@ public class ClusterMirrorCoordinator {
                     CollectionConverters.asScala(entriesPerPartition),
                     response -> {
                         response.foreach(res -> {
+                            TopicIdPartition tip = res._1();
                             ProduceResponse.PartitionResponse partitionRes = res._2;
+                            int coordPartition = tip.partition();
+                            Set<TopicPartition> tps = localByCoordPartition.get(coordPartition);
                             if (partitionRes.error.code() != Errors.NONE.code()) {
-                                // TODO: handle failure, we can't retry forever
-                                log.error("Failed to write LMEs to coordinator: {}, retrying", partitionRes.error.message());
-                                scheduler.scheduleOnce("LmeWriteRetry-" + mirrorName,
-                                        () -> updateLastMirrorEpochs(mirrorName, partitionOffsets), 100);
-                                future.completeExceptionally(partitionRes.error.exception());
-                            } else {
-                                future.complete(null);
+                                log.error("Failed to write LMEs to coordinator partition {}: {}", coordPartition, partitionRes.error.message());
+                                firstError.compareAndSet(null, partitionRes.error.exception());
+                                tps.forEach(tp -> failedOffsets.computeIfAbsent(tp.topic(), k -> new ConcurrentHashMap<>())
+                                        .put(tp.partition(), partitionOffsets.get(tp.topic()).get(tp.partition())));
                             }
+                            maybeFinishLmeWriting(mirrorName, remaining, firstError, failedOffsets, future);
                             return null;
                         });
                         return null;
@@ -729,14 +764,14 @@ public class ClusterMirrorCoordinator {
                 res.data().topics().forEach(topicResult -> {
                     topicResult.partitions().forEach(partitionResult -> {
                         if (partitionResult.errorCode() != Errors.NONE.code()) {
-                            // TODO: handle failure, we can't retry forever
-                            log.error("Failed to write LMEs to remote coordinator: {}, retrying", partitionResult.errorCode());
-                            scheduler.scheduleOnce("LmeWriteRetry-" + mirrorName,
-                                    () -> updateLastMirrorEpochs(mirrorName, partitionOffsets), 100);
-                            future.completeExceptionally(Errors.forCode(partitionResult.errorCode()).exception());
-                        } else {
-                            future.complete(null);
+                            log.error("Failed to write LMEs to remote coordinator for {}-{}: {}",
+                                    topicResult.name(), partitionResult.partitionIndex(), partitionResult.errorCode());
+                            firstError.compareAndSet(null, Errors.forCode(partitionResult.errorCode()).exception());
+                            failedOffsets.computeIfAbsent(topicResult.name(), k -> new ConcurrentHashMap<>())
+                                    .put(partitionResult.partitionIndex(),
+                                            partitionOffsets.get(topicResult.name()).get(partitionResult.partitionIndex()));
                         }
+                        maybeFinishLmeWriting(mirrorName, remaining, firstError, failedOffsets, future);
                     });
                 });
             });
