@@ -1823,6 +1823,10 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         lastMirrorEpochs.keySet().removeIf(key -> key.mirrorName().equals(mirrorName));
     }
 
+    void removeLastMirrorEpoch(PartitionKey key) {
+        lastMirrorEpochs.remove(key);
+    }
+
     void removeStateForPartitions(Set<TopicPartition> partitions) {
         partitions.forEach(tp -> {
             pendingPartitionStates.remove(tp);

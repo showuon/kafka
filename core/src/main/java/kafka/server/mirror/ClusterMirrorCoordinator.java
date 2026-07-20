@@ -20,6 +20,7 @@ import kafka.server.KafkaConfig;
 import kafka.server.ReplicaManager;
 import kafka.server.mirror.ClusterMirrorUtils.FailedPartitionInfo;
 import kafka.server.mirror.ClusterMirrorUtils.PartitionKey;
+import kafka.server.mirror.ClusterMirrorUtils.PartitionStateInfo;
 
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.ClusterMirrorListing;
@@ -272,7 +273,7 @@ public class ClusterMirrorCoordinator {
                                     Optional<String> topicName = metadataCache.getTopicName(key.topicId());
                                     if (topicName.isPresent()) {
                                         PartitionKey pk = new PartitionKey(clusterName, topicName.get(), key.partition());
-                                        metadataManager.removePartitionState(pk);
+                                        metadataManager.removeLastMirrorEpoch(pk);
                                     }
                                 }
                             } else if (version == CoordinatorRecordType.MIRROR_PARTITION_STATE.id()) {
@@ -575,7 +576,7 @@ public class ClusterMirrorCoordinator {
 
     /** Write partition state and offset updates to the internal topic. */
     public void updateTopicMetadata(String mirrorName,
-                                    Map<String, Set<ClusterMirrorUtils.PartitionStateInfo>> topicMetadata,
+                                    Map<String, Set<PartitionStateInfo>> topicMetadata,
                                     Consumer<WriteMirrorStatesResponse> callback) {
         List<CompletableFuture<Optional<TopicPartition>>> updateMirrorPartitionStateFutures = new ArrayList<>();
 
@@ -649,31 +650,12 @@ public class ClusterMirrorCoordinator {
         return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
     }
 
-    // check if the all LME writing completes and decide if the future should complete successfully or exceptionally with retry.
-    private void maybeFinishLmeWriting(String mirrorName,
-                                       AtomicInteger remaining,
-                                       AtomicReference<Throwable> firstError,
-                                       Map<String, Map<Integer, Integer>> failedOffsets,
-                                       CompletableFuture<Void> future) {
-        if (remaining.decrementAndGet() == 0) {
-            if (!failedOffsets.isEmpty()) {
-                // TODO: handle failure, we can't retry forever
-                log.error("Failed to write LMEs for mirror {} partitions {}, retrying", mirrorName, failedOffsets);
-                scheduler.scheduleOnce("LmeWriteRetry-" + mirrorName,
-                        () -> updateLastMirrorEpochs(mirrorName, failedOffsets), 100);
-                future.completeExceptionally(firstError.get());
-            } else {
-                future.complete(null);
-            }
-        }
-    };
-
     /** Persists last mirror epochs to local or remote coordinators. */
     public CompletableFuture<Void> updateLastMirrorEpochs(String mirrorName, Map<String, Map<Integer, Integer>> partitionOffsets) {
         CompletableFuture<Void> future = new CompletableFuture<>();
         // Separate partitions into local and remote coordinator groups
         Map<Integer, Set<TopicPartition>> localByCoordPartition = new HashMap<>();
-        Map<String, Set<ClusterMirrorUtils.PartitionStateInfo>> remoteTopicMetadata = new HashMap<>();
+        Map<String, Set<PartitionStateInfo>> remoteTopicMetadata = new HashMap<>();
 
         partitionOffsets.forEach((topic, offsetMap) -> {
             offsetMap.forEach((par, off) -> {
@@ -686,7 +668,7 @@ public class ClusterMirrorCoordinator {
                 } else {
                     remoteTopicMetadata
                             .computeIfAbsent(topic, k -> new HashSet<>())
-                            .add(new ClusterMirrorUtils.PartitionStateInfo(par, null, off));
+                            .add(new PartitionStateInfo(par, null, off));
                 }
             });
         });
@@ -700,10 +682,10 @@ public class ClusterMirrorCoordinator {
         // Update in-memory cache once with all offsets
         metadataManager.updateLastMirrorEpochs(mirrorName, partitionOffsets);
 
-        // Track completion number across every outstanding write (one unit per local coordinator partition batch,
-        // for remote write, one topic-partition is one unit)
+        // Track completion number across every outstanding write (one unit per local
+        // coordinator partition batch, for remote write, one topic-partition is one unit)
         int totalUnits = localByCoordPartition.size();
-        for (Set<ClusterMirrorUtils.PartitionStateInfo> parts : remoteTopicMetadata.values()) {
+        for (Set<PartitionStateInfo> parts : remoteTopicMetadata.values()) {
             totalUnits += parts.size();
         }
 
@@ -747,7 +729,7 @@ public class ClusterMirrorCoordinator {
                                 tps.forEach(tp -> failedOffsets.computeIfAbsent(tp.topic(), k -> new ConcurrentHashMap<>())
                                         .put(tp.partition(), partitionOffsets.get(tp.topic()).get(tp.partition())));
                             }
-                            maybeFinishLmeWriting(mirrorName, remaining, firstError, failedOffsets, future);
+                            completeLmeWriteIfDone(mirrorName, remaining, firstError, failedOffsets, future);
                             return null;
                         });
                         return null;
@@ -771,13 +753,34 @@ public class ClusterMirrorCoordinator {
                                     .put(partitionResult.partitionIndex(),
                                             partitionOffsets.get(topicResult.name()).get(partitionResult.partitionIndex()));
                         }
-                        maybeFinishLmeWriting(mirrorName, remaining, firstError, failedOffsets, future);
+                        completeLmeWriteIfDone(mirrorName, remaining, firstError, failedOffsets, future);
                     });
                 });
             });
         }
 
         return future;
+    }
+
+    /**
+     * Decrements the outstanding write counter and, when all writes have reported, completes the
+     * future. On partial failure, only the failed offsets are scheduled for retry.
+     */
+    private void completeLmeWriteIfDone(String mirrorName,
+                                       AtomicInteger remaining,
+                                       AtomicReference<Throwable> firstError,
+                                       Map<String, Map<Integer, Integer>> failedOffsets,
+                                       CompletableFuture<Void> future) {
+        if (remaining.decrementAndGet() == 0) {
+            if (!failedOffsets.isEmpty()) {
+                // TODO: handle failure, we can't retry forever
+                log.error("Failed to write LMEs for mirror {} partitions {}, retrying", mirrorName, failedOffsets);
+                scheduler.scheduleOnce("LmeWriteRetry-" + mirrorName, () -> updateLastMirrorEpochs(mirrorName, failedOffsets), 100);
+                future.completeExceptionally(firstError.get());
+            } else {
+                future.complete(null);
+            }
+        }
     }
 
     private CompletableFuture<Optional<TopicPartition>> updateMirrorPartitionState(
@@ -827,8 +830,8 @@ public class ClusterMirrorCoordinator {
             );
         } else {
             // write state data to remote coordinator (async network operation)
-            Map<String, Set<ClusterMirrorUtils.PartitionStateInfo>> topicMetadata =
-                    Map.of(topicPartition.topic(), Set.of(new ClusterMirrorUtils.PartitionStateInfo(topicPartition.partition(), newState, -1)));
+            Map<String, Set<PartitionStateInfo>> topicMetadata =
+                    Map.of(topicPartition.topic(), Set.of(new PartitionStateInfo(topicPartition.partition(), newState, -1)));
             metadataManager.writeStatesToRemoteCoordinator(mirrorName, topicMetadata, Set.of(),
                     res -> res.data().topics().forEach(topic -> topic.partitions().forEach(par -> {
                         if (par.errorCode() == Errors.NONE.code()) {
