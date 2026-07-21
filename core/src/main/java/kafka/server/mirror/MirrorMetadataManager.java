@@ -490,7 +490,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         mirrorLeaders.forEach(tp -> {
             TopicImage topicImage = newImage.topics().getTopic(tp.topic());
             String mirrorName = topicImage.mirrorName();
-            byte desiredMirrorState = (byte) topicImage.desiredMirrorState();
+            byte desiredMirrorState = topicImage.desiredMirrorState();
             boolean stopRequested = desiredMirrorState == MirrorPartitionState.STOPPED.value();
             boolean pauseRequested = desiredMirrorState == MirrorPartitionState.PAUSED.value();
 
@@ -1013,7 +1013,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             }
             // Skip stopped/paused topics: if the partition cache was cleared (e.g. coordinator
             // leadership change), the state defaults to UNKNOWN and would be restarted here.
-            int desiredState = topicImage.desiredMirrorState();
+            byte desiredState = topicImage.desiredMirrorState();
             if (desiredState == MirrorPartitionState.STOPPED.value()
                     || desiredState == MirrorPartitionState.PAUSED.value()) {
                 return;
@@ -2059,7 +2059,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                     String topicMirrorName = topicInfo.mirrorName();
                     if (topicMirrorName == null || topicMirrorName.isBlank()) return false;
                     if (!mirrorName.equals(topicMirrorName)) return false;
-                    int state = topicInfo.desiredMirrorState();
+                    byte state = topicInfo.desiredMirrorState();
                     if (!includeStopped && state == MirrorPartitionState.STOPPED.value()) return false;
                     if (!includePaused && state == MirrorPartitionState.PAUSED.value()) return false;
                     return true;
@@ -2241,8 +2241,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             boolean skipMissingTopics,
             MetadataImage currentImage,
             Map<String, Set<Integer>> remotePartitions) {
-        Set<Integer> validDesiredStateValues = validStates.stream()
-                .map(s -> (int) s.value()).collect(Collectors.toSet());
+        Set<Byte> validDesiredStateValues = validStates.stream()
+                .map(MirrorPartitionState::value).collect(Collectors.toSet());
 
         for (String topic : topicNames) {
             TopicImage topicImage = currentImage.topics().getTopic(topic);
@@ -2255,7 +2255,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             }
             if (!validDesiredStateValues.contains(topicImage.desiredMirrorState())) {
                 log.error("Topic {} desired mirror state is {}, expected one of {}.",
-                        topic, MirrorPartitionState.fromValue((byte) topicImage.desiredMirrorState()), validStates);
+                        topic, MirrorPartitionState.fromValue(topicImage.desiredMirrorState()), validStates);
                 return Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATES);
             }
             for (int i = 0; i < topicImage.partitions().size(); i++) {
