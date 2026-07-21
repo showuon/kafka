@@ -150,7 +150,7 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
       replicaManager, quotaManager, metadataVersionSupplier, brokerEpochSupplier, isClusterMirror = true,
       mirrorConfig = Some(mirrorConfig))
     val mirrorFetchBackoffMs = mirrorConfig.fetchBackoffMs().toInt
-    new MirrorFetcherThread(threadName, endpoint, brokerConfig, failedPartitions, replicaManager,
+    new MirrorFetcherThread(threadName, endpoint, failedPartitions, replicaManager,
       quotaManager, logContext.logPrefix, mirrorName, mirrorFetchBackoffMs)
   }
 

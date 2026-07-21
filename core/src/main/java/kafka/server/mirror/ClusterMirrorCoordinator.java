@@ -157,8 +157,7 @@ public class ClusterMirrorCoordinator {
         log.info("Starting up.");
 
         metadataManager.initialize(
-                brokerConfig.mirrorConfig().metadataRefreshIntervalMs(),
-                (mirrorName, tp, state, errorMessage, nonRetryable) -> transitionTo(mirrorName, tp, state, errorMessage, nonRetryable),
+                this::transitionTo,
                 this::tombstoneMirrorRecords,
                 this::getCoordinatorPartitionByKey,
                 this::getCoordinatorPartitionByName);
@@ -290,7 +289,7 @@ public class ClusterMirrorCoordinator {
                     MirrorPartitionState state = MirrorPartitionState.fromValue(psv.state());
                     MirrorPartitionState previousState = MirrorPartitionState.fromValue(psv.previousState());
                     metadataManager.updatePartitionState(pk, state);
-                    restoreFailedState(key.mirrorName(), pk, state, psv.retryAttempt(), psv.errorMessage(), previousState);
+                    restoreFailedState(pk, state, psv.retryAttempt(), psv.errorMessage(), previousState);
                 });
             } else {
                 metadataManager.removePartitionState(pk);
@@ -365,7 +364,7 @@ public class ClusterMirrorCoordinator {
         }
     }
 
-    private void restoreFailedState(String mirrorName, ClusterMirrorRecordKey pk, MirrorPartitionState state,
+    private void restoreFailedState(ClusterMirrorRecordKey pk, MirrorPartitionState state,
                                     int retryAttempt, String errorMessage, MirrorPartitionState previousState) {
         if (state == MirrorPartitionState.FAILED) {
             metadataManager.setFailedInfo(pk, new FailedPartitionInfo(retryAttempt, errorMessage, previousState));
