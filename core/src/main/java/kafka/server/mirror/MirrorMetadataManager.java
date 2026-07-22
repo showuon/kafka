@@ -578,7 +578,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     private void removePendingRetryFuture(TopicPartition tp) {
         var future = pendingRetryFutures.remove(tp);
-        future.cancel(false);
+        if (future != null)
+            future.cancel(false);
     }
 
     /**

@@ -397,9 +397,13 @@ public class ClusterMirrorCoordinator {
                 }
                 return new FailedPartitionInfo(attempt, errorMessage, previousState);
             });
-        } else if (newState == MirrorPartitionState.LOG_TRUNCATION
+        } else if ((currentState != MirrorPartitionState.FAILED && currentState != newState)
                 || newState == MirrorPartitionState.STOPPED
                 || newState == MirrorPartitionState.PAUSED) {
+            // clean up the state when:
+            // 1. new state is STOPPED or PAUSED state
+            // 2. there is state change, but not change from/to FAILED
+            // we already filter out the newState == FAILED case above, so skip the check
             metadataManager.clearFailedInfo(pk);
         }
     }
