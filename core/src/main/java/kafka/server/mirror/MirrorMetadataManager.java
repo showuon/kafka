@@ -87,6 +87,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -144,6 +145,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     final Set<String> pendingTopicCreations = ConcurrentHashMap.newKeySet();
     private final Map<TopicPartition, MirrorPartitionState> pendingPartitionStates = new ConcurrentHashMap<>();
     final Set<LeaderEpochBump> pendingLeaderEpochBumps = ConcurrentHashMap.newKeySet();
+    final Map<TopicPartition, ScheduledFuture<?>> pendingRetryFutures = new ConcurrentHashMap<>();
 
     // Functions
     private Optional<StateTransitioner> stateTransitioner = Optional.empty();
@@ -459,6 +461,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                     return;
                 }
                 pendingPartitionStates.remove(tp);
+                removePendingRetryFuture(tp);
                 pendingLeaderEpochBumps.removeIf(bump -> {
                     bump.partitionToEpoch().remove(tp);
                     if (bump.partitionToEpoch().isEmpty()) {
@@ -565,6 +568,17 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         sourceLeaders.clear();
         pendingLeaderEpochBumps.clear();
         pendingPartitionStates.clear();
+        removePendingRetryFutures();
+    }
+
+    private void removePendingRetryFutures() {
+        pendingRetryFutures.values().forEach(f -> f.cancel(false));
+        pendingRetryFutures.clear();
+    }
+
+    private void removePendingRetryFuture(TopicPartition tp) {
+        var future = pendingRetryFutures.remove(tp);
+        future.cancel(false);
     }
 
     /**
@@ -1043,6 +1057,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     public void clearFailedInfo(ClusterMirrorRecordKey key) {
         partitionCache.computeIfPresent(key, (k, existing) ->
                 new PartitionCacheEntry(existing.state(), existing.lastMirrorEpoch(), null));
+        metadataCache.getTopicName(key.topicId()).ifPresent(topicName ->
+                removePendingRetryFuture(new TopicPartition(topicName, key.partition())));
     }
 
     public void clearFailedInfo(String mirrorName, TopicPartition tp) {

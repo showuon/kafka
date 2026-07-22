@@ -86,6 +86,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -407,6 +408,8 @@ public class ClusterMirrorCoordinator {
     private void scheduleFailedRetries(String mirrorName, Set<TopicPartition> topicPartitions) {
         int maxAttempts = brokerConfig.mirrorConfig().failedRetryMaxAttempts();
         topicPartitions.forEach(tp -> {
+            if (metadataManager.pendingRetryFutures.containsKey(tp))
+                return;
             FailedPartitionInfo fpi = metadataManager.getFailedInfo(ClusterMirrorRecordKey.of(mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition()));
             int attempt = fpi != null ? fpi.retryAttempt() : 1;
             if (attempt == NON_RETRYABLE_ATTEMPT) {
@@ -436,7 +439,8 @@ public class ClusterMirrorCoordinator {
                 targetState = fpi.previousState();
             }
             log.info("Scheduling retry attempt #{} for partition {} in {} ms with target state {}.", attempt, tp, delay, targetState);
-            scheduler.scheduleOnce("MirrorFailedRetry-" + tp, () -> transitionTo(mirrorName, Set.of(tp), targetState), delay);
+            ScheduledFuture<?> future = scheduler.scheduleOnce("MirrorFailedRetry-" + tp, () -> transitionTo(mirrorName, Set.of(tp), targetState), delay);
+            metadataManager.pendingRetryFutures.put(tp, future);
         });
     }
 
