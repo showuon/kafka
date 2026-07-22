@@ -465,7 +465,7 @@ public class ClusterMirrorCoordinator {
         topicPartitions.forEach(tp -> {
             MirrorPartitionState currentState = metadataManager.getPartitionState(mirrorName, tp);
             if (MirrorPartitionState.isValidTransition(currentState, newState)) {
-                log.debug("Transitioning partition {} from {} to {}.", tp, currentState, newState);
+                log.debug("Transitioning partition {} from {} to {} due to {}.", tp, currentState, newState, errorMessage);
                 updateFailedState(mirrorName, tp, currentState, newState, errorMessage, nonRetryable);
                 updateMirrorPartitionState(mirrorName, tp, newState)
                         .whenComplete((optTp, ex) -> {
