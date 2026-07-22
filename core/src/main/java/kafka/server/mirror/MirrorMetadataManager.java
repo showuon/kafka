@@ -120,13 +120,13 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private final Logger log;
     private volatile boolean isInitialized = false;
     private final String name;
-    final String clusterId;
+    private final String clusterId;
     private final KafkaConfig brokerConfig;
-    final int nodeId;
+    private final int nodeId;
 
     private volatile MirrorSourceSyncer sourceSyncer;
     private final NodeToControllerChannelManager channelManager;
-    final Supplier<ReplicaManager> replicaManagerSupplier;
+    private final Supplier<ReplicaManager> replicaManagerSupplier;
     private volatile MetadataImage metadataImage = MetadataImage.EMPTY;
     private final MetadataCache metadataCache;
     private final KafkaScheduler scheduler;
@@ -135,7 +135,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     // Network communication
     private volatile MirrorStateSender mirrorStateSender;
-    final Map<String, Admin> srcAdmins = new ConcurrentHashMap<>();
+    private final Map<String, Admin> srcAdmins = new ConcurrentHashMap<>();
     private volatile Admin dstAdmin;
 
     // Local cache
