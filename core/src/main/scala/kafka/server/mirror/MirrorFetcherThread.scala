@@ -33,11 +33,10 @@ import scala.collection.{Map, Set}
 import scala.jdk.CollectionConverters.SetHasAsJava
 
 /**
- * Fetcher thread for cross-cluster mirroring.
+ * Fetcher thread for Cluster Mirroring.
  */
 class MirrorFetcherThread(name: String,
                           leader: LeaderEndPoint,
-                          brokerConfig: KafkaConfig,
                           failedPartitions: FailedPartitions,
                           replicaMgr: ReplicaManager,
                           quota: ReplicaQuota,
