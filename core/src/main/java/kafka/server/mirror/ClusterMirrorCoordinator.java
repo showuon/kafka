@@ -86,6 +86,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -396,9 +397,14 @@ public class ClusterMirrorCoordinator {
                 }
                 return new FailedPartitionInfo(attempt, errorMessage, previousState);
             });
-        } else if (newState == MirrorPartitionState.LOG_TRUNCATION
+        } else if ((currentState != MirrorPartitionState.FAILED && currentState != newState)
                 || newState == MirrorPartitionState.STOPPED
                 || newState == MirrorPartitionState.PAUSED) {
+            // clean up the state when:
+            // 1. new state is STOPPED or PAUSED state
+            // 2. there is state change, but not change from/to FAILED
+            // we already filter out the newState == FAILED case above, so skip the check
+            // 3. For MIRRORING, it'll clean up after the first successful fetch response in MirrorFetcherThread.
             metadataManager.clearFailedInfo(pk);
         }
     }
@@ -407,6 +413,8 @@ public class ClusterMirrorCoordinator {
     private void scheduleFailedRetries(String mirrorName, Set<TopicPartition> topicPartitions) {
         int maxAttempts = brokerConfig.mirrorConfig().failedRetryMaxAttempts();
         topicPartitions.forEach(tp -> {
+            if (metadataManager.pendingRetryFutures.containsKey(tp))
+                return;
             FailedPartitionInfo fpi = metadataManager.getFailedInfo(ClusterMirrorRecordKey.of(mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition()));
             int attempt = fpi != null ? fpi.retryAttempt() : 1;
             if (attempt == NON_RETRYABLE_ATTEMPT) {
@@ -436,7 +444,11 @@ public class ClusterMirrorCoordinator {
                 targetState = fpi.previousState();
             }
             log.info("Scheduling retry attempt #{} for partition {} in {} ms with target state {}.", attempt, tp, delay, targetState);
-            scheduler.scheduleOnce("MirrorFailedRetry-" + tp, () -> transitionTo(mirrorName, Set.of(tp), targetState), delay);
+            ScheduledFuture<?> future = scheduler.scheduleOnce("MirrorFailedRetry-" + tp, () -> {
+                transitionTo(mirrorName, Set.of(tp), targetState);
+                metadataManager.pendingRetryFutures.remove(tp);
+            }, delay);
+            metadataManager.pendingRetryFutures.put(tp, future);
         });
     }
 
@@ -456,7 +468,11 @@ public class ClusterMirrorCoordinator {
         topicPartitions.forEach(tp -> {
             MirrorPartitionState currentState = metadataManager.getPartitionState(mirrorName, tp);
             if (MirrorPartitionState.isValidTransition(currentState, newState)) {
-                log.debug("Transitioning partition {} from {} to {}.", tp, currentState, newState);
+                if (newState == MirrorPartitionState.FAILED) {
+                    log.info("Transitioning partition {} from {} to {} due to {} with nonRetryable: {}.", tp, currentState, newState, errorMessage, nonRetryable);
+                } else {
+                    log.debug("Transitioning partition {} from {} to {}.", tp, currentState, newState);
+                }
                 updateFailedState(mirrorName, tp, currentState, newState, errorMessage, nonRetryable);
                 updateMirrorPartitionState(mirrorName, tp, newState)
                         .whenComplete((optTp, ex) -> {
