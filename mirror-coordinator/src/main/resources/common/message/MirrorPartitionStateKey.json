@@ -18,7 +18,7 @@
 // mirror partition states table), the previous state for automatic retry handling, and
 // optional error metadata.
 {
-  "apiKey": 2,
+  "apiKey": 1,
   "type": "coordinator-key",
   "name": "MirrorPartitionStateKey",
   "validVersions": "0",

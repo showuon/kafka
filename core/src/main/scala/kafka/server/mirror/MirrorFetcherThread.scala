@@ -18,7 +18,8 @@ package kafka.server.mirror
 
 import kafka.cluster.Partition
 import kafka.server._
-import kafka.server.mirror.ClusterMirrorUtils.{LEADER_EPOCH_BUMP_THRESHOLD, LeaderInfo}
+import kafka.server.mirror.MirrorMetadataManager.LeaderInfo
+import kafka.server.mirror.MirrorSourceSyncer.LEADER_EPOCH_BUMP_THRESHOLD
 import org.apache.kafka.common.errors.{MirrorLeaderEpochExceededException, MirrorPartitionStaleMetadataException}
 import org.apache.kafka.common.message.FetchResponseData
 import org.apache.kafka.common.record.Records
@@ -105,7 +106,7 @@ class MirrorFetcherThread(name: String,
         if (highestBatchLeaderEpoch > localLeaderEpoch - LEADER_EPOCH_BUMP_THRESHOLD) {
           // When source batch is close to the local epoch (within LEADER_EPOCH_BUMP_THRESHOLD),
           // schedule a proactive local epoch bump while still allowing the current batch to append.
-          mmm.scheduleBumpLeaderEpochs(partition.getMirrorName().get(), java.util.Set.of(topicPartition))
+          mmm.scheduleBumpLeaderEpoch(partition.getMirrorName().get(), topicPartition)
             .whenComplete { (_, ex) =>
               if (ex != null) log.warn(s"Proactive epoch bump failed for $topicPartition", ex)
             }

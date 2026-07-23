@@ -22,7 +22,7 @@ import kafka.coordinator.transaction.TransactionCoordinator
 import kafka.log.LogManager
 import kafka.network.SocketServer
 import kafka.raft.KafkaRaftManager
-import kafka.server.mirror.{ClusterMirrorCoordinator, MirrorMetadataManager}
+import kafka.server.mirror.{ClusterMirrorCoordinatorService, MirrorMetadataManager}
 import kafka.server.metadata._
 import kafka.server.share.{ShareCoordinatorMetadataCacheHelperImpl, SharePartitionManager}
 import kafka.utils.CoreUtils
@@ -38,6 +38,8 @@ import org.apache.kafka.common.{ClusterResource, TopicPartition, Uuid}
 import org.apache.kafka.coordinator.common.runtime.{CoordinatorLoaderImpl, CoordinatorRecord}
 import org.apache.kafka.coordinator.group.metrics.{GroupCoordinatorMetrics, GroupCoordinatorRuntimeMetrics}
 import org.apache.kafka.coordinator.group.{GroupConfigManager, GroupCoordinator, GroupCoordinatorRecordSerde, GroupCoordinatorService}
+import org.apache.kafka.coordinator.mirror.ClusterMirrorRecordSerde
+import org.apache.kafka.coordinator.mirror.metrics.ClusterMirrorCoordinatorRuntimeMetrics
 import org.apache.kafka.coordinator.share.metrics.{ShareCoordinatorMetrics, ShareCoordinatorRuntimeMetrics}
 import org.apache.kafka.coordinator.share.{ShareCoordinator, ShareCoordinatorRecordSerde, ShareCoordinatorService}
 import org.apache.kafka.coordinator.transaction.ProducerIdManager
@@ -125,7 +127,7 @@ class BrokerServer(
 
   var transactionCoordinator: TransactionCoordinator = _
 
-  var clusterMirrorCoordinator: ClusterMirrorCoordinator = _
+  var clusterMirrorCoordinator: ClusterMirrorCoordinatorService = _
 
   var mirrorMetadataManager: MirrorMetadataManager = _
 
@@ -407,8 +409,7 @@ class BrokerServer(
         new KafkaScheduler(1, true, "transaction-log-manager-"),
         producerIdManagerSupplier, metrics, metadataCache, Time.SYSTEM)
 
-      clusterMirrorCoordinator = new ClusterMirrorCoordinator(config, replicaManager,
-        mirrorMetadataManager, metadataCache, mirrorScheduler, metrics, Time.SYSTEM)
+      clusterMirrorCoordinator = createClusterMirrorCoordinator(mirrorScheduler)
 
       autoTopicCreationManager = new DefaultAutoTopicCreationManager(
         config, clientToControllerChannelManager, groupCoordinator,
@@ -720,6 +721,36 @@ class BrokerServer(
     }
   }
 
+  private def createClusterMirrorCoordinator(mirrorScheduler: KafkaScheduler): ClusterMirrorCoordinatorService = {
+    val time = Time.SYSTEM
+    val timer = new SystemTimerReaper(
+      "cluster-mirror-coordinator-reaper",
+      new SystemTimer("cluster-mirror-coordinator")
+    )
+    val serde = new ClusterMirrorRecordSerde
+    val loader = new CoordinatorLoaderImpl[CoordinatorRecord](
+      time,
+      tp => replicaManager.getLog(tp).toJava,
+      tp => replicaManager.getLogEndOffset(tp).map(Long.box).toJava,
+      serde,
+      config.mirrorConfig.coordinatorLoadBufferSize()
+    )
+    val writer = new CoordinatorPartitionWriter(replicaManager)
+
+    new ClusterMirrorCoordinatorService.Builder(config.brokerId, config.mirrorConfig)
+      .withTime(time)
+      .withTimer(timer)
+      .withLoader(loader)
+      .withWriter(writer)
+      .withCoordinatorRuntimeMetrics(new ClusterMirrorCoordinatorRuntimeMetrics(metrics))
+      .withMetadataManager(mirrorMetadataManager)
+      .withMetadataCache(metadataCache)
+      .withReplicaManager(replicaManager)
+      .withScheduler(mirrorScheduler)
+      .withMetrics(metrics)
+      .build()
+  }
+
   protected def createRemoteLogManager(listenerInfo: ListenerInfo): Option[RemoteLogManager] = {
     if (config.remoteLogManagerConfig.isRemoteStorageSystemEnabled) {
       val listenerName = config.remoteLogManagerConfig.remoteLogMetadataManagerListenerName()
@@ -806,11 +837,10 @@ class BrokerServer(
         CoreUtils.swallow(groupConfigManager.close(), this)
       if (groupCoordinator != null)
         CoreUtils.swallow(groupCoordinator.shutdown(), this)
-      if (shareCoordinator != null)
-        CoreUtils.swallow(shareCoordinator.shutdown(), this)
-
       if (clusterMirrorCoordinator != null)
         CoreUtils.swallow(clusterMirrorCoordinator.shutdown(), this)
+      if (shareCoordinator != null)
+        CoreUtils.swallow(shareCoordinator.shutdown(), this)
 
       if (mirrorMetadataManager != null)
         CoreUtils.swallow(mirrorMetadataManager.close(), this)

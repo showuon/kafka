@@ -26,7 +26,7 @@ import kafka.server.KafkaApis;
 import kafka.server.KafkaConfig;
 import kafka.server.QuotaFactory.QuotaManagers;
 import kafka.server.ReplicaManager;
-import kafka.server.mirror.ClusterMirrorCoordinator;
+import kafka.server.mirror.ClusterMirrorCoordinatorService;
 import kafka.server.share.SharePartitionManager;
 
 import org.apache.kafka.common.internals.Plugin;
@@ -72,7 +72,7 @@ public class KafkaApisBuilder {
     private ApiVersionManager apiVersionManager = null;
     private ClientMetricsManager clientMetricsManager = null;
     private ShareCoordinator shareCoordinator = null;
-    private ClusterMirrorCoordinator mirrorCoordinator = null;
+    private ClusterMirrorCoordinatorService mirrorCoordinator = null;
     private GroupConfigManager groupConfigManager = null;
     private Supplier<Long> brokerEpochSupplier = () -> -1L;
 
@@ -196,7 +196,7 @@ public class KafkaApisBuilder {
         return this;
     }
 
-    public KafkaApisBuilder setTopicMirrorCoordinator(ClusterMirrorCoordinator mirrorCoordinator) {
+    public KafkaApisBuilder setClusterMirrorCoordinator(ClusterMirrorCoordinatorService mirrorCoordinator) {
         this.mirrorCoordinator = mirrorCoordinator;
         return this;
     }

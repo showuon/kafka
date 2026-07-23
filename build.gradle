@@ -1598,6 +1598,7 @@ project(':mirror-coordinator') {
 
     dependencies {
         implementation libs.jacksonDatabind
+        implementation libs.metrics
         implementation project(':clients')
         implementation project(':server-common')
         implementation project(':coordinator-common')

@@ -72,6 +72,7 @@
             </subpackage>
             <subpackage name="metrics">
                 <allow pkg="com.yammer.metrics.core" />
+                <allow pkg="org.apache.kafka.server.metrics" />
                 <allow pkg="org.apache.kafka.timeline" />
             </subpackage>
         </subpackage>

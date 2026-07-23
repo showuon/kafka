@@ -35,18 +35,18 @@ import java.util.Objects;
  * @param topicId the topic ID
  * @param partition the partition index
  */
-public record ClusterMirrorRecordKey(String mirrorName, Uuid topicId, int partition) {
+public record ClusterMirrorPartitionKey(String mirrorName, Uuid topicId, int partition) {
     private static final int MAX_NAME_LENGTH = 249;
 
-    public ClusterMirrorRecordKey(String mirrorName, Uuid topicId, int partition) {
+    public ClusterMirrorPartitionKey(String mirrorName, Uuid topicId, int partition) {
         this.mirrorName = Objects.requireNonNull(mirrorName, "Mirror name cannot be null");
         validateMirrorName(mirrorName);
         this.topicId = Objects.requireNonNull(topicId, "topicId cannot be null");
         this.partition = Objects.requireNonNull(partition, "partition cannot be null");
     }
 
-    public static ClusterMirrorRecordKey of(String mirrorName, Uuid topicId, int partition) {
-        return new ClusterMirrorRecordKey(mirrorName, topicId, partition);
+    public static ClusterMirrorPartitionKey of(String mirrorName, Uuid topicId, int partition) {
+        return new ClusterMirrorPartitionKey(mirrorName, topicId, partition);
     }
 
     private static void validateMirrorName(String name) {
@@ -79,14 +79,14 @@ public record ClusterMirrorRecordKey(String mirrorName, Uuid topicId, int partit
     }
 
     /**
-     * Returns a {@link ClusterMirrorRecordKey} parsed from a string of format {@code mirrorName:topicId:partition}.
+     * Returns a {@link ClusterMirrorPartitionKey} parsed from a string of format {@code mirrorName:topicId:partition}.
      * The key is parsed right-to-left to correctly handle mirror names that may contain colons.
      *
      * @param key the string to parse
-     * @return the parsed {@link ClusterMirrorRecordKey}
+     * @return the parsed {@link ClusterMirrorPartitionKey}
      * @throws IllegalArgumentException if the key is empty or has invalid format
      */
-    public static ClusterMirrorRecordKey getInstance(String key) {
+    public static ClusterMirrorPartitionKey getInstance(String key) {
         Objects.requireNonNull(key, "Key cannot be null");
         if (key.isEmpty()) {
             throw new IllegalArgumentException("Mirror key cannot be empty");
@@ -120,7 +120,7 @@ public record ClusterMirrorRecordKey(String mirrorName, Uuid topicId, int partit
             throw new IllegalArgumentException("Invalid partition: " + partitionStr, e);
         }
 
-        return new ClusterMirrorRecordKey(mirrorName, topicId, partition);
+        return new ClusterMirrorPartitionKey(mirrorName, topicId, partition);
     }
 
     /**
@@ -145,7 +145,7 @@ public record ClusterMirrorRecordKey(String mirrorName, Uuid topicId, int partit
     }
 
     /**
-     * Validates whether the string argument has a valid {@link ClusterMirrorRecordKey} format.
+     * Validates whether the string argument has a valid {@link ClusterMirrorPartitionKey} format.
      *
      * @param key the string to validate
      * @throws IllegalArgumentException if the key is empty or has invalid format
