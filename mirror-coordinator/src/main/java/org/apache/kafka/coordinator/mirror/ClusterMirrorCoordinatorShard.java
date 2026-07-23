@@ -261,7 +261,9 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                                     int retryAttempt, String errorMessage, MirrorPartitionState previousState) {
         if (state == MirrorPartitionState.FAILED) {
             metadataManagerBridge.setFailedInfo(pk, new FailedPartitionInfo(retryAttempt, errorMessage, previousState));
-        } else {
+        } else if (state == MirrorPartitionState.LOG_TRUNCATION
+                || state == MirrorPartitionState.STOPPED
+                || state == MirrorPartitionState.PAUSED) {
             metadataManagerBridge.clearFailedInfo(pk);
         }
     }
