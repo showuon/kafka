@@ -444,7 +444,10 @@ public class ClusterMirrorCoordinator {
                 targetState = fpi.previousState();
             }
             log.info("Scheduling retry attempt #{} for partition {} in {} ms with target state {}.", attempt, tp, delay, targetState);
-            ScheduledFuture<?> future = scheduler.scheduleOnce("MirrorFailedRetry-" + tp, () -> transitionTo(mirrorName, Set.of(tp), targetState), delay);
+            ScheduledFuture<?> future = scheduler.scheduleOnce("MirrorFailedRetry-" + tp, () -> {
+                transitionTo(mirrorName, Set.of(tp), targetState);
+                metadataManager.pendingRetryFutures.remove(tp);
+            }, delay);
             metadataManager.pendingRetryFutures.put(tp, future);
         });
     }
