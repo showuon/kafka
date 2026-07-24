@@ -23,7 +23,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kafka.log.LogManager
 import kafka.network.{DataPlaneAcceptor, SocketServer}
-import kafka.server.mirror.ClusterMirrorCoordinatorService
+import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService
 import kafka.raft.KafkaRaftManager
 import kafka.server.DynamicBrokerConfig._
 import kafka.utils.{CoreUtils, Logging}
@@ -43,7 +43,8 @@ import org.apache.kafka.network.SocketServerConfigs
 import org.apache.kafka.raft.KafkaRaftClient
 import org.apache.kafka.server.{DynamicThreadPool, ProcessRole}
 import org.apache.kafka.server.common.ApiMessageAndVersion
-import org.apache.kafka.server.config.{ClusterMirrorConfig, DynamicProducerStateManagerConfig, ServerConfigs, ServerLogConfigs, ServerTopicConfigSynonyms}
+import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig
+import org.apache.kafka.server.config.{DynamicProducerStateManagerConfig, ServerConfigs, ServerLogConfigs, ServerTopicConfigSynonyms}
 import org.apache.kafka.server.log.remote.storage.RemoteLogManagerConfig
 import org.apache.kafka.server.metrics.{ClientMetricsReceiverPlugin, MetricConfigs}
 import org.apache.kafka.server.telemetry.ClientTelemetry

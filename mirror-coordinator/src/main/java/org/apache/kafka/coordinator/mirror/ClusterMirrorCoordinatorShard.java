@@ -31,6 +31,7 @@ import org.apache.kafka.coordinator.common.runtime.CoordinatorResult;
 import org.apache.kafka.coordinator.common.runtime.CoordinatorShard;
 import org.apache.kafka.coordinator.common.runtime.CoordinatorShardBuilder;
 import org.apache.kafka.coordinator.common.runtime.CoordinatorTimer;
+import org.apache.kafka.coordinator.mirror.bridge.MirrorMetadataManagerShardBridge;
 import org.apache.kafka.coordinator.mirror.generated.CoordinatorRecordType;
 import org.apache.kafka.coordinator.mirror.generated.LastMirrorEpochsKey;
 import org.apache.kafka.coordinator.mirror.generated.LastMirrorEpochsValue;
@@ -44,29 +45,25 @@ import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 
 /**
  * The shard (state machine) for the cluster mirror coordinator.
  * One instance per __mirror_state partition, managed by the CoordinatorRuntime.
- *
- * <p>Phase 1: MirrorMetadataManager is shared across all shards for in-memory state.
- * Each record key hashes to exactly one partition, so two shards never update the same key.
  */
 public class ClusterMirrorCoordinatorShard implements CoordinatorShard<CoordinatorRecord> {
     private final Logger log;
-    private final MetadataManagerBridge metadataManagerBridge;
+    private final MirrorMetadataManagerShardBridge metadataManagerBridge;
     private final TopicPartition topicPartition;
     private final int numPartitions;
 
     public static class Builder implements CoordinatorShardBuilder<ClusterMirrorCoordinatorShard, CoordinatorRecord> {
-        private final MetadataManagerBridge metadataManagerBridge;
+        private final MirrorMetadataManagerShardBridge metadataManagerBridge;
         private final int numPartitions;
         private LogContext logContext;
         private TopicPartition topicPartition;
 
-        public Builder(MetadataManagerBridge metadataManagerBridge, int numPartitions) {
+        public Builder(MirrorMetadataManagerShardBridge metadataManagerBridge, int numPartitions) {
             this.metadataManagerBridge = metadataManagerBridge;
             this.numPartitions = numPartitions;
         }
@@ -118,7 +115,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
 
     private ClusterMirrorCoordinatorShard(
         LogContext logContext,
-        MetadataManagerBridge metadataManagerBridge,
+        MirrorMetadataManagerShardBridge metadataManagerBridge,
         TopicPartition topicPartition,
         int numPartitions
     ) {
@@ -293,51 +290,5 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
         var val = new LastMirrorEpochsValue().setLastMirrorEpoch(lastMirrorEpoch);
         return CoordinatorRecord.record(key, new ApiMessageAndVersion(val, LastMirrorEpochsValue.HIGHEST_SUPPORTED_VERSION));
     }
-    /**
-     * Bridge between the shard (mirror-coordinator module) and MirrorMetadataManager / MetadataCache
-     * (core module). The shard cannot depend on core classes directly, so all interactions with
-     * in-memory partition state, failed-info tracking, topic ID resolution, and post-load lifecycle
-     * go through this interface. The concrete implementation lives in
-     * {@code ClusterMirrorCoordinatorService.MetadataManagerBridgeImpl}.
-     */
-    public interface MetadataManagerBridge {
-        /** Called after the shard finishes loading and transitions to ACTIVE. */
-        void onShardLoaded();
-
-        /** Called when the shard is unloaded. Clears all cache entries whose keys hash to the given partition index. */
-        void onShardUnloaded(int partitionIndex, int numPartitions);
-
-        /** Sets the last mirror epoch for a single partition. */
-        void setLastMirrorEpoch(String mirrorName, String topic, int partition, int epoch);
-
-        /** Returns the current partition state, or {@code UNKNOWN} if absent. */
-        MirrorPartitionState getPartitionState(String mirrorName, TopicPartition topicPartition);
-
-        /** Sets the partition state in the in-memory cache (called during replay). */
-        void setPartitionState(ClusterMirrorPartitionKey key, MirrorPartitionState newState);
-
-        /** Clears a partition entry from the in-memory cache (tombstone replay). */
-        void clearPartitionState(ClusterMirrorPartitionKey key);
-
-        /** Gets the failed-info for a partition, or {@code null} if not in FAILED state. */
-        FailedPartitionInfo getFailedInfo(ClusterMirrorPartitionKey key);
-
-        /** Sets failed-info (retry attempt, error, previous state). */
-        void setFailedInfo(ClusterMirrorPartitionKey key, FailedPartitionInfo info);
-
-        /** Clears failed-info when a partition leaves the FAILED state. */
-        void clearFailedInfo(ClusterMirrorPartitionKey key);
-
-        /** Updates failed partition info for a state transition. */
-        void updateFailedState(ClusterMirrorPartitionKey key, MirrorPartitionState currentState,
-                               MirrorPartitionState newState, String errorMessage, boolean nonRetryable);
-
-        /** Resolves a topic name to its ID via the metadata cache. */
-        Uuid getTopicId(String topicName);
-
-        /** Resolves a topic ID to its name via the metadata cache. */
-        Optional<String> getTopicName(Uuid topicId);
-    }
-
     public record FailedPartitionInfo(int retryAttempt, String errorMessage, MirrorPartitionState previousState) { }
 }

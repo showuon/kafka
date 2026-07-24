@@ -44,6 +44,7 @@
 
     <subpackage name="coordinator">
         <subpackage name="mirror">
+            <allow pkg="org.apache.kafka.clients" />
             <allow pkg="org.apache.kafka.common.annotation" />
             <allow pkg="org.apache.kafka.common.config" />
             <allow pkg="org.apache.kafka.common.message" />
@@ -51,6 +52,7 @@
             <allow pkg="org.apache.kafka.common.internals" />
             <allow pkg="org.apache.kafka.common.requests" />
             <allow pkg="org.apache.kafka.coordinator.common" />
+            <allow pkg="org.apache.kafka.coordinator.mirror.bridge" />
             <allow pkg="org.apache.kafka.coordinator.mirror.generated" />
             <allow pkg="org.apache.kafka.coordinator.mirror.metrics" />
             <allow pkg="org.apache.kafka.image" />
@@ -67,6 +69,9 @@
             <allow pkg="org.junit.jupiter.provider" />
             <allow pkg="org.mockito" />
             <allow pkg="org.slf4j" />
+            <subpackage name="bridge">
+                <allow pkg="org.apache.kafka.coordinator.mirror" />
+            </subpackage>
             <subpackage name="generated">
                 <allow pkg="com.fasterxml.jackson" />
             </subpackage>

@@ -22,7 +22,8 @@ import kafka.coordinator.transaction.TransactionCoordinator
 import kafka.log.LogManager
 import kafka.server.share.SharePartitionManager
 import kafka.server.{KafkaConfig, ReplicaManager}
-import kafka.server.mirror.{ClusterMirrorCoordinatorService, MirrorMetadataManager}
+import kafka.server.mirror.MirrorMetadataManager
+import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService
 import kafka.utils.Logging
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.errors.TimeoutException

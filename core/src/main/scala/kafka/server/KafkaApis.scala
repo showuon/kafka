@@ -22,8 +22,8 @@ import kafka.network.RequestChannel
 import kafka.server.QuotaFactory.{QuotaManagers, UNBOUNDED_QUOTA}
 import kafka.server.handlers.DescribeTopicPartitionsRequestHandler
 import kafka.server.metadata.KRaftMetadataCache
-import kafka.server.mirror.MirrorMetadataManager.PartitionStateInfo
-import kafka.server.mirror.ClusterMirrorCoordinatorService
+import org.apache.kafka.coordinator.mirror.PartitionStateInfo
+import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService
 import org.apache.kafka.server.common.{ClusterMirrorVersion, MirrorPartitionState}
 import kafka.server.share.{ShareFetchUtils, SharePartitionManager}
 import kafka.utils.Logging

@@ -26,7 +26,6 @@ import kafka.server.KafkaApis;
 import kafka.server.KafkaConfig;
 import kafka.server.QuotaFactory.QuotaManagers;
 import kafka.server.ReplicaManager;
-import kafka.server.mirror.ClusterMirrorCoordinatorService;
 import kafka.server.share.SharePartitionManager;
 
 import org.apache.kafka.common.internals.Plugin;
@@ -34,6 +33,7 @@ import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.coordinator.group.GroupConfigManager;
 import org.apache.kafka.coordinator.group.GroupCoordinator;
+import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService;
 import org.apache.kafka.coordinator.share.ShareCoordinator;
 import org.apache.kafka.metadata.ConfigRepository;
 import org.apache.kafka.metadata.MetadataCache;

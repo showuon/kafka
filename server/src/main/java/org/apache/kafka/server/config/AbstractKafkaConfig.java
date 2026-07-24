@@ -26,6 +26,7 @@ import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.coordinator.group.GroupCoordinatorConfig;
 import org.apache.kafka.coordinator.group.modern.share.ShareGroupConfig;
+import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig;
 import org.apache.kafka.coordinator.share.ShareCoordinatorConfig;
 import org.apache.kafka.coordinator.transaction.AddPartitionsToTxnConfig;
 import org.apache.kafka.coordinator.transaction.TransactionLogConfig;

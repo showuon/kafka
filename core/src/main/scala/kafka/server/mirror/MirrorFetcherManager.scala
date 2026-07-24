@@ -25,7 +25,7 @@ import org.apache.kafka.common.utils.{LogContext, Time}
 import org.apache.kafka.metadata.MetadataCache
 import org.apache.kafka.server.{LeaderEndPoint, PartitionFetchState}
 import org.apache.kafka.server.common.MetadataVersion
-import org.apache.kafka.server.config.ClusterMirrorConfig
+import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig
 import org.apache.kafka.server.network.BrokerEndPoint
 
 import scala.collection.{Map, mutable}

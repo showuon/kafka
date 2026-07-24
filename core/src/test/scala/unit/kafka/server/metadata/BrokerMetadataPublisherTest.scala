@@ -25,7 +25,8 @@ import java.util.concurrent.atomic.{AtomicInteger, AtomicReference}
 import kafka.log.LogManager
 import kafka.server.share.SharePartitionManager
 import kafka.server.{BrokerServer, KafkaConfig, ReplicaManager}
-import kafka.server.mirror.{MirrorMetadataManager, ClusterMirrorCoordinatorService}
+import kafka.server.mirror.MirrorMetadataManager
+import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService
 import kafka.utils.TestUtils
 import org.apache.kafka.clients.admin.AlterConfigOp.OpType.SET
 import org.apache.kafka.clients.admin.{Admin, AlterConfigOp, ConfigEntry, NewTopic}
