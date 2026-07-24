@@ -346,6 +346,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                         .thenAccept(v -> transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.STOPPED))
                         .exceptionally(ex -> {
                             log.error("Mirror '{}' STOPPING transition failed for {}.", mirrorName, tp, ex);
+                            transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED, ex.getMessage());
                             return null;
                         });
                 break;
@@ -412,7 +413,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                 runtime.scheduleWriteOperation("transition-" + newState, mirrorStateTp,
                         Duration.ofMillis(config.coordinatorWriteTimeoutMs()),
                         shard -> shard.transitionTo(mirrorName, tp, newState, errorMessage, nonRetryable))
-                    .whenComplete((result, ex) -> {
+                    .whenComplete((applied, ex) -> {
                         if (ex != null) {
                             Throwable cause = (ex instanceof CompletionException && ex.getCause() != null)
                                 ? ex.getCause() : ex;
@@ -426,7 +427,9 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                             }
                             return;
                         }
-                        handleSideEffect(mirrorName, tp, newState);
+                        if (Boolean.TRUE.equals(applied)) {
+                            handleSideEffect(mirrorName, tp, newState);
+                        }
                     });
             } else {
                 Map<String, Set<PartitionStateInfo>> topicMetadata =
