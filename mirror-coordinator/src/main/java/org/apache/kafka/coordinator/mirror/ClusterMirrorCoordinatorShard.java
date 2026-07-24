@@ -173,7 +173,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
     // Write operations (return CoordinatorResult)
     // ---------------------------------------------------------------
 
-    public CoordinatorResult<Boolean, CoordinatorRecord> transitionTo(
+    public CoordinatorResult<Void, CoordinatorRecord> transitionTo(
         String mirrorName,
         TopicPartition tp,
         MirrorPartitionState newState,
@@ -183,13 +183,13 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
         MirrorPartitionState currentState = metadataManagerBridge.getPartitionState(mirrorName, tp);
         if (!MirrorPartitionState.isValidTransition(currentState, newState)) {
             log.warn("Skipping invalid transition from {} to {} for partition {}.", currentState, newState, tp);
-            return new CoordinatorResult<>(List.of(), false);
+            return new CoordinatorResult<>(List.of(), null);
         }
 
         log.debug("Transitioning partition {} from {} to {}.", tp, currentState, newState);
         updateFailedState(mirrorName, tp, currentState, newState, errorMessage, nonRetryable);
         CoordinatorRecord record = buildPartitionStateRecord(mirrorName, tp, newState);
-        return new CoordinatorResult<>(List.of(record), true);
+        return new CoordinatorResult<>(List.of(record), null);
     }
 
     public CoordinatorResult<Void, CoordinatorRecord> updateLastMirrorEpoch(

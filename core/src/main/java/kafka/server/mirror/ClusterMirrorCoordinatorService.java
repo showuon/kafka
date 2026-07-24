@@ -413,7 +413,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                 runtime.scheduleWriteOperation("transition-" + newState, mirrorStateTp,
                         Duration.ofMillis(config.coordinatorWriteTimeoutMs()),
                         shard -> shard.transitionTo(mirrorName, tp, newState, errorMessage, nonRetryable))
-                    .whenComplete((applied, ex) -> {
+                    .whenComplete((result, ex) -> {
                         if (ex != null) {
                             Throwable cause = (ex instanceof CompletionException && ex.getCause() != null)
                                 ? ex.getCause() : ex;
@@ -427,7 +427,11 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                             }
                             return;
                         }
-                        if (Boolean.TRUE.equals(applied)) {
+                        ClusterMirrorPartitionKey key = ClusterMirrorPartitionKey.of(
+                            mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
+                        MirrorPartitionState currentState = metadataManager.getPartitionState(
+                            key.mirrorName(), tp);
+                        if (currentState == newState) {
                             handleSideEffect(mirrorName, tp, newState);
                         }
                     });
