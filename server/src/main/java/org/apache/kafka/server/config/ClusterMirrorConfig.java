@@ -54,6 +54,22 @@ public final class ClusterMirrorConfig {
     // Broker level configs: stored in server.properties or dynamic broker config.
     // ---------------------------------------------------------------
 
+    public static final String MIRROR_COORDINATOR_THREADS_CONFIG = "mirror.coordinator.threads";
+    public static final int MIRROR_COORDINATOR_THREADS_DEFAULT = 1;
+    public static final String MIRROR_COORDINATOR_THREADS_DOC = "The number of threads used to process coordinator events for cluster mirroring.";
+
+    public static final String MIRROR_COORDINATOR_WRITE_TIMEOUT_MS_CONFIG = "mirror.coordinator.write.timeout.ms";
+    public static final long MIRROR_COORDINATOR_WRITE_TIMEOUT_MS_DEFAULT = 5000L;
+    public static final String MIRROR_COORDINATOR_WRITE_TIMEOUT_MS_DOC = "The timeout in milliseconds for write operations on the mirror state coordinator.";
+
+    public static final String MIRROR_COORDINATOR_APPEND_LINGER_MS_CONFIG = "mirror.coordinator.append.linger.ms";
+    public static final int MIRROR_COORDINATOR_APPEND_LINGER_MS_DEFAULT = 10;
+    public static final String MIRROR_COORDINATOR_APPEND_LINGER_MS_DOC = "The linger time in milliseconds for batching records before flushing to the mirror state topic.";
+
+    public static final String MIRROR_COORDINATOR_LOAD_BUFFER_SIZE_CONFIG = "mirror.coordinator.load.buffer.size";
+    public static final int MIRROR_COORDINATOR_LOAD_BUFFER_SIZE_DEFAULT = 5 * 1024 * 1024;
+    public static final String MIRROR_COORDINATOR_LOAD_BUFFER_SIZE_DOC = "The buffer size in bytes for loading mirror state records during coordinator startup.";
+
     public static final String MIRROR_STATE_TOPIC_NUM_PARTITIONS_CONFIG = "mirror.state.topic.num.partitions";
     public static final int MIRROR_STATE_TOPIC_NUM_PARTITIONS_DEFAULT = 50;
     public static final String MIRROR_STATE_TOPIC_NUM_PARTITIONS_DOC = "The number of partitions for the internal topic (should not change after deployment).";
@@ -401,6 +417,22 @@ public final class ClusterMirrorConfig {
         this.aclIncludeRules = MirrorFilterUtils.parseAclRules(List.of(MIRROR_ACL_INCLUDE_DEFAULT));
     }
 
+    public int coordinatorNumThreads() {
+        return config.getInt(MIRROR_COORDINATOR_THREADS_CONFIG);
+    }
+
+    public long coordinatorWriteTimeoutMs() {
+        return config.getLong(MIRROR_COORDINATOR_WRITE_TIMEOUT_MS_CONFIG);
+    }
+
+    public int coordinatorAppendLingerMs() {
+        return config.getInt(MIRROR_COORDINATOR_APPEND_LINGER_MS_CONFIG);
+    }
+
+    public int coordinatorLoadBufferSize() {
+        return config.getInt(MIRROR_COORDINATOR_LOAD_BUFFER_SIZE_CONFIG);
+    }
+
     public Pattern topicPropertiesExcludePattern() {
         return topicPropertiesExcludePattern;
     }
@@ -521,6 +553,10 @@ public final class ClusterMirrorConfig {
      */
     public static ConfigDef brokerConfigDef() {
         return new ConfigDef()
+                .define(MIRROR_COORDINATOR_THREADS_CONFIG, INT, MIRROR_COORDINATOR_THREADS_DEFAULT, atLeast(1), LOW, MIRROR_COORDINATOR_THREADS_DOC)
+                .define(MIRROR_COORDINATOR_WRITE_TIMEOUT_MS_CONFIG, LONG, MIRROR_COORDINATOR_WRITE_TIMEOUT_MS_DEFAULT, atLeast(1L), LOW, MIRROR_COORDINATOR_WRITE_TIMEOUT_MS_DOC)
+                .define(MIRROR_COORDINATOR_APPEND_LINGER_MS_CONFIG, INT, MIRROR_COORDINATOR_APPEND_LINGER_MS_DEFAULT, atLeast(0), LOW, MIRROR_COORDINATOR_APPEND_LINGER_MS_DOC)
+                .define(MIRROR_COORDINATOR_LOAD_BUFFER_SIZE_CONFIG, INT, MIRROR_COORDINATOR_LOAD_BUFFER_SIZE_DEFAULT, atLeast(1), LOW, MIRROR_COORDINATOR_LOAD_BUFFER_SIZE_DOC)
                 .define(MIRROR_STATE_TOPIC_NUM_PARTITIONS_CONFIG, INT, MIRROR_STATE_TOPIC_NUM_PARTITIONS_DEFAULT, atLeast(1), HIGH, MIRROR_STATE_TOPIC_NUM_PARTITIONS_DOC)
                 .define(MIRROR_STATE_TOPIC_REPLICATION_FACTOR_CONFIG, SHORT, MIRROR_STATE_TOPIC_REPLICATION_FACTOR_DEFAULT, atLeast(1), HIGH, MIRROR_STATE_TOPIC_REPLICATION_FACTOR_DOC)
                 .define(MIRROR_NUM_REPLICA_FETCHERS_CONFIG, INT, MIRROR_NUM_REPLICA_FETCHERS_DEFAULT, atLeast(1), HIGH, MIRROR_NUM_REPLICA_FETCHERS_DOC)

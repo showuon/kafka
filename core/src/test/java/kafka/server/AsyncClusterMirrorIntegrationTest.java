@@ -51,7 +51,7 @@ import org.apache.kafka.common.test.KafkaClusterTestKit;
 import org.apache.kafka.common.test.TestKitNodes;
 import org.apache.kafka.coordinator.common.runtime.CoordinatorRecord;
 import org.apache.kafka.coordinator.group.GroupCoordinatorConfig;
-import org.apache.kafka.coordinator.mirror.ClusterMirrorRecordKey;
+import org.apache.kafka.coordinator.mirror.ClusterMirrorPartitionKey;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorRecordSerde;
 import org.apache.kafka.coordinator.mirror.generated.LastMirrorEpochsKey;
 import org.apache.kafka.coordinator.mirror.generated.MirrorPartitionStateKey;
@@ -76,6 +76,7 @@ import java.util.function.Predicate;
 
 import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
 import static org.apache.kafka.test.TestUtils.DEFAULT_MAX_WAIT_MS;
+import static org.apache.kafka.test.TestUtils.waitForCondition;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -185,7 +186,7 @@ public class AsyncClusterMirrorIntegrationTest {
 
         produceRecords(srcCluster, TOPIC_NAME, 0, 50);
 
-        // Create mirror and add topic
+        // Create mirror and start topic
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleSourceBootstrapServer
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
@@ -193,7 +194,7 @@ public class AsyncClusterMirrorIntegrationTest {
                 .all().get(30, TimeUnit.SECONDS);
         waitForMirrorLagZero(dstAdmin, MIRROR_NAME, TOPIC_NAME);
 
-        // Produce more data while in ASYNC mode
+        // Produce more data
         produceRecords(srcCluster, TOPIC_NAME, 50, 50);
 
         // Verify all 100 records arrive at destination
@@ -234,10 +235,9 @@ public class AsyncClusterMirrorIntegrationTest {
         produceRecords(dstCluster, topic, 10, 5);
 
         // Sending a describeClusterMirror request with LME lookup info
-        DescribeClusterMirrorsRequestData.LastMirrorEpochLookup lastMirrorEpochLookup = new DescribeClusterMirrorsRequestData.LastMirrorEpochLookup();
-        lastMirrorEpochLookup
-                .setTopicId(topicId)
-                .setPartitions(List.of(0));
+        DescribeClusterMirrorsRequestData.LastMirrorEpochLookup lastMirrorEpochLookup =
+                new DescribeClusterMirrorsRequestData.LastMirrorEpochLookup();
+        lastMirrorEpochLookup.setTopicId(topicId).setPartitions(List.of(0));
         String srcClusterId = srcCluster.controllers().values().stream().findFirst().get().clusterId();
         DescribeClusterMirrorsResult describeClusterMirrors = dstAdmin.describeClusterMirrors(List.of(reverseMirror),
                 new DescribeClusterMirrorsOptions().clusterId(srcClusterId).lastMirrorEpochLookups(List.of(lastMirrorEpochLookup)));
@@ -614,21 +614,23 @@ public class AsyncClusterMirrorIntegrationTest {
         // for both `MirrorPartitionStateKey` and `LastMirrorEpochsKey` types
         // 1. Get the partition index hosting the metadata for the mirrored topic partition
         int partId = dstCluster.brokers().get(0).clusterMirrorCoordinator()
-                .getCoordinatorPartitionByKey(new ClusterMirrorRecordKey(MIRROR_NAME, topicId, 0));
+                .partitionFor(new ClusterMirrorPartitionKey(MIRROR_NAME, topicId, 0));
         // 2. Get the partition leader
         int leaderMirrorStatePartition = dstCluster.brokers().get(0).metadataCache()
                 .getLeaderAndIsr(MIRROR_STATE_TOPIC_NAME, partId).get().leader();
-        // 3. Get the last batch of the partition
-        var lastBatch = dstCluster.brokers().get(leaderMirrorStatePartition).replicaManager()
-                .getLog(new TopicPartition(MIRROR_STATE_TOPIC_NAME, partId)).get().activeSegment().log().lastBatch().get();
-        // 4. Deserialize the records in the last batch
-        List<CoordinatorRecord> records = new ArrayList<>();
+        // 3. Poll until the last batch contains the expected tombstone records.
+        //    Tombstones are written asynchronously by the coordinator runtime.
+        TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME, partId);
         ClusterMirrorRecordSerde serde = new ClusterMirrorRecordSerde();
-        lastBatch.forEach(record -> records.add(serde.deserialize(record.key(), record.value())));
-        // 5. Make sure the last batch contains the 2 tombstone records
-        assertEquals(2, records.size());
-        assertTrue(records.get(0).key().apiKey() == new MirrorPartitionStateKey().apiKey() && records.get(0).value() == null);
-        assertTrue(records.get(1).key().apiKey() == new LastMirrorEpochsKey().apiKey() && records.get(1).value() == null);
+        waitForCondition(() -> {
+            var batch = dstCluster.brokers().get(leaderMirrorStatePartition).replicaManager()
+                    .getLog(mirrorStateTp).get().activeSegment().log().lastBatch().get();
+            List<CoordinatorRecord> recs = new ArrayList<>();
+            batch.forEach(r -> recs.add(serde.deserialize(r.key(), r.value())));
+            return recs.size() == 2
+                    && recs.get(0).key().apiKey() == new MirrorPartitionStateKey().apiKey() && recs.get(0).value() == null
+                    && recs.get(1).key().apiKey() == new LastMirrorEpochsKey().apiKey() && recs.get(1).value() == null;
+        }, DEFAULT_MAX_WAIT_MS, "Tombstone records not found in last batch of " + mirrorStateTp);
     }
 
     @Test
@@ -689,11 +691,11 @@ public class AsyncClusterMirrorIntegrationTest {
     }
 
     /*
-     * Tests that deleting a source topic moves mirror partitions to non-retryable FAILED
-     * and that they remain in that state across metadata refresh cycles.
+     * Tests that deleting a source topic moves mirror partitions to non-retryable
+     * failure and that they remain in that state across metadata refresh cycles.
      */
     @Test
-    void testDeletedSourceTopicMovesToNonRetryableFailed() throws Exception {
+    void testDeletedSourceTopicMovesToNonRetryable() throws Exception {
         String topic = "non-retryable-topic";
 
         srcAdmin.createTopics(List.of(

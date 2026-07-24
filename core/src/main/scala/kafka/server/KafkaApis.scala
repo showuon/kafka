@@ -22,9 +22,9 @@ import kafka.network.RequestChannel
 import kafka.server.QuotaFactory.{QuotaManagers, UNBOUNDED_QUOTA}
 import kafka.server.handlers.DescribeTopicPartitionsRequestHandler
 import kafka.server.metadata.KRaftMetadataCache
-import kafka.server.mirror.ClusterMirrorUtils.PartitionStateInfo
-import kafka.server.mirror.{ClusterMirrorCoordinator, ClusterMirrorUtils}
-import org.apache.kafka.server.common.MirrorPartitionState
+import kafka.server.mirror.MirrorMetadataManager.PartitionStateInfo
+import kafka.server.mirror.ClusterMirrorCoordinatorService
+import org.apache.kafka.server.common.{ClusterMirrorVersion, MirrorPartitionState}
 import kafka.server.share.{ShareFetchUtils, SharePartitionManager}
 import kafka.utils.Logging
 import org.apache.kafka.clients.CommonClientConfigs
@@ -98,7 +98,7 @@ class KafkaApis(val requestChannel: RequestChannel,
                 val groupCoordinator: GroupCoordinator,
                 val txnCoordinator: TransactionCoordinator,
                 val shareCoordinator: ShareCoordinator,
-                val clusterMirrorCoordinator: ClusterMirrorCoordinator,
+                val clusterMirrorCoordinator: ClusterMirrorCoordinatorService,
                 val autoTopicCreationManager: AutoTopicCreationManager,
                 val brokerId: Int,
                 val config: KafkaConfig,
@@ -281,7 +281,7 @@ class KafkaApis(val requestChannel: RequestChannel,
   }
 
   def handleWriteMirrorStates(request: RequestChannel.Request): Unit = {
-    if (!ClusterMirrorUtils.isClusterMirroringEnabled(apiVersionManager.features.finalizedFeatures)) {
+    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
       logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring write mirror states request")
       requestHelper.sendMaybeThrottle(request, new WriteMirrorStatesResponse(new WriteMirrorStatesResponseData()
         .setErrorCode(Errors.UNSUPPORTED_VERSION.code).setErrorMessage(Errors.UNSUPPORTED_VERSION.message)))
@@ -294,19 +294,19 @@ class KafkaApis(val requestChannel: RequestChannel,
     }
     val writeMirrorStatesRequest = request.body[WriteMirrorStatesRequest]
     val mirrorName = writeMirrorStatesRequest.data().mirrorName()
-    val partitionMetadata = new util.HashMap[String, util.Set[PartitionStateInfo]]()
+    val mirrorState = new util.HashMap[String, util.Set[PartitionStateInfo]]()
     writeMirrorStatesRequest.data().topics().forEach(topic => {
-      val partMetadata = new util.HashSet[PartitionStateInfo]()
+      val topicState = new util.HashSet[PartitionStateInfo]()
       topic.partitions().forEach(part => {
-        partMetadata.add(new PartitionStateInfo(part.partitionIndex(), MirrorPartitionState.fromValue(part.state()), part.lastMirrorEpoch()))
+        topicState.add(new PartitionStateInfo(part.partitionIndex(), MirrorPartitionState.fromValue(part.state()), part.lastMirrorEpoch()))
       })
-      partitionMetadata.put(topic.name(), partMetadata)
+      mirrorState.put(topic.name(), topicState)
     })
-    clusterMirrorCoordinator.updateTopicMetadata(mirrorName, partitionMetadata, res => requestHelper.sendMaybeThrottle(request, res))
+    clusterMirrorCoordinator.writeMirrorStates(mirrorName, mirrorState, res => requestHelper.sendMaybeThrottle(request, res))
   }
 
   def handleReadMirrorStates(request: RequestChannel.Request): Unit = {
-    if (!ClusterMirrorUtils.isClusterMirroringEnabled(apiVersionManager.features.finalizedFeatures)) {
+    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
       logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring read mirror states request")
       requestHelper.sendMaybeThrottle(request, new ReadMirrorStatesResponse(new ReadMirrorStatesResponseData()
         .setErrorCode(Errors.UNSUPPORTED_VERSION.code).setErrorMessage(Errors.UNSUPPORTED_VERSION.message)))
@@ -319,20 +319,20 @@ class KafkaApis(val requestChannel: RequestChannel,
     }
     val readMirrorStatesRequest = request.body[ReadMirrorStatesRequest]
     val mirrorName = readMirrorStatesRequest.data().mirrorName()
-    val partitionMetadata = new util.HashMap[String, util.Set[Integer]]()
+    val mirrorPartitions = new util.HashMap[String, util.Set[Integer]]()
     readMirrorStatesRequest.data().topics().forEach(topic => {
       val parts = new util.HashSet[Integer]()
       topic.partitions().forEach(part => {
         parts.add(part.partitionIndex())
       })
-      partitionMetadata.put(topic.name(), parts)
+      mirrorPartitions.put(topic.name(), parts)
     })
-    clusterMirrorCoordinator.getTopicMetadata(mirrorName, partitionMetadata,
+    clusterMirrorCoordinator.readMirrorStates(mirrorName, mirrorPartitions,
       res => requestHelper.sendMaybeThrottle(request, res))
   }
 
   def handleStartMirrorTopics(request: RequestChannel.Request): Unit = {
-    if (!ClusterMirrorUtils.isClusterMirroringEnabled(apiVersionManager.features.finalizedFeatures)) {
+    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
       logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring start mirror topics request")
       requestHelper.sendMaybeThrottle(request, new StartMirrorTopicsResponse(new StartMirrorTopicsResponseData().setErrorCode(Errors.UNSUPPORTED_VERSION.code)))
       return
@@ -351,7 +351,7 @@ class KafkaApis(val requestChannel: RequestChannel,
   }
 
   def handleStopMirrorTopics(request: RequestChannel.Request): Unit = {
-    if (!ClusterMirrorUtils.isClusterMirroringEnabled(apiVersionManager.features.finalizedFeatures)) {
+    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
       logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring stop mirror topics request")
       requestHelper.sendMaybeThrottle(request, new StopMirrorTopicsResponse(new StopMirrorTopicsResponseData().setErrorCode(Errors.UNSUPPORTED_VERSION.code)))
       return
@@ -370,7 +370,7 @@ class KafkaApis(val requestChannel: RequestChannel,
   }
 
   def handlePauseMirrorTopics(request: RequestChannel.Request): Unit = {
-    if (!ClusterMirrorUtils.isClusterMirroringEnabled(apiVersionManager.features.finalizedFeatures)) {
+    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
       logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring pause mirror topics request")
       requestHelper.sendMaybeThrottle(request, new PauseMirrorTopicsResponse(new PauseMirrorTopicsResponseData().setErrorCode(Errors.UNSUPPORTED_VERSION.code)))
       return
@@ -389,7 +389,7 @@ class KafkaApis(val requestChannel: RequestChannel,
   }
 
   def handleResumeMirrorTopics(request: RequestChannel.Request): Unit = {
-    if (!ClusterMirrorUtils.isClusterMirroringEnabled(apiVersionManager.features.finalizedFeatures)) {
+    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
       logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring resume mirror topics request")
       requestHelper.sendMaybeThrottle(request, new ResumeMirrorTopicsResponse(new ResumeMirrorTopicsResponseData().setErrorCode(Errors.UNSUPPORTED_VERSION.code)))
       return
@@ -408,7 +408,7 @@ class KafkaApis(val requestChannel: RequestChannel,
   }
 
   def handleDeleteClusterMirror(request: RequestChannel.Request): Unit = {
-    if (!ClusterMirrorUtils.isClusterMirroringEnabled(apiVersionManager.features.finalizedFeatures)) {
+    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
       logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring delete mirror request")
       requestHelper.sendMaybeThrottle(request, new DeleteClusterMirrorResponse(new DeleteClusterMirrorResponseData().setErrorCode(Errors.UNSUPPORTED_VERSION.code)))
       return
@@ -439,7 +439,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     val responseData = new ListClusterMirrorsResponseData()
     val shouldIncludeTopicNames = listMirrorsRequest.data.includeTopicNames()
 
-    if (!ClusterMirrorUtils.isClusterMirroringEnabled(apiVersionManager.features.finalizedFeatures)) {
+    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
       logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring list mirrors request")
       responseData.setErrorCode(Errors.UNSUPPORTED_VERSION.code)
       requestHelper.sendMaybeThrottle(request, new ListClusterMirrorsResponse(responseData))
@@ -471,7 +471,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     val describeMirrorsRequest = request.body[DescribeClusterMirrorsRequest]
     val responseData = new DescribeClusterMirrorsResponseData()
 
-    if (!ClusterMirrorUtils.isClusterMirroringEnabled(apiVersionManager.features.finalizedFeatures)) {
+    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
       logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring describe mirrors request")
       responseData.setErrorCode(Errors.UNSUPPORTED_VERSION.code)
       requestHelper.sendMaybeThrottle(request, new DescribeClusterMirrorsResponse(responseData))

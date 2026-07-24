@@ -22,7 +22,7 @@ import kafka.coordinator.transaction.TransactionCoordinator
 import kafka.log.LogManager
 import kafka.server.share.SharePartitionManager
 import kafka.server.{KafkaConfig, ReplicaManager}
-import kafka.server.mirror.{MirrorMetadataManager, ClusterMirrorCoordinator}
+import kafka.server.mirror.{ClusterMirrorCoordinatorService, MirrorMetadataManager}
 import kafka.utils.Logging
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.errors.TimeoutException
@@ -85,7 +85,7 @@ class BrokerMetadataPublisher(
   aclPublisher: AclPublisher,
   fatalFaultHandler: FaultHandler,
   metadataPublishingFaultHandler: FaultHandler,
-  mirrorCoordinator: ClusterMirrorCoordinator,
+  mirrorCoordinator: ClusterMirrorCoordinatorService,
   mirrorMetadataManager: MirrorMetadataManager
 ) extends MetadataPublisher with Logging {
   logIdent = s"[BrokerMetadataPublisher id=${config.nodeId}] "
@@ -150,6 +150,10 @@ class BrokerMetadataPublisher(
       } else if (isDebugEnabled) {
         debug(s"Publishing metadata at offset $highestOffsetAndEpoch with $metadataVersionLogMsg.")
       }
+
+      // Update the MirrorMetadataManager image early so isLocalCoordinator
+      // and collectMirrorLeaderChanges see the latest metadata before onMetadataUpdate runs.
+      mirrorMetadataManager.updateMetadataImage(newImage)
 
       // Apply topic deltas.
       Option(delta.topicsDelta()).foreach { topicsDelta =>
@@ -273,6 +277,17 @@ class BrokerMetadataPublisher(
           s"coordinator with local changes in $deltaName", t)
       }
 
+      if (finalizedMirrorVersion > 0) {
+        try {
+          // Propagate the new image to the CoordinatorRuntime so it can
+          // pass it to loaded shards and use it during shard load completion.
+          mirrorCoordinator.onNewMetadataImage(new KRaftCoordinatorMetadataImage(newImage), new KRaftCoordinatorMetadataDelta(delta))
+        } catch {
+          case t: Throwable => metadataPublishingFaultHandler.handleFault("Error updating mirror " +
+            s"coordinator with metadata image in $deltaName", t)
+        }
+      }
+
       if (_firstPublish) {
         finishInitializingReplicaManager()
       }
@@ -296,12 +311,10 @@ class BrokerMetadataPublisher(
 
         try {
           val newFinalizedMirrorVersion = newFinalizedFeatures.finalizedFeatures().getOrDefault(ClusterMirrorVersion.FEATURE_NAME, 0.toShort)
-          // Mirror version feature has been toggled.
           if (newFinalizedMirrorVersion != finalizedMirrorVersion) {
             finalizedMirrorVersion = newFinalizedMirrorVersion
-            val mirrorVersion: ClusterMirrorVersion = ClusterMirrorVersion.fromFeatureLevel(finalizedMirrorVersion)
             info(s"Feature mirror.version has been updated to version $finalizedMirrorVersion")
-            if (mirrorVersion.isClusterMirroringSupported) {
+            if (ClusterMirrorVersion.isEnabled(newFinalizedFeatures.finalizedFeatures())) {
               info("Cluster mirroring feature is now enabled")
               mirrorCoordinator.start()
             } else {

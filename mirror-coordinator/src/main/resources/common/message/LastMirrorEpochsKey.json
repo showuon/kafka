@@ -17,7 +17,7 @@
 // partition before the destination becomes writable. The key identifies the cluster mirror
 // name, topic id, and partition. The value holds a single epoch.
 {
-  "apiKey": 1,
+  "apiKey": 2,
   "type": "coordinator-key",
   "name": "LastMirrorEpochsKey",
   "validVersions": "0",

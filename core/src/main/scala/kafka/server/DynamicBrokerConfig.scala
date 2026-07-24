@@ -23,7 +23,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kafka.log.LogManager
 import kafka.network.{DataPlaneAcceptor, SocketServer}
-import kafka.server.mirror.ClusterMirrorCoordinator
+import kafka.server.mirror.ClusterMirrorCoordinatorService
 import kafka.raft.KafkaRaftManager
 import kafka.server.DynamicBrokerConfig._
 import kafka.utils.{CoreUtils, Logging}
@@ -1131,7 +1131,7 @@ object DynamicRemoteLogConfig {
 }
 
 class DynamicClusterMirrorConfig(replicaManager: ReplicaManager,
-                                 coordinator: ClusterMirrorCoordinator) extends BrokerReconfigurable with Logging {
+                                 coordinator: ClusterMirrorCoordinatorService) extends BrokerReconfigurable with Logging {
 
   override def reconfigurableConfigs: Set[String] = {
     DynamicClusterMirrorConfig.ReconfigurableConfigs

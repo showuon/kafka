@@ -63,8 +63,13 @@ public enum ClusterMirrorVersion implements FeatureVersion {
         return dependencies;
     }
 
-    public boolean isClusterMirroringSupported() {
+    public boolean isEnabled() {
         return featureLevel >= MV_1.featureLevel;
+    }
+
+    public static boolean isEnabled(Map<String, Short> finalizedFeatures) {
+        short featureLevel = finalizedFeatures.getOrDefault(FEATURE_NAME, (short) 0);
+        return ClusterMirrorVersion.fromFeatureLevel(featureLevel).isEnabled();
     }
 
     public static ClusterMirrorVersion fromFeatureLevel(short version) {
