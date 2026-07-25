@@ -81,10 +81,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Integration test for async Cluster Mirroring between two independent KRaft clusters.
+ * Integration test for Cluster Mirroring feature.
  */
 @Timeout(value = 180, unit = TimeUnit.SECONDS)
-public class ClusterMirroringAsyncIntegrationTest {
+public class ClusterMirroringIntegrationTest {
     private static final long METADATA_REFRESH_INTERVAL_MS = 5_000L;
     private static final String MIRROR_NAME = "my-mirror";
     private static final String OTHER_MIRROR_NAME = "new-mirror";
