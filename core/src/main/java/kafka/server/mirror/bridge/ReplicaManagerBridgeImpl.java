@@ -24,7 +24,6 @@ import org.apache.kafka.common.record.ControlRecordUtils;
 import org.apache.kafka.common.record.DefaultRecordBatch;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.requests.ProduceResponse;
-import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.server.common.RequestLocal;
 import org.apache.kafka.storage.internals.log.AppendOrigin;
 import org.apache.kafka.storage.internals.log.UnifiedLog;
@@ -42,11 +41,9 @@ import scala.jdk.javaapi.CollectionConverters;
 
 public class ReplicaManagerBridgeImpl implements org.apache.kafka.coordinator.mirror.bridge.ReplicaManagerBridge {
     private final ReplicaManager replicaManager;
-    private final Time time;
 
-    public ReplicaManagerBridgeImpl(ReplicaManager replicaManager, Time time) {
+    public ReplicaManagerBridgeImpl(ReplicaManager replicaManager) {
         this.replicaManager = replicaManager;
-        this.time = time;
     }
 
     @Override

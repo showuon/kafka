@@ -507,6 +507,7 @@ class BrokerServer(
         groupCoordinator,
         transactionCoordinator,
         shareCoordinator,
+        clusterMirrorCoordinator,
         sharePartitionManager,
         new DynamicConfigPublisher(
           config,
@@ -543,9 +544,7 @@ class BrokerServer(
           authorizerPlugin.toJava
         ),
         sharedServer.initialBrokerMetadataLoadFaultHandler,
-        sharedServer.metadataPublishingFaultHandler,
-        clusterMirrorCoordinator,
-        mirrorMetadataManager
+        sharedServer.metadataPublishingFaultHandler
       )
       // If the BrokerLifecycleManager's initial catch-up future fails, it means we timed out
       // or are shutting down before we could catch up. Therefore, also fail the firstPublishFuture.
@@ -741,7 +740,7 @@ class BrokerServer(
 
     val shardBridge = new MirrorMetadataManagerShardBridgeImpl(mirrorMetadataManager, metadataCache)
     val serviceBridge = new MirrorMetadataManagerServiceBridgeImpl(mirrorMetadataManager, metadataCache)
-    val replicaManagerBridge = new ReplicaManagerBridgeImpl(replicaManager, time)
+    val replicaManagerBridge = new ReplicaManagerBridgeImpl(replicaManager)
 
     new ClusterMirrorCoordinatorService.Builder(config.brokerId, config.mirrorConfig)
       .withTime(time)
