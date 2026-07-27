@@ -28,7 +28,7 @@ import org.apache.kafka.clients.{ApiVersions, ClientResponse, ManualMetadataUpda
 import org.apache.kafka.common.Node
 import org.apache.kafka.common.requests.AbstractRequest.Builder
 import org.apache.kafka.common.security.auth.SecurityProtocol
-import org.apache.kafka.server.config.ClusterMirrorConfig
+import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig
 import org.apache.kafka.server.network.BrokerEndPoint
 import scala.jdk.CollectionConverters._
 

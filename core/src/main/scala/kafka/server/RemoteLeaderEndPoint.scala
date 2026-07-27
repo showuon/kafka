@@ -35,7 +35,7 @@ import org.apache.kafka.server.{PartitionFetchState, ReplicaFetch, ResultWithPar
 
 import java.util
 import scala.jdk.CollectionConverters._
-import org.apache.kafka.server.config.ClusterMirrorConfig
+import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig
 
 import scala.collection.mutable
 

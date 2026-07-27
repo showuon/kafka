@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package kafka.server;
+package kafka.server.mirror;
 
 import kafka.utils.TestUtils;
 
@@ -51,11 +51,11 @@ import org.apache.kafka.common.test.KafkaClusterTestKit;
 import org.apache.kafka.common.test.TestKitNodes;
 import org.apache.kafka.coordinator.common.runtime.CoordinatorRecord;
 import org.apache.kafka.coordinator.group.GroupCoordinatorConfig;
+import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorPartitionKey;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorRecordSerde;
 import org.apache.kafka.coordinator.mirror.generated.LastMirrorEpochsKey;
 import org.apache.kafka.coordinator.mirror.generated.MirrorPartitionStateKey;
-import org.apache.kafka.server.config.ClusterMirrorConfig;
 import org.apache.kafka.server.config.ServerConfigs;
 import org.apache.kafka.server.config.ServerLogConfigs;
 
@@ -81,10 +81,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Integration test for async Cluster Mirroring between two independent KRaft clusters.
+ * Integration test for Cluster Mirroring feature.
  */
 @Timeout(value = 180, unit = TimeUnit.SECONDS)
-public class AsyncClusterMirrorIntegrationTest {
+public class ClusterMirroringIntegrationTest {
     private static final long METADATA_REFRESH_INTERVAL_MS = 5_000L;
     private static final String MIRROR_NAME = "my-mirror";
     private static final String OTHER_MIRROR_NAME = "new-mirror";
@@ -148,7 +148,7 @@ public class AsyncClusterMirrorIntegrationTest {
                 .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_CONFIG, "1000")
                 .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_BACKOFF_MS_CONFIG, "5000")
 
-                // Enable cluster mirroring in early access stage
+                // Enable Cluster Mirroring in early access stage
                 .setConfigProp(ServerConfigs.UNSTABLE_API_VERSIONS_ENABLE_CONFIG, "true")
                 .setConfigProp(ServerConfigs.UNSTABLE_FEATURE_VERSIONS_ENABLE_CONFIG, "true")
                 .build();
@@ -906,7 +906,7 @@ public class AsyncClusterMirrorIntegrationTest {
             } catch (Exception e) {
                 return false;
             }
-        }, () -> "Cluster Mirror is not deleted successfully", DEFAULT_MAX_WAIT_MS, 100);
+        }, () -> "Cluster mirror is not deleted successfully", DEFAULT_MAX_WAIT_MS, 100);
     }
 
     private static void closeQuietly(AutoCloseable closeable) {

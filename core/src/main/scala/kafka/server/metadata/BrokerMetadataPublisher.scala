@@ -22,7 +22,8 @@ import kafka.coordinator.transaction.TransactionCoordinator
 import kafka.log.LogManager
 import kafka.server.share.SharePartitionManager
 import kafka.server.{KafkaConfig, ReplicaManager}
-import kafka.server.mirror.{ClusterMirrorCoordinatorService, MirrorMetadataManager}
+import kafka.server.mirror.MirrorMetadataManager
+import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService
 import kafka.utils.Logging
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.errors.TimeoutException
@@ -316,7 +317,7 @@ class BrokerMetadataPublisher(
             info(s"Feature mirror.version has been updated to version $finalizedMirrorVersion")
             if (ClusterMirrorVersion.isEnabled(newFinalizedFeatures.finalizedFeatures())) {
               info("Cluster mirroring feature is now enabled")
-              mirrorCoordinator.start()
+              mirrorCoordinator.startup()
             } else {
               info("Cluster mirroring feature is now disabled")
               mirrorCoordinator.shutdown()
@@ -451,7 +452,7 @@ class BrokerMetadataPublisher(
       // Start the mirror coordinator only if mirror.version is enabled.
       if (finalizedMirrorVersion > 0) {
         info(s"Starting mirror coordinator with mirror.version=$finalizedMirrorVersion")
-        mirrorCoordinator.start()
+        mirrorCoordinator.startup()
       } else {
         info("Mirror coordinator not started: mirror.version is disabled")
       }

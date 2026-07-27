@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kafka.server.config;
+package org.apache.kafka.coordinator.mirror;
 
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.common.config.AbstractConfig;
@@ -23,7 +23,6 @@ import org.apache.kafka.common.config.SaslConfigs;
 import org.apache.kafka.common.config.SecurityConfig;
 import org.apache.kafka.common.config.SslConfigs;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
-import org.apache.kafka.network.SocketServerConfigs;
 import org.apache.kafka.server.util.MirrorFilterUtils;
 
 import java.util.Arrays;
@@ -126,9 +125,9 @@ public final class ClusterMirrorConfig {
     public static final long CONNECTION_SETUP_TIMEOUT_MAX_MS_DEFAULT = CommonClientConfigs.DEFAULT_SOCKET_CONNECTION_SETUP_TIMEOUT_MAX_MS;
     public static final String CONNECTION_SETUP_TIMEOUT_MAX_MS_DOC = CommonClientConfigs.SOCKET_CONNECTION_SETUP_TIMEOUT_MAX_MS_DOC;
 
-    public static final String CONNECTIONS_MAX_IDLE_MS_CONFIG = SocketServerConfigs.CONNECTIONS_MAX_IDLE_MS_CONFIG;
-    public static final long CONNECTIONS_MAX_IDLE_MS_DEFAULT = SocketServerConfigs.CONNECTIONS_MAX_IDLE_MS_DEFAULT;
-    public static final String CONNECTIONS_MAX_IDLE_MS_DOC = SocketServerConfigs.CONNECTIONS_MAX_IDLE_MS_DOC;
+    public static final String CONNECTIONS_MAX_IDLE_MS_CONFIG = "connections.max.idle.ms";
+    public static final long CONNECTIONS_MAX_IDLE_MS_DEFAULT = 10 * 60 * 1000L;
+    public static final String CONNECTIONS_MAX_IDLE_MS_DOC = "Idle connections timeout: the server socket processor threads close the connections that idle more than this";
 
     // Fetch and network configuration.
     // The replica.* equivalents use a mirror.* prefix to avoid ambiguity with broker-level configs.

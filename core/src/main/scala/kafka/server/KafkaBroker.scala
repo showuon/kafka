@@ -19,7 +19,7 @@ package kafka.server
 
 import kafka.log.LogManager
 import kafka.network.SocketServer
-import kafka.server.mirror.ClusterMirrorCoordinatorService
+import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService
 import kafka.utils.Logging
 import org.apache.kafka.common.ClusterResource
 import org.apache.kafka.common.internals.{ClusterResourceListeners, Plugin}

@@ -16,27 +16,6 @@
  */
 package org.apache.kafka.coordinator.mirror;
 
-import org.apache.kafka.coordinator.common.runtime.CoordinatorMetadataDelta;
-import org.apache.kafka.coordinator.common.runtime.CoordinatorMetadataImage;
+import org.apache.kafka.server.common.MirrorPartitionState;
 
-import java.util.OptionalInt;
-
-/**
- * Lifecycle interface for the cluster mirror coordinator.
- * Used by BrokerMetadataPublisher and BrokerServer for leader election,
- * resignation, and metadata image updates.
- */
-public interface ClusterMirrorCoordinator {
-    /** Activates the coordinator and initializes its dependencies. */
-    void startup();
-
-    void shutdown();
-
-    void onElection(int partitionIndex, int partitionLeaderEpoch);
-
-    void onResignation(int partitionIndex, OptionalInt partitionLeaderEpoch);
-
-    void onNewMetadataImage(
-        CoordinatorMetadataImage newImage,
-        CoordinatorMetadataDelta delta);
-}
+public record PartitionStateInfo(int partition, MirrorPartitionState state, Integer leaderEpoch) { }
