@@ -18,8 +18,6 @@ package org.apache.kafka.coordinator.mirror;
 
 import org.apache.kafka.coordinator.common.runtime.CoordinatorMetadataDelta;
 import org.apache.kafka.coordinator.common.runtime.CoordinatorMetadataImage;
-import org.apache.kafka.image.MetadataDelta;
-import org.apache.kafka.image.MetadataImage;
 
 import java.util.OptionalInt;
 
@@ -29,28 +27,14 @@ import java.util.OptionalInt;
  * resignation, and metadata image updates.
  */
 public interface ClusterMirrorCoordinator {
-    /** Activates the coordinator and initializes its dependencies. */
     void start();
 
-    /** Shuts down the coordinator, releasing all resources. */
     void shutdown();
 
-    /** Called when this broker becomes leader for a {@code __mirror_state} partition. */
     void onElection(int partitionIndex, int partitionLeaderEpoch);
 
-    /** Called when this broker loses leadership of a {@code __mirror_state} partition. */
     void onResignation(int partitionIndex, OptionalInt partitionLeaderEpoch);
 
-    /**
-     * Reacts to a KRaft metadata delta: tears down changed mirror connections,
-     * detects leadership gains and losses, and drives mirror partition state transitions.
-     */
-    void onMetadataUpdate(MetadataImage newImage, MetadataDelta delta);
-
-    /**
-     * Propagates the new metadata snapshot to the CoordinatorRuntime so
-     * loaded shards have access to current topic and partition metadata.
-     */
     void onNewMetadataImage(
         CoordinatorMetadataImage newImage,
         CoordinatorMetadataDelta delta);

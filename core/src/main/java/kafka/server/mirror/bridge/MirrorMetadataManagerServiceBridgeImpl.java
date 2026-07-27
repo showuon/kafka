@@ -34,8 +34,6 @@ import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorShard;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorPartitionKey;
 import org.apache.kafka.coordinator.mirror.PartitionStateInfo;
 import org.apache.kafka.coordinator.mirror.bridge.MirrorMetadataManagerServiceBridge;
-import org.apache.kafka.image.MetadataDelta;
-import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.metadata.MetadataCache;
 import org.apache.kafka.server.common.MirrorPartitionState;
 
@@ -76,40 +74,6 @@ public class MirrorMetadataManagerServiceBridgeImpl implements MirrorMetadataMan
     @Override
     public void closeSourceAdmins() {
         metadataManager.closeSourceAdmins();
-    }
-
-    // Metadata update
-
-    @Override
-    public boolean isInitialized() {
-        return metadataManager.isInitialized();
-    }
-
-    @Override
-    public void updateMetadataImage(MetadataImage newImage) {
-        metadataManager.updateMetadataImage(newImage);
-    }
-
-    @Override
-    public Set<String> handleMirrorConfigDeltas(MetadataDelta delta, MetadataImage newImage) {
-        return metadataManager.handleMirrorConfigDeltas(delta, newImage);
-    }
-
-    @Override
-    public Set<TopicPartition> collectPartitionsForStateTransition(
-        MetadataDelta delta, MetadataImage newImage, Set<String> mirrorsToReconnect
-    ) {
-        return metadataManager.collectPartitionsForStateTransition(delta, newImage, mirrorsToReconnect);
-    }
-
-    @Override
-    public void processStateTransitions(Set<TopicPartition> partitionsToTransition, MetadataImage newImage) {
-        metadataManager.processStateTransitions(partitionsToTransition, newImage);
-    }
-
-    @Override
-    public void maybeCompletePendingEpochBumps() {
-        metadataManager.maybeCompletePendingEpochBumps();
     }
 
     // State cache

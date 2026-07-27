@@ -25,7 +25,8 @@ import java.util.concurrent.atomic.{AtomicInteger, AtomicReference}
 import kafka.log.LogManager
 import kafka.server.share.SharePartitionManager
 import kafka.server.{BrokerServer, KafkaConfig, ReplicaManager}
-import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinator
+import kafka.server.mirror.MirrorMetadataManager
+import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService
 import kafka.utils.TestUtils
 import org.apache.kafka.clients.admin.AlterConfigOp.OpType.SET
 import org.apache.kafka.clients.admin.{Admin, AlterConfigOp, ConfigEntry, NewTopic}
@@ -204,7 +205,6 @@ class BrokerMetadataPublisherTest {
       groupCoordinator,
       mock(classOf[TransactionCoordinator]),
       mock(classOf[ShareCoordinator]),
-      mock(classOf[ClusterMirrorCoordinator]),
       mock(classOf[SharePartitionManager]),
       mock(classOf[DynamicConfigPublisher]),
       mock(classOf[DynamicClientQuotaPublisher]),
@@ -213,7 +213,9 @@ class BrokerMetadataPublisherTest {
       mock(classOf[DelegationTokenPublisher]),
       mock(classOf[AclPublisher]),
       faultHandler,
-      faultHandler
+      faultHandler,
+      mock(classOf[ClusterMirrorCoordinatorService]),
+      mock(classOf[MirrorMetadataManager])
     )
 
     val topicId = Uuid.randomUuid()
@@ -269,7 +271,6 @@ class BrokerMetadataPublisherTest {
       groupCoordinator,
       mock(classOf[TransactionCoordinator]),
       mock(classOf[ShareCoordinator]),
-      mock(classOf[ClusterMirrorCoordinator]),
       mock(classOf[SharePartitionManager]),
       mock(classOf[DynamicConfigPublisher]),
       mock(classOf[DynamicClientQuotaPublisher]),
@@ -278,7 +279,9 @@ class BrokerMetadataPublisherTest {
       mock(classOf[DelegationTokenPublisher]),
       mock(classOf[AclPublisher]),
       faultHandler,
-      faultHandler
+      faultHandler,
+      mock(classOf[ClusterMirrorCoordinatorService]),
+      mock(classOf[MirrorMetadataManager])
     )
 
     val image = MetadataImage.EMPTY
@@ -311,7 +314,6 @@ class BrokerMetadataPublisherTest {
       mock(classOf[GroupCoordinator]),
       mock(classOf[TransactionCoordinator]),
       mock(classOf[ShareCoordinator]),
-      mock(classOf[ClusterMirrorCoordinator]),
       sharePartitionManager,
       mock(classOf[DynamicConfigPublisher]),
       mock(classOf[DynamicClientQuotaPublisher]),
@@ -320,7 +322,9 @@ class BrokerMetadataPublisherTest {
       mock(classOf[DelegationTokenPublisher]),
       mock(classOf[AclPublisher]),
       faultHandler,
-      faultHandler
+      faultHandler,
+      mock(classOf[ClusterMirrorCoordinatorService]),
+      mock(classOf[MirrorMetadataManager])
     )
 
     val featuresImage = new FeaturesImage(

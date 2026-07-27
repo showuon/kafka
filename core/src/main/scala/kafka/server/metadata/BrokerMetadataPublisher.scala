@@ -22,7 +22,8 @@ import kafka.coordinator.transaction.TransactionCoordinator
 import kafka.log.LogManager
 import kafka.server.share.SharePartitionManager
 import kafka.server.{KafkaConfig, ReplicaManager}
-import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinator
+import kafka.server.mirror.MirrorMetadataManager
+import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService
 import kafka.utils.Logging
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.errors.TimeoutException
@@ -76,7 +77,6 @@ class BrokerMetadataPublisher(
   groupCoordinator: GroupCoordinator,
   txnCoordinator: TransactionCoordinator,
   shareCoordinator: ShareCoordinator,
-  mirrorCoordinator: ClusterMirrorCoordinator,
   sharePartitionManager: SharePartitionManager,
   var dynamicConfigPublisher: DynamicConfigPublisher,
   dynamicClientQuotaPublisher: DynamicClientQuotaPublisher,
@@ -85,7 +85,9 @@ class BrokerMetadataPublisher(
   delegationTokenPublisher: DelegationTokenPublisher,
   aclPublisher: AclPublisher,
   fatalFaultHandler: FaultHandler,
-  metadataPublishingFaultHandler: FaultHandler
+  metadataPublishingFaultHandler: FaultHandler,
+  mirrorCoordinator: ClusterMirrorCoordinatorService,
+  mirrorMetadataManager: MirrorMetadataManager
 ) extends MetadataPublisher with Logging {
   logIdent = s"[BrokerMetadataPublisher id=${config.nodeId}] "
 
@@ -150,6 +152,10 @@ class BrokerMetadataPublisher(
         debug(s"Publishing metadata at offset $highestOffsetAndEpoch with $metadataVersionLogMsg.")
       }
 
+      // Update the MirrorMetadataManager image early so isLocalCoordinator
+      // and collectMirrorLeaderChanges see the latest metadata before onMetadataUpdate runs.
+      mirrorMetadataManager.updateMetadataImage(newImage)
+
       // Apply topic deltas.
       Option(delta.topicsDelta()).foreach { topicsDelta =>
         try {
@@ -193,21 +199,6 @@ class BrokerMetadataPublisher(
           case t: Throwable => metadataPublishingFaultHandler.handleFault("Error updating share " +
             s"coordinator with local changes in $deltaName", t)
         }
-        // Apply mirror metadata delta before election so processAllStateTransitions
-        // (triggered by shard loading) sees the latest desiredMirrorState values.
-        if (finalizedMirrorVersion > 0) {
-          mirrorCoordinator.onMetadataUpdate(newImage, delta)
-          try {
-            updateCoordinator(newImage,
-              delta,
-              Topic.MIRROR_STATE_TOPIC_NAME,
-              mirrorCoordinator.onElection,
-              (partitionIndex, leaderEpochOpt) => mirrorCoordinator.onResignation(partitionIndex, toOptionalInt(leaderEpochOpt)))
-          } catch {
-            case t: Throwable => metadataPublishingFaultHandler.handleFault("Error updating Cluster Mirror " +
-              s"coordinator with local changes in $deltaName", t)
-          }
-        }
         try {
           // Notify the group coordinator about deleted topics.
           val deletedTopicPartitions = new mutable.ArrayBuffer[TopicPartition]()
@@ -234,6 +225,20 @@ class BrokerMetadataPublisher(
           case t: Throwable => metadataPublishingFaultHandler.handleFault("Error updating share " +
             s"coordinator with deleted partitions in $deltaName", t)
         }
+        // Only update mirror coordinator if mirror.version is enabled
+        if (finalizedMirrorVersion > 0) {
+          try {
+            // Update the mirror coordinator of topic changes
+            updateCoordinator(newImage,
+              delta,
+              Topic.MIRROR_STATE_TOPIC_NAME,
+              mirrorCoordinator.onElection,
+              (partitionIndex, leaderEpochOpt) => mirrorCoordinator.onResignation(partitionIndex, toOptionalInt(leaderEpochOpt)))
+          } catch {
+            case t: Throwable => metadataPublishingFaultHandler.handleFault("Error updating mirror " +
+              s"coordinator with local changes in $deltaName", t)
+          }
+        }
       }
 
       // Apply configuration deltas.
@@ -253,6 +258,9 @@ class BrokerMetadataPublisher(
 
       // Apply ACL delta.
       aclPublisher.onMetadataUpdate(delta, newImage, manifest)
+
+      // Apply mirror metadata delta
+      mirrorMetadataManager.onMetadataUpdate(delta, newImage, manifest)
 
       try {
         // Propagate the new image to the group coordinator.
