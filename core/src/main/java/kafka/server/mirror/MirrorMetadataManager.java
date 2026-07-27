@@ -696,6 +696,10 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         transitionTo(mirrorName, topicPartition, state, errorMessage, false);
     }
 
+    public void transitionTo(String mirrorName, Set<TopicPartition> topicPartition, MirrorPartitionState state, String errorMessage, boolean nonRetryable) {
+
+    }
+
 //    public void transitionTo(String mirrorName, Set<TopicPartition> topicPartition, MirrorPartitionState state, String errorMessage, boolean nonRetryable) {
 //        stateTransitioner.ifPresent(st -> st.transitionTo(mirrorName, topicPartition, state, errorMessage, nonRetryable));
 //    }
