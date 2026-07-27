@@ -34,7 +34,6 @@ import org.apache.kafka.server.common.MirrorPartitionState;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -50,15 +49,11 @@ public interface MirrorMetadataManagerServiceBridge {
      * Initializes the metadata manager with callbacks from the coordinator service.
      * Called once during {@code ClusterMirrorCoordinatorService.start()}.
      *
-     * @param stateTransitioner       callback to transition partition states
-     * @param lastMirrorEpochUpdater  callback to persist a last-mirror-epoch update through the coordinator
      * @param tombstoneWriter         callback to write tombstone records for a deleted mirror
      * @param coordPartitionByKeyFinder maps a partition key to a {@code __mirror_state} partition index
      * @param coordPartitionByNameFinder maps a mirror name to a {@code __mirror_state} partition index
      */
     void initialize(
-        StateTransitioner stateTransitioner,
-        LastMirrorEpochUpdater lastMirrorEpochUpdater,
         Consumer<String> tombstoneWriter,
         Function<ClusterMirrorPartitionKey, Integer> coordPartitionByKeyFinder,
         Function<String, Integer> coordPartitionByNameFinder
@@ -67,30 +62,11 @@ public interface MirrorMetadataManagerServiceBridge {
     /** Closes all source cluster admin clients immediately. */
     void closeSourceAdmins();
 
-    // -- Side effects --
-
-    /** Handles the side effect associated with a partition transitioning to {@code newState}. */
-    void handleSideEffect(String mirrorName, TopicPartition tp, MirrorPartitionState newState);
-
     // -- State cache --
-
-    /** Returns the cached partition state, or {@code null} if not tracked. */
-    MirrorPartitionState getPartitionState(String mirrorName, TopicPartition tp);
-
-    /** Updates the cached partition state for the given key. */
-    void setPartitionState(ClusterMirrorPartitionKey key, MirrorPartitionState state);
 
     /** Removes the cached partition state for the given key. */
     void clearPartitionState(ClusterMirrorPartitionKey key);
 
-    /** Updates failure tracking metadata for a state transition. */
-    void updateFailedState(
-        ClusterMirrorPartitionKey key,
-        MirrorPartitionState currentState,
-        MirrorPartitionState newState,
-        String errorMessage,
-        boolean nonRetryable
-    );
 
     /** Returns failure tracking metadata for the given key, or {@code null}. */
     ClusterMirrorCoordinatorShard.FailedPartitionInfo getFailedInfo(ClusterMirrorPartitionKey key);
@@ -200,13 +176,5 @@ public interface MirrorMetadataManagerServiceBridge {
             String errorMessage,
             boolean nonRetryable
         );
-    }
-
-    // -- Last mirror epoch callback --
-
-    /** Callback to persist a last-mirror-epoch update through the coordinator runtime. */
-    interface LastMirrorEpochUpdater {
-        /** Updates the last mirror epoch for the given partition. */
-        CompletableFuture<Void> update(String mirrorName, TopicPartition tp, int epoch);
     }
 }

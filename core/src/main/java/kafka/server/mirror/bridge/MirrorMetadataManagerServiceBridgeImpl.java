@@ -55,15 +55,11 @@ public class MirrorMetadataManagerServiceBridgeImpl implements MirrorMetadataMan
 
     @Override
     public void initialize(
-        StateTransitioner stateTransitioner,
-        LastMirrorEpochUpdater lastMirrorEpochUpdater,
         Consumer<String> tombstoneWriter,
         Function<ClusterMirrorPartitionKey, Integer> coordPartitionByKeyFinder,
         Function<String, Integer> coordPartitionByNameFinder
     ) {
         metadataManager.initialize(
-            (mn, tps, st, em, nr) -> stateTransitioner.transitionTo(mn, tps, st, em, nr),
-            (mn, tp, epoch) -> lastMirrorEpochUpdater.update(mn, tp, epoch),
             tombstoneWriter,
             coordPartitionByKeyFinder,
             coordPartitionByNameFinder);
@@ -74,37 +70,10 @@ public class MirrorMetadataManagerServiceBridgeImpl implements MirrorMetadataMan
         metadataManager.closeSourceAdmins();
     }
 
-    @Override
-    public void handleSideEffect(String mirrorName, TopicPartition tp, MirrorPartitionState newState) {
-        metadataManager.handleSideEffect(mirrorName, tp, newState);
-    }
-
     // State cache
-
-    @Override
-    public MirrorPartitionState getPartitionState(String mirrorName, TopicPartition tp) {
-        return metadataManager.getPartitionState(mirrorName, tp);
-    }
-
-    @Override
-    public void setPartitionState(ClusterMirrorPartitionKey key, MirrorPartitionState state) {
-        metadataManager.setPartitionState(key, state);
-    }
-
     @Override
     public void clearPartitionState(ClusterMirrorPartitionKey key) {
         metadataManager.clearPartitionState(key);
-    }
-
-    @Override
-    public void updateFailedState(
-        ClusterMirrorPartitionKey key,
-        MirrorPartitionState currentState,
-        MirrorPartitionState newState,
-        String errorMessage,
-        boolean nonRetryable
-    ) {
-        metadataManager.updateFailedState(key, currentState, newState, errorMessage, nonRetryable);
     }
 
     @Override

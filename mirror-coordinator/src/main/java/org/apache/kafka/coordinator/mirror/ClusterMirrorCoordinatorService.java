@@ -18,7 +18,6 @@ package org.apache.kafka.coordinator.mirror;
 
 
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.errors.CoordinatorLoadInProgressException;
 import org.apache.kafka.common.message.DeleteClusterMirrorRequestData;
 import org.apache.kafka.common.message.PauseMirrorTopicsRequestData;
 import org.apache.kafka.common.message.ResumeMirrorTopicsRequestData;
@@ -59,7 +58,6 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -208,8 +206,6 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         }
         log.info("Starting up.");
         serviceBridge.initialize(
-            this::transitionTo,
-            this::updateLastMirrorEpoch,
             this::tombstoneMirror,
             this::partitionFor,
             this::partitionFor);
@@ -345,70 +341,6 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                                  Map<String, Set<Integer>> partitions,
                                  Consumer<ReadMirrorStatesResponse> callback) {
         serviceBridge.readMirrorStates(mirrorName, partitions, callback);
-    }
-
-    // ---------------------------------------------------------------
-    // State transitions
-    // ---------------------------------------------------------------
-
-
-    public void transitionTo(String mirrorName, Set<TopicPartition> topicPartitions,
-                             MirrorPartitionState newState, String errorMessage, boolean nonRetryable) {
-        topicPartitions.forEach(tp -> {
-            if (isLocal(mirrorName, tp)) {
-                TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME,
-                    partitionFor(ClusterMirrorPartitionKey.of(mirrorName, serviceBridge.getTopicId(tp.topic()), tp.partition())));
-                runtime.scheduleWriteOperation("transition-" + newState, mirrorStateTp,
-                        Duration.ofMillis(config.coordinatorWriteTimeoutMs()),
-                        shard -> shard.transitionTo(mirrorName, tp, newState, errorMessage, nonRetryable))
-                    .whenComplete((result, ex) -> {
-                        if (ex != null) {
-                            Throwable cause = (ex instanceof CompletionException && ex.getCause() != null)
-                                ? ex.getCause() : ex;
-                            if (cause instanceof CoordinatorLoadInProgressException) {
-                                log.debug("Transition to {} deferred for {} (shard loading).", newState, tp);
-                                return;
-                            }
-                            log.error("Transition to {} failed for {}", newState, tp, ex);
-                            if (newState != MirrorPartitionState.FAILED) {
-                                transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED, ex.getMessage(), false);
-                            }
-                            return;
-                        }
-                        ClusterMirrorPartitionKey key = ClusterMirrorPartitionKey.of(
-                            mirrorName, serviceBridge.getTopicId(tp.topic()), tp.partition());
-                        MirrorPartitionState currentState = serviceBridge.getPartitionState(
-                            key.mirrorName(), tp);
-                        if (currentState == newState) {
-                            serviceBridge.handleSideEffect(mirrorName, tp, newState);
-                        }
-                    });
-            } else {
-                Map<String, Set<PartitionStateInfo>> topicMetadata =
-                    Map.of(tp.topic(), Set.of(new PartitionStateInfo(tp.partition(), newState, -1)));
-                serviceBridge.writeStatesToRemoteCoordinator(mirrorName, topicMetadata, Set.of(),
-                    res -> res.data().topics().forEach(topic -> topic.partitions().forEach(par -> {
-                        if (par.errorCode() == Errors.NONE.code()) {
-                            ClusterMirrorPartitionKey key = ClusterMirrorPartitionKey.of(mirrorName,
-                                serviceBridge.getTopicId(tp.topic()), tp.partition());
-                            updateLocalFailedState(key, newState, errorMessage, nonRetryable);
-                            serviceBridge.setPartitionState(key, newState);
-                            serviceBridge.handleSideEffect(mirrorName, tp, newState);
-                        } else {
-                            log.error("Failed to write partition state to remote coordinator: {}", par.errorCode());
-                        }
-                    })));
-            }
-        });
-    }
-
-    private void updateLocalFailedState(ClusterMirrorPartitionKey key,
-                                        MirrorPartitionState newState,
-                                        String errorMessage, boolean nonRetryable) {
-        MirrorPartitionState curState = serviceBridge.getPartitionState(
-                key.mirrorName(), new TopicPartition(
-                        serviceBridge.getTopicName(key.topicId()).orElse(""), key.partition()));
-        serviceBridge.updateFailedState(key, curState, newState, errorMessage, nonRetryable);
     }
 
     // ---------------------------------------------------------------
