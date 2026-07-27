@@ -30,8 +30,6 @@ import org.apache.kafka.common.requests.WriteMirrorStatesResponse;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorShard;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorPartitionKey;
 import org.apache.kafka.coordinator.mirror.PartitionStateInfo;
-import org.apache.kafka.image.MetadataDelta;
-import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.server.common.MirrorPartitionState;
 
 import java.util.Collection;
@@ -71,21 +69,6 @@ public interface MirrorMetadataManagerServiceBridge {
 
     /** Closes all source cluster admin clients immediately. */
     void closeSourceAdmins();
-
-    // -- Metadata update --
-
-    boolean isInitialized();
-
-    void updateMetadataImage(MetadataImage newImage);
-
-    Set<String> handleMirrorConfigDeltas(MetadataDelta delta, MetadataImage newImage);
-
-    Set<TopicPartition> collectPartitionsForStateTransition(
-        MetadataDelta delta, MetadataImage newImage, Set<String> mirrorsToReconnect);
-
-    void processStateTransitions(Set<TopicPartition> partitionsToTransition, MetadataImage newImage);
-
-    void maybeCompletePendingEpochBumps();
 
     // -- State cache --
 

@@ -47,8 +47,6 @@ import org.apache.kafka.coordinator.mirror.bridge.MirrorMetadataManagerServiceBr
 import org.apache.kafka.coordinator.mirror.bridge.MirrorMetadataManagerShardBridge;
 import org.apache.kafka.coordinator.mirror.bridge.ReplicaManagerBridge;
 import org.apache.kafka.coordinator.mirror.metrics.ClusterMirrorCoordinatorMetrics;
-import org.apache.kafka.image.MetadataDelta;
-import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.server.common.MirrorPartitionState;
 import org.apache.kafka.server.util.Scheduler;
 import org.apache.kafka.server.util.timer.Timer;
@@ -74,13 +72,10 @@ import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
 
 /**
  * Service layer for the cluster mirror coordinator.
- *
- * <p>Owns the metadata reaction path: {@link #onMetadataUpdate} orchestrates
- * config delta handling, partition collection, and state transitions by calling
- * into {@link MirrorMetadataManagerServiceBridge} helpers on every KRaft publish.
- *
- * <p>Delegates record persistence to the {@link CoordinatorRuntime} and triggers
- * side effects (fetcher management, epoch bumps, truncation) after writes commit.
+ * Implements the {@link ClusterMirrorCoordinator} lifecycle interface and
+ * delegates record persistence to the {@link CoordinatorRuntime}.
+ * Side effects (fetcher management, epoch bumps, truncation) are triggered
+ * after writes commit (via {@code .whenComplete} on the runtime futures).
  */
 public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator {
     private final Logger log;
@@ -266,28 +261,6 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
     public void onResignation(int partitionIndex, OptionalInt partitionLeaderEpoch) {
         TopicPartition tp = new TopicPartition(MIRROR_STATE_TOPIC_NAME, partitionIndex);
         runtime.scheduleUnloadOperation(tp, partitionLeaderEpoch);
-    }
-
-    @Override
-    public void onMetadataUpdate(MetadataImage newImage, MetadataDelta delta) {
-        if (!serviceBridge.isInitialized()) {
-            return;
-        }
-        serviceBridge.updateMetadataImage(newImage);
-
-        Set<String> mirrorsToReconnect = serviceBridge.handleMirrorConfigDeltas(delta, newImage);
-        Set<TopicPartition> partitionsToTransition =
-            serviceBridge.collectPartitionsForStateTransition(delta, newImage, mirrorsToReconnect);
-
-        if (partitionsToTransition.isEmpty()) {
-            return;
-        }
-
-        log.info("Processing metadata update for {} mirror partition(s): {}",
-            partitionsToTransition.size(), partitionsToTransition);
-
-        serviceBridge.processStateTransitions(partitionsToTransition, newImage);
-        serviceBridge.maybeCompletePendingEpochBumps();
     }
 
     @Override
