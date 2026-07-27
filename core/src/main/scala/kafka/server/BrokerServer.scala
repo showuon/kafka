@@ -23,7 +23,7 @@ import kafka.log.LogManager
 import kafka.network.SocketServer
 import kafka.raft.KafkaRaftManager
 import kafka.server.mirror.MirrorMetadataManager
-import kafka.server.mirror.bridge.{MirrorMetadataManagerServiceBridgeImpl, MirrorMetadataManagerShardBridgeImpl, ReplicaManagerBridgeImpl}
+import kafka.server.mirror.bridge.{MirrorMetadataManagerServiceBridgeImpl, MirrorMetadataManagerShardBridgeImpl}
 import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService
 import kafka.server.metadata._
 import kafka.server.share.{ShareCoordinatorMetadataCacheHelperImpl, SharePartitionManager}
@@ -741,7 +741,6 @@ class BrokerServer(
 
     val shardBridge = new MirrorMetadataManagerShardBridgeImpl(mirrorMetadataManager, metadataCache)
     val serviceBridge = new MirrorMetadataManagerServiceBridgeImpl(mirrorMetadataManager, metadataCache)
-    val replicaManagerBridge = new ReplicaManagerBridgeImpl(replicaManager, time)
 
     new ClusterMirrorCoordinatorService.Builder(config.brokerId, config.mirrorConfig)
       .withTime(time)
@@ -751,7 +750,6 @@ class BrokerServer(
       .withCoordinatorRuntimeMetrics(new ClusterMirrorCoordinatorRuntimeMetrics(metrics))
       .withShardBridge(shardBridge)
       .withServiceBridge(serviceBridge)
-      .withReplicaManagerBridge(replicaManagerBridge)
       .withScheduler(mirrorScheduler)
       .withMetrics(metrics)
       .build()

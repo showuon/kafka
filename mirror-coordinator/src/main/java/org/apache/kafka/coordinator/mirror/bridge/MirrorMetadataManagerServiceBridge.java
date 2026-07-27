@@ -16,7 +16,6 @@
  */
 package org.apache.kafka.coordinator.mirror.bridge;
 
-import org.apache.kafka.clients.admin.ClusterMirrorListing;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.message.DeleteClusterMirrorRequestData;
@@ -32,12 +31,10 @@ import org.apache.kafka.coordinator.mirror.ClusterMirrorPartitionKey;
 import org.apache.kafka.coordinator.mirror.PartitionStateInfo;
 import org.apache.kafka.server.common.MirrorPartitionState;
 
-import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -46,8 +43,6 @@ import java.util.function.Function;
  * (mirror-coordinator module) and {@code MirrorMetadataManager} / {@code MetadataCache} (core module).
  */
 public interface MirrorMetadataManagerServiceBridge {
-    /** Sentinel value indicating a non-retryable failed partition. */
-    int NON_RETRYABLE_ATTEMPT = -1;
 
     // -- Lifecycle --
 
@@ -56,12 +51,14 @@ public interface MirrorMetadataManagerServiceBridge {
      * Called once during {@code ClusterMirrorCoordinatorService.start()}.
      *
      * @param stateTransitioner       callback to transition partition states
+     * @param lastMirrorEpochUpdater  callback to persist a last-mirror-epoch update through the coordinator
      * @param tombstoneWriter         callback to write tombstone records for a deleted mirror
      * @param coordPartitionByKeyFinder maps a partition key to a {@code __mirror_state} partition index
      * @param coordPartitionByNameFinder maps a mirror name to a {@code __mirror_state} partition index
      */
     void initialize(
         StateTransitioner stateTransitioner,
+        LastMirrorEpochUpdater lastMirrorEpochUpdater,
         Consumer<String> tombstoneWriter,
         Function<ClusterMirrorPartitionKey, Integer> coordPartitionByKeyFinder,
         Function<String, Integer> coordPartitionByNameFinder
@@ -69,6 +66,11 @@ public interface MirrorMetadataManagerServiceBridge {
 
     /** Closes all source cluster admin clients immediately. */
     void closeSourceAdmins();
+
+    // -- Side effects --
+
+    /** Handles the side effect associated with a partition transitioning to {@code newState}. */
+    void handleSideEffect(String mirrorName, TopicPartition tp, MirrorPartitionState newState);
 
     // -- State cache --
 
@@ -112,27 +114,6 @@ public interface MirrorMetadataManagerServiceBridge {
         Map<String, Set<Integer>> partitions,
         Consumer<ReadMirrorStatesResponse> callback
     );
-
-    /** Sends a last-mirror-epoch lookup to the source cluster. */
-    CompletionStage<Map<TopicPartition, Integer>> sendLastMirrorEpochLookup(
-        String mirrorName,
-        TopicPartition tp,
-        Collection<ClusterMirrorListing> sourceMirrors
-    );
-
-    /** Requests a leader epoch bump for the given partitions via the controller. */
-    CompletableFuture<Void> bumpLeaderEpochs(Map<TopicPartition, Integer> partitionMinEpochs);
-
-    /** Schedules a leader epoch bump for a single mirror partition. */
-    CompletableFuture<Void> scheduleBumpLeaderEpoch(String mirrorName, TopicPartition tp);
-
-    // -- Source syncer --
-
-    /** Returns the list of cluster mirrors configured on the source cluster. */
-    Collection<ClusterMirrorListing> listSourceClusterMirrors(String mirrorName);
-
-    /** Checks whether mirroring the given partition would create a loop. */
-    boolean hasMirrorLoop(String mirrorName, TopicPartition tp, Collection<ClusterMirrorListing> sourceMirrors);
 
     // -- Query --
 
@@ -219,5 +200,13 @@ public interface MirrorMetadataManagerServiceBridge {
             String errorMessage,
             boolean nonRetryable
         );
+    }
+
+    // -- Last mirror epoch callback --
+
+    /** Callback to persist a last-mirror-epoch update through the coordinator runtime. */
+    interface LastMirrorEpochUpdater {
+        /** Updates the last mirror epoch for the given partition. */
+        CompletableFuture<Void> update(String mirrorName, TopicPartition tp, int epoch);
     }
 }

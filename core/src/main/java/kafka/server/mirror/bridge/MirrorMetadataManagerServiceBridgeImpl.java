@@ -19,7 +19,6 @@ package kafka.server.mirror.bridge;
 import kafka.server.mirror.MirrorMetadataManager;
 import kafka.server.mirror.MirrorMetadataManager.FailedPartitionInfo;
 
-import org.apache.kafka.clients.admin.ClusterMirrorListing;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.message.DeleteClusterMirrorRequestData;
@@ -37,12 +36,9 @@ import org.apache.kafka.coordinator.mirror.bridge.MirrorMetadataManagerServiceBr
 import org.apache.kafka.metadata.MetadataCache;
 import org.apache.kafka.server.common.MirrorPartitionState;
 
-import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -60,12 +56,14 @@ public class MirrorMetadataManagerServiceBridgeImpl implements MirrorMetadataMan
     @Override
     public void initialize(
         StateTransitioner stateTransitioner,
+        LastMirrorEpochUpdater lastMirrorEpochUpdater,
         Consumer<String> tombstoneWriter,
         Function<ClusterMirrorPartitionKey, Integer> coordPartitionByKeyFinder,
         Function<String, Integer> coordPartitionByNameFinder
     ) {
         metadataManager.initialize(
             (mn, tps, st, em, nr) -> stateTransitioner.transitionTo(mn, tps, st, em, nr),
+            (mn, tp, epoch) -> lastMirrorEpochUpdater.update(mn, tp, epoch),
             tombstoneWriter,
             coordPartitionByKeyFinder,
             coordPartitionByNameFinder);
@@ -74,6 +72,11 @@ public class MirrorMetadataManagerServiceBridgeImpl implements MirrorMetadataMan
     @Override
     public void closeSourceAdmins() {
         metadataManager.closeSourceAdmins();
+    }
+
+    @Override
+    public void handleSideEffect(String mirrorName, TopicPartition tp, MirrorPartitionState newState) {
+        metadataManager.handleSideEffect(mirrorName, tp, newState);
     }
 
     // State cache
@@ -136,37 +139,6 @@ public class MirrorMetadataManagerServiceBridgeImpl implements MirrorMetadataMan
         Consumer<ReadMirrorStatesResponse> callback
     ) {
         metadataManager.readMirrorStates(mirrorName, partitions, callback);
-    }
-
-    @Override
-    public CompletionStage<Map<TopicPartition, Integer>> sendLastMirrorEpochLookup(
-        String mirrorName,
-        TopicPartition tp,
-        Collection<ClusterMirrorListing> sourceMirrors
-    ) {
-        return metadataManager.sendLastMirrorEpochLookup(mirrorName, tp, sourceMirrors);
-    }
-
-    @Override
-    public CompletableFuture<Void> bumpLeaderEpochs(Map<TopicPartition, Integer> partitionMinEpochs) {
-        return metadataManager.bumpLeaderEpochs(partitionMinEpochs);
-    }
-
-    @Override
-    public CompletableFuture<Void> scheduleBumpLeaderEpoch(String mirrorName, TopicPartition tp) {
-        return metadataManager.scheduleBumpLeaderEpoch(mirrorName, tp);
-    }
-
-    // Source syncer
-
-    @Override
-    public Collection<ClusterMirrorListing> listSourceClusterMirrors(String mirrorName) {
-        return metadataManager.listSourceClusterMirrors(mirrorName);
-    }
-
-    @Override
-    public boolean hasMirrorLoop(String mirrorName, TopicPartition tp, Collection<ClusterMirrorListing> sourceMirrors) {
-        return metadataManager.hasMirrorLoop(mirrorName, tp, sourceMirrors);
     }
 
     // Query
