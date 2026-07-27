@@ -24,29 +24,29 @@
     { "name": "ThrottleTimeMs", "type": "int32", "versions": "0+",
       "about": "The duration in milliseconds for which the request was throttled due to a quota violation, or zero if the request did not violate any quota." },
     { "name": "ErrorCode", "type": "int16", "versions": "0+",
-      "about": "The error code, or 0 if there was no error." },
+      "about": "The top-level error code, or 0 if there was no error." },
     { "name": "ErrorMessage", "type": "string", "versions": "0+", "nullableVersions": "0+", "default": "null",
       "about": "The top-level error message, or null if there was no error." },
     { "name": "Topics", "type": "[]TopicResult", "versions": "0+",
-      "about": "The read results for the topics.", "fields": [
+      "about": "The per-topic mirror state results.", "fields": [
       { "name": "Name", "type": "string", "versions": "0+", "entityType": "topicName",
         "about": "The topic name." },
       { "name": "Partitions", "type": "[]PartitionResult", "versions": "0+",
-        "about": "The results for the partitions.", "fields": [
+        "about": "The per-partition mirror state results.", "fields": [
         { "name": "PartitionIndex", "type": "int32", "versions": "0+",
           "about": "The partition index." },
         { "name": "LastMirrorEpoch", "type": "int32", "versions": "0+", "default": "-1",
-          "about": "The last mirrored leader epoch, or -1 if not available." },
+          "about": "The last mirrored leader epoch, or -1 if not yet recorded." },
         { "name": "State", "type": "int8", "versions": "0+",
-          "about": "The mirror partition state." },
+          "about": "The mirror partition state byte value." },
         { "name": "ErrorCode", "type": "int16", "versions": "0+",
-          "about": "The error code, or 0 if there was no error." },
-        { "name": "PreviousState", "type": "int8", "versions": "0+", "default": 16,
-          "about": "The mirror partition state before the last transition; UNKNOWN if not recorded." },
-        { "name": "RetryAttempt", "type": "int16", "versions": "0+", "default": 0,
-          "about": "The number of automatic retry attempts while in FAILED state, or -1 for non-retryable failure." },
+          "about": "The per-partition error code (e.g. NOT_COORDINATOR), or 0 if there was no error." },
         { "name": "ErrorMessage", "type": "string", "versions": "0+", "nullableVersions": "0+", "default": "null",
-          "about": "The error message, or null if there was no error." }
+          "about": "The per-partition error message, or null if there was no error." },
+        { "name": "RetryAttempt", "type": "int16", "versions": "0+", "default": 0,
+          "about": "The retry attempt count in FAILED state, 0 if not failed, or -1 if non-retryable." },
+        { "name": "PreviousState", "type": "int8", "versions": "0+", "default": 16,
+          "about": "The mirror partition state before entering FAILED, or UNKNOWN if not recorded." }
       ]}
     ]}
   ]

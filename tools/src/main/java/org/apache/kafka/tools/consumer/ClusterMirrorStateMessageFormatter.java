@@ -17,7 +17,7 @@
 package org.apache.kafka.tools.consumer;
 
 import org.apache.kafka.common.protocol.ApiMessage;
-import org.apache.kafka.coordinator.mirror.ClusterMirrorRecordSerde;
+import org.apache.kafka.coordinator.mirror.MirrorRecordSerde;
 import org.apache.kafka.coordinator.mirror.generated.CoordinatorRecordJsonConverters;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -25,7 +25,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 public class ClusterMirrorStateMessageFormatter extends CoordinatorRecordMessageFormatter {
 
     public ClusterMirrorStateMessageFormatter() {
-        super(new ClusterMirrorRecordSerde());
+        super(new MirrorRecordSerde());
     }
 
     @Override

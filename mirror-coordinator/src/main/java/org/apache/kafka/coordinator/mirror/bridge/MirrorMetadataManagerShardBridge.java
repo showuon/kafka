@@ -18,8 +18,8 @@ package org.apache.kafka.coordinator.mirror.bridge;
 
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
-import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorShard.FailedPartitionInfo;
-import org.apache.kafka.coordinator.mirror.ClusterMirrorPartitionKey;
+import org.apache.kafka.coordinator.mirror.MirrorPartition;
+import org.apache.kafka.coordinator.mirror.MirrorPartitionKey;
 import org.apache.kafka.server.common.MirrorPartitionState;
 
 import java.util.Optional;
@@ -42,23 +42,23 @@ public interface MirrorMetadataManagerShardBridge {
     MirrorPartitionState getPartitionState(String mirrorName, TopicPartition topicPartition);
 
     /** Sets the partition state in the in-memory cache (called during replay). */
-    void setPartitionState(ClusterMirrorPartitionKey key, MirrorPartitionState newState);
+    void setPartitionState(MirrorPartitionKey key, MirrorPartitionState newState);
 
     /** Clears a partition entry from the in-memory cache (tombstone replay). */
-    void clearPartitionState(ClusterMirrorPartitionKey key);
+    void clearPartitionState(MirrorPartitionKey key);
 
-    /** Gets the failed-info for a partition, or {@code null} if not in FAILED state. */
-    FailedPartitionInfo getFailedInfo(ClusterMirrorPartitionKey key);
+    /** Gets the mirror partition metadata, or {@code null} if not tracked. */
+    MirrorPartition getFailedInfo(MirrorPartitionKey key);
 
-    /** Sets failed-info (retry attempt, error, previous state). */
-    void setFailedInfo(ClusterMirrorPartitionKey key, FailedPartitionInfo info);
+    /** Sets error info (retry attempt, error, previous state). */
+    void setFailedInfo(MirrorPartitionKey key, MirrorPartition info);
 
-    /** Clears failed-info when a partition leaves the FAILED state. */
-    void clearFailedInfo(ClusterMirrorPartitionKey key);
+    /** Clears error info when a partition leaves the FAILED state. */
+    void clearFailedInfo(MirrorPartitionKey key);
 
     /** Updates failed partition info for a state transition. */
-    void updateFailedState(ClusterMirrorPartitionKey key, MirrorPartitionState currentState,
-                           MirrorPartitionState newState, String errorMessage, boolean nonRetryable);
+    void updateFailedInfo(MirrorPartitionKey key, MirrorPartitionState currentState,
+                          MirrorPartitionState newState, String errorMessage, boolean nonRetryable);
 
     /** Resolves a topic name to its ID via the metadata cache. */
     Uuid getTopicId(String topicName);

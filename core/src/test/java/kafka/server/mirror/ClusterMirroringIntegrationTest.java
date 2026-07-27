@@ -52,8 +52,8 @@ import org.apache.kafka.common.test.TestKitNodes;
 import org.apache.kafka.coordinator.common.runtime.CoordinatorRecord;
 import org.apache.kafka.coordinator.group.GroupCoordinatorConfig;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig;
-import org.apache.kafka.coordinator.mirror.ClusterMirrorPartitionKey;
-import org.apache.kafka.coordinator.mirror.ClusterMirrorRecordSerde;
+import org.apache.kafka.coordinator.mirror.MirrorPartitionKey;
+import org.apache.kafka.coordinator.mirror.MirrorRecordSerde;
 import org.apache.kafka.coordinator.mirror.generated.LastMirrorEpochsKey;
 import org.apache.kafka.coordinator.mirror.generated.MirrorPartitionStateKey;
 import org.apache.kafka.server.config.ServerConfigs;
@@ -614,14 +614,14 @@ public class ClusterMirroringIntegrationTest {
         // for both `MirrorPartitionStateKey` and `LastMirrorEpochsKey` types
         // 1. Get the partition index hosting the metadata for the mirrored topic partition
         int partId = dstCluster.brokers().get(0).clusterMirrorCoordinator()
-                .partitionFor(new ClusterMirrorPartitionKey(MIRROR_NAME, topicId, 0));
+                .partitionFor(new MirrorPartitionKey(MIRROR_NAME, topicId, 0));
         // 2. Get the partition leader
         int leaderMirrorStatePartition = dstCluster.brokers().get(0).metadataCache()
                 .getLeaderAndIsr(MIRROR_STATE_TOPIC_NAME, partId).get().leader();
         // 3. Poll until the last batch contains the expected tombstone records.
         //    Tombstones are written asynchronously by the coordinator runtime.
         TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME, partId);
-        ClusterMirrorRecordSerde serde = new ClusterMirrorRecordSerde();
+        MirrorRecordSerde serde = new MirrorRecordSerde();
         waitForCondition(() -> {
             var batch = dstCluster.brokers().get(leaderMirrorStatePartition).replicaManager()
                     .getLog(mirrorStateTp).get().activeSegment().log().lastBatch().get();

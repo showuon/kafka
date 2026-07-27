@@ -17,12 +17,11 @@
 package kafka.server.mirror.bridge;
 
 import kafka.server.mirror.MirrorMetadataManager;
-import kafka.server.mirror.MirrorMetadataManager.FailedPartitionInfo;
 
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
-import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorShard;
-import org.apache.kafka.coordinator.mirror.ClusterMirrorPartitionKey;
+import org.apache.kafka.coordinator.mirror.MirrorPartition;
+import org.apache.kafka.coordinator.mirror.MirrorPartitionKey;
 import org.apache.kafka.coordinator.mirror.bridge.MirrorMetadataManagerShardBridge;
 import org.apache.kafka.metadata.MetadataCache;
 import org.apache.kafka.server.common.MirrorPartitionState;
@@ -45,53 +44,7 @@ public class MirrorMetadataManagerShardBridgeImpl implements MirrorMetadataManag
 
     @Override
     public void onShardUnloaded(int partitionIndex, int numPartitions) {
-        metadataManager.clearCacheForPartition(partitionIndex, numPartitions);
-    }
-
-    @Override
-    public void setLastMirrorEpoch(String mirrorName, String topic, int partition, int epoch) {
-        metadataManager.setLastMirrorEpoch(mirrorName, topic, partition, epoch);
-    }
-
-    @Override
-    public MirrorPartitionState getPartitionState(String mirrorName, TopicPartition topicPartition) {
-        return metadataManager.getPartitionState(mirrorName, topicPartition);
-    }
-
-    @Override
-    public void setPartitionState(ClusterMirrorPartitionKey key, MirrorPartitionState newState) {
-        metadataManager.setPartitionState(key, newState);
-    }
-
-    @Override
-    public void clearPartitionState(ClusterMirrorPartitionKey key) {
-        metadataManager.clearPartitionState(key);
-    }
-
-    @Override
-    public ClusterMirrorCoordinatorShard.FailedPartitionInfo getFailedInfo(ClusterMirrorPartitionKey key) {
-        FailedPartitionInfo fpi = metadataManager.getFailedInfo(key);
-        if (fpi == null) return null;
-        return new ClusterMirrorCoordinatorShard.FailedPartitionInfo(
-            fpi.retryAttempt(), fpi.errorMessage(), fpi.previousState());
-    }
-
-    @Override
-    public void setFailedInfo(ClusterMirrorPartitionKey key,
-                              ClusterMirrorCoordinatorShard.FailedPartitionInfo info) {
-        metadataManager.setFailedInfo(key,
-            new FailedPartitionInfo(info.retryAttempt(), info.errorMessage(), info.previousState()));
-    }
-
-    @Override
-    public void clearFailedInfo(ClusterMirrorPartitionKey key) {
-        metadataManager.clearFailedInfo(key);
-    }
-
-    @Override
-    public void updateFailedState(ClusterMirrorPartitionKey key, MirrorPartitionState currentState,
-                                  MirrorPartitionState newState, String errorMessage, boolean nonRetryable) {
-        metadataManager.updateFailedState(key, currentState, newState, errorMessage, nonRetryable);
+        metadataManager.cache().clearPartition(partitionIndex, numPartitions);
     }
 
     @Override
@@ -102,5 +55,46 @@ public class MirrorMetadataManagerShardBridgeImpl implements MirrorMetadataManag
     @Override
     public Optional<String> getTopicName(Uuid topicId) {
         return metadataCache.getTopicName(topicId);
+    }
+
+    @Override
+    public MirrorPartitionState getPartitionState(String mirrorName, TopicPartition topicPartition) {
+        return metadataManager.getPartitionState(mirrorName, topicPartition);
+    }
+
+    @Override
+    public void setPartitionState(MirrorPartitionKey key, MirrorPartitionState newState) {
+        metadataManager.cache().setPartitionState(key, newState);
+    }
+
+    @Override
+    public void clearPartitionState(MirrorPartitionKey key) {
+        metadataManager.cache().remove(key);
+    }
+
+    @Override
+    public void setLastMirrorEpoch(String mirrorName, String topic, int partition, int epoch) {
+        metadataManager.setLastMirrorEpoch(mirrorName, topic, partition, epoch);
+    }
+
+    @Override
+    public MirrorPartition getFailedInfo(MirrorPartitionKey key) {
+        return metadataManager.cache().get(key);
+    }
+
+    @Override
+    public void setFailedInfo(MirrorPartitionKey key, MirrorPartition mp) {
+        metadataManager.cache().setFailedInfo(key, mp.errorMessage(), mp.retryAttempt(), mp.prevState());
+    }
+
+    @Override
+    public void updateFailedInfo(MirrorPartitionKey key, MirrorPartitionState currentState,
+                                 MirrorPartitionState newState, String errorMessage, boolean nonRetryable) {
+        metadataManager.cache().updateFailedInfo(key, currentState, newState, errorMessage, nonRetryable);
+    }
+
+    @Override
+    public void clearFailedInfo(MirrorPartitionKey key) {
+        metadataManager.cache().clearFailedInfo(key);
     }
 }

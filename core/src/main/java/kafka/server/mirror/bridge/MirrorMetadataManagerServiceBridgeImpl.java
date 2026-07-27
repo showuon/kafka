@@ -17,7 +17,6 @@
 package kafka.server.mirror.bridge;
 
 import kafka.server.mirror.MirrorMetadataManager;
-import kafka.server.mirror.MirrorMetadataManager.FailedPartitionInfo;
 
 import org.apache.kafka.clients.admin.ClusterMirrorListing;
 import org.apache.kafka.common.TopicPartition;
@@ -30,10 +29,11 @@ import org.apache.kafka.common.message.StopMirrorTopicsRequestData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ReadMirrorStatesResponse;
 import org.apache.kafka.common.requests.WriteMirrorStatesResponse;
-import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorShard;
-import org.apache.kafka.coordinator.mirror.ClusterMirrorPartitionKey;
-import org.apache.kafka.coordinator.mirror.PartitionStateInfo;
+import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService.MirrorStateWrite;
+import org.apache.kafka.coordinator.mirror.MirrorPartition;
+import org.apache.kafka.coordinator.mirror.MirrorPartitionKey;
 import org.apache.kafka.coordinator.mirror.bridge.MirrorMetadataManagerServiceBridge;
+import org.apache.kafka.metadata.LeaderAndIsr;
 import org.apache.kafka.metadata.MetadataCache;
 import org.apache.kafka.server.common.MirrorPartitionState;
 
@@ -55,17 +55,15 @@ public class MirrorMetadataManagerServiceBridgeImpl implements MirrorMetadataMan
         this.metadataCache = metadataCache;
     }
 
-    // Lifecycle
-
     @Override
     public void initialize(
         StateTransitioner stateTransitioner,
         Consumer<String> tombstoneWriter,
-        Function<ClusterMirrorPartitionKey, Integer> coordPartitionByKeyFinder,
+        Function<MirrorPartitionKey, Integer> coordPartitionByKeyFinder,
         Function<String, Integer> coordPartitionByNameFinder
     ) {
         metadataManager.initialize(
-            (mn, tps, st, em, nr) -> stateTransitioner.transitionTo(mn, tps, st, em, nr),
+            stateTransitioner::transitionTo,
             tombstoneWriter,
             coordPartitionByKeyFinder,
             coordPartitionByNameFinder);
@@ -76,40 +74,35 @@ public class MirrorMetadataManagerServiceBridgeImpl implements MirrorMetadataMan
         metadataManager.closeSourceAdmins();
     }
 
-    // State cache
-
     @Override
     public MirrorPartitionState getPartitionState(String mirrorName, TopicPartition tp) {
         return metadataManager.getPartitionState(mirrorName, tp);
     }
 
     @Override
-    public void setPartitionState(ClusterMirrorPartitionKey key, MirrorPartitionState state) {
-        metadataManager.setPartitionState(key, state);
+    public void setPartitionState(MirrorPartitionKey key, MirrorPartitionState state) {
+        metadataManager.cache().setPartitionState(key, state);
     }
 
     @Override
-    public void clearPartitionState(ClusterMirrorPartitionKey key) {
-        metadataManager.clearPartitionState(key);
+    public void removePartitionState(MirrorPartitionKey key) {
+        metadataManager.cache().remove(key);
     }
 
     @Override
-    public void updateFailedState(
-        ClusterMirrorPartitionKey key,
-        MirrorPartitionState currentState,
+    public void updateFailedInfo(
+        MirrorPartitionKey key,
+        MirrorPartitionState state,
         MirrorPartitionState newState,
         String errorMessage,
         boolean nonRetryable
     ) {
-        metadataManager.updateFailedState(key, currentState, newState, errorMessage, nonRetryable);
+        metadataManager.cache().updateFailedInfo(key, state, newState, errorMessage, nonRetryable);
     }
 
     @Override
-    public ClusterMirrorCoordinatorShard.FailedPartitionInfo getFailedInfo(ClusterMirrorPartitionKey key) {
-        FailedPartitionInfo fpi = metadataManager.getFailedInfo(key);
-        if (fpi == null) return null;
-        return new ClusterMirrorCoordinatorShard.FailedPartitionInfo(
-            fpi.retryAttempt(), fpi.errorMessage(), fpi.previousState());
+    public MirrorPartition getFailedInfo(MirrorPartitionKey key) {
+        return metadataManager.cache().get(key);
     }
 
     @Override
@@ -117,12 +110,10 @@ public class MirrorMetadataManagerServiceBridgeImpl implements MirrorMetadataMan
         metadataManager.setLastMirrorEpoch(mirrorName, topic, partition, epoch);
     }
 
-    // Network/RPC
-
     @Override
     public void writeStatesToRemoteCoordinator(
         String mirrorName,
-        Map<String, Set<PartitionStateInfo>> topicMetadata,
+        Map<String, Set<MirrorStateWrite>> topicMetadata,
         Set<String> stoppedTopics,
         Consumer<WriteMirrorStatesResponse> callback
     ) {
@@ -130,7 +121,7 @@ public class MirrorMetadataManagerServiceBridgeImpl implements MirrorMetadataMan
     }
 
     @Override
-    public void readMirrorStates(
+    public void readStatesFromLocalCoordinator(
         String mirrorName,
         Map<String, Set<Integer>> partitions,
         Consumer<ReadMirrorStatesResponse> callback
@@ -157,7 +148,10 @@ public class MirrorMetadataManagerServiceBridgeImpl implements MirrorMetadataMan
         return metadataManager.scheduleBumpLeaderEpoch(mirrorName, tp);
     }
 
-    // Source syncer
+    @Override
+    public void scheduleMetadataRefresh(long intervalMs) {
+        metadataManager.scheduleMetadataRefresh(intervalMs);
+    }
 
     @Override
     public Collection<ClusterMirrorListing> listSourceClusterMirrors(String mirrorName) {
@@ -169,7 +163,11 @@ public class MirrorMetadataManagerServiceBridgeImpl implements MirrorMetadataMan
         return metadataManager.hasMirrorLoop(mirrorName, tp, sourceMirrors);
     }
 
-    // Query
+    @Override
+    public Map<String, Map<TopicPartition, Integer>> processLastMirrorEpochLookup(
+            Map<String, Map<String, Set<Integer>>> mirrorPartitions) {
+        return metadataManager.processLastMirrorEpochLookup(mirrorPartitions);
+    }
 
     @Override
     public String getSourceClusterId(String mirrorName) {
@@ -179,6 +177,23 @@ public class MirrorMetadataManagerServiceBridgeImpl implements MirrorMetadataMan
     @Override
     public String getSourceBootstrap(String mirrorName) {
         return metadataManager.getSourceBootstrap(mirrorName);
+    }
+
+    @Override
+    public Uuid getTopicId(String topicName) {
+        return metadataCache.getTopicId(topicName);
+    }
+
+    @Override
+    public Optional<String> getTopicName(Uuid topicId) {
+        return metadataCache.getTopicName(topicId);
+    }
+
+    @Override
+    public int getLeaderForPartition(String topic, int partition) {
+        return metadataCache.getLeaderAndIsr(topic, partition)
+                .map(LeaderAndIsr::leader)
+                .orElse(-1);
     }
 
     @Override
@@ -201,19 +216,15 @@ public class MirrorMetadataManagerServiceBridgeImpl implements MirrorMetadataMan
         return metadataManager.getActiveTopicCount(mirrorName);
     }
 
-    // Cache cleanup
-
     @Override
-    public void removeCachedMirror(String mirrorName) {
-        metadataManager.removeCachedMirror(mirrorName);
+    public void removeMirror(String mirrorName) {
+        metadataManager.cache().removeMirror(mirrorName);
     }
 
     @Override
-    public void removeStateForPartitions(Set<TopicPartition> partitions) {
-        metadataManager.removeStateForPartitions(partitions);
+    public void removePendingEpochBumps(Set<TopicPartition> partitions) {
+        metadataManager.cache().removePendingEpochBumps(partitions);
     }
-
-    // Validation
 
     @Override
     public void validateStartMirrorStates(StartMirrorTopicsRequestData data, Consumer<Optional<Errors>> callback) {
@@ -238,42 +249,5 @@ public class MirrorMetadataManagerServiceBridgeImpl implements MirrorMetadataMan
     @Override
     public void validateDeleteMirrorStates(DeleteClusterMirrorRequestData data, Consumer<Optional<Errors>> callback) {
         metadataManager.validateDeleteMirrorStates(data, callback);
-    }
-
-    // LME
-
-    @Override
-    public Map<String, Map<TopicPartition, Integer>> processLastMirrorEpochLookup(
-        Map<String, Map<String, Set<Integer>>> mirrorPartitions
-    ) {
-        return metadataManager.processLastMirrorEpochLookup(mirrorPartitions);
-    }
-
-    // Metadata scheduling
-
-    @Override
-    public void scheduleMetadataRefresh(long intervalMs) {
-        metadataManager.scheduleMetadataRefresh(intervalMs);
-    }
-
-    // Topic resolution
-
-    @Override
-    public Uuid getTopicId(String topicName) {
-        return metadataCache.getTopicId(topicName);
-    }
-
-    @Override
-    public Optional<String> getTopicName(Uuid topicId) {
-        return metadataCache.getTopicName(topicId);
-    }
-
-    // Leader check
-
-    @Override
-    public int getLeaderForPartition(String topic, int partition) {
-        return metadataCache.getLeaderAndIsr(topic, partition)
-            .map(lai -> lai.leader())
-            .orElse(-1);
     }
 }

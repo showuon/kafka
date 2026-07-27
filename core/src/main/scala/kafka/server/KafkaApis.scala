@@ -22,7 +22,7 @@ import kafka.network.RequestChannel
 import kafka.server.QuotaFactory.{QuotaManagers, UNBOUNDED_QUOTA}
 import kafka.server.handlers.DescribeTopicPartitionsRequestHandler
 import kafka.server.metadata.KRaftMetadataCache
-import org.apache.kafka.coordinator.mirror.PartitionStateInfo
+import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService.MirrorStateWrite
 import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService
 import org.apache.kafka.server.common.{ClusterMirrorVersion, MirrorPartitionState}
 import kafka.server.share.{ShareFetchUtils, SharePartitionManager}
@@ -294,11 +294,11 @@ class KafkaApis(val requestChannel: RequestChannel,
     }
     val writeMirrorStatesRequest = request.body[WriteMirrorStatesRequest]
     val mirrorName = writeMirrorStatesRequest.data().mirrorName()
-    val mirrorState = new util.HashMap[String, util.Set[PartitionStateInfo]]()
+    val mirrorState = new util.HashMap[String, util.Set[MirrorStateWrite]]()
     writeMirrorStatesRequest.data().topics().forEach(topic => {
-      val topicState = new util.HashSet[PartitionStateInfo]()
+      val topicState = new util.HashSet[MirrorStateWrite]()
       topic.partitions().forEach(part => {
-        topicState.add(new PartitionStateInfo(part.partitionIndex(), MirrorPartitionState.fromValue(part.state()), part.lastMirrorEpoch()))
+        topicState.add(new MirrorStateWrite(part.partitionIndex(), MirrorPartitionState.fromValue(part.state()), part.lastMirrorEpoch()))
       })
       mirrorState.put(topic.name(), topicState)
     })
@@ -490,7 +490,8 @@ class KafkaApis(val requestChannel: RequestChannel,
         if (!describeAll) {
           responseData.mirrors().add(new DescribeClusterMirrorsResponseData.DescribedMirror()
             .setMirrorName(mirrorName)
-            .setErrorCode(Errors.CLUSTER_MIRROR_AUTHORIZATION_FAILED.code))
+            .setErrorCode(Errors.CLUSTER_MIRROR_AUTHORIZATION_FAILED.code)
+            .setErrorMessage(Errors.CLUSTER_MIRROR_AUTHORIZATION_FAILED.message))
         }
       } else {
         val describedMirror = new DescribeClusterMirrorsResponseData.DescribedMirror()
@@ -524,15 +525,15 @@ class KafkaApis(val requestChannel: RequestChannel,
 
             val state = partitionStates.getOrElse(topicPartition, MirrorPartitionState.UNKNOWN)
             val isMirroring = state == MirrorPartitionState.MIRRORING
-            val fpi = clusterMirrorCoordinator.getFailedInfo(mirrorName, topicPartition)
+            val mp = clusterMirrorCoordinator.getFailedInfo(mirrorName, topicPartition)
             val partitionDetail = new DescribeClusterMirrorsResponseData.PartitionDetail()
               .setPartitionIndex(topicPartition.partition())
               .setSourceOffset(if (isMirroring) lagInfoMap.get(topicPartition).map(_.sourceOffset).getOrElse(-1L) else -1L)
               .setDestinationOffset(if (isMirroring) lagInfoMap.get(topicPartition).map(_.destinationOffset).getOrElse(-1L) else -1L)
               .setLag(if (isMirroring) lagInfoMap.get(topicPartition).map(_.lag).getOrElse(-1L) else -1L)
               .setStateValue(state.name())
-              .setRetryAttempt(if (fpi != null) fpi.retryAttempt().toShort else 0.toShort)
-              .setErrorMessage(if (fpi != null) fpi.errorMessage() else null)
+              .setRetryAttempt(if (mp != null) mp.retryAttempt().toShort else 0.toShort)
+              .setErrorMessage(if (mp != null) mp.errorMessage() else null)
 
             topicPartitions.partitions().add(partitionDetail)
           }

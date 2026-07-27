@@ -27,9 +27,9 @@ import org.apache.kafka.common.message.StopMirrorTopicsRequestData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ReadMirrorStatesResponse;
 import org.apache.kafka.common.requests.WriteMirrorStatesResponse;
-import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorShard;
-import org.apache.kafka.coordinator.mirror.ClusterMirrorPartitionKey;
-import org.apache.kafka.coordinator.mirror.PartitionStateInfo;
+import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService.MirrorStateWrite;
+import org.apache.kafka.coordinator.mirror.MirrorPartition;
+import org.apache.kafka.coordinator.mirror.MirrorPartitionKey;
 import org.apache.kafka.server.common.MirrorPartitionState;
 
 import java.util.Collection;
@@ -46,11 +46,6 @@ import java.util.function.Function;
  * (mirror-coordinator module) and {@code MirrorMetadataManager} / {@code MetadataCache} (core module).
  */
 public interface MirrorMetadataManagerServiceBridge {
-    /** Sentinel value indicating a non-retryable failed partition. */
-    int NON_RETRYABLE_ATTEMPT = -1;
-
-    // -- Lifecycle --
-
     /**
      * Initializes the metadata manager with callbacks from the coordinator service.
      * Called once during {@code ClusterMirrorCoordinatorService.start()}.
@@ -63,7 +58,7 @@ public interface MirrorMetadataManagerServiceBridge {
     void initialize(
         StateTransitioner stateTransitioner,
         Consumer<String> tombstoneWriter,
-        Function<ClusterMirrorPartitionKey, Integer> coordPartitionByKeyFinder,
+        Function<MirrorPartitionKey, Integer> coordPartitionByKeyFinder,
         Function<String, Integer> coordPartitionByNameFinder
     );
 
@@ -76,22 +71,22 @@ public interface MirrorMetadataManagerServiceBridge {
     MirrorPartitionState getPartitionState(String mirrorName, TopicPartition tp);
 
     /** Updates the cached partition state for the given key. */
-    void setPartitionState(ClusterMirrorPartitionKey key, MirrorPartitionState state);
+    void setPartitionState(MirrorPartitionKey key, MirrorPartitionState state);
 
     /** Removes the cached partition state for the given key. */
-    void clearPartitionState(ClusterMirrorPartitionKey key);
+    void removePartitionState(MirrorPartitionKey key);
 
     /** Updates failure tracking metadata for a state transition. */
-    void updateFailedState(
-        ClusterMirrorPartitionKey key,
+    void updateFailedInfo(
+        MirrorPartitionKey key,
         MirrorPartitionState currentState,
         MirrorPartitionState newState,
         String errorMessage,
         boolean nonRetryable
     );
 
-    /** Returns failure tracking metadata for the given key, or {@code null}. */
-    ClusterMirrorCoordinatorShard.FailedPartitionInfo getFailedInfo(ClusterMirrorPartitionKey key);
+    /** Returns the mirror partition metadata for the given key, or {@code null}. */
+    MirrorPartition getFailedInfo(MirrorPartitionKey key);
 
     /** Sets the last mirror epoch in the local cache. */
     void setLastMirrorEpoch(String mirrorName, String topic, int partition, int epoch);
@@ -101,13 +96,13 @@ public interface MirrorMetadataManagerServiceBridge {
     /** Writes partition states to remote coordinator brokers via batched RPCs. */
     void writeStatesToRemoteCoordinator(
         String mirrorName,
-        Map<String, Set<PartitionStateInfo>> topicMetadata,
+        Map<String, Set<MirrorStateWrite>> topicMetadata,
         Set<String> stoppedTopics,
         Consumer<WriteMirrorStatesResponse> callback
     );
 
     /** Reads partition states from remote coordinator brokers via batched RPCs. */
-    void readMirrorStates(
+    void readStatesFromLocalCoordinator(
         String mirrorName,
         Map<String, Set<Integer>> partitions,
         Consumer<ReadMirrorStatesResponse> callback
@@ -157,10 +152,10 @@ public interface MirrorMetadataManagerServiceBridge {
     // -- Cache cleanup --
 
     /** Removes all cached state for the given mirror. */
-    void removeCachedMirror(String mirrorName);
+    void removeMirror(String mirrorName);
 
     /** Removes pending epoch bump state for the given partitions. */
-    void removeStateForPartitions(Set<TopicPartition> partitions);
+    void removePendingEpochBumps(Set<TopicPartition> partitions);
 
     // -- Validation --
 

@@ -21,7 +21,7 @@ import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.coordinator.common.runtime.CoordinatorRecordSerde;
 import org.apache.kafka.coordinator.mirror.generated.CoordinatorRecordType;
 
-public class ClusterMirrorRecordSerde extends CoordinatorRecordSerde {
+public class MirrorRecordSerde extends CoordinatorRecordSerde {
     @Override
     protected ApiMessage apiMessageKeyFor(short recordType) {
         try {

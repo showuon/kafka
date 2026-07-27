@@ -24,7 +24,7 @@ import kafka.network.SocketServer
 import kafka.raft.KafkaRaftManager
 import kafka.server.mirror.MirrorMetadataManager
 import kafka.server.mirror.bridge.{MirrorMetadataManagerServiceBridgeImpl, MirrorMetadataManagerShardBridgeImpl, ReplicaManagerBridgeImpl}
-import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService
+import org.apache.kafka.coordinator.mirror.{ClusterMirrorCoordinatorService, MirrorRecordSerde}
 import kafka.server.metadata._
 import kafka.server.share.{ShareCoordinatorMetadataCacheHelperImpl, SharePartitionManager}
 import kafka.utils.CoreUtils
@@ -40,7 +40,6 @@ import org.apache.kafka.common.{ClusterResource, TopicPartition, Uuid}
 import org.apache.kafka.coordinator.common.runtime.{CoordinatorLoaderImpl, CoordinatorRecord}
 import org.apache.kafka.coordinator.group.metrics.{GroupCoordinatorMetrics, GroupCoordinatorRuntimeMetrics}
 import org.apache.kafka.coordinator.group.{GroupConfigManager, GroupCoordinator, GroupCoordinatorRecordSerde, GroupCoordinatorService}
-import org.apache.kafka.coordinator.mirror.ClusterMirrorRecordSerde
 import org.apache.kafka.coordinator.mirror.metrics.ClusterMirrorCoordinatorRuntimeMetrics
 import org.apache.kafka.coordinator.share.metrics.{ShareCoordinatorMetrics, ShareCoordinatorRuntimeMetrics}
 import org.apache.kafka.coordinator.share.{ShareCoordinator, ShareCoordinatorRecordSerde, ShareCoordinatorService}
@@ -729,7 +728,7 @@ class BrokerServer(
       "cluster-mirror-coordinator-reaper",
       new SystemTimer("cluster-mirror-coordinator")
     )
-    val serde = new ClusterMirrorRecordSerde
+    val serde = new MirrorRecordSerde
     val loader = new CoordinatorLoaderImpl[CoordinatorRecord](
       time,
       tp => replicaManager.getLog(tp).toJava,
@@ -741,7 +740,7 @@ class BrokerServer(
 
     val shardBridge = new MirrorMetadataManagerShardBridgeImpl(mirrorMetadataManager, metadataCache)
     val serviceBridge = new MirrorMetadataManagerServiceBridgeImpl(mirrorMetadataManager, metadataCache)
-    val replicaManagerBridge = new ReplicaManagerBridgeImpl(replicaManager, time)
+    val replicaManagerBridge = new ReplicaManagerBridgeImpl(replicaManager)
 
     new ClusterMirrorCoordinatorService.Builder(config.brokerId, config.mirrorConfig)
       .withTime(time)
