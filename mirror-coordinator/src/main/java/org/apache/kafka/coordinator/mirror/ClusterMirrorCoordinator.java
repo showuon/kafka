@@ -27,7 +27,8 @@ import java.util.OptionalInt;
  * resignation, and metadata image updates.
  */
 public interface ClusterMirrorCoordinator {
-    void start();
+    /** Activates the coordinator and initializes its dependencies. */
+    void startup();
 
     void shutdown();
 

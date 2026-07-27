@@ -218,7 +218,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
     // ---------------------------------------------------------------
 
     @Override
-    public void start() {
+    public void startup() {
         if (!isActive.compareAndSet(false, true)) {
             log.warn("Is already running.");
             return;

@@ -317,7 +317,7 @@ class BrokerMetadataPublisher(
             info(s"Feature mirror.version has been updated to version $finalizedMirrorVersion")
             if (ClusterMirrorVersion.isEnabled(newFinalizedFeatures.finalizedFeatures())) {
               info("Cluster mirroring feature is now enabled")
-              mirrorCoordinator.start()
+              mirrorCoordinator.startup()
             } else {
               info("Cluster mirroring feature is now disabled")
               mirrorCoordinator.shutdown()
@@ -452,7 +452,7 @@ class BrokerMetadataPublisher(
       // Start the mirror coordinator only if mirror.version is enabled.
       if (finalizedMirrorVersion > 0) {
         info(s"Starting mirror coordinator with mirror.version=$finalizedMirrorVersion")
-        mirrorCoordinator.start()
+        mirrorCoordinator.startup()
       } else {
         info("Mirror coordinator not started: mirror.version is disabled")
       }
