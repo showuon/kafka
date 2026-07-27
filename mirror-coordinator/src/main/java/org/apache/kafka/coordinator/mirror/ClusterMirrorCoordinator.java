@@ -30,7 +30,7 @@ import java.util.OptionalInt;
  */
 public interface ClusterMirrorCoordinator {
     /** Activates the coordinator and initializes its dependencies. */
-    void start();
+    void startup();
 
     /** Shuts down the coordinator, releasing all resources. */
     void shutdown();
