@@ -23,7 +23,7 @@ import kafka.log.LogManager
 import kafka.network.SocketServer
 import kafka.raft.KafkaRaftManager
 import kafka.server.mirror.MirrorMetadataManager
-import kafka.server.mirror.bridge.{MirrorMetadataManagerServiceBridgeImpl, MirrorMetadataManagerShardBridgeImpl, ReplicaManagerBridgeImpl}
+import kafka.server.mirror.CoreBridgeImpl
 import org.apache.kafka.coordinator.mirror.{ClusterMirrorCoordinatorService, MirrorRecordSerde}
 import kafka.server.metadata._
 import kafka.server.share.{ShareCoordinatorMetadataCacheHelperImpl, SharePartitionManager}
@@ -475,6 +475,7 @@ class BrokerServer(
         txnCoordinator = transactionCoordinator,
         shareCoordinator = shareCoordinator,
         clusterMirrorCoordinator = clusterMirrorCoordinator,
+        mirrorMetadataManager = mirrorMetadataManager,
         autoTopicCreationManager = autoTopicCreationManager,
         brokerId = config.nodeId,
         config = config,
@@ -722,7 +723,7 @@ class BrokerServer(
     }
   }
 
-  private def createClusterMirrorCoordinator(mirrorScheduler: KafkaScheduler): ClusterMirrorCoordinatorService = {
+  private def createClusterMirrorCoordinator(scheduler: KafkaScheduler): ClusterMirrorCoordinatorService = {
     val time = Time.SYSTEM
     val timer = new SystemTimerReaper(
       "cluster-mirror-coordinator-reaper",
@@ -738,20 +739,17 @@ class BrokerServer(
     )
     val writer = new CoordinatorPartitionWriter(replicaManager)
 
-    val shardBridge = new MirrorMetadataManagerShardBridgeImpl(mirrorMetadataManager, metadataCache)
-    val serviceBridge = new MirrorMetadataManagerServiceBridgeImpl(mirrorMetadataManager, metadataCache)
-    val replicaManagerBridge = new ReplicaManagerBridgeImpl(replicaManager)
+    val runtimeMetrics = new ClusterMirrorCoordinatorRuntimeMetrics(metrics)
+    val bridge = new CoreBridgeImpl(mirrorMetadataManager, metadataCache, replicaManager)
 
     new ClusterMirrorCoordinatorService.Builder(config.brokerId, config.mirrorConfig)
       .withTime(time)
       .withTimer(timer)
       .withLoader(loader)
       .withWriter(writer)
-      .withCoordinatorRuntimeMetrics(new ClusterMirrorCoordinatorRuntimeMetrics(metrics))
-      .withShardBridge(shardBridge)
-      .withServiceBridge(serviceBridge)
-      .withReplicaManagerBridge(replicaManagerBridge)
-      .withScheduler(mirrorScheduler)
+      .withCoordinatorRuntimeMetrics(runtimeMetrics)
+      .withBridge(bridge)
+      .withScheduler(scheduler)
       .withMetrics(metrics)
       .build()
   }

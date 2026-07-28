@@ -18,7 +18,6 @@ package kafka.server.mirror;
 
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.coordinator.mirror.MirrorPartition;
 import org.apache.kafka.coordinator.mirror.MirrorPartitionKey;
 import org.apache.kafka.server.common.MirrorPartitionState;
@@ -34,17 +33,16 @@ import java.util.function.BiConsumer;
  * pending topic creations, and pending leader epoch bumps.
  */
 public class MirrorStateCache {
-
     private final Map<MirrorPartitionKey, MirrorPartition> partitions = new ConcurrentHashMap<>();
     private final Map<String, Map<TopicPartition, SourceLeader>> sourceLeaders = new ConcurrentHashMap<>();
     private final Set<String> pendingTopicCreations = ConcurrentHashMap.newKeySet();
     private final Set<PendingLeaderEpochBump> pendingEpochBumps = ConcurrentHashMap.newKeySet();
 
-    private MirrorStateCache() {
-    }
-
     public static MirrorStateCache empty() {
         return new MirrorStateCache();
+    }
+
+    private MirrorStateCache() {
     }
 
     // -- Partition cache operations --
@@ -91,9 +89,9 @@ public class MirrorStateCache {
         pendingEpochBumps.clear();
     }
 
-    public void clearPartition(int partitionIndex, int numPartitions) {
+    public void clearPartition(int coordinatorPartition, int coordinatorPartitionCount) {
         partitions.keySet().removeIf(key ->
-            Utils.abs(key.asCoordinatorKey().hashCode()) % numPartitions == partitionIndex);
+            key.coordinatorPartition(coordinatorPartitionCount) == coordinatorPartition);
     }
 
     public long partitionStateCount(MirrorPartitionState state) {

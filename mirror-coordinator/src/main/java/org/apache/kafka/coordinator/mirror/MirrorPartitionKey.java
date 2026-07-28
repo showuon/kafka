@@ -17,6 +17,7 @@
 package org.apache.kafka.coordinator.mirror;
 
 import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.utils.Utils;
 
 import java.util.Arrays;
 import java.util.Objects;
@@ -142,6 +143,11 @@ public record MirrorPartitionKey(String mirrorName, Uuid topicId, int partition)
      */
     public static String asCoordinatorKey(String mirrorName, Uuid topicId, int partition) {
         return String.format("%s:%s:%d", mirrorName, topicId, partition);
+    }
+
+    /** Returns the {@code __mirror_state} partition index this key maps to. */
+    public int coordinatorPartition(int partitionCount) {
+        return Utils.abs(asCoordinatorKey().hashCode()) % partitionCount;
     }
 
     /**

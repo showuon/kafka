@@ -126,7 +126,6 @@ class MirrorSourceSyncer {
     private final KafkaScheduler scheduler;
     private volatile ScheduledFuture<?> metadataRefreshFuture;
 
-    // Sync error metrics
     private final AtomicLong metadataRefreshError;
     private final AtomicLong topicConfigSyncError;
     private final AtomicLong consumerGroupOffsetSyncError;

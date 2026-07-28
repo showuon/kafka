@@ -26,6 +26,7 @@ import kafka.server.KafkaApis;
 import kafka.server.KafkaConfig;
 import kafka.server.QuotaFactory.QuotaManagers;
 import kafka.server.ReplicaManager;
+import kafka.server.mirror.MirrorMetadataManager;
 import kafka.server.share.SharePartitionManager;
 
 import org.apache.kafka.common.internals.Plugin;
@@ -73,6 +74,7 @@ public class KafkaApisBuilder {
     private ClientMetricsManager clientMetricsManager = null;
     private ShareCoordinator shareCoordinator = null;
     private ClusterMirrorCoordinatorService mirrorCoordinator = null;
+    private MirrorMetadataManager mirrorMetadataManager = null;
     private GroupConfigManager groupConfigManager = null;
     private Supplier<Long> brokerEpochSupplier = () -> -1L;
 
@@ -201,6 +203,11 @@ public class KafkaApisBuilder {
         return this;
     }
 
+    public KafkaApisBuilder setMirrorMetadataManager(MirrorMetadataManager mirrorMetadataManager) {
+        this.mirrorMetadataManager = mirrorMetadataManager;
+        return this;
+    }
+
     @SuppressWarnings({"CyclomaticComplexity"})
     public KafkaApis build() {
         if (requestChannel == null) throw new RuntimeException("you must set requestChannel");
@@ -222,6 +229,7 @@ public class KafkaApisBuilder {
         if (apiVersionManager == null) throw new RuntimeException("You must set apiVersionManager");
         if (groupConfigManager == null) throw new RuntimeException("You must set groupConfigManager");
         if (mirrorCoordinator == null) throw new RuntimeException("You must set topicMirrorLinkCoordinator");
+        if (mirrorMetadataManager == null) throw new RuntimeException("You must set mirrorMetadataManager");
 
         return new KafkaApis(requestChannel,
                              forwardingManager,
@@ -229,7 +237,8 @@ public class KafkaApisBuilder {
                              groupCoordinator,
                              txnCoordinator,
                              shareCoordinator,
-                mirrorCoordinator,
+                             mirrorCoordinator,
+                             mirrorMetadataManager,
                              autoTopicCreationManager,
                              brokerId,
                              config,

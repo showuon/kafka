@@ -19,6 +19,7 @@ package kafka.server
 
 import kafka.log.LogManager
 import kafka.network.SocketServer
+import kafka.server.mirror.MirrorMetadataManager
 import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService
 import kafka.utils.Logging
 import org.apache.kafka.common.ClusterResource
@@ -94,6 +95,7 @@ trait KafkaBroker extends Logging {
   def quotaManagers: QuotaFactory.QuotaManagers
   def replicaManager: ReplicaManager
   def clusterMirrorCoordinator: ClusterMirrorCoordinatorService
+  def mirrorMetadataManager: MirrorMetadataManager
   def socketServer: SocketServer
   def metadataCache: MetadataCache
   def groupCoordinator: GroupCoordinator
