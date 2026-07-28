@@ -38,13 +38,9 @@ public class CoreBridgeImpl implements CoreBridge {
     @Override
     public void initialize(
         CoordinatorWriter coordinatorWriter,
-        Function<MirrorPartitionKey, Integer> coordPartFinderByKey,
-        Function<String, Integer> coordPartFinderByName
+        Function<MirrorPartitionKey, Integer> coordPartFinder
     ) {
-        metadataManager.initialize(
-                coordinatorWriter,
-                coordPartFinderByKey,
-                coordPartFinderByName);
+        metadataManager.initialize(coordinatorWriter, coordPartFinder);
     }
 
     @Override

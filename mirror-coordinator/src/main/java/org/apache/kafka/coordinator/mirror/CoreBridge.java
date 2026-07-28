@@ -32,8 +32,7 @@ import java.util.function.Function;
 public interface CoreBridge {
     void initialize(
         CoordinatorWriter coordinatorWriter,
-        Function<MirrorPartitionKey, Integer> coordPartFinderByKey,
-        Function<String, Integer> coordPartFinderByName
+        Function<MirrorPartitionKey, Integer> coordPartFinder
     );
 
     void closeSourceAdmins();
@@ -64,12 +63,11 @@ public interface CoreBridge {
 
     /**
      * Callback for writing coordinator records to the {@code __mirror_state} shard
-     * via the {@code CoordinatorRuntime}. Implemented by
-     * {@code ClusterMirrorCoordinatorService} and passed to
-     * {@code MirrorMetadataManager} during initialization.
+     * via the {@code CoordinatorRuntime}. This is the seam between the two modules:
+     * MMM (core) decides what to write; the coordinator service (mirror-coordinator)
+     * knows how to write it.
      */
     interface CoordinatorWriter {
-        /** Persists a partition state transition record to the coordinator shard. */
         CompletableFuture<Void> writeTransition(
             String mirrorName,
             TopicPartition tp,
@@ -78,14 +76,12 @@ public interface CoreBridge {
             boolean nonRetryable
         );
 
-        /** Persists a last mirror epoch record to the coordinator shard. */
         CompletableFuture<Void> writeLastMirrorEpoch(
             String mirrorName,
             TopicPartition tp,
             int epoch
         );
 
-        /** Persists tombstone records for the given partitions of a deleted mirror. */
         CompletableFuture<Void> writeTombstone(
             String mirrorName,
             Set<TopicPartition> partitions

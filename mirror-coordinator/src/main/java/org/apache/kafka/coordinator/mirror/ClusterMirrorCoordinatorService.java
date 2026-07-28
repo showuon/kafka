@@ -211,7 +211,6 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                         mirrorName, partitions);
                 }
             },
-            this::partitionFor,
             this::partitionFor);
         log.info("Startup complete.");
     }
@@ -261,11 +260,6 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
     public int partitionFor(MirrorPartitionKey key) {
         throwIfNotActive();
         return key.coordinatorPartition(config.stateTopicNumPartitions());
-    }
-
-    private int partitionFor(String mirrorName) {
-        throwIfNotActive();
-        return Utils.abs(mirrorName.hashCode()) % config.stateTopicNumPartitions();
     }
 
     /** Persists a partition state transition record to the coordinator shard. */
