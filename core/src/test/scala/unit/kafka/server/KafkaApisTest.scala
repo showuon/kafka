@@ -11594,10 +11594,12 @@ class KafkaApisTest extends Logging {
 
       val clientMetrics = util.Set.of("client-metric1", "client-metric2")
       val topics = util.Set.of("topic1", "topic2")
+      val configs: util.Set[ConfigResource] = util.Set.of()
       val groupIds = util.List.of("group1", "group2")
       val nodeIds = util.List.of(1, 2)
       when(clientMetricsManager.listClientMetricsResources).thenReturn(clientMetrics)
       when(metadataCache.getAllTopics).thenReturn(topics)
+      when(metadataCache.getAllConfigs).thenReturn(configs)
       when(groupConfigManager.groupIds).thenReturn(groupIds)
       when(metadataCache.getBrokerNodes(any())).thenReturn(
         nodeIds.stream().map(id => new Node(id, "localhost", 1234)).collect(java.util.stream.Collectors.toList()))
@@ -11761,6 +11763,7 @@ class KafkaApisTest extends Logging {
 
     when(clientMetricsManager.listClientMetricsResources).thenReturn(util.Set.of)
     when(metadataCache.getAllTopics).thenReturn(util.Set.of)
+    when(metadataCache.getAllConfigs).thenReturn(util.Set.of)
     when(groupConfigManager.groupIds).thenReturn(util.List.of)
     when(metadataCache.getBrokerNodes(any())).thenReturn(util.List.of)
 

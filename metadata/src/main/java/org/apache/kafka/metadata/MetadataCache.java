@@ -21,6 +21,7 @@ import org.apache.kafka.common.Node;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.message.DescribeClientQuotasRequestData;
 import org.apache.kafka.common.message.DescribeClientQuotasResponseData;
@@ -69,6 +70,8 @@ public interface MetadataCache extends ConfigRepository {
         boolean errorUnavailableListeners);
 
     Set<String> getAllTopics();
+
+    Set<ConfigResource> getAllConfigs();
 
     boolean hasAliveBroker(int brokerId);
 

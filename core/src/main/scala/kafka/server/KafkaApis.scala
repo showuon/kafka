@@ -21,7 +21,6 @@ import kafka.coordinator.transaction.{InitProducerIdResult, TransactionCoordinat
 import kafka.network.RequestChannel
 import kafka.server.QuotaFactory.{QuotaManagers, UNBOUNDED_QUOTA}
 import kafka.server.handlers.DescribeTopicPartitionsRequestHandler
-import kafka.server.metadata.KRaftMetadataCache
 import kafka.server.mirror.MirrorMetadataManager
 import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService.MirrorStateWrite
 import org.apache.kafka.coordinator.mirror.{ClusterMirrorCoordinatorService, MirrorPartitionKey}
@@ -3099,16 +3098,12 @@ class KafkaApis(val requestChannel: RequestChannel,
         )
       }
       if (resourceTypes.contains(ConfigResource.Type.CLUSTER_MIRROR.id)) {
-        metadataCache match {
-          case kraftMetadataCache: KRaftMetadataCache if (kraftMetadataCache.currentImage().configs() != null) =>
-            kraftMetadataCache.currentImage().configs().resourceData.keySet().stream()
-              .filter(resource => resource.`type`() == ConfigResource.Type.CLUSTER_MIRROR)
-              .forEach(configResource =>
-                result.add(new ListConfigResourcesResponseData.ConfigResource()
-                  .setResourceName(configResource.name())
-                  .setResourceType(ConfigResource.Type.CLUSTER_MIRROR.id)))
-          case _ =>
-        }
+        metadataCache.getAllConfigs.stream()
+          .filter(resource => resource.`type`() == ConfigResource.Type.CLUSTER_MIRROR)
+          .forEach(configResource =>
+            result.add(new ListConfigResourcesResponseData.ConfigResource()
+              .setResourceName(configResource.name())
+              .setResourceType(ConfigResource.Type.CLUSTER_MIRROR.id)))
       }
       data.setConfigResources(result)
       requestHelper.sendMaybeThrottle(request, new ListConfigResourcesResponse(data))

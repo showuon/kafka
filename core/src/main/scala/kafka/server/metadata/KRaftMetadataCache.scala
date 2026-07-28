@@ -322,6 +322,8 @@ class KRaftMetadataCache(
 
   override def getAllTopics(): util.Set[String] = _currentImage.topics().topicsByName().keySet()
 
+  override def getAllConfigs(): util.Set[ConfigResource] = _currentImage.configs().resourceData().keySet();
+
   override def getTopicId(topicName: String): Uuid = util.Optional.ofNullable(_currentImage.topics.topicsByName.get(topicName))
     .map(_.id)
     .orElse(Uuid.ZERO_UUID)
