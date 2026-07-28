@@ -16,20 +16,13 @@
  */
 package org.apache.kafka.coordinator.mirror;
 
-import org.apache.kafka.clients.admin.ClusterMirrorListing;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
-import org.apache.kafka.common.requests.WriteMirrorStatesResponse;
 import org.apache.kafka.server.common.MirrorPartitionState;
 
-import java.util.Collection;
-import java.util.Map;
 import java.util.Optional;
-import java.util.OptionalInt;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
-import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
@@ -38,10 +31,9 @@ import java.util.function.Function;
  */
 public interface CoreBridge {
     void initialize(
-        StateTransitioner stateTransitioner,
-        Consumer<String> tombstoneWriter,
-        Function<MirrorPartitionKey, Integer> coordPartitionByKeyFinder,
-        Function<String, Integer> coordPartitionByNameFinder
+        CoordinatorWriter coordinatorWriter,
+        Function<MirrorPartitionKey, Integer> coordPartFinderByKey,
+        Function<String, Integer> coordPartFinderByName
     );
 
     void closeSourceAdmins();
@@ -66,62 +58,37 @@ public interface CoreBridge {
 
     void setLastMirrorEpoch(String mirrorName, String topic, int partition, int epoch);
 
-    void writeStatesToRemoteCoordinator(
-        String mirrorName,
-        Map<String, Set<ClusterMirrorCoordinatorService.MirrorStateWrite>> topicMetadata,
-        Set<String> stoppedTopics,
-        Consumer<WriteMirrorStatesResponse> callback
-    );
-
-    CompletionStage<Map<TopicPartition, Integer>> sendLastMirrorEpochLookup(
-        String mirrorName,
-        TopicPartition tp,
-        Collection<ClusterMirrorListing> sourceMirrors
-    );
-
-    CompletableFuture<Void> bumpLeaderEpochs(Map<TopicPartition, Integer> partitionMinEpochs);
-
-    CompletableFuture<Void> scheduleBumpLeaderEpoch(String mirrorName, TopicPartition tp);
-
-    Collection<ClusterMirrorListing> listSourceClusterMirrors(String mirrorName);
-
-    boolean hasMirrorLoop(String mirrorName, TopicPartition tp, Collection<ClusterMirrorListing> sourceMirrors);
-
-    String getSourceClusterId(String mirrorName);
-
-    Map<TopicPartition, MirrorPartitionState> getMirrorStates(String mirrorName);
-
-    void removeMirror(String mirrorName);
-
-    void removePendingEpochBumps(Set<TopicPartition> partitions);
-
     Uuid getTopicId(String topicName);
 
     Optional<String> getTopicName(Uuid topicId);
 
-    int getLeaderForPartition(String topic, int partition);
-
-    void maybeCreateMirrorFetchers(String mirrorName, Set<TopicPartition> partitions);
-
-    void removeFetcherForPartitions(Set<TopicPartition> partitions);
-
-    OptionalInt getLatestEpoch(TopicPartition tp);
-
-    Map<TopicPartition, Integer> getLatestLocalEpoch(TopicPartition tp);
-
-    void maybeTruncateForLeaderEpoch(Map<TopicPartition, Integer> epochs, Consumer<TopicPartition> callback);
-
-    CompletableFuture<Void> abortOngoingTransactions(TopicPartition tp);
-
-    CompletableFuture<Void> appendPidResetBarrier(TopicPartition tp, String sourceClusterId, long timestampMs);
-
-    interface StateTransitioner {
-        void transitionTo(
+    /**
+     * Callback for writing coordinator records to the {@code __mirror_state} shard
+     * via the {@code CoordinatorRuntime}. Implemented by
+     * {@code ClusterMirrorCoordinatorService} and passed to
+     * {@code MirrorMetadataManager} during initialization.
+     */
+    interface CoordinatorWriter {
+        /** Persists a partition state transition record to the coordinator shard. */
+        CompletableFuture<Void> writeTransition(
             String mirrorName,
-            Set<TopicPartition> topicPartition,
+            TopicPartition tp,
             MirrorPartitionState state,
             String errorMessage,
             boolean nonRetryable
+        );
+
+        /** Persists a last mirror epoch record to the coordinator shard. */
+        CompletableFuture<Void> writeLastMirrorEpoch(
+            String mirrorName,
+            TopicPartition tp,
+            int epoch
+        );
+
+        /** Persists tombstone records for the given partitions of a deleted mirror. */
+        CompletableFuture<Void> writeTombstone(
+            String mirrorName,
+            Set<TopicPartition> partitions
         );
     }
 }

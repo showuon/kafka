@@ -30,6 +30,8 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.config.SaslConfigs;
+import org.apache.kafka.common.errors.CoordinatorLoadInProgressException;
+import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.message.DeleteClusterMirrorRequestData;
 import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.message.MirrorPidResetRecord;
@@ -53,10 +55,12 @@ import org.apache.kafka.common.requests.ReadMirrorStatesResponse;
 import org.apache.kafka.common.requests.WriteMirrorStatesRequest;
 import org.apache.kafka.common.requests.WriteMirrorStatesResponse;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
+import org.apache.kafka.common.utils.ExponentialBackoff;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService.MirrorStateWrite;
+import org.apache.kafka.coordinator.mirror.CoreBridge;
 import org.apache.kafka.coordinator.mirror.MirrorPartition;
 import org.apache.kafka.coordinator.mirror.MirrorPartitionKey;
 import org.apache.kafka.image.LocalReplicaChanges;
@@ -89,6 +93,7 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -141,10 +146,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private volatile Map<String, Admin> srcAdmins;
     private volatile Admin dstAdmin;
 
-    private Optional<StateTransitioner> stateTransitioner = Optional.empty();
-    Optional<Consumer<String>> tombstoneWriter = Optional.empty();
-    private Optional<Function<MirrorPartitionKey, Integer>> coordPartitionFinderByKey = Optional.empty();
-    private Optional<Function<String, Integer>> coordPartitionFinderByName = Optional.empty();
+    private Optional<CoreBridge.CoordinatorWriter> coordinatorWriter = Optional.empty();
+    private Optional<Function<MirrorPartitionKey, Integer>> coordPartFinderByKey = Optional.empty();
+    private Optional<Function<String, Integer>> coordPartFinderByName = Optional.empty();
 
     private final AtomicLong metadataRefreshError;
     private final AtomicLong topicConfigSyncError;
@@ -205,9 +209,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * by a single broker per mirror.
      */
     boolean isLocalCoordinator(String mirrorName) {
-        if (coordPartitionFinderByName.isPresent() && metadataImage.topics().getTopic(MIRROR_STATE_TOPIC_NAME) != null) {
+        if (coordPartFinderByName.isPresent() && metadataImage.topics().getTopic(MIRROR_STATE_TOPIC_NAME) != null) {
             int activeCoordinator = metadataImage.topics().getTopic(MIRROR_STATE_TOPIC_NAME)
-                    .partitions().get(coordPartitionFinderByName.get().apply(mirrorName)).leader;
+                    .partitions().get(coordPartFinderByName.get().apply(mirrorName)).leader;
             return activeCoordinator == brokerConfig.nodeId();
         }
         return false;
@@ -219,9 +223,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * coordination across brokers so a mirror with many partitions does not bottleneck on one node.
      */
     private boolean isLocalCoordinator(String mirrorName, String topic, int partition) {
-        if (metadataImage.topics().getTopic(MIRROR_STATE_TOPIC_NAME) != null && coordPartitionFinderByKey.isPresent()) {
+        if (metadataImage.topics().getTopic(MIRROR_STATE_TOPIC_NAME) != null && coordPartFinderByKey.isPresent()) {
             int activeCoordinator = metadataImage.topics().getTopic(MIRROR_STATE_TOPIC_NAME)
-                    .partitions().get(coordPartitionFinderByKey.get().apply(
+                    .partitions().get(coordPartFinderByKey.get().apply(
                             MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(topic), partition))).leader;
             return activeCoordinator == brokerConfig.nodeId();
         }
@@ -234,10 +238,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * Wires in the state transitioner, tombstone handler, and coordinator partition finders.
      * Creates the {@link MirrorSourceSyncer} and schedules periodic metadata refresh.
      */
-    public void initialize(StateTransitioner stateTransitioner,
-                           Consumer<String> tombstoneWriter,
-                           Function<MirrorPartitionKey, Integer> coordPartitionByKeyFinder,
-                           Function<String, Integer> coordPartitionByNameFinder) {
+    public void initialize(CoreBridge.CoordinatorWriter coordinatorWriter,
+                           Function<MirrorPartitionKey, Integer> coordPartFinderByKey,
+                           Function<String, Integer> coordPartFinderByName) {
         if (mirrorStateSender == null) {
             this.mirrorStateSender = new MirrorStateSender(MirrorStateSender.class.getSimpleName(),
                     NetworkUtils.buildNetworkClient(MirrorMetadataManager.class.getSimpleName(), brokerConfig, metrics, time, new LogContext(name())),
@@ -250,10 +253,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 consumerGroupOffsetSyncError, shareGroupOffsetSyncError, aclSyncError);
         sourceSyncer.scheduleMetadataRefresh(brokerConfig.mirrorConfig().metadataRefreshIntervalMs());
 
-        this.stateTransitioner = Optional.of(stateTransitioner);
-        this.tombstoneWriter = Optional.of(tombstoneWriter);
-        this.coordPartitionFinderByKey = Optional.of(coordPartitionByKeyFinder);
-        this.coordPartitionFinderByName = Optional.of(coordPartitionByNameFinder);
+        this.coordinatorWriter = Optional.of(coordinatorWriter);
+        this.coordPartFinderByKey = Optional.of(coordPartFinderByKey);
+        this.coordPartFinderByName = Optional.of(coordPartFinderByName);
 
         this.isInitialized = true;
     }
@@ -400,7 +402,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                         boolean mirrorDeleted = newImage.configs().configProperties(e.getKey()).isEmpty();
                         if (mirrorDeleted) {
                             log.info("Mirror '{}' has been deleted. Writing tombstone records.", mirrorName);
-                            tombstoneWriter.ifPresent(h -> h.accept(mirrorName));
+                            tombstoneMirror(mirrorName);
                         }
 
                         boolean connectionConfigChanged = e.getValue().changes().keySet().stream()
@@ -680,16 +682,294 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         }
     }
 
-    public void transitionTo(String mirrorName, Set<TopicPartition> topicPartition, MirrorPartitionState state) {
-        transitionTo(mirrorName, topicPartition, state, null, false);
+    public void transitionTo(String mirrorName, Set<TopicPartition> topicPartitions, MirrorPartitionState state) {
+        transitionTo(mirrorName, topicPartitions, state, null, false);
     }
 
-    public void transitionTo(String mirrorName, Set<TopicPartition> topicPartition, MirrorPartitionState state, String errorMessage) {
-        transitionTo(mirrorName, topicPartition, state, errorMessage, false);
+    public void transitionTo(String mirrorName, Set<TopicPartition> topicPartitions, MirrorPartitionState state, String errorMessage) {
+        transitionTo(mirrorName, topicPartitions, state, errorMessage, false);
     }
 
-    public void transitionTo(String mirrorName, Set<TopicPartition> topicPartition, MirrorPartitionState state, String errorMessage, boolean nonRetryable) {
-        stateTransitioner.ifPresent(st -> st.transitionTo(mirrorName, topicPartition, state, errorMessage, nonRetryable));
+    /**
+     * Writes a state transition for each partition, routing to either the local coordinator
+     * shard (via {@link CoreBridge.CoordinatorWriter}) or a remote coordinator (via
+     * {@link #writeStatesToRemoteCoordinator}). On successful write, dispatches side effects
+     * through {@link #onStateTransition}.
+     */
+    public void transitionTo(String mirrorName, Set<TopicPartition> topicPartitions,
+                              MirrorPartitionState state, String errorMessage, boolean nonRetryable) {
+        coordinatorWriter.ifPresent(writer -> {
+            for (TopicPartition tp : topicPartitions) {
+                MirrorPartitionKey key = MirrorPartitionKey.of(
+                    mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
+                if (isLocalCoordinator(mirrorName, tp.topic(), tp.partition())) {
+                    writer.writeTransition(mirrorName, tp, state, errorMessage, nonRetryable)
+                        .whenComplete((v, ex) -> {
+                            if (ex != null) {
+                                Throwable cause = (ex instanceof CompletionException && ex.getCause() != null)
+                                    ? ex.getCause() : ex;
+                                if (cause instanceof CoordinatorLoadInProgressException) {
+                                    log.debug("Transition to {} deferred for {} (shard loading).", state, tp);
+                                    return;
+                                }
+                                log.error("Transition to {} failed for {}", state, tp, ex);
+                                if (state != MirrorPartitionState.FAILED) {
+                                    transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED, ex.getMessage());
+                                }
+                                return;
+                            }
+                            if (MirrorPartition.orEmpty(cache.getPartition(key)).state() == state) {
+                                onStateTransition(mirrorName, tp, state);
+                            }
+                        });
+                } else {
+                    Map<String, Set<MirrorStateWrite>> topicMetadata =
+                        Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), state, -1)));
+                    writeStatesToRemoteCoordinator(mirrorName, topicMetadata, Set.of(),
+                        res -> res.data().topics().forEach(topic -> topic.partitions().forEach(par -> {
+                            if (par.errorCode() == Errors.NONE.code()) {
+                                updateLocalFailedState(key, state, errorMessage, nonRetryable);
+                                cache.setPartition(key,
+                                    MirrorPartition.orEmpty(cache.getPartition(key)).withState(state));
+                                onStateTransition(mirrorName, tp, state);
+                            } else {
+                                log.error("Failed to write partition state to remote coordinator: {}",
+                                    par.errorCode());
+                            }
+                        })));
+                }
+            }
+        });
+    }
+
+    // ---------------------------------------------------------------
+    // Side-effect dispatch (triggered after coordinator writes commit)
+    // ---------------------------------------------------------------
+
+    /**
+     * Dispatches side effects after a coordinator write commits.
+     * Each state triggers a specific action: LOG_TRUNCATION starts truncation,
+     * EPOCH_FENCING bumps the leader epoch, MIRRORING creates fetchers,
+     * PAUSING/STOPPING removes fetchers, FAILED schedules a retry.
+     */
+    private void onStateTransition(String mirrorName, TopicPartition tp, MirrorPartitionState newState) {
+        switch (newState) {
+            case LOG_TRUNCATION:
+                scheduleTruncation(mirrorName, tp);
+                break;
+            case EPOCH_FENCING:
+                scheduleBumpLeaderEpoch(mirrorName, tp)
+                    .whenComplete((v, ex) -> {
+                        if (ex != null) {
+                            transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED, ex.getMessage());
+                        } else {
+                            transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.MIRRORING);
+                        }
+                    });
+                break;
+            case MIRRORING:
+                replicaManagerSupplier.get().maybeCreateMirrorFetchers(mirrorName, Set.of(tp));
+                break;
+            case PAUSING:
+                replicaManagerSupplier.get().mirrorFetcherManager()
+                    .removeFetcherForPartitions(CollectionConverters.asScala(Set.of(tp)));
+                transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.PAUSED);
+                break;
+            case STOPPING:
+                handleStoppingTransition(mirrorName, tp);
+                break;
+            case PAUSED, STOPPED:
+                break;
+            case FAILED:
+                scheduleFailedRetry(mirrorName, tp);
+                break;
+            default:
+                throw new IllegalArgumentException("Illegal state transition to " + newState);
+        }
+    }
+
+    /**
+     * Handles the STOPPING lifecycle: removes fetchers, updates the last mirror epoch,
+     * bumps the leader epoch, aborts ongoing transactions, writes PID reset barrier,
+     * and finally transitions to STOPPED. On any failure, transitions to FAILED.
+     */
+    private void handleStoppingTransition(String mirrorName, TopicPartition tp) {
+        ReplicaManager rm = replicaManagerSupplier.get();
+        rm.mirrorFetcherManager().removeFetcherForPartitions(CollectionConverters.asScala(Set.of(tp)));
+        var logOpt = rm.getPartitionOrException(tp).log();
+        int latestEpoch = logOpt.isDefined() ? logOpt.get().latestEpoch().orElse(-1) : -1;
+        updateLastMirrorEpoch(mirrorName, tp, latestEpoch)
+            .thenCompose(v -> bumpLeaderEpochs(getLatestLocalEpoch(tp)))
+            .thenCompose(v -> abortOngoingTransactions(tp))
+            .thenCompose(v -> writePidResetBarrier(mirrorName, tp))
+            .thenAccept(v -> transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.STOPPED))
+            .exceptionally(ex -> {
+                transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED, ex.getMessage());
+                return null;
+            });
+    }
+
+    /** Updates the last mirror epoch in the local cache and persists it to the coordinator shard. */
+    private CompletableFuture<Void> updateLastMirrorEpoch(String mirrorName, TopicPartition tp, int epoch) {
+        if (epoch == -1) {
+            return CompletableFuture.completedFuture(null);
+        }
+        setLastMirrorEpoch(mirrorName, tp.topic(), tp.partition(), epoch);
+        if (isLocalCoordinator(mirrorName, tp.topic(), tp.partition())) {
+            return coordinatorWriter.get().writeLastMirrorEpoch(mirrorName, tp, epoch);
+        } else {
+            writeStatesToRemoteCoordinator(mirrorName,
+                Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), null, epoch))),
+                Set.of(), res -> { });
+            return CompletableFuture.completedFuture(null);
+        }
+    }
+
+    private void scheduleTruncation(String mirrorName, TopicPartition tp) {
+        final Consumer<TopicPartition> truncateCallback =
+            partition -> transitionTo(mirrorName, Set.of(partition), MirrorPartitionState.MIRRORING);
+        scheduler.scheduleOnce("truncation-" + mirrorName + "-" + tp,
+            () -> {
+                try {
+                    var sourceMirrors = listSourceClusterMirrors(mirrorName);
+                    if (hasMirrorLoop(mirrorName, tp, sourceMirrors)) {
+                        transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED,
+                            "Detected mirror loop for mirror:" + mirrorName);
+                        return;
+                    }
+                    sendLastMirrorEpochLookup(mirrorName, tp, sourceMirrors)
+                        .whenComplete((epochs, rawError) -> {
+                            if (rawError != null) {
+                                Throwable error = rawError instanceof CompletionException && rawError.getCause() != null
+                                    ? rawError.getCause() : rawError;
+                                if (error instanceof UnsupportedVersionException) {
+                                    log.warn("Source cluster doesn't support DescribeClusterMirror API. " +
+                                        "Replication will be one-way without failback");
+                                    replicaManagerSupplier.get().maybeTruncateForLeaderEpoch(
+                                        Map.of(tp, -1), truncateCallback);
+                                } else {
+                                    log.warn("Failed to truncate to last mirrored epoch for mirror {}",
+                                        mirrorName, error);
+                                    transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED,
+                                        error.getMessage());
+                                }
+                                return;
+                            }
+                            if (!epochs.containsKey(tp)) {
+                                log.warn("No epoch returned for {}. Using -1.", tp);
+                                epochs.put(tp, -1);
+                            }
+                            replicaManagerSupplier.get().maybeTruncateForLeaderEpoch(
+                                epochs, truncateCallback);
+                        });
+                } catch (Exception e) {
+                    log.warn("Failed to truncate to last mirror epochs for mirror {}", mirrorName, e);
+                    transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED, e.getMessage());
+                }
+            }, 0);
+    }
+
+    private void scheduleFailedRetry(String mirrorName, TopicPartition tp) {
+        ClusterMirrorConfig mirrorConfig = brokerConfig.mirrorConfig();
+        int maxAttempts = mirrorConfig.failedRetryMaxAttempts();
+        MirrorPartitionKey key = MirrorPartitionKey.of(
+            mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
+        MirrorPartition mp = MirrorPartition.orEmpty(cache.getPartition(key));
+        int attempt = mp.retryAttempt() != 0 ? mp.retryAttempt() : 1;
+        if (attempt == MirrorPartition.NON_RETRYABLE_ATTEMPT) {
+            log.debug("Skipping retry for partition {} (non-retryable failed state).", tp);
+            return;
+        }
+        if (attempt >= maxAttempts) {
+            log.error("Partition {} exceeded max retry attempts ({}), requires manual intervention.",
+                tp, maxAttempts);
+            return;
+        }
+        ExponentialBackoff backoff = new ExponentialBackoff(
+            mirrorConfig.failedRetryInitialBackoffMs(),
+            CommonClientConfigs.RETRY_BACKOFF_EXP_BASE,
+            mirrorConfig.failedRetryMaxBackoffMs(),
+            CommonClientConfigs.RETRY_BACKOFF_JITTER);
+        long delay = backoff.backoff(attempt);
+        MirrorPartitionState targetState = (mp.prevState() == null || mp.prevState() == MirrorPartitionState.UNKNOWN)
+            ? MirrorPartitionState.LOG_TRUNCATION : mp.prevState();
+        log.info("Scheduling retry #{} for {} in {} ms targeting {}.", attempt, tp, delay, targetState);
+        scheduler.scheduleOnce("failed-retry-" + tp,
+            () -> transitionTo(mirrorName, Set.of(tp), targetState), delay);
+    }
+
+    private CompletableFuture<Void> writePidResetBarrier(String mirrorName, TopicPartition tp) {
+        String sourceClusterId = getSourceClusterId(mirrorName);
+        if (sourceClusterId == null) {
+            log.warn("Source cluster ID not available for mirror {}. Skipping PID reset barrier.", mirrorName);
+            return CompletableFuture.completedFuture(null);
+        }
+        CompletableFuture<Void> result = new CompletableFuture<>();
+        appendPidResetBarrier(tp, sourceClusterId, time.milliseconds())
+            .whenComplete((v, ex) -> {
+                if (ex != null) {
+                    log.error("Failed to write PID reset record for {} in mirror {}", tp, mirrorName, ex);
+                    scheduler.scheduleOnce("pid-reset-retry-" + tp,
+                        () -> writePidResetBarrier(mirrorName, tp).thenAccept(r -> result.complete(null)), 5000);
+                } else {
+                    result.complete(null);
+                }
+            });
+        return result;
+    }
+
+    private void updateLocalFailedState(MirrorPartitionKey key, MirrorPartitionState newState,
+                                        String errorMessage, boolean nonRetryable) {
+        MirrorPartitionState curState = MirrorPartition.orEmpty(cache.getPartition(key)).state();
+        cache.updateFailedInfo(key, curState, newState, errorMessage, nonRetryable);
+    }
+
+    private Map<TopicPartition, Integer> getLatestLocalEpoch(TopicPartition tp) {
+        int epoch = replicaManagerSupplier.get().logManager().getLog(tp, false).get().latestEpoch().orElse(-1);
+        return Map.of(tp, epoch);
+    }
+
+    /**
+     * Writes tombstone records for all locally coordinated partitions of a deleted mirror,
+     * then removes the mirror's cache entries. Called from {@link #handleMirrorConfigDeltas}
+     * when a mirror config deletion is detected.
+     */
+    void tombstoneMirror(String mirrorName) {
+        Map<TopicPartition, MirrorPartitionState> states = getMirrorStates(mirrorName);
+        Map<Integer, Set<TopicPartition>> coordPartitionToMirrorPartitions = new HashMap<>();
+        states.forEach((tp, state) -> {
+            if (isLocalCoordinator(mirrorName, tp.topic(), tp.partition())) {
+                coordPartitionToMirrorPartitions.computeIfAbsent(
+                    coordPartFinderByKey.get().apply(
+                        MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition())),
+                    v -> new HashSet<>()).add(tp);
+            }
+        });
+
+        cache.removeMirror(mirrorName);
+        cache.clearPendingLeaderEpochBumps(states.keySet());
+
+        if (coordPartitionToMirrorPartitions.isEmpty()) {
+            states.keySet().forEach(tp ->
+                cache.removePartition(
+                    MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition())));
+            return;
+        }
+
+        for (Map.Entry<Integer, Set<TopicPartition>> entry : coordPartitionToMirrorPartitions.entrySet()) {
+            Set<TopicPartition> tps = entry.getValue();
+            coordinatorWriter.get().writeTombstone(mirrorName, tps)
+                .whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        log.warn("Failed to write tombstone for mirror '{}': {}. Will retry later.",
+                            mirrorName, ex.getMessage());
+                    } else {
+                        tps.forEach(tp -> cache.removePartition(
+                            MirrorPartitionKey.of(mirrorName,
+                                metadataCache.getTopicId(tp.topic()), tp.partition())));
+                    }
+                });
+        }
     }
 
     public void scheduleSourceTopicStateSync(String mirrorName) {
@@ -712,7 +992,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      */
     private Node findCoordinatorNode(MirrorPartitionKey key) {
         try {
-            if (coordPartitionFinderByKey.isEmpty() || !metadataCache.contains(MIRROR_STATE_TOPIC_NAME)) {
+            if (coordPartFinderByKey.isEmpty() || !metadataCache.contains(MIRROR_STATE_TOPIC_NAME)) {
                 return Node.noNode();
             }
 
@@ -724,7 +1004,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 return Node.noNode();
             }
 
-            int partition = coordPartitionFinderByKey.get().apply(key);
+            int partition = coordPartFinderByKey.get().apply(key);
             return topicMetadata.get(0).partitions().stream()
                     .filter(p -> p.partitionIndex() == partition && p.leaderId() != MetadataResponse.NO_LEADER_ID)
                     .findFirst()
@@ -1055,10 +1335,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         cache.setLastMirrorEpoch(key, epoch);
     }
 
-    public void removeMirror(String mirrorName) {
-        cache.removeMirror(mirrorName);
-    }
-
     public void updateFailedInfo(MirrorPartitionKey key, MirrorPartitionState currentState,
                                  MirrorPartitionState newState, String errorMessage, boolean nonRetryable) {
         cache.updateFailedInfo(key, currentState, newState, errorMessage, nonRetryable);
@@ -1066,10 +1342,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     public void clearFailedInfo(String mirrorName, TopicPartition tp) {
         cache.clearFailedInfo(MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition()));
-    }
-
-    public void removePendingEpochBumps(Set<TopicPartition> partitions) {
-        cache.clearPendingLeaderEpochBumps(partitions);
     }
 
     public MirrorStateCache.SourceLeader resolveSourceLeader(String mirrorName, TopicPartition tp) {
@@ -1248,8 +1520,4 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         return Optional.empty();
     }
 
-    /** Callback for partition state transitions triggered by the coordinator. */
-    public interface StateTransitioner {
-        void transitionTo(String mirrorName, Set<TopicPartition> topicPartition, MirrorPartitionState state, String errorMessage, boolean nonRetryable);
-    }
 }

@@ -208,10 +208,6 @@ class MirrorSourceSyncer {
     }
 
     private void retryPendingTombstoneWrites() {
-        if (manager.tombstoneWriter.isEmpty()) {
-            log.warn("Mirror deletion handler not configured. Tombstone record writes will be skipped.");
-            return;
-        }
         Set<String> configuredMirrors = manager.getConfiguredMirrors();
         Set<String> staleMirrors = cache.partitionKeys().stream()
                 .map(MirrorPartitionKey::mirrorName)
@@ -219,7 +215,7 @@ class MirrorSourceSyncer {
                 .collect(Collectors.toSet());
         for (String mirrorName : staleMirrors) {
             log.info("Found stale partition states for deleted mirror '{}'. Writing tombstones.", mirrorName);
-            manager.tombstoneWriter.ifPresent(h -> h.accept(mirrorName));
+            manager.tombstoneMirror(mirrorName);
         }
     }
 
