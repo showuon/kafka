@@ -52,7 +52,9 @@ import java.util.OptionalInt;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
 
 import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
@@ -67,12 +69,15 @@ import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
  */
 public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator {
     private final Logger log;
-    private final AtomicBoolean isActive = new AtomicBoolean(false);
+    private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
     private final ClusterMirrorConfig config;
     private final CoordinatorRuntime<ClusterMirrorCoordinatorShard, CoordinatorRecord> runtime;
     private final CoreBridge bridge;
     private final Scheduler scheduler;
     private final Metrics metrics;
+
+    private boolean hasStarted;
+    private boolean hasShutdown;
 
     public static class Builder {
         private final int nodeId;
@@ -179,14 +184,29 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         this.bridge = bridge;
         this.scheduler = scheduler;
         this.metrics = metrics;
+
+        this.hasStarted = false;
+        this.hasShutdown = false;
     }
 
     @Override
     public void startup() {
-        if (!isActive.compareAndSet(false, true)) {
-            log.warn("Is already running.");
-            return;
+        Lock writeLock = rwLock.writeLock();
+        writeLock.lock();
+        try {
+            if (hasStarted) {
+                log.warn("Is already running.");
+                return;
+            }
+            if (hasShutdown) {
+                log.warn("Shutdown has been initiated");
+                return;
+            }
+            hasStarted = true;
+        } finally {
+            writeLock.unlock();
         }
+
         log.info("Starting up.");
         bridge.initialize(
             new CoreBridge.CoordinatorWriter() {
@@ -217,9 +237,16 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
 
     @Override
     public void shutdown() {
-        if (!isActive.compareAndSet(true, false)) {
-            log.warn("Is already shutting down.");
-            return;
+        Lock writeLock = rwLock.writeLock();
+        writeLock.lock();
+        try {
+            if (hasShutdown) {
+                log.warn("Is already shutting down.");
+                return;
+            }
+            hasShutdown = true;
+        } finally {
+            writeLock.unlock();
         }
         log.info("Shutting down.");
         bridge.closeSourceAdmins();
@@ -252,8 +279,14 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
     }
 
     private void throwIfNotActive() {
-        if (!isActive.get()) {
-            throw Errors.COORDINATOR_NOT_AVAILABLE.exception();
+        Lock readLock = rwLock.readLock();
+        readLock.lock();
+        try {
+            if (!hasStarted || hasShutdown) {
+                throw Errors.COORDINATOR_NOT_AVAILABLE.exception();
+            }
+        } finally {
+            readLock.unlock();
         }
     }
 
