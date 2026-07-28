@@ -17,7 +17,7 @@
 package kafka.server.mirror;
 
 import kafka.server.KafkaConfig;
-import kafka.server.mirror.MirrorMetadataManager.LeaderInfo;
+import kafka.server.mirror.MirrorStateCache.SourceLeader;
 
 import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.clients.admin.Admin;
@@ -67,7 +67,7 @@ import org.apache.kafka.common.requests.IncrementalAlterConfigsRequest;
 import org.apache.kafka.common.resource.ResourceType;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig;
-import org.apache.kafka.coordinator.mirror.ClusterMirrorPartitionKey;
+import org.apache.kafka.coordinator.mirror.MirrorPartitionKey;
 import org.apache.kafka.image.TopicImage;
 import org.apache.kafka.metadata.MetadataCache;
 import org.apache.kafka.metadata.authorizer.StandardAcl;
@@ -126,7 +126,6 @@ class MirrorSourceSyncer {
     private final KafkaScheduler scheduler;
     private volatile ScheduledFuture<?> metadataRefreshFuture;
 
-    // Sync error metrics
     private final AtomicLong metadataRefreshError;
     private final AtomicLong topicConfigSyncError;
     private final AtomicLong consumerGroupOffsetSyncError;
@@ -211,8 +210,8 @@ class MirrorSourceSyncer {
             return;
         }
         Set<String> configuredMirrors = manager.getConfiguredMirrors();
-        Set<String> staleMirrors = manager.partitionCache.keySet().stream()
-                .map(ClusterMirrorPartitionKey::mirrorName)
+        Set<String> staleMirrors = manager.cache().keySet().stream()
+                .map(MirrorPartitionKey::mirrorName)
                 .filter(name -> !configuredMirrors.contains(name))
                 .collect(Collectors.toSet());
         for (String mirrorName : staleMirrors) {
@@ -378,14 +377,14 @@ class MirrorSourceSyncer {
         var createPartitionsTopics = new CreatePartitionsRequestData.CreatePartitionsTopicCollection();
 
         sourceTopicStates.forEach(ti -> {
-            var partitionLeaders = manager.sourceLeaders.computeIfAbsent(mirrorName, k -> new ConcurrentHashMap<>());
+            var partitionLeaders = manager.cache().getOrCreateSourceLeaders(mirrorName);
 
             int sourcePartitionCount = ti.partitions().size();
 
             ti.partitions().forEach(pi -> {
                 if (pi.leader() != null) {
                     partitionLeaders.put(pi.topicPartition(),
-                            new LeaderInfo(pi.leader(), pi.leaderEpoch().orElse(0)));
+                            new SourceLeader(pi.leader(), pi.leaderEpoch().orElse(0)));
                 }
             });
 
@@ -403,7 +402,7 @@ class MirrorSourceSyncer {
             } else if (destTopic == null &&
                     manager.metadataImage().topics().getTopic(ti.topic()) == null &&
                     ti.exists() && sourcePartitionCount > 0) {
-                if (manager.pendingTopicCreations.add(ti.topic())) {
+                if (manager.cache().addPendingTopicCreation(ti.topic())) {
                     creatableTopics.add(new CreateTopicsRequestData.CreatableTopic()
                             .setName(ti.topic())
                             .setNumPartitions(sourcePartitionCount)
@@ -446,13 +445,13 @@ class MirrorSourceSyncer {
         ControllerRequestCompletionHandler requestCompletionHandler = new ControllerRequestCompletionHandler() {
             @Override
             public void onTimeout() {
-                topicNames.forEach(manager.pendingTopicCreations::remove);
+                topicNames.forEach(manager.cache()::removePendingTopicCreation);
                 log.warn("Create mirror topics timed out for {}", topicNames);
             }
 
             @Override
             public void onComplete(ClientResponse response) {
-                topicNames.forEach(manager.pendingTopicCreations::remove);
+                topicNames.forEach(manager.cache()::removePendingTopicCreation);
                 if (response.responseBody() instanceof CreateTopicsResponse createTopicsResponse) {
                     createTopicsResponse.data().topics().forEach(topic -> {
                         var error = Errors.forCode(topic.errorCode());
@@ -532,13 +531,13 @@ class MirrorSourceSyncer {
      * widens the window in which the source leader is not yet known.
      */
     private void maybeStartMissedPartitions(String mirrorName) {
-        var partitionLeaders = manager.sourceLeaders.get(mirrorName);
+        var partitionLeaders = manager.cache().getSourceLeaders(mirrorName);
         if (partitionLeaders == null) {
             return;
         }
         partitionLeaders.keySet().forEach(tp -> {
-            var key = ClusterMirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
-            var cachedEntry = manager.partitionCache.get(key);
+            var key = MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
+            var cachedEntry = manager.cache().get(key);
             if (cachedEntry != null && cachedEntry.state() != null && cachedEntry.state() != MirrorPartitionState.UNKNOWN) {
                 return;
             }
@@ -1111,7 +1110,7 @@ class MirrorSourceSyncer {
             topicStates.add(topicState);
         });
 
-        manager.pendingLeaderEpochBumps.add(new MirrorMetadataManager.LeaderEpochBump(future, new ConcurrentHashMap<>(partitionMinEpochs)));
+        manager.cache().addPendingEpochBump(new MirrorStateCache.PendingLeaderEpochBump(future, new ConcurrentHashMap<>(partitionMinEpochs)));
         manager.maybeCompletePendingEpochBumps();
 
         channelManager.sendRequest(new BumpLeaderEpochsRequest.Builder(
@@ -1180,11 +1179,11 @@ class MirrorSourceSyncer {
      * syncSourceTopicState populates the cache.
      */
     private void cacheSourceLeaders(String mirrorName, Collection<TopicDescription> descriptions) {
-        var partitionLeaders = manager.sourceLeaders.computeIfAbsent(mirrorName, k -> new ConcurrentHashMap<>());
+        var sourceLeaders = manager.cache().getOrCreateSourceLeaders(mirrorName);
         descriptions.forEach(td -> td.partitions().forEach(pi -> {
             if (pi.leader() != null) {
-                partitionLeaders.put(new TopicPartition(td.name(), pi.partition()),
-                        new LeaderInfo(pi.leader(), pi.leaderEpoch().orElse(0)));
+                sourceLeaders.put(new TopicPartition(td.name(), pi.partition()),
+                        new SourceLeader(pi.leader(), pi.leaderEpoch().orElse(0)));
             }
         }));
     }
@@ -1194,9 +1193,9 @@ class MirrorSourceSyncer {
      * for any source mirror that was previously mirroring from this local cluster. This prevents
      * starting replication while the reverse direction is still active.
      *
-     * @param sourceDescription   described mirrors from the source cluster
-     * @param sourceMirrors       listed mirrors from the source cluster
-     * @param topicPartitionToBeMirrored partitions about to start mirroring
+     * @param sourceDescription described mirrors from the source cluster
+     * @param sourceMirrors listed mirrors from the source cluster
+     * @param tp partitions about to start mirroring
      * @throws IllegalStateException if any partition is not STOPPED
      */
     private void validateSourcePartitionIsStopped(

@@ -31,7 +31,6 @@ import org.apache.kafka.coordinator.common.runtime.CoordinatorResult;
 import org.apache.kafka.coordinator.common.runtime.CoordinatorShard;
 import org.apache.kafka.coordinator.common.runtime.CoordinatorShardBuilder;
 import org.apache.kafka.coordinator.common.runtime.CoordinatorTimer;
-import org.apache.kafka.coordinator.mirror.bridge.MirrorMetadataManagerShardBridge;
 import org.apache.kafka.coordinator.mirror.generated.CoordinatorRecordType;
 import org.apache.kafka.coordinator.mirror.generated.LastMirrorEpochsKey;
 import org.apache.kafka.coordinator.mirror.generated.LastMirrorEpochsValue;
@@ -53,18 +52,18 @@ import java.util.Set;
  */
 public class ClusterMirrorCoordinatorShard implements CoordinatorShard<CoordinatorRecord> {
     private final Logger log;
-    private final MirrorMetadataManagerShardBridge metadataManagerBridge;
+    private final CoreBridge coreBridge;
     private final TopicPartition topicPartition;
     private final int numPartitions;
 
     public static class Builder implements CoordinatorShardBuilder<ClusterMirrorCoordinatorShard, CoordinatorRecord> {
-        private final MirrorMetadataManagerShardBridge metadataManagerBridge;
+        private final CoreBridge coreBridge;
         private final int numPartitions;
         private LogContext logContext;
         private TopicPartition topicPartition;
 
-        public Builder(MirrorMetadataManagerShardBridge metadataManagerBridge, int numPartitions) {
-            this.metadataManagerBridge = metadataManagerBridge;
+        public Builder(CoreBridge coreBridge, int numPartitions) {
+            this.coreBridge = coreBridge;
             this.numPartitions = numPartitions;
         }
 
@@ -109,25 +108,21 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
         public ClusterMirrorCoordinatorShard build() {
             if (logContext == null) throw new IllegalArgumentException("LogContext must not be null.");
             if (topicPartition == null) throw new IllegalArgumentException("TopicPartition must not be null.");
-            return new ClusterMirrorCoordinatorShard(logContext, metadataManagerBridge, topicPartition, numPartitions);
+            return new ClusterMirrorCoordinatorShard(logContext, coreBridge, topicPartition, numPartitions);
         }
     }
 
     private ClusterMirrorCoordinatorShard(
         LogContext logContext,
-        MirrorMetadataManagerShardBridge metadataManagerBridge,
+        CoreBridge coreBridge,
         TopicPartition topicPartition,
         int numPartitions
     ) {
         this.log = logContext.logger(ClusterMirrorCoordinatorShard.class);
-        this.metadataManagerBridge = metadataManagerBridge;
+        this.coreBridge = coreBridge;
         this.topicPartition = topicPartition;
         this.numPartitions = numPartitions;
     }
-
-    // ---------------------------------------------------------------
-    // Lifecycle hooks (called by the runtime)
-    // ---------------------------------------------------------------
 
     @Override
     public void replay(long offset, long producerId, short producerEpoch, CoordinatorRecord record) {
@@ -153,22 +148,18 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
     @Override
     public void onLoaded(CoordinatorMetadataImage newImage) {
         log.info("Loaded shard for {}.", topicPartition);
-        metadataManagerBridge.onShardLoaded();
+        coreBridge.onShardLoaded();
     }
 
     @Override
     public void onUnloaded() {
-        metadataManagerBridge.onShardUnloaded(topicPartition.partition(), numPartitions);
+        coreBridge.onShardUnloaded(topicPartition.partition(), numPartitions);
         log.info("Unloaded shard for {}.", topicPartition);
     }
 
     @Override
     public void onNewMetadataImage(CoordinatorMetadataImage newImage, CoordinatorMetadataDelta delta) {
     }
-
-    // ---------------------------------------------------------------
-    // Write operations (return CoordinatorResult)
-    // ---------------------------------------------------------------
 
     public CoordinatorResult<Void, CoordinatorRecord> transitionTo(
         String mirrorName,
@@ -177,7 +168,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
         String errorMessage,
         boolean nonRetryable
     ) {
-        MirrorPartitionState currentState = metadataManagerBridge.getPartitionState(mirrorName, tp);
+        MirrorPartitionState currentState = coreBridge.getPartitionState(mirrorName, tp);
         if (!MirrorPartitionState.isValidTransition(currentState, newState)) {
             log.warn("Skipping invalid transition from {} to {} for partition {}.", currentState, newState, tp);
             return new CoordinatorResult<>(List.of(), null);
@@ -192,8 +183,8 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
     public CoordinatorResult<Void, CoordinatorRecord> updateLastMirrorEpoch(
         String mirrorName, TopicPartition tp, int epoch
     ) {
-        ClusterMirrorPartitionKey pk = ClusterMirrorPartitionKey.of(
-            mirrorName, metadataManagerBridge.getTopicId(tp.topic()), tp.partition());
+        MirrorPartitionKey pk = MirrorPartitionKey.of(
+            mirrorName, coreBridge.getTopicId(tp.topic()), tp.partition());
         CoordinatorRecord record = buildLastMirrorEpochsRecord(pk, epoch);
         return new CoordinatorResult<>(List.of(record), null);
     }
@@ -204,7 +195,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
     ) {
         List<CoordinatorRecord> records = new ArrayList<>();
         for (TopicPartition tp : partitions) {
-            Uuid topicId = metadataManagerBridge.getTopicId(tp.topic());
+            Uuid topicId = coreBridge.getTopicId(tp.topic());
             records.add(CoordinatorRecord.tombstone(new MirrorPartitionStateKey()
                 .setMirrorName(mirrorName).setTopicId(topicId).setPartition(tp.partition())));
             records.add(CoordinatorRecord.tombstone(new LastMirrorEpochsKey()
@@ -213,76 +204,68 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
         return new CoordinatorResult<>(records, null);
     }
 
-    // ---------------------------------------------------------------
-    // Private replay helpers
-    // ---------------------------------------------------------------
-
     private void replayPartitionState(MirrorPartitionStateKey key, ApiMessageAndVersion value) {
-        ClusterMirrorPartitionKey pk = ClusterMirrorPartitionKey.of(key.mirrorName(), key.topicId(), key.partition());
+        MirrorPartitionKey pk = MirrorPartitionKey.of(key.mirrorName(), key.topicId(), key.partition());
         if (value != null) {
             MirrorPartitionStateValue stateValue = (MirrorPartitionStateValue) value.message();
             MirrorPartitionState state = MirrorPartitionState.fromValue(stateValue.state());
             MirrorPartitionState previousState = MirrorPartitionState.fromValue(stateValue.previousState());
-            metadataManagerBridge.setPartitionState(pk, state);
+            coreBridge.setPartitionState(pk, state);
             restoreFailedState(pk, state, stateValue.retryAttempt(), stateValue.errorMessage(), previousState);
         } else {
-            metadataManagerBridge.clearPartitionState(pk);
+            coreBridge.removePartitionState(pk);
         }
     }
 
     private void replayLastMirrorEpochs(LastMirrorEpochsKey key, ApiMessageAndVersion value) {
-        ClusterMirrorPartitionKey pk = ClusterMirrorPartitionKey.of(key.mirrorName(), key.topicId(), key.partition());
+        MirrorPartitionKey pk = MirrorPartitionKey.of(key.mirrorName(), key.topicId(), key.partition());
         if (value != null) {
             LastMirrorEpochsValue epochsValue = (LastMirrorEpochsValue) value.message();
-            metadataManagerBridge.getTopicName(key.topicId()).ifPresent(topicName ->
-                metadataManagerBridge.setLastMirrorEpoch(key.mirrorName(),
+            coreBridge.getTopicName(key.topicId()).ifPresent(topicName ->
+                coreBridge.setLastMirrorEpoch(key.mirrorName(),
                     topicName, key.partition(), epochsValue.lastMirrorEpoch()));
         } else {
-            metadataManagerBridge.clearPartitionState(pk);
+            coreBridge.removePartitionState(pk);
         }
     }
-
-    // ---------------------------------------------------------------
-    // Private helpers
-    // ---------------------------------------------------------------
 
     private void updateFailedState(String mirrorName, TopicPartition tp,
                                    MirrorPartitionState currentState, MirrorPartitionState newState,
                                    String errorMessage, boolean nonRetryable) {
-        ClusterMirrorPartitionKey pk = ClusterMirrorPartitionKey.of(
-            mirrorName, metadataManagerBridge.getTopicId(tp.topic()), tp.partition());
-        metadataManagerBridge.updateFailedState(pk, currentState, newState, errorMessage, nonRetryable);
+        MirrorPartitionKey pk = MirrorPartitionKey.of(
+            mirrorName, coreBridge.getTopicId(tp.topic()), tp.partition());
+        coreBridge.updateFailedInfo(pk, currentState, newState, errorMessage, nonRetryable);
     }
 
-    private void restoreFailedState(ClusterMirrorPartitionKey pk, MirrorPartitionState state,
+    private void restoreFailedState(MirrorPartitionKey pk, MirrorPartitionState state,
                                     int retryAttempt, String errorMessage, MirrorPartitionState previousState) {
         if (state == MirrorPartitionState.FAILED) {
-            metadataManagerBridge.setFailedInfo(pk, new FailedPartitionInfo(retryAttempt, errorMessage, previousState));
+            coreBridge.setFailedInfo(pk, MirrorPartition.EMPTY.withError(errorMessage, retryAttempt, previousState));
         } else if (state == MirrorPartitionState.LOG_TRUNCATION
                 || state == MirrorPartitionState.STOPPED
                 || state == MirrorPartitionState.PAUSED) {
-            metadataManagerBridge.clearFailedInfo(pk);
+            coreBridge.clearFailedInfo(pk);
         }
     }
 
     private CoordinatorRecord buildPartitionStateRecord(String mirrorName, TopicPartition tp,
                                                         MirrorPartitionState newState) {
-        ClusterMirrorPartitionKey pk = ClusterMirrorPartitionKey.of(
-            mirrorName, metadataManagerBridge.getTopicId(tp.topic()), tp.partition());
-        FailedPartitionInfo fpi = metadataManagerBridge.getFailedInfo(pk);
+        MirrorPartitionKey pk = MirrorPartitionKey.of(
+            mirrorName, coreBridge.getTopicId(tp.topic()), tp.partition());
+        MirrorPartition mp = coreBridge.getFailedInfo(pk);
         var key = new MirrorPartitionStateKey()
             .setMirrorName(mirrorName)
             .setTopicId(pk.topicId())
             .setPartition(pk.partition());
         var val = new MirrorPartitionStateValue()
             .setState(newState.value())
-            .setPreviousState(fpi != null ? fpi.previousState().value() : MirrorPartitionState.UNKNOWN.value())
-            .setRetryAttempt(fpi != null ? (short) fpi.retryAttempt() : (short) 0)
-            .setErrorMessage(fpi != null ? fpi.errorMessage() : null);
+            .setPreviousState(mp != null && mp.prevState() != null ? mp.prevState().value() : MirrorPartitionState.UNKNOWN.value())
+            .setRetryAttempt(mp != null ? (short) mp.retryAttempt() : (short) 0)
+            .setErrorMessage(mp != null ? mp.errorMessage() : null);
         return CoordinatorRecord.record(key, new ApiMessageAndVersion(val, MirrorPartitionStateValue.HIGHEST_SUPPORTED_VERSION));
     }
 
-    private CoordinatorRecord buildLastMirrorEpochsRecord(ClusterMirrorPartitionKey pk, int lastMirrorEpoch) {
+    private CoordinatorRecord buildLastMirrorEpochsRecord(MirrorPartitionKey pk, int lastMirrorEpoch) {
         var key = new LastMirrorEpochsKey()
             .setMirrorName(pk.mirrorName())
             .setTopicId(pk.topicId())
@@ -290,5 +273,4 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
         var val = new LastMirrorEpochsValue().setLastMirrorEpoch(lastMirrorEpoch);
         return CoordinatorRecord.record(key, new ApiMessageAndVersion(val, LastMirrorEpochsValue.HIGHEST_SUPPORTED_VERSION));
     }
-    public record FailedPartitionInfo(int retryAttempt, String errorMessage, MirrorPartitionState previousState) { }
 }

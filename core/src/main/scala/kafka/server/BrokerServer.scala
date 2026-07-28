@@ -23,8 +23,8 @@ import kafka.log.LogManager
 import kafka.network.SocketServer
 import kafka.raft.KafkaRaftManager
 import kafka.server.mirror.MirrorMetadataManager
-import kafka.server.mirror.bridge.{MirrorMetadataManagerServiceBridgeImpl, MirrorMetadataManagerShardBridgeImpl, ReplicaManagerBridgeImpl}
-import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService
+import kafka.server.mirror.CoreBridgeImpl
+import org.apache.kafka.coordinator.mirror.{ClusterMirrorCoordinatorService, MirrorRecordSerde}
 import kafka.server.metadata._
 import kafka.server.share.{ShareCoordinatorMetadataCacheHelperImpl, SharePartitionManager}
 import kafka.utils.CoreUtils
@@ -40,7 +40,6 @@ import org.apache.kafka.common.{ClusterResource, TopicPartition, Uuid}
 import org.apache.kafka.coordinator.common.runtime.{CoordinatorLoaderImpl, CoordinatorRecord}
 import org.apache.kafka.coordinator.group.metrics.{GroupCoordinatorMetrics, GroupCoordinatorRuntimeMetrics}
 import org.apache.kafka.coordinator.group.{GroupConfigManager, GroupCoordinator, GroupCoordinatorRecordSerde, GroupCoordinatorService}
-import org.apache.kafka.coordinator.mirror.ClusterMirrorRecordSerde
 import org.apache.kafka.coordinator.mirror.metrics.ClusterMirrorCoordinatorRuntimeMetrics
 import org.apache.kafka.coordinator.share.metrics.{ShareCoordinatorMetrics, ShareCoordinatorRuntimeMetrics}
 import org.apache.kafka.coordinator.share.{ShareCoordinator, ShareCoordinatorRecordSerde, ShareCoordinatorService}
@@ -476,6 +475,7 @@ class BrokerServer(
         txnCoordinator = transactionCoordinator,
         shareCoordinator = shareCoordinator,
         clusterMirrorCoordinator = clusterMirrorCoordinator,
+        mirrorMetadataManager = mirrorMetadataManager,
         autoTopicCreationManager = autoTopicCreationManager,
         brokerId = config.nodeId,
         config = config,
@@ -723,13 +723,13 @@ class BrokerServer(
     }
   }
 
-  private def createClusterMirrorCoordinator(mirrorScheduler: KafkaScheduler): ClusterMirrorCoordinatorService = {
+  private def createClusterMirrorCoordinator(scheduler: KafkaScheduler): ClusterMirrorCoordinatorService = {
     val time = Time.SYSTEM
     val timer = new SystemTimerReaper(
       "cluster-mirror-coordinator-reaper",
       new SystemTimer("cluster-mirror-coordinator")
     )
-    val serde = new ClusterMirrorRecordSerde
+    val serde = new MirrorRecordSerde
     val loader = new CoordinatorLoaderImpl[CoordinatorRecord](
       time,
       tp => replicaManager.getLog(tp).toJava,
@@ -739,20 +739,17 @@ class BrokerServer(
     )
     val writer = new CoordinatorPartitionWriter(replicaManager)
 
-    val shardBridge = new MirrorMetadataManagerShardBridgeImpl(mirrorMetadataManager, metadataCache)
-    val serviceBridge = new MirrorMetadataManagerServiceBridgeImpl(mirrorMetadataManager, metadataCache)
-    val replicaManagerBridge = new ReplicaManagerBridgeImpl(replicaManager, time)
+    val runtimeMetrics = new ClusterMirrorCoordinatorRuntimeMetrics(metrics)
+    val bridge = new CoreBridgeImpl(mirrorMetadataManager, metadataCache, replicaManager)
 
     new ClusterMirrorCoordinatorService.Builder(config.brokerId, config.mirrorConfig)
       .withTime(time)
       .withTimer(timer)
       .withLoader(loader)
       .withWriter(writer)
-      .withCoordinatorRuntimeMetrics(new ClusterMirrorCoordinatorRuntimeMetrics(metrics))
-      .withShardBridge(shardBridge)
-      .withServiceBridge(serviceBridge)
-      .withReplicaManagerBridge(replicaManagerBridge)
-      .withScheduler(mirrorScheduler)
+      .withCoordinatorRuntimeMetrics(runtimeMetrics)
+      .withBridge(bridge)
+      .withScheduler(scheduler)
       .withMetrics(metrics)
       .build()
   }

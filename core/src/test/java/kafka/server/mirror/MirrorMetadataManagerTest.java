@@ -63,7 +63,7 @@ public class MirrorMetadataManagerTest {
     }
 
     @Test
-    public void testParseMirrorAdminPropsDefaultsToInterBrokerProtocol() {
+    public void testParseMirrorPropsDefaultsToInterBrokerProtocol() {
         // Given
         KafkaConfig config = new KafkaConfig(initialProps);
 
@@ -78,7 +78,7 @@ public class MirrorMetadataManagerTest {
     }
 
     @Test
-    public void testParseMirrorAdminPropsParsesMirrorListenerWhenConfiguredExplicitly() {
+    public void testParseMirrorPropsParsesMirrorListenerWhenConfigured() {
         // Given
         initialProps.setProperty(ReplicationConfigs.MIRROR_ADMIN_LISTENER_NAME_CONFIG, "MIRROR");
         initialProps.setProperty(BrokerSecurityConfigs.SASL_MECHANISM_MIRROR_ADMIN_PROTOCOL_CONFIG, PlainSaslServer.PLAIN_MECHANISM);

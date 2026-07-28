@@ -199,6 +199,18 @@ class BrokerMetadataPublisher(
           case t: Throwable => metadataPublishingFaultHandler.handleFault("Error updating share " +
             s"coordinator with local changes in $deltaName", t)
         }
+        if (finalizedMirrorVersion > 0) {
+          try {
+            updateCoordinator(newImage,
+              delta,
+              Topic.MIRROR_STATE_TOPIC_NAME,
+              mirrorCoordinator.onElection,
+              (partitionIndex, leaderEpochOpt) => mirrorCoordinator.onResignation(partitionIndex, toOptionalInt(leaderEpochOpt)))
+          } catch {
+            case t: Throwable => metadataPublishingFaultHandler.handleFault("Error updating Cluster Mirror " +
+              s"coordinator with local changes in $deltaName", t)
+          }
+        }
         try {
           // Notify the group coordinator about deleted topics.
           val deletedTopicPartitions = new mutable.ArrayBuffer[TopicPartition]()

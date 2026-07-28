@@ -23,7 +23,6 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kafka.log.LogManager
 import kafka.network.{DataPlaneAcceptor, SocketServer}
-import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService
 import kafka.raft.KafkaRaftManager
 import kafka.server.DynamicBrokerConfig._
 import kafka.utils.{CoreUtils, Logging}
@@ -310,7 +309,7 @@ class DynamicBrokerConfig(private val kafkaConfig: KafkaConfig) extends Logging 
     addBrokerReconfigurable(kafkaServer.socketServer)
     addBrokerReconfigurable(new DynamicProducerStateManagerConfig(kafkaServer.logManager.producerStateManagerConfig))
     addBrokerReconfigurable(new DynamicRemoteLogConfig(kafkaServer))
-    addBrokerReconfigurable(new DynamicClusterMirrorConfig(kafkaServer.replicaManager, kafkaServer.clusterMirrorCoordinator))
+    addBrokerReconfigurable(new DynamicClusterMirrorConfig(kafkaServer.replicaManager, kafkaServer.mirrorMetadataManager))
   }
 
   /**
@@ -1132,7 +1131,7 @@ object DynamicRemoteLogConfig {
 }
 
 class DynamicClusterMirrorConfig(replicaManager: ReplicaManager,
-                                 coordinator: ClusterMirrorCoordinatorService) extends BrokerReconfigurable with Logging {
+                                 mirrorMetadataManager: mirror.MirrorMetadataManager) extends BrokerReconfigurable with Logging {
 
   override def reconfigurableConfigs: Set[String] = {
     DynamicClusterMirrorConfig.ReconfigurableConfigs
@@ -1167,7 +1166,7 @@ class DynamicClusterMirrorConfig(replicaManager: ReplicaManager,
     }
 
     if (newMirrorConfig.metadataRefreshIntervalMs != oldMirrorConfig.metadataRefreshIntervalMs) {
-      coordinator.scheduleMetadataRefresh(newMirrorConfig.metadataRefreshIntervalMs)
+      mirrorMetadataManager.scheduleMetadataRefresh(newMirrorConfig.metadataRefreshIntervalMs)
       info(s"Updated ${ClusterMirrorConfig.MIRROR_METADATA_REFRESH_INTERVAL_MS_CONFIG} " +
         s"from ${oldMirrorConfig.metadataRefreshIntervalMs} to ${newMirrorConfig.metadataRefreshIntervalMs}")
     }
