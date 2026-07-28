@@ -298,7 +298,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                     stateFutures.add(runtime.scheduleWriteOperation(
                             "write-state", mirrorStateTp,
                             Duration.ofMillis(config.coordinatorWriteTimeoutMs()),
-                            shard -> shard.transitionTo(mirrorName, tp, partition.state(), null, false)));
+                            shard -> shard.writePartitionStateRecords(mirrorName, tp, partition.state(), null, false)));
                 }
                 if (partition.leaderEpoch() != -1) {
                     TopicPartition lmeTp = new TopicPartition(topic, partition.partition());

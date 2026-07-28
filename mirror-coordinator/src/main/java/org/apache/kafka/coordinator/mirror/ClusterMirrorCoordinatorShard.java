@@ -170,7 +170,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
     // Write operations (return CoordinatorResult)
     // ---------------------------------------------------------------
 
-    public CoordinatorResult<Void, CoordinatorRecord> transitionTo(
+    public CoordinatorResult<Void, CoordinatorRecord> writePartitionStateRecords(
         String mirrorName,
         TopicPartition tp,
         MirrorPartitionState newState,
@@ -178,13 +178,8 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
         boolean nonRetryable
     ) {
         MirrorPartitionState currentState = metadataManagerBridge.getPartitionState(mirrorName, tp);
-        if (!MirrorPartitionState.isValidTransition(currentState, newState)) {
-            log.warn("Skipping invalid transition from {} to {} for partition {}.", currentState, newState, tp);
-            return new CoordinatorResult<>(List.of(), null);
-        }
-
-        log.debug("Transitioning partition {} from {} to {}.", tp, currentState, newState);
         updateFailedState(mirrorName, tp, currentState, newState, errorMessage, nonRetryable);
+        metadataManagerBridge.setPartitionState(new ClusterMirrorPartitionKey(mirrorName, metadataManagerBridge.getTopicId(tp.topic()), tp.partition()), newState);
         CoordinatorRecord record = buildPartitionStateRecord(mirrorName, tp, newState);
         return new CoordinatorResult<>(List.of(record), null);
     }
@@ -192,6 +187,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
     public CoordinatorResult<Void, CoordinatorRecord> updateLastMirrorEpoch(
         String mirrorName, TopicPartition tp, int epoch
     ) {
+        metadataManagerBridge.setLastMirrorEpoch(mirrorName, tp.topic(), tp.partition(), epoch);
         ClusterMirrorPartitionKey pk = ClusterMirrorPartitionKey.of(
             mirrorName, metadataManagerBridge.getTopicId(tp.topic()), tp.partition());
         CoordinatorRecord record = buildLastMirrorEpochsRecord(pk, epoch);

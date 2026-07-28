@@ -696,23 +696,33 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     public void transitionTo(String mirrorName, Set<TopicPartition> topicPartitions,
                              MirrorPartitionState newState, String errorMessage, boolean nonRetryable) {
         topicPartitions.forEach(tp -> {
-            Map<String, Set<PartitionStateInfo>> topicMetadata =
-                    Map.of(tp.topic(), Set.of(new PartitionStateInfo(tp.partition(), newState, -1)));
-            // because we don't have connection with coordinator anymore, treat all nodes as remote coordinator
-            writeStatesToRemoteCoordinator(mirrorName, topicMetadata, Set.of(),
-                    res -> res.data().topics().forEach(topic -> topic.partitions().forEach(par -> {
-                        if (par.errorCode() == Errors.NONE.code()) {
-                            ClusterMirrorPartitionKey key = ClusterMirrorPartitionKey.of(mirrorName,
-                                    metadataCache.getTopicId(tp.topic()), tp.partition());
-                            MirrorPartitionState currentState = getPartitionState(
-                                    key.mirrorName(), tp);
-                            updateFailedState(key, currentState, newState, errorMessage, nonRetryable);
-                            setPartitionState(key, newState);
-                            handleSideEffect(mirrorName, tp, newState);
-                        } else {
-                            log.error("Failed to write partition state to remote coordinator: {}", par.errorCode());
-                        }
-                    })));
+            MirrorPartitionState currentState = getPartitionState(mirrorName, tp);
+            if (MirrorPartitionState.isValidTransition(currentState, newState)) {
+                if (newState == MirrorPartitionState.FAILED) {
+                    log.info("Transitioning partition {} from {} to {} due to {} with retryable: {}.", tp, currentState, newState, errorMessage, !nonRetryable);
+                } else {
+                    log.info("Transitioning partition {} from {} to {}.", tp, currentState, newState);
+                }
+
+                Map<String, Set<PartitionStateInfo>> topicMetadata =
+                        Map.of(tp.topic(), Set.of(new PartitionStateInfo(tp.partition(), newState, -1)));
+                // because we don't have connection with coordinator anymore, treat all nodes as remote coordinator
+                writeStatesToRemoteCoordinator(mirrorName, topicMetadata, Set.of(),
+                        res -> res.data().topics().forEach(topic -> topic.partitions().forEach(par -> {
+                            if (par.errorCode() == Errors.NONE.code()) {
+                                ClusterMirrorPartitionKey key = ClusterMirrorPartitionKey.of(mirrorName,
+                                        metadataCache.getTopicId(tp.topic()), tp.partition());
+                                updateFailedState(key, currentState, newState, errorMessage, nonRetryable);
+                                setPartitionState(key, newState);
+                                handleSideEffect(mirrorName, tp, newState);
+                            } else {
+                                log.error("Failed to write partition state to remote coordinator: {}", par.errorCode());
+                            }
+                        })));
+            } else {
+                log.warn("Ignoring state transition from {} to {} for partition {}: invalid transition",
+                        currentState, newState, tp);
+            }
         });
     }
 

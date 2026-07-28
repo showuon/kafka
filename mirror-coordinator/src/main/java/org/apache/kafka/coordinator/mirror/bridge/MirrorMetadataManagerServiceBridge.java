@@ -163,18 +163,4 @@ public interface MirrorMetadataManagerServiceBridge {
      * if the leader is unknown.
      */
     int getLeaderForPartition(String topic, int partition);
-
-    // -- State transition callback --
-
-    /** Callback for partition state transitions triggered by the coordinator. */
-    interface StateTransitioner {
-        /** Transitions the given partitions to the specified state. */
-        void transitionTo(
-            String mirrorName,
-            Set<TopicPartition> topicPartition,
-            MirrorPartitionState state,
-            String errorMessage,
-            boolean nonRetryable
-        );
-    }
 }
