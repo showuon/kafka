@@ -4456,7 +4456,7 @@ class KafkaApis(val requestChannel: RequestChannel,
 
             val state = partitionStates.getOrElse(topicPartition, MirrorPartitionState.UNKNOWN)
             val isMirroring = state == MirrorPartitionState.MIRRORING
-            val mp = mirrorMetadataManager.cache().get(
+            val mp = mirrorMetadataManager.getPartition(
               MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(topicPartition.topic()), topicPartition.partition()))
             val partitionDetail = new DescribeClusterMirrorsResponseData.PartitionDetail()
               .setPartitionIndex(topicPartition.partition())

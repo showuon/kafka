@@ -21,6 +21,7 @@ import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.CoordinatorLoadInProgressException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
+import org.apache.kafka.common.message.ReadMirrorStatesResponseData;
 import org.apache.kafka.common.message.WriteMirrorStatesResponseData;
 import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.protocol.Errors;
@@ -250,8 +251,26 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         }
     }
 
+    private int partitionFor(String mirrorName) {
+        throwIfNotActive();
+        return Utils.abs(mirrorName.hashCode()) % config.stateTopicNumPartitions();
+    }
+
+    public int partitionFor(MirrorPartitionKey key) {
+        throwIfNotActive();
+        return key.coordinatorPartition(config.stateTopicNumPartitions());
+    }
+
+    /** Returns true if this broker leads the __mirror_state partition for the given mirror partition. */
+    private boolean isLocal(String mirrorName, TopicPartition tp) {
+        int partition = partitionFor(MirrorPartitionKey.of(
+                mirrorName, bridge.getTopicId(tp.topic()), tp.partition()));
+        int leader = bridge.getLeaderForPartition(MIRROR_STATE_TOPIC_NAME, partition);
+        return leader == nodeId;
+    }
+
     // ---------------------------------------------------------------
-    // Side effects (after successful write commit)
+    // State transitions
     // ---------------------------------------------------------------
 
     private void onStateTransition(String mirrorName, TopicPartition tp, MirrorPartitionState newState) {
@@ -312,32 +331,6 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         }
     }
 
-    // ---------------------------------------------------------------
-    // Partition routing
-    // ---------------------------------------------------------------
-
-    private int partitionFor(String mirrorName) {
-        throwIfNotActive();
-        return Utils.abs(mirrorName.hashCode()) % config.stateTopicNumPartitions();
-    }
-
-    public int partitionFor(MirrorPartitionKey key) {
-        throwIfNotActive();
-        return key.coordinatorPartition(config.stateTopicNumPartitions());
-    }
-
-    /** Returns true if this broker leads the __mirror_state partition for the given mirror partition. */
-    private boolean isLocal(String mirrorName, TopicPartition tp) {
-        int partition = partitionFor(MirrorPartitionKey.of(
-                mirrorName, bridge.getTopicId(tp.topic()), tp.partition()));
-        int leader = bridge.getLeaderForPartition(MIRROR_STATE_TOPIC_NAME, partition);
-        return leader == nodeId;
-    }
-
-    // ---------------------------------------------------------------
-    // State transitions
-    // ---------------------------------------------------------------
-
     public void transitionTo(String mirrorName, Set<TopicPartition> topicPartitions,
                              MirrorPartitionState newState) {
         transitionTo(mirrorName, topicPartitions, newState, null, false);
@@ -374,9 +367,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                         }
                         MirrorPartitionKey key = MirrorPartitionKey.of(
                             mirrorName, bridge.getTopicId(tp.topic()), tp.partition());
-                        MirrorPartitionState currentState = bridge.getPartitionState(
-                            key.mirrorName(), tp);
-                        if (currentState == newState) {
+                        if (MirrorPartition.orEmpty(bridge.getPartition(key)).state() == newState) {
                             onStateTransition(mirrorName, tp, newState);
                         }
                     });
@@ -389,7 +380,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                             MirrorPartitionKey key = MirrorPartitionKey.of(mirrorName,
                                 bridge.getTopicId(tp.topic()), tp.partition());
                             updateLocalFailedState(key, newState, errorMessage, nonRetryable);
-                            bridge.setPartitionState(key, newState);
+                            bridge.setPartition(key, MirrorPartition.orEmpty(bridge.getPartition(key)).withState(newState));
                             onStateTransition(mirrorName, tp, newState);
                         } else {
                             log.error("Failed to write partition state to remote coordinator: {}", par.errorCode());
@@ -402,10 +393,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
     private void updateLocalFailedState(MirrorPartitionKey key,
                                         MirrorPartitionState newState,
                                         String errorMessage, boolean nonRetryable) {
-        throwIfNotActive();
-        MirrorPartitionState curState = bridge.getPartitionState(
-                key.mirrorName(), new TopicPartition(
-                        bridge.getTopicName(key.topicId()).orElse(""), key.partition()));
+        MirrorPartitionState curState = MirrorPartition.orEmpty(bridge.getPartition(key)).state();
         bridge.updateFailedInfo(key, curState, newState, errorMessage, nonRetryable);
     }
 
@@ -413,49 +401,86 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
     // Inter-broker RPC handling
     // ---------------------------------------------------------------
 
+    /**
+     * Reads partition states from the local coordinator cache. Partitions are grouped
+     * by their {@code __mirror_state} coordinator partition and each group is submitted
+     * as a read operation through the runtime event queue, guaranteeing that reads are
+     * ordered after any preceding writes to the same coordinator partition.
+     */
     public void readMirrorStates(String mirrorName,
                                  Map<String, Set<Integer>> partitions,
                                  Consumer<ReadMirrorStatesResponse> callback) {
         throwIfNotActive();
-        bridge.readStatesFromLocalCoordinator(mirrorName, partitions, callback);
+
+        Map<Integer, Map<String, Set<Integer>>> byCoordPartition = new HashMap<>();
+        partitions.forEach((topic, parts) -> parts.forEach(part -> {
+            int cp = partitionFor(MirrorPartitionKey.of(mirrorName, bridge.getTopicId(topic), part));
+            byCoordPartition.computeIfAbsent(cp, k -> new HashMap<>())
+                .computeIfAbsent(topic, k -> new HashSet<>()).add(part);
+        }));
+
+        List<CompletableFuture<ReadMirrorStatesResponseData>> futures = new ArrayList<>();
+        byCoordPartition.forEach((cp, tps) -> {
+            TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME, cp);
+            futures.add(runtime.scheduleReadOperation("read-mirror-states", mirrorStateTp,
+                (shard, offset) -> shard.readMirrorStates(mirrorName, tps)));
+        });
+
+        CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
+            .whenComplete((v, e) -> {
+                ReadMirrorStatesResponseData data = new ReadMirrorStatesResponseData();
+                if (e != null) {
+                    log.error("Failed to read mirror states for {}", mirrorName, e);
+                    data.setErrorCode(Errors.forException(e).code());
+                    data.setErrorMessage(e.getMessage());
+                } else {
+                    List<ReadMirrorStatesResponseData.TopicResult> topicResults = new ArrayList<>();
+                    futures.forEach(f -> topicResults.addAll(f.join().topics()));
+                    data.setTopics(topicResults);
+                }
+                callback.accept(new ReadMirrorStatesResponse(data));
+            });
     }
 
+    /**
+     * Writes partition states and last mirror epochs received from a remote coordinator.
+     * Partitions are grouped by their {@code __mirror_state} coordinator partition and
+     * each group is submitted as a single write operation through the runtime event queue,
+     * batching state transitions and LME updates into one atomic write per coordinator partition.
+     */
     public void writeMirrorStates(String mirrorName,
                                   Map<String, Set<MirrorStateWrite>> mirrorStates,
                                   Consumer<WriteMirrorStatesResponse> callback) {
         throwIfNotActive();
-        List<CompletableFuture<?>> stateFutures = new ArrayList<>();
-        List<CompletableFuture<Void>> lmeFutures = new ArrayList<>();
+
+        Map<Integer, Map<String, Set<MirrorStateWrite>>> byCoordPartition = new HashMap<>();
         Map<String, Set<Integer>> tps = new HashMap<>();
 
         mirrorStates.forEach((topic, partitions) -> {
             Set<Integer> partitionIndices = new HashSet<>();
             partitions.forEach(partition -> {
-                TopicPartition tp = new TopicPartition(topic, partition.partition());
-                partitionIndices.add(tp.partition());
-                if (partition.state() != null && partition.state() != MirrorPartitionState.UNKNOWN) {
-                    TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME,
-                        partitionFor(MirrorPartitionKey.of(mirrorName, bridge.getTopicId(tp.topic()), tp.partition())));
-                    stateFutures.add(runtime.scheduleWriteOperation("write-state", mirrorStateTp,
-                            Duration.ofMillis(config.coordinatorWriteTimeoutMs()),
-                            shard -> shard.transitionTo(mirrorName, tp, partition.state(), null, false)));
-                }
-                if (partition.leaderEpoch() != -1) {
-                    TopicPartition lmeTp = new TopicPartition(topic, partition.partition());
-                    lmeFutures.add(updateLastMirrorEpoch(mirrorName, lmeTp, partition.leaderEpoch()));
-                }
+                partitionIndices.add(partition.partition());
+                int cp = partitionFor(MirrorPartitionKey.of(
+                    mirrorName, bridge.getTopicId(topic), partition.partition()));
+                byCoordPartition.computeIfAbsent(cp, k -> new HashMap<>())
+                    .computeIfAbsent(topic, k -> new HashSet<>()).add(partition);
             });
             tps.put(topic, partitionIndices);
         });
 
-        CompletableFuture<Void> lmeFuture = CompletableFuture.allOf(
-            lmeFutures.toArray(CompletableFuture[]::new));
-        CompletableFuture.allOf(stateFutures.toArray(CompletableFuture[]::new))
-            .thenCompose(v -> lmeFuture)
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        byCoordPartition.forEach((cp, states) -> {
+            TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME, cp);
+            futures.add(runtime.scheduleWriteOperation("write-mirror-states", mirrorStateTp,
+                Duration.ofMillis(config.coordinatorWriteTimeoutMs()),
+                shard -> shard.writeMirrorStates(mirrorName, states)));
+        });
+
+        CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
             .whenComplete((v, e) -> {
                 WriteMirrorStatesResponseData data = new WriteMirrorStatesResponseData();
                 if (e != null) {
-                    log.error("Failed to update partition state and LME for {}: {}", mirrorName, e);
+                    log.error("Failed to write mirror states for {}", mirrorName, e);
                     data.setErrorCode(Errors.forException(e).code());
                     data.setErrorMessage(e.getMessage());
                 } else {
@@ -572,9 +597,9 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
 
     private void scheduleFailedRetry(String mirrorName, TopicPartition tp) {
         int maxAttempts = config.failedRetryMaxAttempts();
-        MirrorPartition mp = bridge.getFailedInfo(
-                MirrorPartitionKey.of(mirrorName, bridge.getTopicId(tp.topic()), tp.partition()));
-        int attempt = mp != null ? mp.retryAttempt() : 1;
+        MirrorPartition mp = MirrorPartition.orEmpty(bridge.getPartition(
+                MirrorPartitionKey.of(mirrorName, bridge.getTopicId(tp.topic()), tp.partition())));
+        int attempt = mp.retryAttempt() != 0 ? mp.retryAttempt() : 1;
         if (attempt == MirrorPartition.NON_RETRYABLE_ATTEMPT) {
             log.debug("Skipping retry for partition {} because it is in non-retryable failed state.", tp);
             return;
@@ -590,9 +615,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                 CommonClientConfigs.RETRY_BACKOFF_JITTER);
         long delay = failedRetryBackoff.backoff(attempt);
         MirrorPartitionState targetState;
-        if (mp == null) {
-            targetState = MirrorPartitionState.MIRRORING;
-        } else if (mp.prevState() == MirrorPartitionState.UNKNOWN) {
+        if (mp.prevState() == null || mp.prevState() == MirrorPartitionState.UNKNOWN) {
             targetState = MirrorPartitionState.LOG_TRUNCATION;
         } else {
             targetState = mp.prevState();
@@ -623,7 +646,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
 
         if (coordPartitionToMirrorPartitions.isEmpty()) {
             states.keySet().forEach(tp ->
-                    bridge.removePartitionState(
+                    bridge.removePartition(
                             MirrorPartitionKey.of(mirrorName, bridge.getTopicId(tp.topic()), tp.partition())));
             return;
         }
@@ -639,7 +662,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                             log.warn("Failed to write tombstone to {}: {}. Will retry later.",
                                     mirrorStateTp, ex.getMessage());
                         } else {
-                            tps.forEach(tp -> bridge.removePartitionState(
+                            tps.forEach(tp -> bridge.removePartition(
                                     MirrorPartitionKey.of(mirrorName,
                                             bridge.getTopicId(tp.topic()), tp.partition())));
                         }

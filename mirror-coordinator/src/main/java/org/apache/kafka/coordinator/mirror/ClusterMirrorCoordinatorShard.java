@@ -19,6 +19,7 @@ package org.apache.kafka.coordinator.mirror;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
+import org.apache.kafka.common.message.ReadMirrorStatesResponseData;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
@@ -44,6 +45,7 @@ import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -145,6 +147,38 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
         }
     }
 
+    private void replayPartitionState(MirrorPartitionStateKey key, ApiMessageAndVersion value) {
+        MirrorPartitionKey pk = MirrorPartitionKey.of(key.mirrorName(), key.topicId(), key.partition());
+        if (value != null) {
+            MirrorPartitionStateValue stateValue = (MirrorPartitionStateValue) value.message();
+            MirrorPartitionState state = MirrorPartitionState.fromValue(stateValue.state());
+            MirrorPartitionState previousState = MirrorPartitionState.fromValue(stateValue.previousState());
+            MirrorPartition mp = MirrorPartition.orEmpty(coreBridge.getPartition(pk)).withState(state);
+            if (state == MirrorPartitionState.FAILED) {
+                mp = mp.withError(stateValue.errorMessage(), stateValue.retryAttempt(), previousState);
+            } else if (state == MirrorPartitionState.LOG_TRUNCATION
+                    || state == MirrorPartitionState.STOPPED
+                    || state == MirrorPartitionState.PAUSED) {
+                mp = mp.clearError();
+            }
+            coreBridge.setPartition(pk, mp);
+        } else {
+            coreBridge.removePartition(pk);
+        }
+    }
+
+    private void replayLastMirrorEpochs(LastMirrorEpochsKey key, ApiMessageAndVersion value) {
+        MirrorPartitionKey pk = MirrorPartitionKey.of(key.mirrorName(), key.topicId(), key.partition());
+        if (value != null) {
+            LastMirrorEpochsValue epochsValue = (LastMirrorEpochsValue) value.message();
+            coreBridge.getTopicName(key.topicId()).ifPresent(topicName ->
+                    coreBridge.setLastMirrorEpoch(key.mirrorName(),
+                            topicName, key.partition(), epochsValue.lastMirrorEpoch()));
+        } else {
+            coreBridge.removePartition(pk);
+        }
+    }
+
     @Override
     public void onLoaded(CoordinatorMetadataImage newImage) {
         log.info("Loaded shard for {}.", topicPartition);
@@ -161,14 +195,60 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
     public void onNewMetadataImage(CoordinatorMetadataImage newImage, CoordinatorMetadataDelta delta) {
     }
 
-    public CoordinatorResult<Void, CoordinatorRecord> transitionTo(
+    public ReadMirrorStatesResponseData readMirrorStates(String mirrorName, Map<String, Set<Integer>> partitions) {
+        ReadMirrorStatesResponseData data = new ReadMirrorStatesResponseData();
+        List<ReadMirrorStatesResponseData.TopicResult> topicResults = new ArrayList<>();
+        partitions.forEach((topic, parts) -> {
+            List<ReadMirrorStatesResponseData.PartitionResult> partitionResults = new ArrayList<>();
+            parts.forEach(part -> {
+                MirrorPartitionKey pk = MirrorPartitionKey.of(mirrorName, coreBridge.getTopicId(topic), part);
+                MirrorPartition mp = MirrorPartition.orEmpty(coreBridge.getPartition(pk));
+                ReadMirrorStatesResponseData.PartitionResult pr = new ReadMirrorStatesResponseData.PartitionResult()
+                        .setPartitionIndex(part)
+                        .setState(mp.state().value())
+                        .setPreviousState(mp.prevState() != null ? mp.prevState().value() : MirrorPartitionState.UNKNOWN.value())
+                        .setLastMirrorEpoch(mp.lastMirrorEpoch())
+                        .setRetryAttempt((short) mp.retryAttempt())
+                        .setErrorMessage(mp.errorMessage());
+                partitionResults.add(pr);
+            });
+            topicResults.add(new ReadMirrorStatesResponseData.TopicResult()
+                    .setName(topic).setPartitions(partitionResults));
+        });
+        data.setTopics(topicResults);
+        return data;
+    }
+
+    public CoordinatorResult<Void, CoordinatorRecord> writeMirrorStates(
         String mirrorName,
-        TopicPartition tp,
-        MirrorPartitionState newState,
-        String errorMessage,
-        boolean nonRetryable
+        Map<String, Set<ClusterMirrorCoordinatorService.MirrorStateWrite>> mirrorStates
     ) {
-        MirrorPartitionState currentState = coreBridge.getPartitionState(mirrorName, tp);
+        List<CoordinatorRecord> records = new ArrayList<>();
+        mirrorStates.forEach((topic, partitions) -> partitions.forEach(partition -> {
+            TopicPartition tp = new TopicPartition(topic, partition.partition());
+            if (partition.state() != null && partition.state() != MirrorPartitionState.UNKNOWN) {
+                CoordinatorResult<Void, CoordinatorRecord> result =
+                    transitionTo(mirrorName, tp, partition.state(), null, false);
+                records.addAll(result.records());
+            }
+            if (partition.leaderEpoch() != -1) {
+                CoordinatorResult<Void, CoordinatorRecord> result =
+                    updateLastMirrorEpoch(mirrorName, tp, partition.leaderEpoch());
+                records.addAll(result.records());
+            }
+        }));
+        return new CoordinatorResult<>(records, null);
+    }
+
+    public CoordinatorResult<Void, CoordinatorRecord> transitionTo(
+            String mirrorName,
+            TopicPartition tp,
+            MirrorPartitionState newState,
+            String errorMessage,
+            boolean nonRetryable
+    ) {
+        MirrorPartitionKey pk = MirrorPartitionKey.of(mirrorName, coreBridge.getTopicId(tp.topic()), tp.partition());
+        MirrorPartitionState currentState = MirrorPartition.orEmpty(coreBridge.getPartition(pk)).state();
         if (!MirrorPartitionState.isValidTransition(currentState, newState)) {
             log.warn("Skipping invalid transition from {} to {} for partition {}.", currentState, newState, tp);
             return new CoordinatorResult<>(List.of(), null);
@@ -180,13 +260,47 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
         return new CoordinatorResult<>(List.of(record), null);
     }
 
+    private void updateFailedState(String mirrorName, TopicPartition tp,
+                                   MirrorPartitionState currentState, MirrorPartitionState newState,
+                                   String errorMessage, boolean nonRetryable) {
+        MirrorPartitionKey pk = MirrorPartitionKey.of(
+                mirrorName, coreBridge.getTopicId(tp.topic()), tp.partition());
+        coreBridge.updateFailedInfo(pk, currentState, newState, errorMessage, nonRetryable);
+    }
+
+    private CoordinatorRecord buildPartitionStateRecord(String mirrorName, TopicPartition tp,
+                                                        MirrorPartitionState newState) {
+        MirrorPartitionKey pk = MirrorPartitionKey.of(
+                mirrorName, coreBridge.getTopicId(tp.topic()), tp.partition());
+        MirrorPartition mp = MirrorPartition.orEmpty(coreBridge.getPartition(pk));
+        var key = new MirrorPartitionStateKey()
+                .setMirrorName(mirrorName)
+                .setTopicId(pk.topicId())
+                .setPartition(pk.partition());
+        var val = new MirrorPartitionStateValue()
+                .setState(newState.value())
+                .setPreviousState(mp.prevState() != null ? mp.prevState().value() : MirrorPartitionState.UNKNOWN.value())
+                .setRetryAttempt((short) mp.retryAttempt())
+                .setErrorMessage(mp.errorMessage());
+        return CoordinatorRecord.record(key, new ApiMessageAndVersion(val, MirrorPartitionStateValue.HIGHEST_SUPPORTED_VERSION));
+    }
+
     public CoordinatorResult<Void, CoordinatorRecord> updateLastMirrorEpoch(
-        String mirrorName, TopicPartition tp, int epoch
+            String mirrorName, TopicPartition tp, int epoch
     ) {
         MirrorPartitionKey pk = MirrorPartitionKey.of(
-            mirrorName, coreBridge.getTopicId(tp.topic()), tp.partition());
+                mirrorName, coreBridge.getTopicId(tp.topic()), tp.partition());
         CoordinatorRecord record = buildLastMirrorEpochsRecord(pk, epoch);
         return new CoordinatorResult<>(List.of(record), null);
+    }
+
+    private CoordinatorRecord buildLastMirrorEpochsRecord(MirrorPartitionKey pk, int lastMirrorEpoch) {
+        var key = new LastMirrorEpochsKey()
+                .setMirrorName(pk.mirrorName())
+                .setTopicId(pk.topicId())
+                .setPartition(pk.partition());
+        var val = new LastMirrorEpochsValue().setLastMirrorEpoch(lastMirrorEpoch);
+        return CoordinatorRecord.record(key, new ApiMessageAndVersion(val, LastMirrorEpochsValue.HIGHEST_SUPPORTED_VERSION));
     }
 
     public CoordinatorResult<Void, CoordinatorRecord> tombstoneMirrorRecords(
@@ -202,75 +316,5 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                 .setMirrorName(mirrorName).setTopicId(topicId).setPartition(tp.partition())));
         }
         return new CoordinatorResult<>(records, null);
-    }
-
-    private void replayPartitionState(MirrorPartitionStateKey key, ApiMessageAndVersion value) {
-        MirrorPartitionKey pk = MirrorPartitionKey.of(key.mirrorName(), key.topicId(), key.partition());
-        if (value != null) {
-            MirrorPartitionStateValue stateValue = (MirrorPartitionStateValue) value.message();
-            MirrorPartitionState state = MirrorPartitionState.fromValue(stateValue.state());
-            MirrorPartitionState previousState = MirrorPartitionState.fromValue(stateValue.previousState());
-            coreBridge.setPartitionState(pk, state);
-            restoreFailedState(pk, state, stateValue.retryAttempt(), stateValue.errorMessage(), previousState);
-        } else {
-            coreBridge.removePartitionState(pk);
-        }
-    }
-
-    private void replayLastMirrorEpochs(LastMirrorEpochsKey key, ApiMessageAndVersion value) {
-        MirrorPartitionKey pk = MirrorPartitionKey.of(key.mirrorName(), key.topicId(), key.partition());
-        if (value != null) {
-            LastMirrorEpochsValue epochsValue = (LastMirrorEpochsValue) value.message();
-            coreBridge.getTopicName(key.topicId()).ifPresent(topicName ->
-                coreBridge.setLastMirrorEpoch(key.mirrorName(),
-                    topicName, key.partition(), epochsValue.lastMirrorEpoch()));
-        } else {
-            coreBridge.removePartitionState(pk);
-        }
-    }
-
-    private void updateFailedState(String mirrorName, TopicPartition tp,
-                                   MirrorPartitionState currentState, MirrorPartitionState newState,
-                                   String errorMessage, boolean nonRetryable) {
-        MirrorPartitionKey pk = MirrorPartitionKey.of(
-            mirrorName, coreBridge.getTopicId(tp.topic()), tp.partition());
-        coreBridge.updateFailedInfo(pk, currentState, newState, errorMessage, nonRetryable);
-    }
-
-    private void restoreFailedState(MirrorPartitionKey pk, MirrorPartitionState state,
-                                    int retryAttempt, String errorMessage, MirrorPartitionState previousState) {
-        if (state == MirrorPartitionState.FAILED) {
-            coreBridge.setFailedInfo(pk, MirrorPartition.EMPTY.withError(errorMessage, retryAttempt, previousState));
-        } else if (state == MirrorPartitionState.LOG_TRUNCATION
-                || state == MirrorPartitionState.STOPPED
-                || state == MirrorPartitionState.PAUSED) {
-            coreBridge.clearFailedInfo(pk);
-        }
-    }
-
-    private CoordinatorRecord buildPartitionStateRecord(String mirrorName, TopicPartition tp,
-                                                        MirrorPartitionState newState) {
-        MirrorPartitionKey pk = MirrorPartitionKey.of(
-            mirrorName, coreBridge.getTopicId(tp.topic()), tp.partition());
-        MirrorPartition mp = coreBridge.getFailedInfo(pk);
-        var key = new MirrorPartitionStateKey()
-            .setMirrorName(mirrorName)
-            .setTopicId(pk.topicId())
-            .setPartition(pk.partition());
-        var val = new MirrorPartitionStateValue()
-            .setState(newState.value())
-            .setPreviousState(mp != null && mp.prevState() != null ? mp.prevState().value() : MirrorPartitionState.UNKNOWN.value())
-            .setRetryAttempt(mp != null ? (short) mp.retryAttempt() : (short) 0)
-            .setErrorMessage(mp != null ? mp.errorMessage() : null);
-        return CoordinatorRecord.record(key, new ApiMessageAndVersion(val, MirrorPartitionStateValue.HIGHEST_SUPPORTED_VERSION));
-    }
-
-    private CoordinatorRecord buildLastMirrorEpochsRecord(MirrorPartitionKey pk, int lastMirrorEpoch) {
-        var key = new LastMirrorEpochsKey()
-            .setMirrorName(pk.mirrorName())
-            .setTopicId(pk.topicId())
-            .setPartition(pk.partition());
-        var val = new LastMirrorEpochsValue().setLastMirrorEpoch(lastMirrorEpoch);
-        return CoordinatorRecord.record(key, new ApiMessageAndVersion(val, LastMirrorEpochsValue.HIGHEST_SUPPORTED_VERSION));
     }
 }

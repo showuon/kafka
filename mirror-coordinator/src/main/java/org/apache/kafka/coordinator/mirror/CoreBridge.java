@@ -19,7 +19,6 @@ package org.apache.kafka.coordinator.mirror;
 import org.apache.kafka.clients.admin.ClusterMirrorListing;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
-import org.apache.kafka.common.requests.ReadMirrorStatesResponse;
 import org.apache.kafka.common.requests.WriteMirrorStatesResponse;
 import org.apache.kafka.server.common.MirrorPartitionState;
 
@@ -51,21 +50,15 @@ public interface CoreBridge {
 
     void onShardUnloaded(int coordPartition, int coordPartitionCount);
 
-    MirrorPartitionState getPartitionState(String mirrorName, TopicPartition tp);
+    MirrorPartition getPartition(MirrorPartitionKey key);
 
-    void setPartitionState(MirrorPartitionKey key, MirrorPartitionState state);
+    void setPartition(MirrorPartitionKey key, MirrorPartition partition);
 
-    void removePartitionState(MirrorPartitionKey key);
-
-    MirrorPartition getFailedInfo(MirrorPartitionKey key);
-
-    void setFailedInfo(MirrorPartitionKey key, MirrorPartition info);
-
-    void clearFailedInfo(MirrorPartitionKey key);
+    void removePartition(MirrorPartitionKey key);
 
     void updateFailedInfo(
         MirrorPartitionKey key,
-        MirrorPartitionState currentState,
+        MirrorPartitionState curState,
         MirrorPartitionState newState,
         String errorMessage,
         boolean nonRetryable
@@ -78,12 +71,6 @@ public interface CoreBridge {
         Map<String, Set<ClusterMirrorCoordinatorService.MirrorStateWrite>> topicMetadata,
         Set<String> stoppedTopics,
         Consumer<WriteMirrorStatesResponse> callback
-    );
-
-    void readStatesFromLocalCoordinator(
-        String mirrorName,
-        Map<String, Set<Integer>> partitions,
-        Consumer<ReadMirrorStatesResponse> callback
     );
 
     CompletionStage<Map<TopicPartition, Integer>> sendLastMirrorEpochLookup(

@@ -30,7 +30,7 @@ import org.apache.kafka.server.common.MirrorPartitionState;
  */
 public record MirrorPartition(MirrorPartitionState state, int lastMirrorEpoch,
                               String errorMessage, int retryAttempt, MirrorPartitionState prevState) {
-    public static final MirrorPartition EMPTY = new MirrorPartition(null, -1, null, 0, null);
+    public static final MirrorPartition EMPTY = new MirrorPartition(MirrorPartitionState.UNKNOWN, -1, null, 0, null);
     public static final int NON_RETRYABLE_ATTEMPT = -1;
 
     public static MirrorPartition orEmpty(MirrorPartition mp) {
@@ -49,6 +49,10 @@ public record MirrorPartition(MirrorPartitionState state, int lastMirrorEpoch,
         return new MirrorPartition(state, lastMirrorEpoch, errorMessage, retryAttempt, previousState);
     }
 
+    public MirrorPartition clearError() {
+        return new MirrorPartition(state, lastMirrorEpoch, null, 0, null);
+    }
+
     public int nextAttempt(boolean nonRetryable) {
         if (nonRetryable || retryAttempt == NON_RETRYABLE_ATTEMPT) {
             return NON_RETRYABLE_ATTEMPT;
@@ -56,10 +60,10 @@ public record MirrorPartition(MirrorPartitionState state, int lastMirrorEpoch,
         return retryAttempt != 0 ? retryAttempt + 1 : 1;
     }
 
-    public MirrorPartitionState resolvePreviousState(MirrorPartitionState currentState) {
-        if (currentState == MirrorPartitionState.FAILED && prevState != null) {
+    public MirrorPartitionState resolvePrevState(MirrorPartitionState currState) {
+        if (currState == MirrorPartitionState.FAILED && prevState != null) {
             return prevState;
         }
-        return currentState;
+        return currState;
     }
 }
