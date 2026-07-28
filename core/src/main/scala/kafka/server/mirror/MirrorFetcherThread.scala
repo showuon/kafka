@@ -63,7 +63,7 @@ class MirrorFetcherThread(name: String,
   override protected def addFetcherForPartitions(partitionAndOffsets: Map[TopicPartition, InitialFetchState]): Unit = {
     replicaMgr.mirrorMetadataManager.foreach { mmm =>
       partitionAndOffsets.foreach { case (tp, state) =>
-        mmm.cache().updateSourceLeader(mirrorName, tp,
+        mmm.updateSourceLeader(mirrorName, tp,
           new SourceLeader(new Node(state.leader.id(), state.leader.host(), state.leader.port()), state.currentLeaderEpoch))
       }
     }
@@ -181,7 +181,7 @@ class MirrorFetcherThread(name: String,
   }
 
   override def leaderEpochFromSource(tp: TopicPartition): Option[Int] = {
-    replicaMgr.mirrorMetadataManager.map(mmm => mmm.cache().resolveSourceLeader(mirrorName, tp).leaderEpoch())
+    replicaMgr.mirrorMetadataManager.map(mmm => mmm.resolveSourceLeader(mirrorName, tp).leaderEpoch())
   }
 
   // Returns the mirror partition lag

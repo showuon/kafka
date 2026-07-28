@@ -119,6 +119,7 @@ class MirrorSourceSyncer {
 
     private final Logger log;
     private final MirrorMetadataManager manager;
+    private final MirrorStateCache cache;
     private final KafkaConfig brokerConfig;
     private final int nodeId;
     private final NodeToControllerChannelManager channelManager;
@@ -135,6 +136,7 @@ class MirrorSourceSyncer {
     MirrorSourceSyncer(
         KafkaConfig brokerConfig,
         MirrorMetadataManager manager,
+        MirrorStateCache cache,
         NodeToControllerChannelManager channelManager,
         MetadataCache metadataCache,
         KafkaScheduler scheduler,
@@ -145,6 +147,7 @@ class MirrorSourceSyncer {
         AtomicLong aclSyncError
     ) {
         this.manager = manager;
+        this.cache = cache;
         this.brokerConfig = brokerConfig;
         this.nodeId = brokerConfig.nodeId();
         this.channelManager = channelManager;
@@ -210,7 +213,7 @@ class MirrorSourceSyncer {
             return;
         }
         Set<String> configuredMirrors = manager.getConfiguredMirrors();
-        Set<String> staleMirrors = manager.cache().keySet().stream()
+        Set<String> staleMirrors = cache.partitionKeys().stream()
                 .map(MirrorPartitionKey::mirrorName)
                 .filter(name -> !configuredMirrors.contains(name))
                 .collect(Collectors.toSet());
@@ -377,13 +380,11 @@ class MirrorSourceSyncer {
         var createPartitionsTopics = new CreatePartitionsRequestData.CreatePartitionsTopicCollection();
 
         sourceTopicStates.forEach(ti -> {
-            var partitionLeaders = manager.cache().getOrCreateSourceLeaders(mirrorName);
-
             int sourcePartitionCount = ti.partitions().size();
 
             ti.partitions().forEach(pi -> {
                 if (pi.leader() != null) {
-                    partitionLeaders.put(pi.topicPartition(),
+                    cache.updateSourceLeader(mirrorName, pi.topicPartition(),
                             new SourceLeader(pi.leader(), pi.leaderEpoch().orElse(0)));
                 }
             });
@@ -402,7 +403,7 @@ class MirrorSourceSyncer {
             } else if (destTopic == null &&
                     manager.metadataImage().topics().getTopic(ti.topic()) == null &&
                     ti.exists() && sourcePartitionCount > 0) {
-                if (manager.cache().addPendingTopicCreation(ti.topic())) {
+                if (cache.addPendingTopicCreation(ti.topic())) {
                     creatableTopics.add(new CreateTopicsRequestData.CreatableTopic()
                             .setName(ti.topic())
                             .setNumPartitions(sourcePartitionCount)
@@ -445,13 +446,13 @@ class MirrorSourceSyncer {
         ControllerRequestCompletionHandler requestCompletionHandler = new ControllerRequestCompletionHandler() {
             @Override
             public void onTimeout() {
-                topicNames.forEach(manager.cache()::removePendingTopicCreation);
+                topicNames.forEach(cache::removePendingTopicCreation);
                 log.warn("Create mirror topics timed out for {}", topicNames);
             }
 
             @Override
             public void onComplete(ClientResponse response) {
-                topicNames.forEach(manager.cache()::removePendingTopicCreation);
+                topicNames.forEach(cache::removePendingTopicCreation);
                 if (response.responseBody() instanceof CreateTopicsResponse createTopicsResponse) {
                     createTopicsResponse.data().topics().forEach(topic -> {
                         var error = Errors.forCode(topic.errorCode());
@@ -531,13 +532,13 @@ class MirrorSourceSyncer {
      * widens the window in which the source leader is not yet known.
      */
     private void maybeStartMissedPartitions(String mirrorName) {
-        var partitionLeaders = manager.cache().getSourceLeaders(mirrorName);
+        var partitionLeaders = cache.getSourceLeaders(mirrorName);
         if (partitionLeaders == null) {
             return;
         }
         partitionLeaders.keySet().forEach(tp -> {
             var key = MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
-            var cachedEntry = manager.cache().get(key);
+            var cachedEntry = cache.getPartition(key);
             if (cachedEntry != null && cachedEntry.state() != null && cachedEntry.state() != MirrorPartitionState.UNKNOWN) {
                 return;
             }
@@ -1110,7 +1111,7 @@ class MirrorSourceSyncer {
             topicStates.add(topicState);
         });
 
-        manager.cache().addPendingEpochBump(new MirrorStateCache.PendingLeaderEpochBump(future, new ConcurrentHashMap<>(partitionMinEpochs)));
+        cache.addPendingEpochBump(new MirrorStateCache.PendingLeaderEpochBump(future, new ConcurrentHashMap<>(partitionMinEpochs)));
         manager.maybeCompletePendingEpochBumps();
 
         channelManager.sendRequest(new BumpLeaderEpochsRequest.Builder(
@@ -1179,10 +1180,9 @@ class MirrorSourceSyncer {
      * syncSourceTopicState populates the cache.
      */
     private void cacheSourceLeaders(String mirrorName, Collection<TopicDescription> descriptions) {
-        var sourceLeaders = manager.cache().getOrCreateSourceLeaders(mirrorName);
         descriptions.forEach(td -> td.partitions().forEach(pi -> {
             if (pi.leader() != null) {
-                sourceLeaders.put(new TopicPartition(td.name(), pi.partition()),
+                cache.updateSourceLeader(mirrorName, new TopicPartition(td.name(), pi.partition()),
                         new SourceLeader(pi.leader(), pi.leaderEpoch().orElse(0)));
             }
         }));

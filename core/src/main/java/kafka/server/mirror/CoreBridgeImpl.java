@@ -21,7 +21,6 @@ import kafka.server.ReplicaManager;
 import org.apache.kafka.clients.admin.ClusterMirrorListing;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
-import org.apache.kafka.common.requests.ReadMirrorStatesResponse;
 import org.apache.kafka.common.requests.WriteMirrorStatesResponse;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService.MirrorStateWrite;
 import org.apache.kafka.coordinator.mirror.CoreBridge;
@@ -81,48 +80,33 @@ public class CoreBridgeImpl implements CoreBridge {
 
     @Override
     public void onShardUnloaded(int coordPartition, int coordPartitionCount) {
-        metadataManager.cache().clearPartition(coordPartition, coordPartitionCount);
+        metadataManager.clearPartition(coordPartition, coordPartitionCount);
     }
 
     @Override
-    public MirrorPartitionState getPartitionState(String mirrorName, TopicPartition tp) {
-        return metadataManager.getPartitionState(mirrorName, tp);
+    public MirrorPartition getPartition(MirrorPartitionKey key) {
+        return metadataManager.getPartition(key);
     }
 
     @Override
-    public void setPartitionState(MirrorPartitionKey key, MirrorPartitionState state) {
-        metadataManager.cache().setPartitionState(key, state);
+    public void setPartition(MirrorPartitionKey key, MirrorPartition partition) {
+        metadataManager.setPartition(key, partition);
     }
 
     @Override
-    public void removePartitionState(MirrorPartitionKey key) {
-        metadataManager.cache().remove(key);
-    }
-
-    @Override
-    public MirrorPartition getFailedInfo(MirrorPartitionKey key) {
-        return metadataManager.cache().get(key);
-    }
-
-    @Override
-    public void setFailedInfo(MirrorPartitionKey key, MirrorPartition info) {
-        metadataManager.cache().setFailedInfo(key, info.errorMessage(), info.retryAttempt(), info.prevState());
-    }
-
-    @Override
-    public void clearFailedInfo(MirrorPartitionKey key) {
-        metadataManager.cache().clearFailedInfo(key);
+    public void removePartition(MirrorPartitionKey key) {
+        metadataManager.removePartition(key);
     }
 
     @Override
     public void updateFailedInfo(
         MirrorPartitionKey key,
-        MirrorPartitionState currentState,
+        MirrorPartitionState curState,
         MirrorPartitionState newState,
         String errorMessage,
         boolean nonRetryable
     ) {
-        metadataManager.cache().updateFailedInfo(key, currentState, newState, errorMessage, nonRetryable);
+        metadataManager.updateFailedInfo(key, curState, newState, errorMessage, nonRetryable);
     }
 
     @Override
@@ -138,15 +122,6 @@ public class CoreBridgeImpl implements CoreBridge {
         Consumer<WriteMirrorStatesResponse> callback
     ) {
         metadataManager.writeStatesToRemoteCoordinator(mirrorName, topicMetadata, stoppedTopics, callback);
-    }
-
-    @Override
-    public void readStatesFromLocalCoordinator(
-        String mirrorName,
-        Map<String, Set<Integer>> partitions,
-        Consumer<ReadMirrorStatesResponse> callback
-    ) {
-        metadataManager.readMirrorStates(mirrorName, partitions, callback);
     }
 
     @Override
@@ -190,12 +165,12 @@ public class CoreBridgeImpl implements CoreBridge {
 
     @Override
     public void removeMirror(String mirrorName) {
-        metadataManager.cache().removeMirror(mirrorName);
+        metadataManager.removeMirror(mirrorName);
     }
 
     @Override
     public void removePendingEpochBumps(Set<TopicPartition> partitions) {
-        metadataManager.cache().removePendingEpochBumps(partitions);
+        metadataManager.removePendingEpochBumps(partitions);
     }
 
     @Override

@@ -2649,7 +2649,7 @@ class ReplicaManager(val config: KafkaConfig,
           try {
             if (mirrorName != null) {
               // Get the source partition leader
-              val sourceLeader = mirrorMetadataManager.get.cache().resolveSourceLeader(mirrorName, tp)
+              val sourceLeader = mirrorMetadataManager.get.resolveSourceLeader(mirrorName, tp)
               val sourceLeaderNode = sourceLeader.node()
               val leaderEndpoint = new BrokerEndPoint(sourceLeaderNode.id(), sourceLeaderNode.host(), sourceLeaderNode.port())
 
