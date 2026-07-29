@@ -740,7 +740,7 @@ class BrokerServer(
     val writer = new CoordinatorPartitionWriter(replicaManager)
 
     val runtimeMetrics = new ClusterMirrorCoordinatorRuntimeMetrics(metrics)
-    val bridge = new CoreBridgeImpl(mirrorMetadataManager, metadataCache, replicaManager)
+    val bridge = new CoreBridgeImpl(mirrorMetadataManager, metadataCache)
 
     new ClusterMirrorCoordinatorService.Builder(config.brokerId, config.mirrorConfig)
       .withTime(time)

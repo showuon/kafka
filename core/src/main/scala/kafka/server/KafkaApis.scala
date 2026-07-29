@@ -4486,11 +4486,9 @@ class KafkaApis(val requestChannel: RequestChannel,
    * Returns -1 for partitions not coordinated by this broker. The admin client
    * broadcasts to all brokers and takes the max LME per partition.
    */
-  private def maybeProcessLastMirrorEpochLookup(
-                                                 requestData: DescribeClusterMirrorsRequestData,
-                                                 responseData: DescribeClusterMirrorsResponseData,
-                                                 sendResponse: Runnable
-                                               ): Unit = {
+  private def maybeProcessLastMirrorEpochLookup(requestData: DescribeClusterMirrorsRequestData,
+                                                responseData: DescribeClusterMirrorsResponseData,
+                                                sendResponse: Runnable): Unit = {
     val requestClusterId = requestData.clusterId
     val lastMirrorEpochLookups = requestData.lastMirrorEpochLookups
     if (requestClusterId == null || lastMirrorEpochLookups == null || lastMirrorEpochLookups.isEmpty) {
@@ -4583,7 +4581,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       })
       mirrorPartitions.put(topic.name(), parts)
     })
-    clusterMirrorCoordinator.readMirrorStates(mirrorName, mirrorPartitions,
+    clusterMirrorCoordinator.readState(mirrorName, mirrorPartitions,
       res => requestHelper.sendMaybeThrottle(request, res))
   }
 
@@ -4609,7 +4607,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       })
       mirrorState.put(topic.name(), topicState)
     })
-    clusterMirrorCoordinator.writeMirrorStates(mirrorName, mirrorState, res => requestHelper.sendMaybeThrottle(request, res))
+    clusterMirrorCoordinator.writeState(mirrorName, mirrorState, res => requestHelper.sendMaybeThrottle(request, res))
   }
 }
 

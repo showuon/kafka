@@ -707,12 +707,14 @@ abstract class AbstractFetcherThread(name: String,
   private def partitionFetchState(tp: TopicPartition, initialFetchState: InitialFetchState, currentState: PartitionFetchState): PartitionFetchState = {
     if (currentState != null && currentState.currentLeaderEpoch == initialFetchState.currentLeaderEpoch) {
       currentState
+    } else if (currentState != null && mirrorName.nonEmpty && initialFetchState.currentLeaderEpoch < currentState.currentLeaderEpoch) {
+      // Skip stale epoch downgrades for mirror partitions to avoid an infinite truncation loop.
+      currentState
     } else if (initialFetchState.initOffset < 0) {
       fetchOffsetAndTruncate(tp, initialFetchState.topicId, initialFetchState.currentLeaderEpoch, initialFetchState.mirrorLeaderEpoch)
     } else if (leader.isTruncationOnFetchSupported && mirrorName.isBlank) {
-      // With old message format, `latestEpoch` will be empty and we use Truncating state to truncate to high watermark
+      // With old message format, latestEpoch will be empty and we use Truncating state to truncate to high watermark
       val lastFetchedEpoch: Optional[Integer] = latestEpoch(tp)
-
       val state = if (lastFetchedEpoch.isPresent) ReplicaState.FETCHING else ReplicaState.TRUNCATING
       new PartitionFetchState(initialFetchState.topicId.toJava, initialFetchState.initOffset, Optional.empty(), initialFetchState.currentLeaderEpoch,
         state, lastFetchedEpoch, initialFetchState.mirrorName, initialFetchState.mirrorLeaderEpoch)
