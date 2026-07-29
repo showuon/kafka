@@ -434,8 +434,16 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                     data.setErrorCode(Errors.forException(e).code());
                     data.setErrorMessage(e.getMessage());
                 } else {
-                    List<ReadMirrorStatesResponseData.TopicResult> topicResults = new ArrayList<>();
-                    futures.forEach(f -> topicResults.addAll(f.join().topics()));
+                    // A topic's partitions can span multiple coordinator partitions, so merge results by topic name here
+                    Map<String, List<ReadMirrorStatesResponseData.PartitionResult>> merged = new HashMap<>();
+                    futures.forEach(f -> f.join().topics().forEach(topicResult ->
+                        merged.computeIfAbsent(topicResult.name(), k -> new ArrayList<>())
+                            .addAll(topicResult.partitions())));
+                    List<ReadMirrorStatesResponseData.TopicResult> topicResults = merged.entrySet().stream()
+                        .map(topicEntry -> new ReadMirrorStatesResponseData.TopicResult()
+                            .setName(topicEntry.getKey())
+                            .setPartitions(topicEntry.getValue()))
+                        .toList();
                     data.setTopics(topicResults);
                 }
                 callback.accept(new ReadMirrorStatesResponse(data));
