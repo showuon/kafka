@@ -536,7 +536,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             desiredStates.keySet().forEach(tp ->
                     partitions.computeIfAbsent(tp.topic(), k -> new HashSet<>()).add(tp.partition()));
             log.debug("Reading remote coordinator state for mirror '{}': {}", mirrorName, partitions);
-            readStatesFromRemoteCoordinator(mirrorName, partitions, res ->
+            readStateFromRemoteCoordinator(mirrorName, partitions, res ->
                     res.data().topics().forEach(topic ->
                             topic.partitions().forEach(partition -> {
                                 if (partition.errorCode() != Errors.NONE.code()) {
@@ -669,7 +669,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     /**
      * Writes a state transition for each partition, routing to either the local coordinator
      * shard (via {@link CoreBridge.CoordinatorWriter}) or a remote coordinator (via
-     * {@link #writeStatesToRemoteCoordinator}). On successful write, dispatches side effects
+     * {@link #writeStateToRemoteCoordinator}). On successful write, dispatches side effects
      * through {@link #onStateTransition}.
      */
     public void transitionTo(String mirrorName, Set<TopicPartition> topicPartitions,
@@ -679,7 +679,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 MirrorPartitionKey key = MirrorPartitionKey.of(
                     mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
                 if (isLocalCoordinator(mirrorName, tp.topic(), tp.partition())) {
-                    writer.writeTransition(mirrorName, tp, state, errorMessage, nonRetryable)
+                    writer.writePartitionState(mirrorName, tp, state, errorMessage, nonRetryable)
                         .whenComplete((v, ex) -> {
                             if (ex != null) {
                                 Throwable cause = (ex instanceof CompletionException && ex.getCause() != null)
@@ -701,7 +701,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 } else {
                     Map<String, Set<MirrorStateWrite>> topicMetadata =
                         Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), state, -1)));
-                    writeStatesToRemoteCoordinator(mirrorName, topicMetadata, Set.of(),
+                    writeStateToRemoteCoordinator(mirrorName, topicMetadata, Set.of(),
                         res -> res.data().topics().forEach(topic -> topic.partitions().forEach(par -> {
                             if (par.errorCode() == Errors.NONE.code()) {
                                 updateLocalFailedState(key, state, errorMessage, nonRetryable);
@@ -794,7 +794,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         if (isLocalCoordinator(mirrorName, tp.topic(), tp.partition())) {
             return coordinatorWriter.get().writeLastMirrorEpoch(mirrorName, tp, epoch);
         } else {
-            writeStatesToRemoteCoordinator(mirrorName,
+            writeStateToRemoteCoordinator(mirrorName,
                 Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), null, epoch))),
                 Set.of(), res -> { });
             return CompletableFuture.completedFuture(null);
@@ -983,9 +983,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * Reads partition states from remote coordinators, batching requests per coordinator node.
      * Updates the local {@link MirrorStateCache} with each response.
      */
-    void readStatesFromRemoteCoordinator(String mirrorName,
-                                         Map<String, Set<Integer>> partitions,
-                                         Consumer<ReadMirrorStatesResponse> callback) {
+    void readStateFromRemoteCoordinator(String mirrorName,
+                                        Map<String, Set<Integer>> partitions,
+                                        Consumer<ReadMirrorStatesResponse> callback) {
         log.debug("Reading states from remote coordinator: {} {}", mirrorName, partitions);
 
         // Group partitions by coordinator node for batching
@@ -1046,10 +1046,10 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     /** Writes partition states to remote coordinators, batching requests per coordinator node. */
-    public void writeStatesToRemoteCoordinator(String mirrorName,
-                                        Map<String, Set<MirrorStateWrite>> topicMetadata,
-                                        Set<String> stoppedTopics,
-                                        Consumer<WriteMirrorStatesResponse> callback) {
+    public void writeStateToRemoteCoordinator(String mirrorName,
+                                              Map<String, Set<MirrorStateWrite>> topicMetadata,
+                                              Set<String> stoppedTopics,
+                                              Consumer<WriteMirrorStatesResponse> callback) {
         log.debug("Writing states to remote coordinator: {} {} {}", mirrorName, topicMetadata, stoppedTopics);
 
         // Group partitions by coordinator node for batching
@@ -1344,7 +1344,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             return;
         }
 
-        readStatesFromRemoteCoordinator(mirrorName, remotePartitions, response -> {
+        readStateFromRemoteCoordinator(mirrorName, remotePartitions, response -> {
             Optional<Errors> remoteError = validateRemotePartitions(response, validStates);
             if (remoteError.isPresent()) {
                 resultHandler.accept(remoteError);

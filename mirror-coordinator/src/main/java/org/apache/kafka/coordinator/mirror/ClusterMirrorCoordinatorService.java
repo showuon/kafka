@@ -191,9 +191,9 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         bridge.initialize(
             new CoreBridge.CoordinatorWriter() {
                 @Override
-                public CompletableFuture<Void> writeTransition(String mirrorName, TopicPartition tp,
+                public CompletableFuture<Void> writePartitionState(String mirrorName, TopicPartition tp,
                         MirrorPartitionState state, String errorMessage, boolean nonRetryable) {
-                    return ClusterMirrorCoordinatorService.this.writeTransition(
+                    return ClusterMirrorCoordinatorService.this.writePartitionState(
                         mirrorName, tp, state, errorMessage, nonRetryable);
                 }
 
@@ -262,48 +262,26 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         return key.coordinatorPartition(config.stateTopicNumPartitions());
     }
 
-    /** Persists a partition state transition record to the coordinator shard. */
-    private CompletableFuture<Void> writeTransition(String mirrorName, TopicPartition tp,
-            MirrorPartitionState state, String errorMessage, boolean nonRetryable) {
-        throwIfNotActive();
-        TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME,
-            partitionFor(MirrorPartitionKey.of(mirrorName, bridge.getTopicId(tp.topic()), tp.partition())));
-        return runtime.scheduleWriteOperation("transition-" + state, mirrorStateTp,
-            Duration.ofMillis(config.coordinatorWriteTimeoutMs()),
-            shard -> shard.transitionTo(mirrorName, tp, state, errorMessage, nonRetryable));
-    }
-
-    /** Persists a last mirror epoch record to the coordinator shard. */
-    private CompletableFuture<Void> writeLastMirrorEpoch(String mirrorName, TopicPartition tp, int epoch) {
-        throwIfNotActive();
-        TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME,
-            partitionFor(MirrorPartitionKey.of(mirrorName, bridge.getTopicId(tp.topic()), tp.partition())));
-        return runtime.scheduleWriteOperation("update-lme", mirrorStateTp,
-            Duration.ofMillis(config.coordinatorWriteTimeoutMs()),
-            shard -> shard.updateLastMirrorEpoch(mirrorName, tp, epoch));
-    }
-
-    /** Persists tombstone records for the given partitions of a deleted mirror. */
-    private CompletableFuture<Void> writeTombstone(String mirrorName, Set<TopicPartition> partitions) {
-        throwIfNotActive();
-        int coordPartition = partitionFor(MirrorPartitionKey.of(
-                mirrorName, bridge.getTopicId(partitions.iterator().next().topic()),
-                partitions.iterator().next().partition()));
-        TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME, coordPartition);
-        return runtime.scheduleWriteOperation("tombstone-mirror", mirrorStateTp,
-                Duration.ofMillis(config.coordinatorWriteTimeoutMs()),
-                shard -> shard.tombstoneMirrorRecords(mirrorName, partitions));
+    private boolean isValidTransition(String mirrorName, TopicPartition tp, MirrorPartitionState newState) {
+        MirrorPartitionKey pk = MirrorPartitionKey.of(mirrorName, bridge.getTopicId(tp.topic()), tp.partition());
+        MirrorPartitionState currentState = MirrorPartition.orEmpty(bridge.getPartition(pk)).state();
+        if (!MirrorPartitionState.isValidTransition(currentState, newState)) {
+            log.warn("Skipping invalid transition from {} to {} for {}.", currentState, newState, tp);
+            return false;
+        }
+        return true;
     }
 
     /**
-     * Reads partition states from the local coordinator cache. Partitions are grouped
-     * by their {@code __mirror_state} coordinator partition and each group is submitted
-     * as a read operation through the runtime event queue, guaranteeing that reads are
-     * ordered after any preceding writes to the same coordinator partition.
+     * Reads partition states from the local coordinator cache. Called from
+     * {@code MirrorMetadataManager#readStatesFromRemoteCoordinator} of a
+     * remote broker.
      */
-    public void readMirrorStates(String mirrorName,
-                                 Map<String, Set<Integer>> partitions,
-                                 Consumer<ReadMirrorStatesResponse> callback) {
+    public void readState(
+            String mirrorName,
+            Map<String, Set<Integer>> partitions,
+            Consumer<ReadMirrorStatesResponse> callback
+    ) {
         throwIfNotActive();
 
         Map<Integer, Map<String, Set<Integer>>> byCoordPartition = new HashMap<>();
@@ -317,7 +295,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         byCoordPartition.forEach((cp, tps) -> {
             TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME, cp);
             futures.add(runtime.scheduleReadOperation("read-mirror-states", mirrorStateTp,
-                (shard, offset) -> shard.readMirrorStates(mirrorName, tps)));
+                (shard, offset) -> shard.readState(mirrorName, tps)));
         });
 
         CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
@@ -345,14 +323,15 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
     }
 
     /**
-     * Writes partition states and last mirror epochs received from a remote coordinator.
-     * Partitions are grouped by their {@code __mirror_state} coordinator partition and
-     * each group is submitted as a single write operation through the runtime event queue,
-     * batching state transitions and LME updates into one atomic write per coordinator partition.
+     * Writes partition states and last mirror epochs received from a remote broker.
+     * Called from {@code MirrorMetadataManager#writeStatesToRemoteCoordinator} of
+     * a remote broker.
      */
-    public void writeMirrorStates(String mirrorName,
-                                  Map<String, Set<MirrorStateWrite>> mirrorStates,
-                                  Consumer<WriteMirrorStatesResponse> callback) {
+    public void writeState(
+            String mirrorName,
+            Map<String, Set<MirrorStateWrite>> mirrorStates,
+            Consumer<WriteMirrorStatesResponse> callback
+    ) {
         throwIfNotActive();
 
         Map<Integer, Map<String, Set<MirrorStateWrite>>> byCoordPartition = new HashMap<>();
@@ -361,7 +340,12 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         mirrorStates.forEach((topic, partitions) -> {
             Set<Integer> partitionIndices = new HashSet<>();
             partitions.forEach(partition -> {
+                TopicPartition tp = new TopicPartition(topic, partition.partition());
                 partitionIndices.add(partition.partition());
+                if (partition.state() != null && partition.state() != MirrorPartitionState.UNKNOWN
+                        && !isValidTransition(mirrorName, tp, partition.state())) {
+                    return;
+                }
                 int cp = partitionFor(MirrorPartitionKey.of(
                     mirrorName, bridge.getTopicId(topic), partition.partition()));
                 byCoordPartition.computeIfAbsent(cp, k -> new HashMap<>())
@@ -373,9 +357,9 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         List<CompletableFuture<Void>> futures = new ArrayList<>();
         byCoordPartition.forEach((cp, states) -> {
             TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME, cp);
-            futures.add(runtime.scheduleWriteOperation("write-mirror-states", mirrorStateTp,
+            futures.add(runtime.scheduleWriteOperation("write-states", mirrorStateTp,
                 Duration.ofMillis(config.coordinatorWriteTimeoutMs()),
-                shard -> shard.writeMirrorStates(mirrorName, states)));
+                shard -> shard.writeState(mirrorName, states)));
         });
 
         CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
@@ -390,7 +374,8 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                     tps.forEach((topic, indices) -> {
                         List<WriteMirrorStatesResponseData.PartitionResult> partitionResults = new ArrayList<>();
                         indices.forEach(i -> {
-                            WriteMirrorStatesResponseData.PartitionResult pr = new WriteMirrorStatesResponseData.PartitionResult();
+                            WriteMirrorStatesResponseData.PartitionResult pr =
+                                    new WriteMirrorStatesResponseData.PartitionResult();
                             pr.setPartitionIndex(i);
                             pr.setErrorCode((short) 0);
                             partitionResults.add(pr);
@@ -402,6 +387,48 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                 }
                 callback.accept(new WriteMirrorStatesResponse(data));
             });
+    }
+
+    /** Persists a partition state record. Called from {@code MirrorMetadataManager#transitionTo}. */
+    private CompletableFuture<Void> writePartitionState(
+            String mirrorName, TopicPartition tp, MirrorPartitionState state,
+            String errorMessage, boolean nonRetryable
+    ) {
+        throwIfNotActive();
+        if (!isValidTransition(mirrorName, tp, state)) {
+            return CompletableFuture.completedFuture(null);
+        }
+        TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME,
+                partitionFor(MirrorPartitionKey.of(mirrorName, bridge.getTopicId(tp.topic()), tp.partition())));
+        return runtime.scheduleWriteOperation("write-partition-state", mirrorStateTp,
+                Duration.ofMillis(config.coordinatorWriteTimeoutMs()),
+                shard -> shard.writePartitionState(mirrorName, tp, state, errorMessage, nonRetryable));
+    }
+
+    /** Persists a last mirror epoch record. Called from {@code MirrorMetadataManager#updateLastMirrorEpoch}. */
+    private CompletableFuture<Void> writeLastMirrorEpoch(
+            String mirrorName, TopicPartition tp, int epoch
+    ) {
+        throwIfNotActive();
+        TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME,
+                partitionFor(MirrorPartitionKey.of(mirrorName, bridge.getTopicId(tp.topic()), tp.partition())));
+        return runtime.scheduleWriteOperation("write-lme", mirrorStateTp,
+                Duration.ofMillis(config.coordinatorWriteTimeoutMs()),
+                shard -> shard.writeLastMirrorEpoch(mirrorName, tp, epoch));
+    }
+
+    /** Persists tombstone records for a deleted mirror. Called from {@code MirrorMetadataManager#tombstoneMirror}. */
+    private CompletableFuture<Void> writeTombstone(
+            String mirrorName, Set<TopicPartition> partitions
+    ) {
+        throwIfNotActive();
+        int coordPartition = partitionFor(MirrorPartitionKey.of(
+                mirrorName, bridge.getTopicId(partitions.iterator().next().topic()),
+                partitions.iterator().next().partition()));
+        TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME, coordPartition);
+        return runtime.scheduleWriteOperation("write-tombstone", mirrorStateTp,
+                Duration.ofMillis(config.coordinatorWriteTimeoutMs()),
+                shard -> shard.writeTombstone(mirrorName, partitions));
     }
 
     /** A single partition state or LME write entry for inter-broker WriteMirrorStates RPCs. */

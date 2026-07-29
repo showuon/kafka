@@ -68,7 +68,7 @@ public interface CoreBridge {
      * knows how to write it.
      */
     interface CoordinatorWriter {
-        CompletableFuture<Void> writeTransition(
+        CompletableFuture<Void> writePartitionState(
             String mirrorName,
             TopicPartition tp,
             MirrorPartitionState state,
