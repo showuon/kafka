@@ -244,6 +244,10 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
     ) {
         MirrorPartitionKey pk = MirrorPartitionKey.of(mirrorName, coreBridge.getTopicId(tp.topic()), tp.partition());
         MirrorPartitionState currentState = MirrorPartition.orEmpty(coreBridge.getPartition(pk)).state();
+        if (!MirrorPartitionState.isValidTransition(currentState, state)) {
+            log.warn("Skipping invalid transition from {} to {} for {}.", currentState, state, tp);
+            return new CoordinatorResult<>(List.of(), null);
+        }
         log.debug("Transitioning partition {} from {} to {}.", tp, currentState, state);
         coreBridge.updateFailedInfo(pk, currentState, state, errorMessage, nonRetryable);
 

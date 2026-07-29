@@ -262,16 +262,6 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         return key.coordinatorPartition(config.stateTopicNumPartitions());
     }
 
-    private boolean isValidTransition(String mirrorName, TopicPartition tp, MirrorPartitionState newState) {
-        MirrorPartitionKey pk = MirrorPartitionKey.of(mirrorName, bridge.getTopicId(tp.topic()), tp.partition());
-        MirrorPartitionState currentState = MirrorPartition.orEmpty(bridge.getPartition(pk)).state();
-        if (!MirrorPartitionState.isValidTransition(currentState, newState)) {
-            log.warn("Skipping invalid transition from {} to {} for {}.", currentState, newState, tp);
-            return false;
-        }
-        return true;
-    }
-
     /**
      * Reads partition states from the local coordinator cache. Called from
      * {@code MirrorMetadataManager#readStatesFromRemoteCoordinator} of a
@@ -340,12 +330,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         mirrorStates.forEach((topic, partitions) -> {
             Set<Integer> partitionIndices = new HashSet<>();
             partitions.forEach(partition -> {
-                TopicPartition tp = new TopicPartition(topic, partition.partition());
                 partitionIndices.add(partition.partition());
-                if (partition.state() != null && partition.state() != MirrorPartitionState.UNKNOWN
-                        && !isValidTransition(mirrorName, tp, partition.state())) {
-                    return;
-                }
                 int cp = partitionFor(MirrorPartitionKey.of(
                     mirrorName, bridge.getTopicId(topic), partition.partition()));
                 byCoordPartition.computeIfAbsent(cp, k -> new HashMap<>())
@@ -395,9 +380,6 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
             String errorMessage, boolean nonRetryable
     ) {
         throwIfNotActive();
-        if (!isValidTransition(mirrorName, tp, state)) {
-            return CompletableFuture.completedFuture(null);
-        }
         TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME,
                 partitionFor(MirrorPartitionKey.of(mirrorName, bridge.getTopicId(tp.topic()), tp.partition())));
         return runtime.scheduleWriteOperation("write-partition-state", mirrorStateTp,
