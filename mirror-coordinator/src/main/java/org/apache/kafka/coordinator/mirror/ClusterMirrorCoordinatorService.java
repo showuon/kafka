@@ -52,9 +52,7 @@ import java.util.OptionalInt;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
@@ -68,16 +66,16 @@ import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
  * writes commit.
  */
 public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator {
+    private enum State { INITIAL, STARTING, STARTED, SHUTDOWN }
+
     private final Logger log;
-    private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
+    private final AtomicReference<State> state = new AtomicReference<>(State.INITIAL);
     private final ClusterMirrorConfig config;
     private final CoordinatorRuntime<ClusterMirrorCoordinatorShard, CoordinatorRecord> runtime;
     private final CoreBridge bridge;
     private final Scheduler scheduler;
     private final Metrics metrics;
-
-    private boolean hasStarted;
-    private boolean hasShutdown;
+    private final Time time;
 
     public static class Builder {
         private final int nodeId;
@@ -165,7 +163,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
 
             return new ClusterMirrorCoordinatorService(
                     nodeId, config, runtime, bridge,
-                    scheduler, metrics);
+                    scheduler, metrics, time);
         }
     }
 
@@ -175,7 +173,8 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         CoordinatorRuntime<ClusterMirrorCoordinatorShard, CoordinatorRecord> runtime,
         CoreBridge bridge,
         Scheduler scheduler,
-        Metrics metrics
+        Metrics metrics,
+        Time time
     ) {
         String name = "[ClusterMirrorCoordinatorService id=" + nodeId + "] ";
         this.log = new LogContext(name).logger(ClusterMirrorCoordinatorService.class);
@@ -184,27 +183,14 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         this.bridge = bridge;
         this.scheduler = scheduler;
         this.metrics = metrics;
-
-        this.hasStarted = false;
-        this.hasShutdown = false;
+        this.time = time;
     }
 
     @Override
     public void startup() {
-        Lock writeLock = rwLock.writeLock();
-        writeLock.lock();
-        try {
-            if (hasStarted) {
-                log.warn("Is already running.");
-                return;
-            }
-            if (hasShutdown) {
-                log.warn("Shutdown has been initiated");
-                return;
-            }
-            hasStarted = true;
-        } finally {
-            writeLock.unlock();
+        if (!state.compareAndSet(State.INITIAL, State.STARTING)) {
+            log.warn("Not starting up as state is not INITIAL");
+            return;
         }
 
         log.info("Starting up.");
@@ -233,20 +219,17 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
             },
             this::partitionFor);
         log.info("Startup complete.");
+        state.set(State.STARTED);
     }
 
     @Override
     public void shutdown() {
-        Lock writeLock = rwLock.writeLock();
-        writeLock.lock();
-        try {
-            if (hasShutdown) {
-                log.warn("Is already shutting down.");
-                return;
+        State prev = state.getAndSet(State.SHUTDOWN);
+        if (prev == State.STARTING) {
+            // Busy loop until state changes
+            while (state.get() != State.STARTED) {
+                time.sleep(1);
             }
-            hasShutdown = true;
-        } finally {
-            writeLock.unlock();
         }
         log.info("Shutting down.");
         bridge.closeSourceAdmins();
@@ -279,14 +262,8 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
     }
 
     private void throwIfNotActive() {
-        Lock readLock = rwLock.readLock();
-        readLock.lock();
-        try {
-            if (!hasStarted || hasShutdown) {
-                throw Errors.COORDINATOR_NOT_AVAILABLE.exception();
-            }
-        } finally {
-            readLock.unlock();
+        if (state.get() != State.STARTED) {
+            throw Errors.COORDINATOR_NOT_AVAILABLE.exception();
         }
     }
 
