@@ -676,43 +676,49 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                               MirrorPartitionState state, String errorMessage, boolean nonRetryable) {
         coordinatorWriter.ifPresent(writer -> {
             for (TopicPartition tp : topicPartitions) {
-                MirrorPartitionKey key = MirrorPartitionKey.of(
-                    mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
-                if (isLocalCoordinator(mirrorName, tp.topic(), tp.partition())) {
-                    writer.writePartitionState(mirrorName, tp, state, errorMessage, nonRetryable)
-                        .whenComplete((v, ex) -> {
-                            if (ex != null) {
-                                Throwable cause = (ex instanceof CompletionException && ex.getCause() != null)
-                                    ? ex.getCause() : ex;
-                                if (cause instanceof CoordinatorLoadInProgressException) {
-                                    log.debug("Transition to {} deferred for {} (shard loading).", state, tp);
-                                    return;
-                                }
-                                log.error("Transition to {} failed for {}", state, tp, ex);
-                                if (state != MirrorPartitionState.FAILED) {
-                                    transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED, ex.getMessage());
-                                }
-                                return;
-                            }
-                            if (MirrorPartition.orEmpty(mirrorCache.getPartition(key)).state() == state) {
-                                onStateTransition(mirrorName, tp, state);
-                            }
-                        });
+                MirrorPartitionState currentState = getPartitionState(mirrorName, tp);
+                if (MirrorPartitionState.isValidTransition(currentState, state)) {
+                    MirrorPartitionKey key = MirrorPartitionKey.of(
+                            mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
+                    if (isLocalCoordinator(mirrorName, tp.topic(), tp.partition())) {
+                        writer.writePartitionState(mirrorName, tp, state, errorMessage, nonRetryable)
+                                .whenComplete((v, ex) -> {
+                                    if (ex != null) {
+                                        Throwable cause = (ex instanceof CompletionException && ex.getCause() != null)
+                                                ? ex.getCause() : ex;
+                                        if (cause instanceof CoordinatorLoadInProgressException) {
+                                            log.debug("Transition to {} deferred for {} (shard loading).", state, tp);
+                                            return;
+                                        }
+                                        log.error("Transition to {} failed for {}", state, tp, ex);
+                                        if (state != MirrorPartitionState.FAILED) {
+                                            transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED, ex.getMessage());
+                                        }
+                                        return;
+                                    }
+                                    if (MirrorPartition.orEmpty(mirrorCache.getPartition(key)).state() == state) {
+                                        onStateTransition(mirrorName, tp, state);
+                                    }
+                                });
+                    } else {
+                        Map<String, Set<MirrorStateWrite>> topicMetadata =
+                                Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), state, -1)));
+                        writeStateToRemoteCoordinator(mirrorName, topicMetadata, Set.of(),
+                                res -> res.data().topics().forEach(topic -> topic.partitions().forEach(par -> {
+                                    if (par.errorCode() == Errors.NONE.code()) {
+                                        updateLocalFailedState(key, state, errorMessage, nonRetryable);
+                                        mirrorCache.setPartition(key,
+                                                MirrorPartition.orEmpty(mirrorCache.getPartition(key)).withState(state));
+                                        onStateTransition(mirrorName, tp, state);
+                                    } else {
+                                        log.error("Failed to write partition state to remote coordinator: {}",
+                                                par.errorCode());
+                                    }
+                                })));
+                    }
                 } else {
-                    Map<String, Set<MirrorStateWrite>> topicMetadata =
-                        Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), state, -1)));
-                    writeStateToRemoteCoordinator(mirrorName, topicMetadata, Set.of(),
-                        res -> res.data().topics().forEach(topic -> topic.partitions().forEach(par -> {
-                            if (par.errorCode() == Errors.NONE.code()) {
-                                updateLocalFailedState(key, state, errorMessage, nonRetryable);
-                                mirrorCache.setPartition(key,
-                                    MirrorPartition.orEmpty(mirrorCache.getPartition(key)).withState(state));
-                                onStateTransition(mirrorName, tp, state);
-                            } else {
-                                log.error("Failed to write partition state to remote coordinator: {}",
-                                    par.errorCode());
-                            }
-                        })));
+                    log.warn("Ignoring state transition from {} to {} for partition {}: invalid transition",
+                            currentState, state, tp);
                 }
             }
         });
