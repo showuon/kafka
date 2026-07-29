@@ -39,6 +39,8 @@
           "about": "The last mirrored leader epoch, or -1 if not yet recorded." },
         { "name": "State", "type": "int8", "versions": "0+",
           "about": "The mirror partition state byte value." },
+        { "name": "StateEpoch", "type": "int32", "versions": "0+", "default": "0",
+          "about": "The current state epoch for the partition." },
         { "name": "ErrorCode", "type": "int16", "versions": "0+",
           "about": "The per-partition error code (e.g. NOT_COORDINATOR), or 0 if there was no error." },
         { "name": "ErrorMessage", "type": "string", "versions": "0+", "nullableVersions": "0+", "default": "null",

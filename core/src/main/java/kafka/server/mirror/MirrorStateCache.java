@@ -61,11 +61,12 @@ public class MirrorStateCache {
         partitions.put(key, partition);
     }
 
-    public void mergePartition(MirrorPartitionKey key, byte state, int lastMirrorEpoch,
+    public void mergePartition(MirrorPartitionKey key, byte state, int stateEpoch, int lastMirrorEpoch,
                                String errorMessage, int retryAttempt, byte previousState) {
         partitions.compute(key, (k, existing) -> {
             MirrorPartition result = MirrorPartition.orEmpty(existing);
             if (state != -1) result = result.withState(MirrorPartitionState.fromValue(state));
+            if (stateEpoch >= 0) result = result.withStateEpoch(stateEpoch);
             if (lastMirrorEpoch != -1) result = result.withLastMirrorEpoch(lastMirrorEpoch);
             if (state == MirrorPartitionState.FAILED.value()) {
                 result = result.withError(errorMessage, retryAttempt, MirrorPartitionState.fromValue(previousState));

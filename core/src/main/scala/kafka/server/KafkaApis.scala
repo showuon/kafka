@@ -4603,7 +4603,8 @@ class KafkaApis(val requestChannel: RequestChannel,
     writeMirrorStatesRequest.data().topics().forEach(topic => {
       val topicState = new util.HashSet[MirrorStateWrite]()
       topic.partitions().forEach(part => {
-        topicState.add(new MirrorStateWrite(part.partitionIndex(), MirrorPartitionState.fromValue(part.state()), part.lastMirrorEpoch()))
+        topicState.add(new MirrorStateWrite(part.partitionIndex(),
+          MirrorPartitionState.fromValue(part.state()), part.stateEpoch(), part.lastMirrorEpoch()))
       })
       mirrorState.put(topic.name(), topicState)
     })

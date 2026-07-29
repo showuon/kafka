@@ -26,6 +26,8 @@
   "fields": [
     { "name": "State", "type": "int8", "versions": "0+",
       "about": "The mirror partition state." },
+    { "name": "StateEpoch", "type": "int32", "versions": "0+", "default": "0",
+      "about": "Monotonically increasing epoch incremented on every state transition." },
     { "name": "PreviousState", "type": "int8",  "versions": "0+", "default": 16,
       "about": "The mirror partition state before this transition; UNKNOWN if not recorded." },
     { "name": "RetryAttempt", "type": "int16", "versions": "0+", "default": "0",
