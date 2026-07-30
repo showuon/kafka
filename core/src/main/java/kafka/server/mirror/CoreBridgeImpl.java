@@ -50,7 +50,7 @@ public class CoreBridgeImpl implements CoreBridge {
 
     @Override
     public void onShardLoaded() {
-        metadataManager.processAllStateTransitions();
+        metadataManager.onShardLoaded();
     }
 
     @Override

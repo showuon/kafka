@@ -412,12 +412,14 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     /**
-     * Returns mirror partitions that need a state transition: gained leaders,
-     * mirror state changes, and MIRRORING partitions of reconnected mirrors.
-     * Also clears cached state for partitions where this broker lost leadership.
+     * Collects mirror partitions that need a state transition from three sources:
+     * partitions where this broker gained leadership, partitions whose desired
+     * mirror state changed in the metadata delta, and MIRRORING partitions of
+     * mirrors whose source connection was recreated. As a side effect, clears
+     * cached state for partitions where this broker lost leadership.
      */
     private Set<TopicPartition> collectPartitionsForStateTransition(MetadataDelta delta, MetadataImage image,
-                                                                    Set<String> reconnectedMirrors) {
+                                                                    Set<String> mirrorsToReconnect) {
         Set<TopicPartition> partitionsToTransition = new HashSet<>();
         Set<String> configuredMirrors = getConfiguredMirrors();
 
@@ -427,7 +429,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             cleanupLostLeaderPartitions(localReplicaChanges, image);
         }
 
-        collectReconnectedMirrorPartitions(reconnectedMirrors, partitionsToTransition);
+        collectReconnectPartitions(mirrorsToReconnect, partitionsToTransition);
         return partitionsToTransition;
     }
 
@@ -473,14 +475,15 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         });
     }
 
-    private void collectReconnectedMirrorPartitions(Set<String> reconnectedMirrors, Set<TopicPartition> result) {
+    private void collectReconnectPartitions(Set<String> reconnectedMirrors, Set<TopicPartition> result) {
         if (reconnectedMirrors.isEmpty()) {
             return;
         }
         log.info("Re-evaluating MIRRORING partitions for reconnected mirrors: {}", reconnectedMirrors);
         mirrorCache.partitionKeys().forEach(key -> {
             MirrorPartition entry = mirrorCache.getPartition(key);
-            if (entry != null && reconnectedMirrors.contains(key.mirrorName()) && entry.state() == MirrorPartitionState.MIRRORING) {
+            if (entry != null && reconnectedMirrors.contains(key.mirrorName())
+                    && entry.state() == MirrorPartitionState.MIRRORING) {
                 metadataCache.getTopicName(key.topicId()).ifPresent(topicName ->
                         result.add(new TopicPartition(topicName, key.partition())));
             }
@@ -494,7 +497,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * incremental delta, this method discovers every mirror partition led by this
      * broker from the current metadata image.
      */
-    public void processAllStateTransitions() {
+    public void onShardLoaded() {
         if (!isInitialized || metadataImage == null) {
             return;
         }
