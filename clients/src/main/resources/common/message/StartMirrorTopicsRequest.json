@@ -37,6 +37,6 @@
     { "name": "ExcludePatterns", "type": "[]string", "versions": "0+", "taggedVersions": "0+", "tag": 1,
       "about": "Regex patterns to add to mirror.topics.exclude (this takes precedence over mirror.topics.include)." },
     { "name": "StateOffset", "type": "int64", "versions": "0+", "default": "-1",
-      "about": "Per-topic cluster metadata offset at which the broker validated partition state preconditions. -1 to skip validation."}
+      "about": "Cluster metadata log offset used for validating partition state preconditions. -1 to skip validation."}
   ]
 }

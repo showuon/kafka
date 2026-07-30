@@ -690,10 +690,10 @@ public class ConfigurationControlManager {
     }
 
     /**
-     * Optimistic locking check: detects whether any mirror topic state changed after the broker
-     * validated preconditions. Returns the first topic whose last state change offset exceeds the
-     * broker's snapshot offset, indicating a concurrent modification that should cause the
-     * controller to reject the request.
+     * Per-topic optimistic locking check. Returns the first topic in the request whose
+     * {@code lastStateOffset} exceeds the broker's {@code stateOffset}, indicating that
+     * a {@code MirrorTopicStateChangeRecord} was written for that topic after the broker
+     * validated partition state preconditions.
      */
     private Optional<ReplicationControlManager.TopicControlInfo> checkForConcurrentStateChange(
             long stateOffset,
