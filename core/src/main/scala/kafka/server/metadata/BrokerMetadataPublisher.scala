@@ -152,8 +152,7 @@ class BrokerMetadataPublisher(
         debug(s"Publishing metadata at offset $highestOffsetAndEpoch with $metadataVersionLogMsg.")
       }
 
-      // Update the MirrorMetadataManager image early so isLocalCoordinator
-      // and collectMirrorLeaderChanges see the latest metadata before onMetadataUpdate runs.
+      // Update the MirrorMetadataManager image early so it has the latest metadata before onMetadataUpdate runs
       mirrorMetadataManager.updateMetadataImage(newImage)
 
       // Apply topic deltas.
@@ -293,7 +292,7 @@ class BrokerMetadataPublisher(
       if (finalizedMirrorVersion > 0) {
         try {
           // Propagate the new image to the CoordinatorRuntime so it can
-          // pass it to loaded shards and use it during shard load completion.
+          // pass it to loaded shards and use it during shard load completion
           mirrorCoordinator.onNewMetadataImage(new KRaftCoordinatorMetadataImage(newImage), new KRaftCoordinatorMetadataDelta(delta))
         } catch {
           case t: Throwable => metadataPublishingFaultHandler.handleFault("Error updating mirror " +
