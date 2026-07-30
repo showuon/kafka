@@ -363,10 +363,10 @@ class ClusterMirrorCoordinatorShardTest {
 
         @Override
         public void updateFailedInfo(MirrorPartitionKey key, MirrorPartitionState curState,
-                                     MirrorPartitionState newState, String errorMessage, boolean nonRetryable) {
+                                     MirrorPartitionState newState, String errorMessage, boolean isPermFailure) {
             if (newState == MirrorPartitionState.FAILED) {
                 MirrorPartition existing = MirrorPartition.orEmpty(getPartition(key));
-                int attempt = existing.nextAttempt(nonRetryable);
+                int attempt = existing.nextAttempt(isPermFailure);
                 MirrorPartitionState previousState = existing.resolvePrevState(curState);
                 partitions.compute(key, (k, e) ->
                         MirrorPartition.orEmpty(e).withError(errorMessage, attempt, previousState));

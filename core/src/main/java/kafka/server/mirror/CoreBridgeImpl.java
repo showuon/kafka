@@ -79,9 +79,9 @@ public class CoreBridgeImpl implements CoreBridge {
         MirrorPartitionState curState,
         MirrorPartitionState newState,
         String errorMessage,
-        boolean nonRetryable
+        boolean isPermFailure
     ) {
-        metadataManager.updateFailedInfo(key, curState, newState, errorMessage, nonRetryable);
+        metadataManager.updateFailedInfo(key, curState, newState, errorMessage, isPermFailure);
     }
 
     @Override
