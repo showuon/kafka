@@ -49,13 +49,13 @@ public class CoreBridgeImpl implements CoreBridge {
     }
 
     @Override
-    public void onShardLoaded() {
-        metadataManager.onShardLoaded();
+    public void onShardLoaded(int coordPartition) {
+        metadataManager.onShardLoaded(coordPartition);
     }
 
     @Override
     public void onShardUnloaded(int coordPartition, int coordPartitionCount) {
-        metadataManager.clearPartition(coordPartition, coordPartitionCount);
+        metadataManager.onShardUnloaded(coordPartition, coordPartitionCount);
     }
 
     @Override

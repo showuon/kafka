@@ -339,7 +339,7 @@ class ClusterMirrorCoordinatorShardTest {
         }
 
         @Override
-        public void onShardLoaded() {
+        public void onShardLoaded(int coordPartition) {
         }
 
         @Override

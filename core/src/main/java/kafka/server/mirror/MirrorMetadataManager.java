@@ -491,14 +491,12 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     /**
-     * Full scan of all mirror leader partitions on this broker.
-     * Called after coordinator shard loading completes to re-establish side effects.
-     * Unlike {@code processStateTransitions(Set, MetadataImage)} which handles an
-     * incremental delta, this method discovers every mirror partition led by this
-     * broker from the current metadata image.
+     * Called after a coordinator shard finishes loading (leadership gained).
+     * Re-evaluates mirror leader partitions that map to the loaded coordinator partition.
      */
-    public void onShardLoaded() {
-        if (!isInitialized || metadataImage == null) {
+    public void onShardLoaded(int coordPartition) {
+        log.debug("Coordinator shard {} loaded.", coordPartition);
+        if (!isInitialized || metadataImage == null || !coordPartFinder.isPresent()) {
             return;
         }
         Set<TopicPartition> mirrorLeaders = new HashSet<>();
@@ -506,7 +504,12 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             if (topicImage.mirrorName() != null) {
                 topicImage.partitions().forEach((partitionId, partition) -> {
                     if (partition.leader == nodeId) {
-                        mirrorLeaders.add(new TopicPartition(topicName, partitionId));
+                        TopicPartition tp = new TopicPartition(topicName, partitionId);
+                        MirrorPartitionKey key = MirrorPartitionKey.of(
+                                topicImage.mirrorName(), metadataCache.getTopicId(topicName), partitionId);
+                        if (coordPartFinder.get().apply(key) == coordPartition) {
+                            mirrorLeaders.add(tp);
+                        }
                     }
                 });
             }
@@ -514,6 +517,15 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         if (!mirrorLeaders.isEmpty()) {
             processStateTransitions(mirrorLeaders, metadataImage);
         }
+    }
+
+    /**
+     * Called when a coordinator shard is unloaded (leadership lost).
+     * Clears cached state for partitions that mapped to this shard.
+     */
+    public void onShardUnloaded(int coordPartition, int coordPartitionCount) {
+        log.debug("Coordinator shard {} unloaded.", coordPartition);
+        mirrorCache.clearPartition(coordPartition, coordPartitionCount);
     }
 
     /**
@@ -1484,10 +1496,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     public void removePartition(MirrorPartitionKey key) {
         mirrorCache.removePartition(key);
-    }
-
-    public void clearPartition(int coordPartition, int coordPartitionCount) {
-        mirrorCache.clearPartition(coordPartition, coordPartitionCount);
     }
 
     public void setLastMirrorEpoch(String mirrorName, String topic, int partition, int epoch) {

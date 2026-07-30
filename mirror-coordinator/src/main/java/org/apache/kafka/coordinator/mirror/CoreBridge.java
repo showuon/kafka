@@ -37,7 +37,7 @@ public interface CoreBridge {
 
     void closeSourceAdmins();
 
-    void onShardLoaded();
+    void onShardLoaded(int coordPartition);
 
     void onShardUnloaded(int coordPartition, int coordPartitionCount);
 

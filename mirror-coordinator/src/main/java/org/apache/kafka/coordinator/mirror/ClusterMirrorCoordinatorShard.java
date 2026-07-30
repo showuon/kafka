@@ -216,7 +216,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
     @Override
     public void onLoaded(CoordinatorMetadataImage newImage) {
         log.info("Loaded shard for {}.", topicPartition);
-        coreBridge.onShardLoaded();
+        coreBridge.onShardLoaded(topicPartition.partition());
     }
 
     @Override
