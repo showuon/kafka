@@ -1239,9 +1239,9 @@ class ControllerApis(
     val excludePatterns = startRequest.data().excludePatterns()
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
-    val stateValidationOffset = startRequest.data().stateValidationOffset()
+    val stateOffset = startRequest.data().stateOffset()
     controller.startMirrorTopics(context, mirrorName, topics,
-        includePatterns, excludePatterns, stateValidationOffset)
+        includePatterns, excludePatterns, stateOffset)
       .handle[Unit] { (response, exception) =>
         if (exception != null) {
           requestHelper.handleError(request, exception)
@@ -1273,10 +1273,10 @@ class ControllerApis(
     if (unauthorizedTopics.nonEmpty)
       throw new TopicAuthorizationException(unauthorizedTopics.asJava)
     val patterns = stopRequest.data().patterns()
-    val stateValidationOffset = stopRequest.data().stateValidationOffset()
+    val stateOffset = stopRequest.data().stateOffset()
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
-    controller.stopMirrorTopics(context, mirrorName, topics, patterns, stateValidationOffset)
+    controller.stopMirrorTopics(context, mirrorName, topics, patterns, stateOffset)
       .handle[Unit] { (response, exception) =>
         if (exception != null) {
           requestHelper.handleError(request, exception)
@@ -1305,10 +1305,10 @@ class ControllerApis(
       authHelper.authorize(request.context, ALTER_CONFIGS, TOPIC, topic, logIfDenied = false))
     if (unauthorizedTopics.nonEmpty)
       throw new TopicAuthorizationException(unauthorizedTopics.asJava)
-    val stateValidationOffset = pauseRequest.data().stateValidationOffset()
+    val stateOffset = pauseRequest.data().stateOffset()
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
-    controller.pauseMirrorTopics(context, mirrorName, topics, stateValidationOffset)
+    controller.pauseMirrorTopics(context, mirrorName, topics, stateOffset)
       .handle[Unit] { (response, exception) =>
         if (exception != null) {
           requestHelper.handleError(request, exception)
@@ -1336,10 +1336,10 @@ class ControllerApis(
       authHelper.authorize(request.context, ALTER_CONFIGS, TOPIC, topic, logIfDenied = false))
     if (unauthorizedTopics.nonEmpty)
       throw new TopicAuthorizationException(unauthorizedTopics.asJava)
-    val stateValidationOffset = resumeRequest.data().stateValidationOffset()
+    val stateOffset = resumeRequest.data().stateOffset()
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
-    controller.resumeMirrorTopics(context, mirrorName, topics, stateValidationOffset)
+    controller.resumeMirrorTopics(context, mirrorName, topics, stateOffset)
       .handle[Unit] { (response, exception) =>
         if (exception != null) {
           requestHelper.handleError(request, exception)
@@ -1363,7 +1363,7 @@ class ControllerApis(
 
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
-    val brokerMetadataOffset = deleteMirrorRequest.data().stateValidationOffset()
+    val brokerMetadataOffset = deleteMirrorRequest.data().stateOffset()
     controller.deleteClusterMirror(context, mirrorName, brokerMetadataOffset)
       .handle[Unit] { (response, exception) =>
         if (exception != null) {

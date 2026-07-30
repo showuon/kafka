@@ -72,6 +72,7 @@ public interface CoreBridge {
             String mirrorName,
             TopicPartition tp,
             MirrorPartitionState state,
+            int stateEpoch,
             String errorMessage,
             boolean nonRetryable
         );

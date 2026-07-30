@@ -22,15 +22,16 @@ import org.apache.kafka.server.common.MirrorPartitionState;
  * Immutable snapshot of a mirror partition.
  *
  * @param state            the current lifecycle state, or null if unknown
+ * @param stateEpoch       monotonically increasing epoch incremented on every state transition
  * @param lastMirrorEpoch  the last mirrored leader epoch, or -1 if not yet recorded
  * @param errorMessage     the failure reason when in FAILED state, or null otherwise
  * @param retryAttempt     the retry count in FAILED state, 0 if not failed,
  *                         or {@link #NON_RETRYABLE_ATTEMPT} if non-retryable
  * @param prevState        the state before entering FAILED, or null if not applicable
  */
-public record MirrorPartition(MirrorPartitionState state, int lastMirrorEpoch,
+public record MirrorPartition(MirrorPartitionState state, int stateEpoch, int lastMirrorEpoch,
                               String errorMessage, int retryAttempt, MirrorPartitionState prevState) {
-    public static final MirrorPartition EMPTY = new MirrorPartition(MirrorPartitionState.UNKNOWN, -1, null, 0, null);
+    public static final MirrorPartition EMPTY = new MirrorPartition(MirrorPartitionState.UNKNOWN, 0, -1, null, 0, null);
     public static final int NON_RETRYABLE_ATTEMPT = -1;
 
     public static MirrorPartition orEmpty(MirrorPartition mp) {
@@ -38,19 +39,23 @@ public record MirrorPartition(MirrorPartitionState state, int lastMirrorEpoch,
     }
 
     public MirrorPartition withState(MirrorPartitionState newState) {
-        return new MirrorPartition(newState, lastMirrorEpoch, errorMessage, retryAttempt, prevState);
+        return new MirrorPartition(newState, stateEpoch, lastMirrorEpoch, errorMessage, retryAttempt, prevState);
+    }
+
+    public MirrorPartition withStateEpoch(int newStateEpoch) {
+        return new MirrorPartition(state, newStateEpoch, lastMirrorEpoch, errorMessage, retryAttempt, prevState);
     }
 
     public MirrorPartition withLastMirrorEpoch(int newEpoch) {
-        return new MirrorPartition(state, newEpoch, errorMessage, retryAttempt, prevState);
+        return new MirrorPartition(state, stateEpoch, newEpoch, errorMessage, retryAttempt, prevState);
     }
 
     public MirrorPartition withError(String errorMessage, int retryAttempt, MirrorPartitionState previousState) {
-        return new MirrorPartition(state, lastMirrorEpoch, errorMessage, retryAttempt, previousState);
+        return new MirrorPartition(state, stateEpoch, lastMirrorEpoch, errorMessage, retryAttempt, previousState);
     }
 
     public MirrorPartition clearError() {
-        return new MirrorPartition(state, lastMirrorEpoch, null, 0, null);
+        return new MirrorPartition(state, stateEpoch, lastMirrorEpoch, null, 0, null);
     }
 
     public int nextAttempt(boolean nonRetryable) {

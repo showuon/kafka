@@ -1795,11 +1795,11 @@ public final class QuorumController implements Controller {
             List<Controller.MirrorTopicMetadata> topics,
             List<String> includePatterns,
             List<String> excludePatterns,
-            long stateValidationOffset
+            long stateOffset
     ) {
         return appendWriteEvent("startMirrorTopics", context.deadlineNs(),
                 () -> configurationControl.startMirrorTopics(mirrorName, topics,
-                        includePatterns, excludePatterns, replicationControl, stateValidationOffset));
+                        includePatterns, excludePatterns, replicationControl, stateOffset));
     }
 
     @Override
@@ -1808,10 +1808,10 @@ public final class QuorumController implements Controller {
             String mirrorName,
             Set<String> topics,
             List<String> patterns,
-            long stateValidationOffset
+            long stateOffset
     ) {
         return appendWriteEvent("stopMirrorTopics", context.deadlineNs(),
-                () -> configurationControl.stopMirrorTopics(mirrorName, topics, patterns, replicationControl, stateValidationOffset));
+                () -> configurationControl.stopMirrorTopics(mirrorName, topics, patterns, replicationControl, stateOffset));
     }
 
     @Override
@@ -1819,10 +1819,10 @@ public final class QuorumController implements Controller {
             ControllerRequestContext context,
             String mirrorName,
             Set<String> topics,
-            long stateValidationOffset
+            long stateOffset
     ) {
         return appendWriteEvent("pauseMirrorTopics", context.deadlineNs(),
-                () -> configurationControl.pauseMirrorTopics(mirrorName, topics, replicationControl, stateValidationOffset));
+                () -> configurationControl.pauseMirrorTopics(mirrorName, topics, replicationControl, stateOffset));
     }
 
     @Override
@@ -1830,10 +1830,10 @@ public final class QuorumController implements Controller {
             ControllerRequestContext context,
             String mirrorName,
             Set<String> topics,
-            long stateValidationOffset
+            long stateOffset
     ) {
         return appendWriteEvent("resumeMirrorTopics", context.deadlineNs(),
-                () -> configurationControl.resumeMirrorTopics(mirrorName, topics, replicationControl, stateValidationOffset));
+                () -> configurationControl.resumeMirrorTopics(mirrorName, topics, replicationControl, stateOffset));
     }
 
     @Override

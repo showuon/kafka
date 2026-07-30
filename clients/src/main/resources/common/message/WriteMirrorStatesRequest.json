@@ -35,7 +35,9 @@
         { "name": "LastMirrorEpoch", "type": "int32", "versions": "0+", "default": "-1",
           "about": "The last mirrored leader epoch, or -1 if not available." },
         { "name": "State", "type": "int8", "versions": "0+",
-          "about": "The mirror partition state." }
+          "about": "The mirror partition state." },
+        { "name": "StateEpoch", "type": "int32", "versions": "0+", "default": "-1",
+          "about": "The expected state epoch for fencing, or -1 to skip the check." }
       ]}
     ]},
     { "name": "StoppedTopics", "type": "[]string", "versions": "0+", "about": "The topic names to be stopped." }
