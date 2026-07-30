@@ -51,7 +51,9 @@ import java.util.Map;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -70,12 +72,12 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
 
     private final Logger log;
     private final AtomicReference<State> state = new AtomicReference<>(State.INITIAL);
+    private final CountDownLatch latch = new CountDownLatch(1);
     private final ClusterMirrorConfig config;
     private final CoordinatorRuntime<ClusterMirrorCoordinatorShard, CoordinatorRecord> runtime;
     private final CoreBridge bridge;
     private final Scheduler scheduler;
     private final Metrics metrics;
-    private final Time time;
 
     public static class Builder {
         private final int nodeId;
@@ -163,7 +165,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
 
             return new ClusterMirrorCoordinatorService(
                     nodeId, config, runtime, bridge,
-                    scheduler, metrics, time);
+                    scheduler, metrics);
         }
     }
 
@@ -173,8 +175,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         CoordinatorRuntime<ClusterMirrorCoordinatorShard, CoordinatorRecord> runtime,
         CoreBridge bridge,
         Scheduler scheduler,
-        Metrics metrics,
-        Time time
+        Metrics metrics
     ) {
         String name = "[ClusterMirrorCoordinatorService id=" + nodeId + "] ";
         this.log = new LogContext(name).logger(ClusterMirrorCoordinatorService.class);
@@ -183,7 +184,6 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         this.bridge = bridge;
         this.scheduler = scheduler;
         this.metrics = metrics;
-        this.time = time;
     }
 
     @Override
@@ -194,42 +194,55 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         }
 
         log.info("Starting up.");
-        bridge.initialize(
-            new CoreBridge.CoordinatorWriter() {
-                @Override
-                public CompletableFuture<Void> writePartitionState(String mirrorName, TopicPartition tp,
-                        MirrorPartitionState state, int stateEpoch, String errorMessage, boolean nonRetryable) {
-                    return ClusterMirrorCoordinatorService.this.writePartitionState(
-                        mirrorName, tp, state, stateEpoch, errorMessage, nonRetryable);
-                }
+        try {
+            bridge.initialize(
+                    new CoreBridge.CoordinatorWriter() {
+                        @Override
+                        public CompletableFuture<Void> writePartitionState(String mirrorName, TopicPartition tp,
+                                                                           MirrorPartitionState state, int stateEpoch, String errorMessage, boolean nonRetryable) {
+                            return ClusterMirrorCoordinatorService.this.writePartitionState(
+                                    mirrorName, tp, state, stateEpoch, errorMessage, nonRetryable);
+                        }
 
-                @Override
-                public CompletableFuture<Void> writeLastMirrorEpoch(String mirrorName,
-                        TopicPartition tp, int epoch) {
-                    return ClusterMirrorCoordinatorService.this.writeLastMirrorEpoch(
-                        mirrorName, tp, epoch);
-                }
+                        @Override
+                        public CompletableFuture<Void> writeLastMirrorEpoch(String mirrorName,
+                                                                            TopicPartition tp, int epoch) {
+                            return ClusterMirrorCoordinatorService.this.writeLastMirrorEpoch(
+                                    mirrorName, tp, epoch);
+                        }
 
-                @Override
-                public CompletableFuture<Void> writeTombstone(String mirrorName,
-                        Set<TopicPartition> partitions) {
-                    return ClusterMirrorCoordinatorService.this.writeTombstone(
-                        mirrorName, partitions);
-                }
-            },
-            this::partitionFor);
-        log.info("Startup complete.");
-        state.set(State.STARTED);
+                        @Override
+                        public CompletableFuture<Void> writeTombstone(String mirrorName,
+                                                                      Set<TopicPartition> partitions) {
+                            return ClusterMirrorCoordinatorService.this.writeTombstone(
+                                    mirrorName, partitions);
+                        }
+                    },
+                    this::partitionFor);
+            log.info("Startup complete.");
+        } finally {
+            state.set(State.STARTED);
+        }
     }
 
     @Override
     public void shutdown() {
         State prev = state.getAndSet(State.SHUTDOWN);
+        if (prev == State.SHUTDOWN) {
+            log.warn("Shutdown already invoked");
+            return;
+        }
         if (prev == State.STARTING) {
-            // Busy loop until state changes
-            while (state.get() != State.STARTED) {
-                time.sleep(1);
+            try {
+                if (!latch.await(10, TimeUnit.SECONDS)) {
+                    log.warn("Timed out waiting for startup to complete. Shutting down directly");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("Interrupted while waiting for startup to complete. Shutting down directly", e);
             }
+        } else if (prev == State.INITIAL) {
+            log.info("Shutting down before the service was initialized");
         }
         log.info("Shutting down.");
         bridge.closeSourceAdmins();
