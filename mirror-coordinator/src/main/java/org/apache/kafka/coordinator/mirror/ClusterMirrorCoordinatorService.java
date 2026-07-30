@@ -16,7 +16,6 @@
  */
 package org.apache.kafka.coordinator.mirror;
 
-
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.ReadMirrorStatesResponseData;
 import org.apache.kafka.common.message.WriteMirrorStatesResponseData;
@@ -194,15 +193,15 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         }
 
         log.info("Starting up.");
-        try {
-            bridge.initialize(
-                    new CoreBridge.CoordinatorWriter() {
-                        @Override
-                        public CompletableFuture<Void> writePartitionState(String mirrorName, TopicPartition tp,
-                                                                           MirrorPartitionState state, int stateEpoch, String errorMessage, boolean nonRetryable) {
-                            return ClusterMirrorCoordinatorService.this.writePartitionState(
-                                    mirrorName, tp, state, stateEpoch, errorMessage, nonRetryable);
-                        }
+        bridge.initialize(
+            new CoreBridge.CoordinatorWriter() {
+                @Override
+                public CompletableFuture<Void> writePartitionState(String mirrorName, TopicPartition tp,
+                        MirrorPartitionState state, int leaderEpoch, int stateEpoch,
+                        String errorMessage, boolean nonRetryable) {
+                    return ClusterMirrorCoordinatorService.this.writePartitionState(
+                        mirrorName, tp, state, leaderEpoch, stateEpoch, errorMessage, nonRetryable);
+                }
 
                         @Override
                         public CompletableFuture<Void> writeLastMirrorEpoch(String mirrorName,
@@ -408,14 +407,14 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
     /** Persists a partition state record. Called from {@code MirrorMetadataManager#transitionTo}. */
     private CompletableFuture<Void> writePartitionState(
             String mirrorName, TopicPartition tp, MirrorPartitionState state,
-            int stateEpoch, String errorMessage, boolean nonRetryable
+            int leaderEpoch, int stateEpoch, String errorMessage, boolean nonRetryable
     ) {
         throwIfNotActive();
         TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME,
                 partitionFor(MirrorPartitionKey.of(mirrorName, bridge.getTopicId(tp.topic()), tp.partition())));
         return runtime.scheduleWriteOperation("write-partition-state", mirrorStateTp,
                 Duration.ofMillis(config.coordinatorWriteTimeoutMs()),
-                shard -> shard.writePartitionState(mirrorName, tp, state, stateEpoch, errorMessage, nonRetryable));
+                shard -> shard.writePartitionState(mirrorName, tp, state, leaderEpoch, stateEpoch, errorMessage, nonRetryable));
     }
 
     /** Persists a last mirror epoch record. Called from {@code MirrorMetadataManager#updateLastMirrorEpoch}. */
@@ -445,5 +444,5 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
     }
 
     /** A single partition state or LME write entry for inter-broker WriteMirrorStates RPCs. */
-    public record MirrorStateWrite(int partition, MirrorPartitionState state, int stateEpoch, Integer leaderEpoch) { }
+    public record MirrorStateWrite(int partition, MirrorPartitionState state, int leaderEpoch, int stateEpoch, Integer lastMirrorEpoch) { }
 }

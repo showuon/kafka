@@ -32,12 +32,14 @@
         "about": "The data for the partitions.", "fields": [
         { "name": "PartitionIndex", "type": "int32", "versions": "0+",
           "about": "The partition index." },
-        { "name": "LastMirrorEpoch", "type": "int32", "versions": "0+", "default": "-1",
-          "about": "The last mirrored leader epoch, or -1 if not available." },
         { "name": "State", "type": "int8", "versions": "0+",
           "about": "The mirror partition state." },
+        { "name": "LeaderEpoch", "type": "int32", "versions": "0+", "default": "-1",
+          "about": "The leader epoch of the writing broker, or -1 to skip the check." },
         { "name": "StateEpoch", "type": "int32", "versions": "0+", "default": "-1",
-          "about": "The expected state epoch for fencing, or -1 to skip the check." }
+          "about": "The expected state epoch for fencing, or -1 to skip the check." },
+        { "name": "LastMirrorEpoch", "type": "int32", "versions": "0+", "default": "-1",
+          "about": "The last mirrored leader epoch, or -1 if not available." }
       ]}
     ]},
     { "name": "StoppedTopics", "type": "[]string", "versions": "0+", "about": "The topic names to be stopped." }

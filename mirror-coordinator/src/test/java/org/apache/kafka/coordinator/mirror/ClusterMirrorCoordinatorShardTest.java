@@ -18,6 +18,7 @@ package org.apache.kafka.coordinator.mirror;
 
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.errors.FencedLeaderEpochException;
 import org.apache.kafka.common.errors.FencedStateEpochException;
 import org.apache.kafka.common.message.ReadMirrorStatesResponseData;
 import org.apache.kafka.common.protocol.Errors;
@@ -68,10 +69,12 @@ class ClusterMirrorCoordinatorShardTest {
                 .build();
     }
 
+    // -- writePartitionState basics --
+
     @Test
-    void testWritePartitionStateIncrementsEpoch() {
+    void testWritePartitionStateIncrementsStateEpoch() {
         CoordinatorResult<Void, CoordinatorRecord> result =
-                shard.writePartitionState(MIRROR_NAME, TP0, MirrorPartitionState.LOG_TRUNCATION, -1, null, false);
+                shard.writePartitionState(MIRROR_NAME, TP0, MirrorPartitionState.LOG_TRUNCATION, -1, -1, null, false);
 
         assertEquals(1, result.records().size());
         MirrorPartitionStateValue val = (MirrorPartitionStateValue) result.records().get(0).value().message();
@@ -79,33 +82,84 @@ class ClusterMirrorCoordinatorShardTest {
     }
 
     @Test
-    void testWritePartitionStateIncrementsEpochSequentially() {
+    void testWritePartitionStateIncrementsStateEpochSequentially() {
         CoordinatorResult<Void, CoordinatorRecord> first =
-                shard.writePartitionState(MIRROR_NAME, TP0, MirrorPartitionState.LOG_TRUNCATION, -1, null, false);
+                shard.writePartitionState(MIRROR_NAME, TP0, MirrorPartitionState.LOG_TRUNCATION, -1, -1, null, false);
         replayRecords(first);
 
         CoordinatorResult<Void, CoordinatorRecord> second =
-                shard.writePartitionState(MIRROR_NAME, TP0, MirrorPartitionState.MIRRORING, -1, null, false);
+                shard.writePartitionState(MIRROR_NAME, TP0, MirrorPartitionState.MIRRORING, -1, -1, null, false);
 
         assertEquals(1, second.records().size());
         MirrorPartitionStateValue val = (MirrorPartitionStateValue) second.records().get(0).value().message();
         assertEquals(2, val.stateEpoch());
     }
 
-    @Test
-    void testWritePartitionStateFencedEpoch() {
-        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, 5);
+    // -- leader epoch fencing --
 
-        assertThrows(FencedStateEpochException.class, () ->
-                shard.writePartitionState(MIRROR_NAME, TP0, MirrorPartitionState.MIRRORING, 3, null, false));
+    @Test
+    void testWritePartitionStateFencedLeaderEpoch() {
+        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, 5, 1);
+
+        assertThrows(FencedLeaderEpochException.class, () ->
+                shard.writePartitionState(MIRROR_NAME, TP0, MirrorPartitionState.MIRRORING, 3, -1, null, false));
     }
 
     @Test
-    void testWritePartitionStateFencedProducesNoRecords() {
-        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, 5);
+    void testWritePartitionStateLeaderEpochMinusOneSkipsCheck() {
+        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, 10, 1);
+
+        CoordinatorResult<Void, CoordinatorRecord> result =
+                shard.writePartitionState(MIRROR_NAME, TP0, MirrorPartitionState.MIRRORING, -1, -1, null, false);
+
+        assertEquals(1, result.records().size());
+    }
+
+    @Test
+    void testLeaderEpochCheckRunsBeforeStateEpochCheck() {
+        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, 5, 5);
+
+        assertThrows(FencedLeaderEpochException.class, () ->
+                shard.writePartitionState(MIRROR_NAME, TP0, MirrorPartitionState.MIRRORING, 3, 3, null, false));
+    }
+
+    @Test
+    void testWriteStateBatchedLeaderEpochFencing() {
+        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, 5, 1);
+        replayState(TP1, MirrorPartitionState.LOG_TRUNCATION, 3, 1);
+
+        Map<String, Set<ClusterMirrorCoordinatorService.MirrorStateWrite>> mirrorStates = Map.of(
+                TOPIC_NAME, Set.of(
+                        new ClusterMirrorCoordinatorService.MirrorStateWrite(0, MirrorPartitionState.MIRRORING, 2, -1, null),
+                        new ClusterMirrorCoordinatorService.MirrorStateWrite(1, MirrorPartitionState.MIRRORING, 3, -1, null)));
+
+        CoordinatorResult<Map<TopicPartition, ClusterMirrorCoordinatorShard.PartitionWriteResult>, CoordinatorRecord> result =
+                shard.writeState(MIRROR_NAME, mirrorStates);
+
+        Map<TopicPartition, ClusterMirrorCoordinatorShard.PartitionWriteResult> results = result.response();
+
+        assertEquals(Errors.FENCED_LEADER_EPOCH, results.get(TP0).error());
+        assertEquals(-1, results.get(TP0).stateEpoch());
+
+        assertEquals(Errors.NONE, results.get(TP1).error());
+    }
+
+    // -- state epoch fencing --
+
+    @Test
+    void testWritePartitionStateFencedStateEpoch() {
+        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, -1, 5);
+
+        assertThrows(FencedStateEpochException.class, () ->
+                shard.writePartitionState(MIRROR_NAME, TP0, MirrorPartitionState.MIRRORING, -1, 3, null, false));
+    }
+
+    @Test
+    void testWritePartitionStateFencedStateEpochProducesNoRecords() {
+        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, -1, 5);
 
         try {
-            shard.writePartitionState(MIRROR_NAME, TP0, MirrorPartitionState.MIRRORING, 3, null, false);
+            shard.writePartitionState(MIRROR_NAME, TP0, MirrorPartitionState.MIRRORING, -1, 3, null, false);
         } catch (FencedStateEpochException ignored) {
         }
 
@@ -116,11 +170,11 @@ class ClusterMirrorCoordinatorShardTest {
     }
 
     @Test
-    void testWritePartitionStateSkipsCheckWhenMinusOne() {
-        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, 10);
+    void testWritePartitionStateStateEpochMinusOneSkipsCheck() {
+        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, -1, 10);
 
         CoordinatorResult<Void, CoordinatorRecord> result =
-                shard.writePartitionState(MIRROR_NAME, TP0, MirrorPartitionState.MIRRORING, -1, null, false);
+                shard.writePartitionState(MIRROR_NAME, TP0, MirrorPartitionState.MIRRORING, -1, -1, null, false);
 
         assertEquals(1, result.records().size());
         MirrorPartitionStateValue val = (MirrorPartitionStateValue) result.records().get(0).value().message();
@@ -128,14 +182,14 @@ class ClusterMirrorCoordinatorShardTest {
     }
 
     @Test
-    void testWriteStateBatchedFencing() {
-        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, 5);
-        replayState(TP1, MirrorPartitionState.LOG_TRUNCATION, 3);
+    void testWriteStateBatchedStateEpochFencing() {
+        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, -1, 5);
+        replayState(TP1, MirrorPartitionState.LOG_TRUNCATION, -1, 3);
 
         Map<String, Set<ClusterMirrorCoordinatorService.MirrorStateWrite>> mirrorStates = Map.of(
                 TOPIC_NAME, Set.of(
-                        new ClusterMirrorCoordinatorService.MirrorStateWrite(0, MirrorPartitionState.MIRRORING, 2, -1),
-                        new ClusterMirrorCoordinatorService.MirrorStateWrite(1, MirrorPartitionState.MIRRORING, 3, -1)));
+                        new ClusterMirrorCoordinatorService.MirrorStateWrite(0, MirrorPartitionState.MIRRORING, -1, 2, null),
+                        new ClusterMirrorCoordinatorService.MirrorStateWrite(1, MirrorPartitionState.MIRRORING, -1, 3, null)));
 
         CoordinatorResult<Map<TopicPartition, ClusterMirrorCoordinatorShard.PartitionWriteResult>, CoordinatorRecord> result =
                 shard.writeState(MIRROR_NAME, mirrorStates);
@@ -152,8 +206,34 @@ class ClusterMirrorCoordinatorShardTest {
     }
 
     @Test
+    void testBrokersRaceSimulation() {
+        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, -1, 5);
+
+        CoordinatorResult<Void, CoordinatorRecord> firstWrite =
+                shard.writePartitionState(MIRROR_NAME, TP0, MirrorPartitionState.FAILED, -1, 5, "error", false);
+        assertEquals(1, firstWrite.records().size());
+
+        assertThrows(FencedStateEpochException.class, () ->
+                shard.writePartitionState(MIRROR_NAME, TP0, MirrorPartitionState.MIRRORING, -1, 5, null, false));
+    }
+
+    // -- replay --
+
+    @Test
+    void testReplayPopulatesLeaderEpoch() {
+        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, 7, 1);
+
+        ReadMirrorStatesResponseData data = shard.readState(MIRROR_NAME,
+                Map.of(TOPIC_NAME, Set.of(0)));
+
+        ReadMirrorStatesResponseData.PartitionResult pr =
+                data.topics().get(0).partitions().get(0);
+        assertEquals(7, pr.leaderEpoch());
+    }
+
+    @Test
     void testReplayPopulatesStateEpoch() {
-        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, 7);
+        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, -1, 7);
 
         MirrorPartition mp = coreBridge.getPartition(
                 MirrorPartitionKey.of(MIRROR_NAME, TOPIC_ID, 0));
@@ -161,9 +241,24 @@ class ClusterMirrorCoordinatorShardTest {
         assertEquals(MirrorPartitionState.LOG_TRUNCATION, mp.state());
     }
 
+    // -- readState --
+
     @Test
-    void testReadStateIncludesEpoch() {
-        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, 4);
+    void testReadStateIncludesLeaderEpoch() {
+        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, 4, 2);
+
+        ReadMirrorStatesResponseData data = shard.readState(MIRROR_NAME,
+                Map.of(TOPIC_NAME, Set.of(0)));
+
+        ReadMirrorStatesResponseData.PartitionResult pr =
+                data.topics().get(0).partitions().get(0);
+        assertEquals(4, pr.leaderEpoch());
+        assertEquals(2, pr.stateEpoch());
+    }
+
+    @Test
+    void testReadStateIncludesStateEpoch() {
+        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, -1, 4);
 
         ReadMirrorStatesResponseData data = shard.readState(MIRROR_NAME,
                 Map.of(TOPIC_NAME, Set.of(0)));
@@ -174,9 +269,30 @@ class ClusterMirrorCoordinatorShardTest {
         assertEquals(MirrorPartitionState.LOG_TRUNCATION.value(), pr.state());
     }
 
+    // -- tombstone --
+
     @Test
-    void testTombstoneRemovesEpoch() {
-        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, 5);
+    void testTombstoneRemovesLeaderEpoch() {
+        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, 5, 1);
+
+        MirrorPartitionStateKey key = new MirrorPartitionStateKey()
+                .setMirrorName(MIRROR_NAME)
+                .setTopicId(TOPIC_ID)
+                .setPartition(0);
+        shard.replay(0, -1, (short) -1,
+                CoordinatorRecord.tombstone(key));
+
+        ReadMirrorStatesResponseData data = shard.readState(MIRROR_NAME,
+                Map.of(TOPIC_NAME, Set.of(0)));
+
+        ReadMirrorStatesResponseData.PartitionResult pr =
+                data.topics().get(0).partitions().get(0);
+        assertEquals(-1, pr.leaderEpoch());
+    }
+
+    @Test
+    void testTombstoneRemovesStateEpoch() {
+        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, -1, 5);
 
         MirrorPartitionStateKey key = new MirrorPartitionStateKey()
                 .setMirrorName(MIRROR_NAME)
@@ -190,31 +306,20 @@ class ClusterMirrorCoordinatorShardTest {
         assertTrue(mp == null || mp.stateEpoch() == 0);
     }
 
-    @Test
-    void testBrokersRaceSimulation() {
-        replayState(TP0, MirrorPartitionState.LOG_TRUNCATION, 5);
-
-        CoordinatorResult<Void, CoordinatorRecord> firstWrite =
-                shard.writePartitionState(MIRROR_NAME, TP0, MirrorPartitionState.FAILED, 5, "error", false);
-        assertEquals(1, firstWrite.records().size());
-
-        assertThrows(FencedStateEpochException.class, () ->
-                shard.writePartitionState(MIRROR_NAME, TP0, MirrorPartitionState.MIRRORING, 5, null, false));
-    }
-
     private void replayRecords(CoordinatorResult<?, CoordinatorRecord> result) {
         for (CoordinatorRecord record : result.records()) {
             shard.replay(0, -1, (short) -1, record);
         }
     }
 
-    private void replayState(TopicPartition tp, MirrorPartitionState state, int stateEpoch) {
+    private void replayState(TopicPartition tp, MirrorPartitionState state, int leaderEpoch, int stateEpoch) {
         MirrorPartitionStateKey key = new MirrorPartitionStateKey()
                 .setMirrorName(MIRROR_NAME)
                 .setTopicId(TOPIC_ID)
                 .setPartition(tp.partition());
         MirrorPartitionStateValue val = new MirrorPartitionStateValue()
                 .setState(state.value())
+                .setLeaderEpoch(leaderEpoch)
                 .setStateEpoch(stateEpoch)
                 .setPreviousState(MirrorPartitionState.UNKNOWN.value());
         shard.replay(0, -1, (short) -1,

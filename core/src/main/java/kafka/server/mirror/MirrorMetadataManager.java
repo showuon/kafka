@@ -31,6 +31,7 @@ import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.config.SaslConfigs;
 import org.apache.kafka.common.errors.CoordinatorLoadInProgressException;
+import org.apache.kafka.common.errors.FencedLeaderEpochException;
 import org.apache.kafka.common.errors.FencedStateEpochException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.message.DeleteClusterMirrorRequestData;
@@ -325,6 +326,14 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     Supplier<ReplicaManager> replicaManagerSupplier() {
         return replicaManagerSupplier;
+    }
+
+    private int getLeaderEpoch(TopicPartition tp) {
+        TopicImage topicImage = metadataImage.topics().getTopic(tp.topic());
+        if (topicImage == null) return -1;
+        var partitionReg = topicImage.partitions().get(tp.partition());
+        if (partitionReg == null) return -1;
+        return partitionReg.leaderEpoch;
     }
 
     /**
@@ -684,54 +693,67 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 }
                 MirrorPartitionKey key = MirrorPartitionKey.of(
                         mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
-                int stateEpoch = state == MirrorPartitionState.FAILED
+                boolean isFailed = state == MirrorPartitionState.FAILED;
+                int leaderEpoch = isFailed ? -1 : getLeaderEpoch(tp);
+                int stateEpoch = isFailed
                         ? -1 : MirrorPartition.orEmpty(mirrorCache.getPartition(key)).stateEpoch();
                 if (isLocalCoordinator(mirrorName, tp.topic(), tp.partition())) {
-                    writer.writePartitionState(mirrorName, tp, state, stateEpoch, errorMessage, nonRetryable)
-                            .whenComplete((v, ex) -> {
-                                if (ex != null) {
-                                    Throwable cause = (ex instanceof CompletionException && ex.getCause() != null)
-                                            ? ex.getCause() : ex;
-                                    if (cause instanceof CoordinatorLoadInProgressException) {
-                                        log.debug("Transition to {} deferred for {} (shard loading).", state, tp);
-                                        return;
-                                    }
-                                    if (cause instanceof FencedStateEpochException) {
-                                        log.debug("Transition to {} fenced for {} (stale state epoch).", state, tp);
-                                        return;
-                                    }
-                                    log.error("Transition to {} failed for {}", state, tp, ex);
-                                    if (state != MirrorPartitionState.FAILED) {
-                                        transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED, ex.getMessage());
-                                    }
-                                    return;
-                                }
-                                if (MirrorPartition.orEmpty(mirrorCache.getPartition(key)).state() == state) {
-                                    onStateTransition(mirrorName, tp, state);
-                                }
-                            });
+                    writer.writePartitionState(mirrorName, tp, state, leaderEpoch, stateEpoch, errorMessage, nonRetryable)
+                            .whenComplete((v, ex) -> onLocalWriteComplete(mirrorName, tp, key, state, ex));
                 } else {
                     Map<String, Set<MirrorStateWrite>> topicMetadata =
-                            Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), state, stateEpoch, -1)));
+                            Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), state, leaderEpoch, stateEpoch, null)));
                     writeStateToRemoteCoordinator(mirrorName, topicMetadata, Set.of(),
-                            res -> res.data().topics().forEach(topic -> topic.partitions().forEach(par -> {
-                                if (par.errorCode() == Errors.NONE.code()) {
-                                    updateLocalFailedState(key, state, errorMessage, nonRetryable);
-                                    mirrorCache.setPartition(key,
-                                            MirrorPartition.orEmpty(mirrorCache.getPartition(key))
-                                                    .withState(state)
-                                                    .withStateEpoch(par.stateEpoch()));
-                                    onStateTransition(mirrorName, tp, state);
-                                } else if (par.errorCode() == Errors.FENCED_STATE_EPOCH.code()) {
-                                    log.debug("Transition to {} fenced for {} (stale state epoch).", state, tp);
-                                } else {
-                                    log.error("Failed to write partition state to remote coordinator: {}",
-                                            par.errorCode());
-                                }
-                            })));
+                            res -> onRemoteWriteComplete(mirrorName, tp, key, state, errorMessage, nonRetryable, res));
                 }
             }
         });
+    }
+
+    private void onLocalWriteComplete(String mirrorName, TopicPartition tp,
+                                      MirrorPartitionKey key, MirrorPartitionState state, Throwable ex) {
+        if (ex != null) {
+            Throwable cause = (ex instanceof CompletionException && ex.getCause() != null)
+                    ? ex.getCause() : ex;
+            if (cause instanceof CoordinatorLoadInProgressException) {
+                log.debug("Transition to {} deferred for {} (shard loading).", state, tp);
+                return;
+            }
+            if (cause instanceof FencedLeaderEpochException || cause instanceof FencedStateEpochException) {
+                log.debug("Transition to {} fenced for {} (stale epoch).", state, tp);
+                return;
+            }
+            log.error("Transition to {} failed for {}", state, tp, ex);
+            if (state != MirrorPartitionState.FAILED) {
+                transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED, ex.getMessage());
+            }
+            return;
+        }
+        if (MirrorPartition.orEmpty(mirrorCache.getPartition(key)).state() == state) {
+            onStateTransition(mirrorName, tp, state);
+        }
+    }
+
+    private void onRemoteWriteComplete(String mirrorName, TopicPartition tp,
+                                        MirrorPartitionKey key, MirrorPartitionState state,
+                                        String errorMessage, boolean nonRetryable,
+                                        WriteMirrorStatesResponse res) {
+        res.data().topics().forEach(topic -> topic.partitions().forEach(par -> {
+            if (par.errorCode() == Errors.NONE.code()) {
+                updateLocalFailedState(key, state, errorMessage, nonRetryable);
+                mirrorCache.setPartition(key,
+                        MirrorPartition.orEmpty(mirrorCache.getPartition(key))
+                                .withState(state)
+                                .withStateEpoch(par.stateEpoch()));
+                onStateTransition(mirrorName, tp, state);
+            } else if (par.errorCode() == Errors.FENCED_LEADER_EPOCH.code()
+                    || par.errorCode() == Errors.FENCED_STATE_EPOCH.code()) {
+                log.debug("Transition to {} fenced for {} (stale epoch).", state, tp);
+            } else {
+                log.error("Failed to write partition state to remote coordinator: {}",
+                        par.errorCode());
+            }
+        }));
     }
 
     /**
@@ -807,7 +829,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             return coordinatorWriter.get().writeLastMirrorEpoch(mirrorName, tp, epoch);
         } else {
             writeStateToRemoteCoordinator(mirrorName,
-                Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), null, -1, epoch))),
+                Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), null, -1, -1, epoch))),
                 Set.of(), res -> { });
             return CompletableFuture.completedFuture(null);
         }
@@ -1079,8 +1101,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
                 WriteMirrorStatesRequestData.PartitionData partitionData = new WriteMirrorStatesRequestData.PartitionData();
                 partitionData.setState(m.state() == null ? MirrorPartitionState.UNKNOWN.value() : m.state().value());
+                partitionData.setLeaderEpoch(m.leaderEpoch());
                 partitionData.setStateEpoch(m.stateEpoch());
-                partitionData.setLastMirrorEpoch(m.leaderEpoch());
+                partitionData.setLastMirrorEpoch(m.lastMirrorEpoch() != null ? m.lastMirrorEpoch() : -1);
                 partitionData.setPartitionIndex(m.partition());
 
                 nodeToTopicPartitions
