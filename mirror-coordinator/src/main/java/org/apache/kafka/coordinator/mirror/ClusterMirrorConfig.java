@@ -25,10 +25,11 @@ import org.apache.kafka.common.config.SslConfigs;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.server.util.MirrorFilterUtils;
 
+import com.google.re2j.Pattern;
+
 import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
-import java.util.regex.Pattern;
 
 import static org.apache.kafka.clients.CommonClientConfigs.MIRROR_SOURCE_CLUSTER_ID_CONFIG;
 import static org.apache.kafka.clients.CommonClientConfigs.MIRROR_SOURCE_CLUSTER_ID_DOC;

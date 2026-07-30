@@ -63,6 +63,7 @@
     </subpackage>
 
     <subpackage name="controller">
+        <allow pkg="com.google.re2j"/>
         <allow pkg="org.apache.kafka.clients" />
         <allow pkg="org.apache.kafka.clients.admin" />
         <allow pkg="org.apache.kafka.common.acl" />

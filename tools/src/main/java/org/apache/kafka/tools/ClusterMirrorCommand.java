@@ -41,6 +41,7 @@ import org.apache.kafka.server.util.MirrorFilterUtils;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.re2j.Pattern;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -53,7 +54,6 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import joptsimple.ArgumentAcceptingOptionSpec;

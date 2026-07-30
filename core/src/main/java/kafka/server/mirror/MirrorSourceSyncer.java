@@ -80,6 +80,8 @@ import org.apache.kafka.server.util.KafkaScheduler;
 import org.apache.kafka.server.util.MirrorFilterUtils;
 import org.apache.kafka.storage.internals.log.UnifiedLog;
 
+import com.google.re2j.Pattern;
+
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
@@ -98,7 +100,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import scala.Option;
