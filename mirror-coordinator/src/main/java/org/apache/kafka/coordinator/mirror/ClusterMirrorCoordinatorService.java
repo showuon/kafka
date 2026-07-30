@@ -51,8 +51,10 @@ import java.util.Map;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
@@ -66,8 +68,11 @@ import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
  * writes commit.
  */
 public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator {
+    private enum State { INITIAL, STARTING, STARTED, SHUTDOWN }
+
     private final Logger log;
-    private final AtomicBoolean isActive = new AtomicBoolean(false);
+    private final AtomicReference<State> state = new AtomicReference<>(State.INITIAL);
+    private final CountDownLatch latch = new CountDownLatch(1);
     private final ClusterMirrorConfig config;
     private final CoordinatorRuntime<ClusterMirrorCoordinatorShard, CoordinatorRecord> runtime;
     private final CoreBridge bridge;
@@ -183,43 +188,61 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
 
     @Override
     public void startup() {
-        if (!isActive.compareAndSet(false, true)) {
-            log.warn("Is already running.");
+        if (!state.compareAndSet(State.INITIAL, State.STARTING)) {
+            log.warn("Not starting up as state is not INITIAL");
             return;
         }
+
         log.info("Starting up.");
-        bridge.initialize(
-            new CoreBridge.CoordinatorWriter() {
-                @Override
-                public CompletableFuture<Void> writePartitionState(String mirrorName, TopicPartition tp,
-                        MirrorPartitionState state, int stateEpoch, String errorMessage, boolean nonRetryable) {
-                    return ClusterMirrorCoordinatorService.this.writePartitionState(
-                        mirrorName, tp, state, stateEpoch, errorMessage, nonRetryable);
-                }
+        try {
+            bridge.initialize(
+                    new CoreBridge.CoordinatorWriter() {
+                        @Override
+                        public CompletableFuture<Void> writePartitionState(String mirrorName, TopicPartition tp,
+                                                                           MirrorPartitionState state, int stateEpoch, String errorMessage, boolean nonRetryable) {
+                            return ClusterMirrorCoordinatorService.this.writePartitionState(
+                                    mirrorName, tp, state, stateEpoch, errorMessage, nonRetryable);
+                        }
 
-                @Override
-                public CompletableFuture<Void> writeLastMirrorEpoch(String mirrorName,
-                        TopicPartition tp, int epoch) {
-                    return ClusterMirrorCoordinatorService.this.writeLastMirrorEpoch(
-                        mirrorName, tp, epoch);
-                }
+                        @Override
+                        public CompletableFuture<Void> writeLastMirrorEpoch(String mirrorName,
+                                                                            TopicPartition tp, int epoch) {
+                            return ClusterMirrorCoordinatorService.this.writeLastMirrorEpoch(
+                                    mirrorName, tp, epoch);
+                        }
 
-                @Override
-                public CompletableFuture<Void> writeTombstone(String mirrorName,
-                        Set<TopicPartition> partitions) {
-                    return ClusterMirrorCoordinatorService.this.writeTombstone(
-                        mirrorName, partitions);
-                }
-            },
-            this::partitionFor);
-        log.info("Startup complete.");
+                        @Override
+                        public CompletableFuture<Void> writeTombstone(String mirrorName,
+                                                                      Set<TopicPartition> partitions) {
+                            return ClusterMirrorCoordinatorService.this.writeTombstone(
+                                    mirrorName, partitions);
+                        }
+                    },
+                    this::partitionFor);
+            log.info("Startup complete.");
+        } finally {
+            state.set(State.STARTED);
+        }
     }
 
     @Override
     public void shutdown() {
-        if (!isActive.compareAndSet(true, false)) {
-            log.warn("Is already shutting down.");
+        State prev = state.getAndSet(State.SHUTDOWN);
+        if (prev == State.SHUTDOWN) {
+            log.warn("Shutdown already invoked");
             return;
+        }
+        if (prev == State.STARTING) {
+            try {
+                if (!latch.await(10, TimeUnit.SECONDS)) {
+                    log.warn("Timed out waiting for startup to complete. Shutting down directly");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("Interrupted while waiting for startup to complete. Shutting down directly", e);
+            }
+        } else if (prev == State.INITIAL) {
+            log.info("Shutting down before the service was initialized");
         }
         log.info("Shutting down.");
         bridge.closeSourceAdmins();
@@ -252,7 +275,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
     }
 
     private void throwIfNotActive() {
-        if (!isActive.get()) {
+        if (state.get() != State.STARTED) {
             throw Errors.COORDINATOR_NOT_AVAILABLE.exception();
         }
     }
