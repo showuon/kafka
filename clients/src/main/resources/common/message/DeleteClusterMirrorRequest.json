@@ -24,7 +24,7 @@
   "fields": [
     { "name": "MirrorName", "type": "string", "versions": "0+", "entityType": "mirrorName",
       "about": "The cluster mirror name to delete."},
-    { "name": "StateValidationOffset", "type": "int64", "versions": "0+", "default": "-1",
-      "about": "Cluster metadata offset at which the broker validated preconditions. -1 to skip validation."}
+    { "name": "StateOffset", "type": "int64", "versions": "0+", "default": "-1",
+      "about": "Per-topic cluster metadata offset at which the broker validated partition state preconditions. -1 to skip validation."}
   ]
 }

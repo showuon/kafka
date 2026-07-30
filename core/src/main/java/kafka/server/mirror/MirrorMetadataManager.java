@@ -1284,7 +1284,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         Set<String> topics = getConfiguredTopics(data.mirrorName(), true, true);
         validateMirrorStates(data.mirrorName(), topics,
                 Set.of(MirrorPartitionState.STOPPED), false,
-                data::setStateValidationOffset, callback);
+                data::setStateOffset, callback);
     }
 
     public void validateStartMirrorStates(StartMirrorTopicsRequestData data, Consumer<Optional<Errors>> callback) {
@@ -1292,7 +1292,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 .map(StartMirrorTopicsRequestData.TopicMetadata::topicName).collect(Collectors.toSet());
         validateMirrorStates(data.mirrorName(), topics,
                 Set.of(MirrorPartitionState.STOPPED, MirrorPartitionState.UNKNOWN), true,
-                data::setStateValidationOffset, callback);
+                data::setStateOffset, callback);
     }
 
     public void validateStopMirrorStates(StopMirrorTopicsRequestData data, Consumer<Optional<Errors>> callback) {
@@ -1300,7 +1300,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 .map(StopMirrorTopicsRequestData.TopicMetadata::topicName).collect(Collectors.toSet());
         validateMirrorStates(data.mirrorName(), topics,
                 Set.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED), false,
-                data::setStateValidationOffset, callback);
+                data::setStateOffset, callback);
     }
 
     public void validatePauseMirrorStates(PauseMirrorTopicsRequestData data, Consumer<Optional<Errors>> callback) {
@@ -1308,7 +1308,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 .map(PauseMirrorTopicsRequestData.TopicMetadata::topicName).collect(Collectors.toSet());
         validateMirrorStates(data.mirrorName(), topics,
                 Set.of(MirrorPartitionState.MIRRORING), false,
-                data::setStateValidationOffset, callback);
+                data::setStateOffset, callback);
     }
 
     public void validateResumeMirrorStates(ResumeMirrorTopicsRequestData data, Consumer<Optional<Errors>> callback) {
@@ -1316,7 +1316,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 .map(ResumeMirrorTopicsRequestData.TopicMetadata::topicName).collect(Collectors.toSet());
         validateMirrorStates(data.mirrorName(), topics,
                 Set.of(MirrorPartitionState.PAUSED), false,
-                data::setStateValidationOffset, callback);
+                data::setStateOffset, callback);
     }
 
     /**
