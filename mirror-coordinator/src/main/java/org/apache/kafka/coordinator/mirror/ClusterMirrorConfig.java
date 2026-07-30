@@ -23,7 +23,7 @@ import org.apache.kafka.common.config.SaslConfigs;
 import org.apache.kafka.common.config.SecurityConfig;
 import org.apache.kafka.common.config.SslConfigs;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
-import org.apache.kafka.server.util.MirrorFilterUtils;
+import org.apache.kafka.server.util.MirrorUtils;
 
 import com.google.re2j.Pattern;
 
@@ -361,7 +361,7 @@ public final class ClusterMirrorConfig {
     private final Pattern topicsExcludePattern;
     private final Pattern groupsIncludePattern;
     private final Pattern groupsExcludePattern;
-    private final List<MirrorFilterUtils.AclRule> aclIncludeRules;
+    private final List<MirrorUtils.AclRule> aclIncludeRules;
     private final String securityProtocol;
     private final String saslMechanism;
 
@@ -393,12 +393,12 @@ public final class ClusterMirrorConfig {
         this.config = config;
         this.securityProtocol = config.getString(SECURITY_PROTOCOL_CONFIG);
         this.saslMechanism = config.getString(SASL_MECHANISM_CONFIG);
-        this.topicPropertiesExcludePattern = MirrorFilterUtils.compilePatternList(topicPropertiesExclude);
-        this.topicsIncludePattern = MirrorFilterUtils.compilePatternList(topicsInclude);
-        this.topicsExcludePattern = MirrorFilterUtils.compilePatternList(topicsExclude);
-        this.groupsIncludePattern = MirrorFilterUtils.compilePatternList(groupsInclude);
-        this.groupsExcludePattern = MirrorFilterUtils.compilePatternList(groupsExclude);
-        this.aclIncludeRules = MirrorFilterUtils.parseAclRules(aclInclude);
+        this.topicPropertiesExcludePattern = MirrorUtils.compilePatternList(topicPropertiesExclude);
+        this.topicsIncludePattern = MirrorUtils.compilePatternList(topicsInclude);
+        this.topicsExcludePattern = MirrorUtils.compilePatternList(topicsExclude);
+        this.groupsIncludePattern = MirrorUtils.compilePatternList(groupsInclude);
+        this.groupsExcludePattern = MirrorUtils.compilePatternList(groupsExclude);
+        this.aclIncludeRules = MirrorUtils.parseAclRules(aclInclude);
     }
 
     /**
@@ -409,12 +409,12 @@ public final class ClusterMirrorConfig {
         this.config = config;
         this.securityProtocol = null;
         this.saslMechanism = null;
-        this.topicPropertiesExcludePattern = MirrorFilterUtils.compilePatternList(Arrays.asList(MIRROR_TOPIC_PROPERTIES_EXCLUDE_DEFAULT.split(",")));
+        this.topicPropertiesExcludePattern = MirrorUtils.compilePatternList(Arrays.asList(MIRROR_TOPIC_PROPERTIES_EXCLUDE_DEFAULT.split(",")));
         this.topicsIncludePattern = null;
-        this.topicsExcludePattern = MirrorFilterUtils.compilePatternList(List.of(MIRROR_TOPICS_EXCLUDE_DEFAULT));
-        this.groupsIncludePattern = MirrorFilterUtils.compilePatternList(List.of(MIRROR_GROUPS_INCLUDE_DEFAULT));
+        this.topicsExcludePattern = MirrorUtils.compilePatternList(List.of(MIRROR_TOPICS_EXCLUDE_DEFAULT));
+        this.groupsIncludePattern = MirrorUtils.compilePatternList(List.of(MIRROR_GROUPS_INCLUDE_DEFAULT));
         this.groupsExcludePattern = null;
-        this.aclIncludeRules = MirrorFilterUtils.parseAclRules(List.of(MIRROR_ACL_INCLUDE_DEFAULT));
+        this.aclIncludeRules = MirrorUtils.parseAclRules(List.of(MIRROR_ACL_INCLUDE_DEFAULT));
     }
 
     public int coordinatorNumThreads() {
@@ -453,7 +453,7 @@ public final class ClusterMirrorConfig {
         return groupsExcludePattern;
     }
 
-    public List<MirrorFilterUtils.AclRule> aclIncludeRules() {
+    public List<MirrorUtils.AclRule> aclIncludeRules() {
         return aclIncludeRules;
     }
 
