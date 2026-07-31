@@ -46,10 +46,13 @@ import org.apache.kafka.server.common.MirrorPartitionState;
 import org.apache.kafka.server.mutable.BoundedList;
 import org.apache.kafka.server.policy.AlterConfigPolicy;
 import org.apache.kafka.server.policy.AlterConfigPolicy.RequestMetadata;
-import org.apache.kafka.server.util.MirrorFilterUtils;
+import org.apache.kafka.server.util.MirrorUtils;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
 import org.apache.kafka.timeline.TimelineHashSet;
+
+import com.google.re2j.Pattern;
+import com.google.re2j.PatternSyntaxException;
 
 import org.slf4j.Logger;
 
@@ -67,7 +70,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static org.apache.kafka.clients.admin.AlterConfigOp.OpType.APPEND;
@@ -744,6 +746,13 @@ public class ConfigurationControlManager {
         Set<String> excludeSet = parseCsvToSet(currentExclude);
         mutator.accept(includeSet, excludeSet);
 
+        try {
+            MirrorUtils.validatePatterns(includeSet.stream().toList());
+            MirrorUtils.validatePatterns(excludeSet.stream().toList());
+        } catch (PatternSyntaxException e) {
+            return new ApiError(Errors.INVALID_REGULAR_EXPRESSION, e.getMessage());
+        }
+
         ApiError topicsInPatternsError = validateTopicsInPatterns(topics, includeSet, excludeSet);
         if (topicsInPatternsError.isFailure()) {
             return topicsInPatternsError;
@@ -765,8 +774,8 @@ public class ConfigurationControlManager {
         if (topics.isEmpty()) {
             return ApiError.NONE;
         }
-        Pattern includePatterns = MirrorFilterUtils.compilePatternList(includeSet.stream().toList());
-        Pattern excludePatterns = MirrorFilterUtils.compilePatternList(excludeSet.stream().toList());
+        Pattern includePatterns = MirrorUtils.compilePatternList(includeSet.stream().toList());
+        Pattern excludePatterns = MirrorUtils.compilePatternList(excludeSet.stream().toList());
 
         if (excludePatterns != null) {
             boolean topicExcluded = topics.stream().anyMatch(topic -> excludePatterns.matcher(topic).matches());

@@ -1314,6 +1314,7 @@ project(':metadata') {
     implementation libs.jacksonDatabind
     implementation libs.jacksonJDK8Datatypes
     implementation libs.metrics
+    implementation libs.re2j
     implementation libs.slf4jApi
 
     testImplementation testLog4j2Libs
@@ -1599,6 +1600,7 @@ project(':mirror-coordinator') {
     dependencies {
         implementation libs.jacksonDatabind
         implementation libs.metrics
+        implementation libs.re2j
         implementation project(':clients')
         implementation project(':server-common')
         implementation project(':coordinator-common')
@@ -2206,6 +2208,7 @@ project(':server-common') {
     implementation libs.joptSimple
     implementation libs.jacksonDatabind
     implementation libs.pcollections
+    implementation libs.re2j
     implementation libs.slf4jApi
 
     testImplementation project(':clients')

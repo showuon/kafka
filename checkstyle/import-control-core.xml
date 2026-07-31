@@ -67,6 +67,7 @@
   </subpackage>
 
   <subpackage name="server">
+    <allow pkg="com.google.re2j"/>
     <allow pkg="kafka" />
     <allow pkg="org.apache.kafka" />
   </subpackage>

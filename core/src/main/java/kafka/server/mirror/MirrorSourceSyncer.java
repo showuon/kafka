@@ -77,8 +77,10 @@ import org.apache.kafka.server.common.ControllerRequestCompletionHandler;
 import org.apache.kafka.server.common.MirrorPartitionState;
 import org.apache.kafka.server.common.NodeToControllerChannelManager;
 import org.apache.kafka.server.util.KafkaScheduler;
-import org.apache.kafka.server.util.MirrorFilterUtils;
+import org.apache.kafka.server.util.MirrorUtils;
 import org.apache.kafka.storage.internals.log.UnifiedLog;
+
+import com.google.re2j.Pattern;
 
 import org.slf4j.Logger;
 
@@ -98,7 +100,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import scala.Option;
@@ -912,7 +913,7 @@ class MirrorSourceSyncer {
 
             log.debug("Describe ACLs response from remote cluster {}: {}", mirrorName, sourceAcls);
 
-            List<MirrorFilterUtils.AclRule> aclIncludeRules = mirrorConfig.aclIncludeRules();
+            List<MirrorUtils.AclRule> aclIncludeRules = mirrorConfig.aclIncludeRules();
             var allRemoteAcls = sourceAcls.stream()
                     .filter(acl -> aclIncludeRules.stream().anyMatch(rule -> rule.matches(acl)))
                     .toList();

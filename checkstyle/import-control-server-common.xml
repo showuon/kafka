@@ -113,6 +113,7 @@
             <!-- InterBrokerSendThread uses some clients classes that are not part of the public -->
             <!-- API but are still relatively common -->
             <allow class="org.apache.kafka.clients.admin.AdminClientConfig" />
+            <allow pkg="com.google.re2j"/>
             <allow class="org.apache.kafka.clients.ClientRequest" />
             <allow class="org.apache.kafka.clients.ClientResponse" />
             <allow class="org.apache.kafka.clients.KafkaClient" />

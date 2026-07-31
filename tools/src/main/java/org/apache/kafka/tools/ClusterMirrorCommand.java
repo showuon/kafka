@@ -37,10 +37,11 @@ import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.server.util.CommandDefaultOptions;
 import org.apache.kafka.server.util.CommandLineUtils;
-import org.apache.kafka.server.util.MirrorFilterUtils;
+import org.apache.kafka.server.util.MirrorUtils;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.re2j.Pattern;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -53,7 +54,6 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import joptsimple.ArgumentAcceptingOptionSpec;
@@ -142,8 +142,8 @@ public abstract class ClusterMirrorCommand {
             Set<String> matchingTopicNames;
             try (Admin sourceAdmin = Admin.create(sourceConfig)) {
                 Set<String> allSourceTopics = sourceAdmin.listTopics().names().get();
-                Pattern includePattern = MirrorFilterUtils.compilePatternList(topicPatterns);
-                Pattern excludePattern = MirrorFilterUtils.compilePatternList(excludePatterns);
+                Pattern includePattern = MirrorUtils.compilePatternList(topicPatterns);
+                Pattern excludePattern = MirrorUtils.compilePatternList(excludePatterns);
                 matchingTopicNames = allSourceTopics.stream()
                         .filter(t -> includePattern != null && includePattern.matcher(t).matches())
                         .filter(t -> excludePattern == null || !excludePattern.matcher(t).matches())
@@ -215,7 +215,7 @@ public abstract class ClusterMirrorCommand {
 
         private Set<String> resolveTopicsOnDestination(List<String> patterns) throws Exception {
             Set<String> allTopics = adminClient.listTopics().names().get();
-            Pattern compiled = MirrorFilterUtils.compilePatternList(patterns);
+            Pattern compiled = MirrorUtils.compilePatternList(patterns);
             if (compiled == null) return Set.of();
             return allTopics.stream()
                     .filter(t -> compiled.matcher(t).matches())
