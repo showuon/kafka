@@ -49,13 +49,13 @@ public class CoreBridgeImpl implements CoreBridge {
     }
 
     @Override
-    public void onShardLoaded() {
-        metadataManager.processAllStateTransitions();
+    public void onShardLoaded(int coordPartition) {
+        metadataManager.onShardLoaded(coordPartition);
     }
 
     @Override
     public void onShardUnloaded(int coordPartition, int coordPartitionCount) {
-        metadataManager.clearPartition(coordPartition, coordPartitionCount);
+        metadataManager.onShardUnloaded(coordPartition, coordPartitionCount);
     }
 
     @Override
@@ -79,9 +79,9 @@ public class CoreBridgeImpl implements CoreBridge {
         MirrorPartitionState curState,
         MirrorPartitionState newState,
         String errorMessage,
-        boolean nonRetryable
+        boolean isPermFailure
     ) {
-        metadataManager.updateFailedInfo(key, curState, newState, errorMessage, nonRetryable);
+        metadataManager.updateFailedInfo(key, curState, newState, errorMessage, isPermFailure);
     }
 
     @Override

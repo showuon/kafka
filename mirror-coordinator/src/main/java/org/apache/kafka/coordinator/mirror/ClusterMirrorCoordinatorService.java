@@ -16,7 +16,6 @@
  */
 package org.apache.kafka.coordinator.mirror;
 
-
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.ReadMirrorStatesResponseData;
 import org.apache.kafka.common.message.WriteMirrorStatesResponseData;
@@ -193,33 +192,34 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
             return;
         }
 
-        log.info("Starting up.");
+        log.info("Starting up");
         try {
             bridge.initialize(
-                    new CoreBridge.CoordinatorWriter() {
-                        @Override
-                        public CompletableFuture<Void> writePartitionState(String mirrorName, TopicPartition tp,
-                                                                           MirrorPartitionState state, int stateEpoch, String errorMessage, boolean nonRetryable) {
-                            return ClusterMirrorCoordinatorService.this.writePartitionState(
-                                    mirrorName, tp, state, stateEpoch, errorMessage, nonRetryable);
-                        }
+                new CoreBridge.CoordinatorWriter() {
+                    @Override
+                    public CompletableFuture<Void> writePartitionState(String mirrorName, TopicPartition tp,
+                            MirrorPartitionState state, int leaderEpoch, int stateEpoch,
+                            String errorMessage, boolean isPermFailure) {
+                        return ClusterMirrorCoordinatorService.this.writePartitionState(
+                            mirrorName, tp, state, leaderEpoch, stateEpoch, errorMessage, isPermFailure);
+                    }
 
-                        @Override
-                        public CompletableFuture<Void> writeLastMirrorEpoch(String mirrorName,
-                                                                            TopicPartition tp, int epoch) {
-                            return ClusterMirrorCoordinatorService.this.writeLastMirrorEpoch(
-                                    mirrorName, tp, epoch);
-                        }
+                    @Override
+                    public CompletableFuture<Void> writeLastMirrorEpoch(String mirrorName,
+                                                                        TopicPartition tp, int epoch) {
+                        return ClusterMirrorCoordinatorService.this.writeLastMirrorEpoch(
+                                mirrorName, tp, epoch);
+                    }
 
-                        @Override
-                        public CompletableFuture<Void> writeTombstone(String mirrorName,
-                                                                      Set<TopicPartition> partitions) {
-                            return ClusterMirrorCoordinatorService.this.writeTombstone(
-                                    mirrorName, partitions);
-                        }
-                    },
-                    this::partitionFor);
-            log.info("Startup complete.");
+                    @Override
+                    public CompletableFuture<Void> writeTombstone(String mirrorName,
+                                                                  Set<TopicPartition> partitions) {
+                        return ClusterMirrorCoordinatorService.this.writeTombstone(
+                                mirrorName, partitions);
+                    }
+                },
+                this::partitionFor);
+            log.info("Startup complete");
         } finally {
             state.set(State.STARTED);
         }
@@ -235,16 +235,16 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         if (prev == State.STARTING) {
             try {
                 if (!latch.await(10, TimeUnit.SECONDS)) {
-                    log.warn("Timed out waiting for startup to complete. Shutting down directly");
+                    log.warn("Timed out waiting for startup to complete. Shutting down directly.");
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                log.warn("Interrupted while waiting for startup to complete. Shutting down directly", e);
+                log.warn("Interrupted while waiting for startup to complete. Shutting down directly.", e);
             }
         } else if (prev == State.INITIAL) {
             log.info("Shutting down before the service was initialized");
         }
-        log.info("Shutting down.");
+        log.info("Shutting down");
         bridge.closeSourceAdmins();
         try {
             scheduler.shutdown();
@@ -254,7 +254,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         }
         Utils.closeQuietly(runtime, "coordinator runtime");
         Utils.closeQuietly(metrics, "coordinator metrics");
-        log.info("Shutdown complete.");
+        log.info("Shutdown complete");
     }
 
     @Override
@@ -408,14 +408,14 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
     /** Persists a partition state record. Called from {@code MirrorMetadataManager#transitionTo}. */
     private CompletableFuture<Void> writePartitionState(
             String mirrorName, TopicPartition tp, MirrorPartitionState state,
-            int stateEpoch, String errorMessage, boolean nonRetryable
+            int leaderEpoch, int stateEpoch, String errorMessage, boolean isPermFailure
     ) {
         throwIfNotActive();
         TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME,
                 partitionFor(MirrorPartitionKey.of(mirrorName, bridge.getTopicId(tp.topic()), tp.partition())));
         return runtime.scheduleWriteOperation("write-partition-state", mirrorStateTp,
                 Duration.ofMillis(config.coordinatorWriteTimeoutMs()),
-                shard -> shard.writePartitionState(mirrorName, tp, state, stateEpoch, errorMessage, nonRetryable));
+                shard -> shard.writePartitionState(mirrorName, tp, state, leaderEpoch, stateEpoch, errorMessage, isPermFailure));
     }
 
     /** Persists a last mirror epoch record. Called from {@code MirrorMetadataManager#updateLastMirrorEpoch}. */
@@ -445,5 +445,5 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
     }
 
     /** A single partition state or LME write entry for inter-broker WriteMirrorStates RPCs. */
-    public record MirrorStateWrite(int partition, MirrorPartitionState state, int stateEpoch, Integer leaderEpoch) { }
+    public record MirrorStateWrite(int partition, MirrorPartitionState state, int leaderEpoch, int stateEpoch, Integer lastMirrorEpoch) { }
 }

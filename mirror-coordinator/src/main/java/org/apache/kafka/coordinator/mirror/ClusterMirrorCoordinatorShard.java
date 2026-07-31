@@ -18,6 +18,7 @@ package org.apache.kafka.coordinator.mirror;
 
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.errors.FencedLeaderEpochException;
 import org.apache.kafka.common.errors.FencedStateEpochException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.message.ReadMirrorStatesResponseData;
@@ -61,6 +62,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
     private final CoreBridge coreBridge;
     private final TopicPartition topicPartition;
     private final int numPartitions;
+    private final TimelineHashMap<MirrorPartitionKey, Integer> leaderEpochMap;
     private final TimelineHashMap<MirrorPartitionKey, Integer> stateEpochMap;
 
     public static class Builder implements CoordinatorShardBuilder<ClusterMirrorCoordinatorShard, CoordinatorRecord> {
@@ -133,6 +135,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
         this.coreBridge = coreBridge;
         this.topicPartition = topicPartition;
         this.numPartitions = numPartitions;
+        this.leaderEpochMap = new TimelineHashMap<>(snapshotRegistry, 0);
         this.stateEpochMap = new TimelineHashMap<>(snapshotRegistry, 0);
     }
 
@@ -163,6 +166,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
             MirrorPartitionStateValue stateValue = (MirrorPartitionStateValue) value.message();
             MirrorPartitionState state = MirrorPartitionState.fromValue(stateValue.state());
             MirrorPartitionState previousState = MirrorPartitionState.fromValue(stateValue.previousState());
+            maybeUpdateLeaderEpochMap(pk, stateValue.leaderEpoch());
             maybeUpdateStateEpochMap(pk, stateValue.stateEpoch());
             MirrorPartition mp = MirrorPartition.orEmpty(coreBridge.getPartition(pk))
                     .withState(state)
@@ -177,7 +181,16 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
             coreBridge.setPartition(pk, mp);
         } else {
             coreBridge.removePartition(pk);
+            leaderEpochMap.remove(pk);
             stateEpochMap.remove(pk);
+        }
+    }
+
+    private void maybeUpdateLeaderEpochMap(MirrorPartitionKey pk, int leaderEpoch) {
+        if (leaderEpoch == -1) return;
+        leaderEpochMap.putIfAbsent(pk, leaderEpoch);
+        if (leaderEpochMap.get(pk) < leaderEpoch) {
+            leaderEpochMap.put(pk, leaderEpoch);
         }
     }
 
@@ -203,7 +216,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
     @Override
     public void onLoaded(CoordinatorMetadataImage newImage) {
         log.info("Loaded shard for {}.", topicPartition);
-        coreBridge.onShardLoaded();
+        coreBridge.onShardLoaded(topicPartition.partition());
     }
 
     @Override
@@ -229,6 +242,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                 ReadMirrorStatesResponseData.PartitionResult pr = new ReadMirrorStatesResponseData.PartitionResult()
                         .setPartitionIndex(part)
                         .setState(mp.state().value())
+                        .setLeaderEpoch(leaderEpochMap.getOrDefault(pk, -1))
                         .setStateEpoch(mp.stateEpoch())
                         .setPreviousState(mp.prevState() != null ?
                                 mp.prevState().value() : MirrorPartitionState.UNKNOWN.value())
@@ -255,18 +269,22 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
             if (partition.state() != null && partition.state() != MirrorPartitionState.UNKNOWN) {
                 try {
                     CoordinatorResult<Void, CoordinatorRecord> result =
-                            writePartitionState(mirrorName, tp, partition.state(), partition.stateEpoch(), null, false);
+                            writePartitionState(mirrorName, tp, partition.state(),
+                                    partition.leaderEpoch(), partition.stateEpoch(), null, false);
                     records.addAll(result.records());
                     int newEpoch = stateEpochMap.getOrDefault(
                             MirrorPartitionKey.of(mirrorName, coreBridge.getTopicId(topic), tp.partition()), 0);
                     results.put(tp, new PartitionWriteResult(Errors.NONE, newEpoch));
+                } catch (FencedLeaderEpochException e) {
+                    results.put(tp, new PartitionWriteResult(Errors.FENCED_LEADER_EPOCH, -1));
+                    return;
                 } catch (FencedStateEpochException e) {
                     results.put(tp, new PartitionWriteResult(Errors.FENCED_STATE_EPOCH, -1));
                     return;
                 }
             }
-            if (partition.leaderEpoch() != -1) {
-                records.addAll(writeLastMirrorEpoch(mirrorName, tp, partition.leaderEpoch()).records());
+            if (partition.lastMirrorEpoch() != null && partition.lastMirrorEpoch() != -1) {
+                records.addAll(writeLastMirrorEpoch(mirrorName, tp, partition.lastMirrorEpoch()).records());
             }
         }));
         return new CoordinatorResult<>(records, results);
@@ -274,9 +292,13 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
 
     public CoordinatorResult<Void, CoordinatorRecord> writePartitionState(
             String mirrorName, TopicPartition tp, MirrorPartitionState state,
-            int expectedStateEpoch, String errorMessage, boolean nonRetryable
+            int leaderEpoch, int expectedStateEpoch, String errorMessage, boolean isPermFailure
     ) {
         MirrorPartitionKey pk = MirrorPartitionKey.of(mirrorName, coreBridge.getTopicId(tp.topic()), tp.partition());
+        if (leaderEpoch != -1 && leaderEpochMap.containsKey(pk) && leaderEpochMap.get(pk) > leaderEpoch) {
+            log.info("Write fenced for {}: leader epoch {} < current {}.", tp, leaderEpoch, leaderEpochMap.get(pk));
+            throw Errors.FENCED_LEADER_EPOCH.exception();
+        }
         int currentStateEpoch = stateEpochMap.getOrDefault(pk, 0);
         if (expectedStateEpoch != -1 && currentStateEpoch > expectedStateEpoch) {
             log.info("Write fenced for {}: current epoch {} > expected {}.", tp, currentStateEpoch, expectedStateEpoch);
@@ -288,8 +310,9 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
             return new CoordinatorResult<>(List.of(), null);
         }
         log.debug("Transitioning partition {} from {} to {}.", tp, currentState, state);
-        coreBridge.updateFailedInfo(pk, currentState, state, errorMessage, nonRetryable);
+        coreBridge.updateFailedInfo(pk, currentState, state, errorMessage, isPermFailure);
 
+        maybeUpdateLeaderEpochMap(pk, leaderEpoch);
         int newEpoch = currentStateEpoch + 1;
         stateEpochMap.put(pk, newEpoch);
 
@@ -300,6 +323,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                 .setPartition(pk.partition());
         var val = new MirrorPartitionStateValue()
                 .setState(state.value())
+                .setLeaderEpoch(leaderEpoch)
                 .setStateEpoch(newEpoch)
                 .setPreviousState(mp.prevState() != null ? mp.prevState().value() : MirrorPartitionState.UNKNOWN.value())
                 .setRetryAttempt((short) mp.retryAttempt())

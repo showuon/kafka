@@ -34,6 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class MirrorStateCache {
     private final Map<MirrorPartitionKey, MirrorPartition> partitions = new ConcurrentHashMap<>();
     private final Map<String, Map<TopicPartition, SourceLeader>> sourceLeaders = new ConcurrentHashMap<>();
+    private final Set<Integer> loadedCoordPartitions = ConcurrentHashMap.newKeySet();
     private final Set<String> pendingTopicCreations = ConcurrentHashMap.newKeySet();
     private final Set<PendingLeaderEpochBump> pendingLederEpochBumps = ConcurrentHashMap.newKeySet();
 
@@ -47,6 +48,7 @@ public class MirrorStateCache {
     public void clear() {
         partitions.clear();
         sourceLeaders.clear();
+        loadedCoordPartitions.clear();
         pendingTopicCreations.clear();
         pendingLederEpochBumps.clear();
     }
@@ -103,10 +105,10 @@ public class MirrorStateCache {
     }
 
     public void updateFailedInfo(MirrorPartitionKey key, MirrorPartitionState currentState,
-                                 MirrorPartitionState newState, String errorMessage, boolean nonRetryable) {
+                                 MirrorPartitionState newState, String errorMessage, boolean isPermFailure) {
         if (newState == MirrorPartitionState.FAILED) {
             MirrorPartition existing = MirrorPartition.orEmpty(getPartition(key));
-            int attempt = existing.nextAttempt(nonRetryable);
+            int attempt = existing.nextAttempt(isPermFailure);
             MirrorPartitionState previousState = existing.resolvePrevState(currentState);
             partitions.compute(key, (k, e) -> MirrorPartition.orEmpty(e).withError(errorMessage, attempt, previousState));
         } else if (newState == MirrorPartitionState.LOG_TRUNCATION
@@ -144,6 +146,20 @@ public class MirrorStateCache {
 
     public void removeSourceLeaders(String mirrorName) {
         sourceLeaders.remove(mirrorName);
+    }
+
+    // -- Loaded coordinator shard operations --
+
+    public boolean isShardLoaded(int coordPartition) {
+        return loadedCoordPartitions.contains(coordPartition);
+    }
+
+    public void addLoadedShard(int coordPartition) {
+        loadedCoordPartitions.add(coordPartition);
+    }
+
+    public void removeLoadedShard(int coordPartition) {
+        loadedCoordPartitions.remove(coordPartition);
     }
 
     // -- Pending topic creation operations --

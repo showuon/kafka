@@ -37,7 +37,7 @@ public interface CoreBridge {
 
     void closeSourceAdmins();
 
-    void onShardLoaded();
+    void onShardLoaded(int coordPartition);
 
     void onShardUnloaded(int coordPartition, int coordPartitionCount);
 
@@ -52,7 +52,7 @@ public interface CoreBridge {
         MirrorPartitionState curState,
         MirrorPartitionState newState,
         String errorMessage,
-        boolean nonRetryable
+        boolean isPermFailure
     );
 
     void setLastMirrorEpoch(String mirrorName, String topic, int partition, int epoch);
@@ -72,9 +72,10 @@ public interface CoreBridge {
             String mirrorName,
             TopicPartition tp,
             MirrorPartitionState state,
+            int leaderEpoch,
             int stateEpoch,
             String errorMessage,
-            boolean nonRetryable
+            boolean isPermFailure
         );
 
         CompletableFuture<Void> writeLastMirrorEpoch(
