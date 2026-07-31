@@ -16,15 +16,15 @@
  */
 package org.apache.kafka.common.errors;
 
-public class MirrorTopicBeingStoppedException extends ApiException {
+public class MirrorTopicAlreadyStoppedException extends ApiException {
 
     private static final long serialVersionUID = 1L;
 
-    public MirrorTopicBeingStoppedException(String message) {
+    public MirrorTopicAlreadyStoppedException(String message) {
         super(message);
     }
 
-    public MirrorTopicBeingStoppedException(String message, Throwable cause) {
+    public MirrorTopicAlreadyStoppedException(String message, Throwable cause) {
         super(message, cause);
     }
 }

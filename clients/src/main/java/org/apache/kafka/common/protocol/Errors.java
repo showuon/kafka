@@ -90,7 +90,7 @@ import org.apache.kafka.common.errors.ListenerNotFoundException;
 import org.apache.kafka.common.errors.LogDirNotFoundException;
 import org.apache.kafka.common.errors.MemberIdRequiredException;
 import org.apache.kafka.common.errors.MirrorTopicAlreadyPausedException;
-import org.apache.kafka.common.errors.MirrorTopicBeingStoppedException;
+import org.apache.kafka.common.errors.MirrorTopicAlreadyStoppedException;
 import org.apache.kafka.common.errors.MirrorTopicNotPausedException;
 import org.apache.kafka.common.errors.MirrorTopicNotStoppedException;
 import org.apache.kafka.common.errors.MismatchedEndpointTypeException;
@@ -438,7 +438,7 @@ public enum Errors {
     TOPIC_NOT_IN_CLUSTER_MIRROR(139, "The topic does not belong to the specified cluster mirror.", TopicNotInClusterMirrorException::new),
     MIRROR_TOPIC_ALREADY_PAUSED(140, "The mirror topic is already paused.", MirrorTopicAlreadyPausedException::new),
     MIRROR_TOPIC_NOT_PAUSED(141, "The mirror topic is not paused.", MirrorTopicNotPausedException::new),
-    MIRROR_TOPIC_BEING_STOPPED(142, "The mirror topic is being stopped.", MirrorTopicBeingStoppedException::new),
+    MIRROR_TOPIC_ALREADY_STOPPED(142, "The mirror topic is alredy stopped.", MirrorTopicAlreadyStoppedException::new),
     CLUSTER_MIRROR_NOT_EMPTY(143, "The cluster mirror still has active or non-stopped topics.", ClusterMirrorNotEmptyException::new),
     CLUSTER_MIRROR_AUTHORIZATION_FAILED(144, "Cluster mirror authorization failed.", ClusterMirrorAuthorizationException::new),
     INVALID_CLUSTER_MIRROR_STATES(145, "Cluster mirror partition states are not in the expected states.", InvalidMirrorStateException::new),
