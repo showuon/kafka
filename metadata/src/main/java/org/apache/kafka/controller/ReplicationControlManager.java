@@ -764,7 +764,7 @@ public class ReplicationControlManager {
         if (topic.mirrorInfo() != null) {
             ApiError mirrorIdError = validateMirrorTopicId(topic.name(), topic.mirrorInfo().topicId());
             if (mirrorIdError.isFailure()) return mirrorIdError;
-            preserveSourceTopicId = true;
+            preserveSourceTopicId = !topic.mirrorInfo().topicId().equals(Uuid.ZERO_UUID);
         }
 
         Map<Integer, PartitionRegistration> newParts = new HashMap<>();
