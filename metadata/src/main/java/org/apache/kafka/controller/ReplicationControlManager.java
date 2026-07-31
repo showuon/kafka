@@ -998,7 +998,7 @@ public class ReplicationControlManager {
         if (topicId.equals(Uuid.ZERO_UUID)) {
             return ApiError.NONE;
         }
-        if (Uuid.RESERVED.contains(topicId) || topicId.toString().startsWith("-")) {
+        if (!topicId.isValid()) {
             return new ApiError(INVALID_REQUEST,
                     "Mirror topic id " + topicId + " is invalid and cannot be used.");
         }

@@ -69,13 +69,20 @@ public class Uuid implements Comparable<Uuid> {
     }
 
     /**
+     * Returns true if this UUID is not reserved and its string form does not start with "-".
+     */
+    public boolean isValid() {
+        return !RESERVED.contains(this) && !toString().startsWith("-");
+    }
+
+    /**
      * Static factory to retrieve a type 4 (pseudo randomly generated) UUID.
      *
-     * This will not generate a UUID equal to 0, 1, or one whose string representation starts with a dash ("-")
+     * This will not generate a UUID equal to 0, 1, or one whose string representation starts with a dash ("-").
      */
     public static Uuid randomUuid() {
         Uuid uuid = unsafeRandomUuid();
-        while (RESERVED.contains(uuid) || uuid.toString().startsWith("-")) {
+        while (!uuid.isValid()) {
             uuid = unsafeRandomUuid();
         }
         return uuid;
