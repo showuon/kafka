@@ -753,38 +753,6 @@ public class ReplicationControlManager {
         }
     }
 
-    public ControllerResult<BumpLeaderEpochsResponseData> bumpLeaderEpochs(Map<Uuid, Map<Integer, Integer>> partitionLeaderEpochs) {
-        List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
-        for (Entry<Uuid, Map<Integer, Integer>> partitionLeaderEpoch : partitionLeaderEpochs.entrySet()) {
-            Uuid topicId = partitionLeaderEpoch.getKey();
-            Map<Integer, Integer> leaderEpochs = partitionLeaderEpoch.getValue();
-            TopicControlInfo info = topics.get(topicId);
-            String topicName = info.name;
-            leaderEpochs.forEach((partitionId, leaderEpoch) -> {
-                PartitionRegistration partition = info.parts.get(partitionId);
-                // Skip if the current epoch already exceeds the requested value
-                if (partition.leaderEpoch <= leaderEpoch) {
-                    PartitionChangeBuilder builder = new PartitionChangeBuilder(
-                            partition,
-                            info.topicId(),
-                            partitionId,
-                            new LeaderAcceptor(clusterControl, partition),
-                            featureControl.metadataVersionOrThrow(),
-                            getTopicEffectiveMinIsr(topicName)
-                    )
-                            .setTargetLeaderEpoch(leaderEpochs.getOrDefault(partitionId, NO_PARTITION_LEADER_EPOCH))
-                            .setDefaultDirProvider(clusterDescriber);
-                    builder.build().ifPresent(records::add);
-                    log.debug("Updating partition {} leader epoch for topic {} from {} to {}: {}", partitionId, topicName, partition.leaderEpoch, leaderEpoch, records);
-                } else {
-                    log.debug("Skipping partition {} leader epoch update for topic {} from {} to {}", partitionId, topicName, partition.leaderEpoch, leaderEpoch);
-                }
-            });
-        }
-
-        return ControllerResult.of(records, new BumpLeaderEpochsResponseData().setErrorCode((short) 0));
-    }
-
     private ApiError createTopic(ControllerRequestContext context,
                                  CreatableTopic topic,
                                  List<ApiMessageAndVersion> records,
@@ -792,10 +760,11 @@ public class ReplicationControlManager {
                                  List<ApiMessageAndVersion> configRecords,
                                  boolean authorizedToReturnConfigs) {
         Map<String, String> creationConfigs = translateCreationConfigs(topic.configs());
-        boolean useMirrorTopicId = false;
-        // should keep source topicId for mirror topics
-        if (topic.mirrorInfo() != null && !topic.mirrorInfo().topicId().equals(Uuid.ZERO_UUID)) {
-            useMirrorTopicId = true;
+        boolean preserveSourceTopicId = false;
+        if (topic.mirrorInfo() != null) {
+            ApiError mirrorIdError = validateMirrorTopicId(topic.name(), topic.mirrorInfo().topicId());
+            if (mirrorIdError.isFailure()) return mirrorIdError;
+            preserveSourceTopicId = !topic.mirrorInfo().topicId().equals(Uuid.ZERO_UUID);
         }
 
         Map<Integer, PartitionRegistration> newParts = new HashMap<>();
@@ -828,7 +797,7 @@ public class ReplicationControlManager {
                         "partition " + assignment.partitionIndex() + " are fenced or in controlled shutdown.");
                 }
 
-                if (useMirrorTopicId && isr.size() < assignment.brokerIds().size()) {
+                if (preserveSourceTopicId && isr.size() < assignment.brokerIds().size()) {
                     return new ApiError(Errors.INVALID_REPLICA_ASSIGNMENT,
                         "Some brokers specified in the manual partition assignment for " +
                         "partition " + assignment.partitionIndex() + " are fenced or in controlled shutdown. " +
@@ -882,7 +851,7 @@ public class ReplicationControlManager {
                             "Unable to replicate the partition " + replicationFactor +
                                 " time(s): All brokers are currently fenced or in controlled shutdown.");
                     }
-                    if (useMirrorTopicId && isr.size() < partitionAssignment.replicas().size()) {
+                    if (preserveSourceTopicId && isr.size() < partitionAssignment.replicas().size()) {
                         return new ApiError(Errors.INVALID_REPLICATION_FACTOR,
                             "Unable to replicate the partition " + replicationFactor +
                                 " time(s): Some brokers are currently fenced or in controlled shutdown. " +
@@ -913,7 +882,7 @@ public class ReplicationControlManager {
         }
 
         // Preserve topic ID for mirror topics
-        Uuid topicId = useMirrorTopicId ? topic.mirrorInfo().topicId() : Uuid.randomUuid();
+        Uuid topicId = preserveSourceTopicId ? topic.mirrorInfo().topicId() : Uuid.randomUuid();
 
         CreatableTopicResult result = new CreatableTopicResult().
             setName(topic.name()).
@@ -969,6 +938,8 @@ public class ReplicationControlManager {
      */
     ApiError createMirrorTopic(String topicName, Uuid topicId, int numPartitions,
                                List<ApiMessageAndVersion> records) {
+        ApiError mirrorIdError = validateMirrorTopicId(topicName, topicId);
+        if (mirrorIdError.isFailure()) return mirrorIdError;
         if (topicsByName.containsKey(topicName)) {
             Uuid existingId = topicsByName.get(topicName);
             if (!existingId.equals(topicId)) {
@@ -1017,6 +988,58 @@ public class ReplicationControlManager {
                             .build()));
         }
         return ApiError.NONE;
+    }
+
+    /**
+     * Validates that a mirror topic ID is not reserved and not already in use by a different topic.
+     * ZERO_UUID means "not provided": skip validation so the caller can fall back to a random ID.
+     */
+    private ApiError validateMirrorTopicId(String topicName, Uuid topicId) {
+        if (topicId.equals(Uuid.ZERO_UUID)) {
+            return ApiError.NONE;
+        }
+        if (!topicId.isValid()) {
+            return new ApiError(INVALID_REQUEST,
+                    "Mirror topic id " + topicId + " is invalid and cannot be used.");
+        }
+        TopicControlInfo existing = topics.get(topicId);
+        if (existing != null && !existing.name().equals(topicName)) {
+            return new ApiError(Errors.TOPIC_ALREADY_EXISTS,
+                    "Topic id " + topicId + " is already used by topic " + existing.name());
+        }
+        return ApiError.NONE;
+    }
+
+    public ControllerResult<BumpLeaderEpochsResponseData> bumpLeaderEpochs(Map<Uuid, Map<Integer, Integer>> partitionLeaderEpochs) {
+        List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
+        for (Entry<Uuid, Map<Integer, Integer>> partitionLeaderEpoch : partitionLeaderEpochs.entrySet()) {
+            Uuid topicId = partitionLeaderEpoch.getKey();
+            Map<Integer, Integer> leaderEpochs = partitionLeaderEpoch.getValue();
+            TopicControlInfo info = topics.get(topicId);
+            String topicName = info.name;
+            leaderEpochs.forEach((partitionId, leaderEpoch) -> {
+                PartitionRegistration partition = info.parts.get(partitionId);
+                // Skip if the current epoch already exceeds the requested value
+                if (partition.leaderEpoch <= leaderEpoch) {
+                    PartitionChangeBuilder builder = new PartitionChangeBuilder(
+                            partition,
+                            info.topicId(),
+                            partitionId,
+                            new LeaderAcceptor(clusterControl, partition),
+                            featureControl.metadataVersionOrThrow(),
+                            getTopicEffectiveMinIsr(topicName)
+                    )
+                            .setTargetLeaderEpoch(leaderEpochs.getOrDefault(partitionId, NO_PARTITION_LEADER_EPOCH))
+                            .setDefaultDirProvider(clusterDescriber);
+                    builder.build().ifPresent(records::add);
+                    log.debug("Updating partition {} leader epoch for topic {} from {} to {}: {}", partitionId, topicName, partition.leaderEpoch, leaderEpoch, records);
+                } else {
+                    log.debug("Skipping partition {} leader epoch update for topic {} from {} to {}", partitionId, topicName, partition.leaderEpoch, leaderEpoch);
+                }
+            });
+        }
+
+        return ControllerResult.of(records, new BumpLeaderEpochsResponseData().setErrorCode((short) 0));
     }
 
     private static PartitionRegistration buildPartitionRegistration(

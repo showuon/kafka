@@ -310,46 +310,46 @@ public class ConfigurationControlManager {
             String topicName = topic.name();
             topicRes.setName(topicName);
 
-            ReplicationControlManager.TopicControlInfo existingTopic = replicationControl.getTopicByName(topicName);
-            ReplicationControlManager.TopicControlInfo existingIdTopic = replicationControl.getTopic(topic.id());
+            ReplicationControlManager.TopicControlInfo existingByName = replicationControl.getTopicByName(topicName);
+            ReplicationControlManager.TopicControlInfo existingById = replicationControl.getTopic(topic.id());
 
             boolean hasRequestTopicId = !topic.id().equals(Uuid.ZERO_UUID);
-            boolean topicIdMismatch = existingTopic != null && hasRequestTopicId
-                    && !existingTopic.topicId().equals(topic.id());
-            boolean topicNameMismatch = existingIdTopic != null && hasRequestTopicId
-                    && !existingIdTopic.name().equals(topicName);
-            boolean activeInOtherMirror = existingTopic != null && existingTopic.mirrorName() != null
-                    && !existingTopic.mirrorName().equals(mirrorName)
-                    && existingTopic.mirrorState() != MirrorPartitionState.STOPPED.value();
-            boolean startedState = existingTopic != null && existingTopic.mirrorName() != null
-                    && existingTopic.mirrorName().equals(mirrorName)
-                    && existingTopic.mirrorState() == MirrorPartitionState.MIRRORING.value();
-            boolean nonStoppedState = existingTopic != null && existingTopic.mirrorName() != null
-                    && existingTopic.mirrorName().equals(mirrorName)
-                    && existingTopic.mirrorState() != MirrorPartitionState.STOPPED.value();
+            boolean topicIdMismatch = existingByName != null && hasRequestTopicId
+                    && !existingByName.topicId().equals(topic.id());
+            boolean topicNameMismatch = existingById != null && hasRequestTopicId
+                    && !existingById.name().equals(topicName);
+            boolean activeInOtherMirror = existingByName != null && existingByName.mirrorName() != null
+                    && !existingByName.mirrorName().equals(mirrorName)
+                    && existingByName.mirrorState() != MirrorPartitionState.STOPPED.value();
+            boolean startedState = existingByName != null && existingByName.mirrorName() != null
+                    && existingByName.mirrorName().equals(mirrorName)
+                    && existingByName.mirrorState() == MirrorPartitionState.MIRRORING.value();
+            boolean nonStoppedState = existingByName != null && existingByName.mirrorName() != null
+                    && existingByName.mirrorName().equals(mirrorName)
+                    && existingByName.mirrorState() != MirrorPartitionState.STOPPED.value();
 
             if (topicIdMismatch) {
                 topicRes.setErrorCode(Errors.INCONSISTENT_TOPIC_ID.code())
                         .setErrorMessage("Topic id " + topic.id() + " in the request doesn't match " +
-                                "the existing topic id " + existingTopic.topicId() + " for topic " + topicName);
+                                "the existing topic id " + existingByName.topicId() + " for topic " + topicName);
             }
 
             if (topicNameMismatch) {
                 topicRes.setErrorCode(Errors.TOPIC_ALREADY_EXISTS.code())
                         .setErrorMessage("Topic id " + topic.id() + " with topic name " + topic.name() +
-                                " in the request is already used by topic name " + existingIdTopic.name());
+                                " in the request is already used by topic name " + existingById.name());
             }
 
             if (activeInOtherMirror) {
                 topicRes.setErrorCode(Errors.TOPIC_ALREADY_IN_CLUSTER_MIRROR.code())
-                        .setErrorMessage("Topic '" + topicName + "' is already in mirror '" + existingTopic.mirrorName()
-                                + "' in " + MirrorPartitionState.fromValue(existingTopic.mirrorState()) + " state");
+                        .setErrorMessage("Topic '" + topicName + "' is already in mirror '" + existingByName.mirrorName()
+                                + "' in " + MirrorPartitionState.fromValue(existingByName.mirrorState()) + " state");
                 topicResList.add(topicRes);
                 continue;
             }
 
             Uuid topicId = topic.id();
-            boolean hasNoPartitionInfo = existingTopic == null && topic.numPartitions() <= 0;
+            boolean hasNoPartitionInfo = existingByName == null && topic.numPartitions() <= 0;
             if (hasNoPartitionInfo) {
                 log.warn("Topic {} for mirror {} has no topic ID or partition info and will be" +
                         " created at the next metadata refresh", topicName, mirrorName);
@@ -357,7 +357,7 @@ public class ConfigurationControlManager {
                 continue;
             }
             if (topicId.equals(Uuid.ZERO_UUID)) {
-                topicId = existingTopic != null ? existingTopic.topicId() : Uuid.randomUuid();
+                topicId = existingByName != null ? existingByName.topicId() : Uuid.randomUuid();
             }
 
             if (topic.numPartitions() > 0) {
@@ -376,7 +376,7 @@ public class ConfigurationControlManager {
             } else if (nonStoppedState) {
                 topicRes.setErrorCode(Errors.MIRROR_TOPIC_NOT_STOPPED.code())
                         .setErrorMessage("Topic '" + topicName + "' is in "
-                                + MirrorPartitionState.fromValue(existingTopic.mirrorState()) + " state");
+                                + MirrorPartitionState.fromValue(existingByName.mirrorState()) + " state");
                 topicResList.add(topicRes);
                 continue;
             }
@@ -523,7 +523,7 @@ public class ConfigurationControlManager {
             }
 
             if (currMirrorStateChange == MirrorPartitionState.STOPPED.value()) {
-                topicRes.setErrorCode(Errors.MIRROR_TOPIC_BEING_STOPPED.code()).setName(topic)
+                topicRes.setErrorCode(Errors.MIRROR_TOPIC_ALREADY_STOPPED.code()).setName(topic)
                         .setErrorMessage("Topic '" + topic + "' is in "
                                 + MirrorPartitionState.fromValue(currMirrorStateChange) + " state");
                 topicResList.add(topicRes);
