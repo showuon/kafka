@@ -316,8 +316,8 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                 ReadMirrorStatesResponseData data = new ReadMirrorStatesResponseData();
                 if (e != null) {
                     log.error("Failed to read mirror states for {}", mirrorName, e);
-                    data.setErrorCode(Errors.forException(e).code());
-                    data.setErrorMessage(e.getMessage());
+                    data.setErrorCode(Errors.forException(e.getCause()).code());
+                    data.setErrorMessage(e.getCause().getMessage());
                 } else {
                     // A topic's partitions can span multiple coordinator partitions, so merge results by topic name here
                     Map<String, List<ReadMirrorStatesResponseData.PartitionResult>> merged = new HashMap<>();
