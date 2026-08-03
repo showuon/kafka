@@ -375,8 +375,8 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                 WriteMirrorStatesResponseData data = new WriteMirrorStatesResponseData();
                 if (e != null) {
                     log.error("Failed to write mirror states for {}", mirrorName, e);
-                    data.setErrorCode(Errors.forException(e).code());
-                    data.setErrorMessage(e.getMessage());
+                    data.setErrorCode(Errors.forException(e.getCause()).code());
+                    data.setErrorMessage(e.getCause().getMessage());
                 } else {
                     Map<TopicPartition, ClusterMirrorCoordinatorShard.PartitionWriteResult> allResults = new HashMap<>();
                     futures.forEach(f -> allResults.putAll(f.join()));
