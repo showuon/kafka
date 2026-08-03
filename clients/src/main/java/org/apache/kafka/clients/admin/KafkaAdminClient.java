@@ -4916,7 +4916,9 @@ public class KafkaAdminClient extends AdminClient {
                 StartMirrorTopicsRequestData data = new StartMirrorTopicsRequestData();
                 data.setMirrorName(mirrorName);
                 topics.forEach(t -> {
-                    StartMirrorTopicsRequestData.TopicMetadata existing = topicMetadata.get(t);
+                    // Add operation mutates the value of prev and next and if we do not duplicate
+                    // the add operation will be ignored on a retry as prev and next != INVALID_INDEX
+                    StartMirrorTopicsRequestData.TopicMetadata existing = topicMetadata.get(t).duplicate();
                     data.topics().add(existing != null ? existing
                             : new StartMirrorTopicsRequestData.TopicMetadata().setTopicName(t));
                 });
