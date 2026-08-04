@@ -4836,9 +4836,11 @@ public class KafkaAdminClient extends AdminClient {
                     case NONE:
                         future.complete(null);
                         break;
-                    case REQUEST_TIMED_OUT:
-                        throw error.exception(response.data().errorMessage());
                     default:
+                        if (error.exception() instanceof RetriableException) {
+                            log.warn("Failed to create mirror, retrying", error.exception());
+                            throw error.exception();
+                        }
                         log.error("Create mirror {} failed: {}", mirrorName, response.data().errorMessage());
                         future.completeExceptionally(error.exception(response.data().errorMessage()));
                         break;
@@ -4875,9 +4877,11 @@ public class KafkaAdminClient extends AdminClient {
                     case NONE:
                         future.complete(null);
                         break;
-                    case REQUEST_TIMED_OUT:
-                        throw error.exception(response.data().errorMessage());
                     default:
+                        if (error.exception() instanceof RetriableException) {
+                            log.warn("Failed to delete mirror, retrying", error.exception());
+                            throw error.exception();
+                        }
                         log.error("Delete mirror {} failed: {}", mirrorName, response.data().errorMessage());
                         future.completeExceptionally(error.exception(response.data().errorMessage()));
                         break;
@@ -4913,7 +4917,9 @@ public class KafkaAdminClient extends AdminClient {
                 data.setMirrorName(mirrorName);
                 topics.forEach(t -> {
                     StartMirrorTopicsRequestData.TopicMetadata existing = topicMetadata.get(t);
-                    data.topics().add(existing != null ? existing
+                    // Add operation mutates the value of prev and next and if we do not duplicate
+                    // the add operation will be ignored on a retry as prev and next != INVALID_INDEX
+                    data.topics().add(existing != null ? existing.duplicate()
                             : new StartMirrorTopicsRequestData.TopicMetadata().setTopicName(t));
                 });
                 data.setIncludePatterns(options.includePatterns());
@@ -4930,9 +4936,11 @@ public class KafkaAdminClient extends AdminClient {
                     case NONE:
                         future.complete(null);
                         break;
-                    case REQUEST_TIMED_OUT:
-                        throw error.exception();
                     default:
+                        if (error.exception() instanceof RetriableException) {
+                            log.warn("Failed to start mirror topics, retrying", error.exception());
+                            throw error.exception();
+                        }
                         log.error("Mirror topics addition failed: {}", topics);
                         future.completeExceptionally(error.exception());
                         break;
@@ -5011,9 +5019,11 @@ public class KafkaAdminClient extends AdminClient {
                     case NONE:
                         future.complete(null);
                         break;
-                    case REQUEST_TIMED_OUT:
-                        throw error.exception();
                     default:
+                        if (error.exception() instanceof RetriableException) {
+                            log.warn("Failed to stop mirror topics, retrying", error.exception());
+                            throw error.exception();
+                        }
                         log.error("Mirror topics removal failed: {}", topics);
                         future.completeExceptionally(error.exception());
                         break;
@@ -5060,9 +5070,11 @@ public class KafkaAdminClient extends AdminClient {
                     case NONE:
                         future.complete(null);
                         break;
-                    case REQUEST_TIMED_OUT:
-                        throw error.exception();
                     default:
+                        if (error.exception() instanceof RetriableException) {
+                            log.warn("Failed to pause mirror topics, retrying", error.exception());
+                            throw error.exception();
+                        }
                         log.error("Mirror topics pause failed: {}", topics);
                         future.completeExceptionally(error.exception());
                         break;
@@ -5099,9 +5111,11 @@ public class KafkaAdminClient extends AdminClient {
                     case NONE:
                         future.complete(null);
                         break;
-                    case REQUEST_TIMED_OUT:
-                        throw error.exception();
                     default:
+                        if (error.exception() instanceof RetriableException) {
+                            log.warn("Failed to resume mirror topics, retrying", error.exception());
+                            throw error.exception();
+                        }
                         log.error("Mirror topics resume failed: {}", topics);
                         future.completeExceptionally(error.exception());
                         break;
