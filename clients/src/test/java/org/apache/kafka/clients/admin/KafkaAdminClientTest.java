@@ -11700,29 +11700,85 @@ public class KafkaAdminClientTest {
     }
 
     @Test
-    public void testCreateClusterMirrorRetriesOnRetriableException() throws Exception {
+    public void testMirrorOperationsRetryOnRetriableExceptions() throws Exception {
         try (AdminClientUnitTestEnv env = mirrorClientEnv()) {
+            // Given
             env.kafkaClient().prepareResponse(body -> body instanceof CreateClusterMirrorRequest,
                 createClusterMirrorResponse(Errors.NOT_COORDINATOR));
             env.kafkaClient().prepareResponse(body -> body instanceof CreateClusterMirrorRequest,
                 createClusterMirrorResponse(Errors.NONE));
+            env.kafkaClient().prepareResponse(body -> body instanceof DeleteClusterMirrorRequest,
+                    deleteClusterMirrorResponse(Errors.NOT_COORDINATOR));
+            env.kafkaClient().prepareResponse(body -> body instanceof DeleteClusterMirrorRequest,
+                    deleteClusterMirrorResponse(Errors.NONE));
+            env.kafkaClient().prepareResponse(body -> body instanceof StartMirrorTopicsRequest,
+                    startMirrorTopicsResponse(Errors.NOT_COORDINATOR));
+            env.kafkaClient().prepareResponse(body -> body instanceof StartMirrorTopicsRequest,
+                    startMirrorTopicsResponse(Errors.NONE));
+            env.kafkaClient().prepareResponse(body -> body instanceof StopMirrorTopicsRequest,
+                    stopMirrorTopicsResponse(Errors.NOT_COORDINATOR));
+            env.kafkaClient().prepareResponse(body -> body instanceof StopMirrorTopicsRequest,
+                    stopMirrorTopicsResponse(Errors.NONE));
+            env.kafkaClient().prepareResponse(body -> body instanceof PauseMirrorTopicsRequest,
+                    pauseMirrorTopicsResponse(Errors.NOT_COORDINATOR));
+            env.kafkaClient().prepareResponse(body -> body instanceof PauseMirrorTopicsRequest,
+                    pauseMirrorTopicsResponse(Errors.NONE));
+            env.kafkaClient().prepareResponse(body -> body instanceof ResumeMirrorTopicsRequest,
+                    resumeMirrorTopicsResponse(Errors.NOT_COORDINATOR));
+            env.kafkaClient().prepareResponse(body -> body instanceof ResumeMirrorTopicsRequest,
+                    resumeMirrorTopicsResponse(Errors.NONE));
 
             env.adminClient().createClusterMirror("mirror",
                 Map.of(CommonClientConfigs.MIRROR_SOURCE_CLUSTER_ID_CONFIG, "source-cluster-id"),
                 new CreateClusterMirrorOptions()).all().get();
+            env.adminClient().deleteClusterMirror("mirror", new DeleteClusterMirrorOptions()).all().get();
+            env.adminClient().startMirrorTopics("mirror", emptySet(),
+                    new StartMirrorTopicsOptions()).all().get();
+            env.adminClient().stopMirrorTopics("mirror", singleton("topic1"),
+                    new StopMirrorTopicsOptions()).all().get();
+            env.adminClient().pauseMirrorTopics("mirror", singleton("topic1"),
+                    new PauseMirrorTopicsOptions()).all().get();
+            env.adminClient().resumeMirrorTopics("mirror", singleton("topic1"),
+                    new ResumeMirrorTopicsOptions()).all().get();
         }
     }
 
     @Test
-    public void testCreateClusterMirrorFailsOnNonRetriableException() throws Exception {
+    public void testMirrorOperationsFailOnNonRetriableExceptions() throws Exception {
         try (AdminClientUnitTestEnv env = mirrorClientEnv()) {
             env.kafkaClient().prepareResponse(body -> body instanceof CreateClusterMirrorRequest,
                 createClusterMirrorResponse(Errors.INVALID_REQUEST));
+            env.kafkaClient().prepareResponse(body -> body instanceof DeleteClusterMirrorRequest,
+                    deleteClusterMirrorResponse(Errors.INVALID_REQUEST));
+            env.kafkaClient().prepareResponse(body -> body instanceof StartMirrorTopicsRequest,
+                    startMirrorTopicsResponse(Errors.INVALID_REQUEST));
+            env.kafkaClient().prepareResponse(body -> body instanceof StopMirrorTopicsRequest,
+                    stopMirrorTopicsResponse(Errors.INVALID_REQUEST));
+            env.kafkaClient().prepareResponse(body -> body instanceof PauseMirrorTopicsRequest,
+                    pauseMirrorTopicsResponse(Errors.INVALID_REQUEST));
+            env.kafkaClient().prepareResponse(body -> body instanceof ResumeMirrorTopicsRequest,
+                    resumeMirrorTopicsResponse(Errors.INVALID_REQUEST));
 
-            KafkaFuture<Void> future = env.adminClient().createClusterMirror("mirror",
+            KafkaFuture<Void> create = env.adminClient().createClusterMirror("mirror",
                 Map.of(CommonClientConfigs.MIRROR_SOURCE_CLUSTER_ID_CONFIG, "source-cluster-id"),
                 new CreateClusterMirrorOptions()).all();
-            TestUtils.assertFutureThrows(InvalidRequestException.class, future);
+            KafkaFuture<Void> delete = env.adminClient().deleteClusterMirror("mirror",
+                    new DeleteClusterMirrorOptions()).all();
+            KafkaFuture<Void> start = env.adminClient().startMirrorTopics("mirror", emptySet(),
+                    new StartMirrorTopicsOptions()).all();
+            KafkaFuture<Void> stop = env.adminClient().stopMirrorTopics("mirror", singleton("topic1"),
+                    new StopMirrorTopicsOptions()).all();
+            KafkaFuture<Void> pause = env.adminClient().pauseMirrorTopics("mirror", singleton("topic1"),
+                    new PauseMirrorTopicsOptions()).all();
+            KafkaFuture<Void> resume = env.adminClient().resumeMirrorTopics("mirror", singleton("topic1"),
+                    new ResumeMirrorTopicsOptions()).all();
+
+            TestUtils.assertFutureThrows(InvalidRequestException.class, delete);
+            TestUtils.assertFutureThrows(InvalidRequestException.class, create);
+            TestUtils.assertFutureThrows(InvalidRequestException.class, start);
+            TestUtils.assertFutureThrows(InvalidRequestException.class, stop);
+            TestUtils.assertFutureThrows(InvalidRequestException.class, pause);
+            TestUtils.assertFutureThrows(InvalidRequestException.class, resume);
         }
     }
 
@@ -11732,60 +11788,10 @@ public class KafkaAdminClientTest {
             .setErrorMessage(error == Errors.NONE ? null : error.message()));
     }
 
-    @Test
-    public void testDeleteClusterMirrorRetriesOnRetriableException() throws Exception {
-        try (AdminClientUnitTestEnv env = mirrorClientEnv()) {
-            env.kafkaClient().prepareResponse(body -> body instanceof DeleteClusterMirrorRequest,
-                deleteClusterMirrorResponse(Errors.NOT_COORDINATOR));
-            env.kafkaClient().prepareResponse(body -> body instanceof DeleteClusterMirrorRequest,
-                deleteClusterMirrorResponse(Errors.NONE));
-
-            env.adminClient().deleteClusterMirror("mirror", new DeleteClusterMirrorOptions()).all().get();
-        }
-    }
-
-    @Test
-    public void testDeleteClusterMirrorFailsOnNonRetriableException() throws Exception {
-        try (AdminClientUnitTestEnv env = mirrorClientEnv()) {
-            env.kafkaClient().prepareResponse(body -> body instanceof DeleteClusterMirrorRequest,
-                deleteClusterMirrorResponse(Errors.INVALID_REQUEST));
-
-            KafkaFuture<Void> future = env.adminClient().deleteClusterMirror("mirror",
-                new DeleteClusterMirrorOptions()).all();
-            TestUtils.assertFutureThrows(InvalidRequestException.class, future);
-        }
-    }
-
     private StartMirrorTopicsResponse startMirrorTopicsResponse(Errors error) {
         return new StartMirrorTopicsResponse(new StartMirrorTopicsResponseData()
             .setErrorCode(error.code())
             .setErrorMessage(error == Errors.NONE ? null : error.message()));
-    }
-
-    @Test
-    public void testStartMirrorTopicsRetriesOnRetriableException() throws Exception {
-        try (AdminClientUnitTestEnv env = mirrorClientEnv()) {
-            env.kafkaClient().prepareResponse(body -> body instanceof StartMirrorTopicsRequest,
-                startMirrorTopicsResponse(Errors.NOT_COORDINATOR));
-            env.kafkaClient().prepareResponse(body -> body instanceof StartMirrorTopicsRequest,
-                startMirrorTopicsResponse(Errors.NONE));
-
-            // Use an empty topic set so no source-cluster metadata lookup is attempted.
-            env.adminClient().startMirrorTopics("mirror", emptySet(),
-                new StartMirrorTopicsOptions()).all().get();
-        }
-    }
-
-    @Test
-    public void testStartMirrorTopicsFailsOnNonRetriableException() throws Exception {
-        try (AdminClientUnitTestEnv env = mirrorClientEnv()) {
-            env.kafkaClient().prepareResponse(body -> body instanceof StartMirrorTopicsRequest,
-                startMirrorTopicsResponse(Errors.INVALID_REQUEST));
-
-            KafkaFuture<Void> future = env.adminClient().startMirrorTopics("mirror", emptySet(),
-                new StartMirrorTopicsOptions()).all();
-            TestUtils.assertFutureThrows(InvalidRequestException.class, future);
-        }
     }
 
     private StopMirrorTopicsResponse stopMirrorTopicsResponse(Errors error) {
@@ -11794,90 +11800,15 @@ public class KafkaAdminClientTest {
             .setErrorMessage(error == Errors.NONE ? null : error.message()));
     }
 
-    @Test
-    public void testStopMirrorTopicsRetriesOnRetriableException() throws Exception {
-        try (AdminClientUnitTestEnv env = mirrorClientEnv()) {
-            env.kafkaClient().prepareResponse(body -> body instanceof StopMirrorTopicsRequest,
-                stopMirrorTopicsResponse(Errors.NOT_COORDINATOR));
-            env.kafkaClient().prepareResponse(body -> body instanceof StopMirrorTopicsRequest,
-                stopMirrorTopicsResponse(Errors.NONE));
-
-            env.adminClient().stopMirrorTopics("mirror", singleton("topic1"),
-                new StopMirrorTopicsOptions()).all().get();
-        }
-    }
-
-    @Test
-    public void testStopMirrorTopicsFailsOnNonRetriableException() throws Exception {
-        try (AdminClientUnitTestEnv env = mirrorClientEnv()) {
-            env.kafkaClient().prepareResponse(body -> body instanceof StopMirrorTopicsRequest,
-                stopMirrorTopicsResponse(Errors.INVALID_REQUEST));
-
-            KafkaFuture<Void> future = env.adminClient().stopMirrorTopics("mirror", singleton("topic1"),
-                new StopMirrorTopicsOptions()).all();
-            TestUtils.assertFutureThrows(InvalidRequestException.class, future);
-        }
-    }
-
     private PauseMirrorTopicsResponse pauseMirrorTopicsResponse(Errors error) {
         return new PauseMirrorTopicsResponse(new PauseMirrorTopicsResponseData()
             .setErrorCode(error.code())
             .setErrorMessage(error == Errors.NONE ? null : error.message()));
     }
 
-    @Test
-    public void testPauseMirrorTopicsRetriesOnRetriableException() throws Exception {
-        try (AdminClientUnitTestEnv env = mirrorClientEnv()) {
-            env.kafkaClient().prepareResponse(body -> body instanceof PauseMirrorTopicsRequest,
-                pauseMirrorTopicsResponse(Errors.NOT_COORDINATOR));
-            env.kafkaClient().prepareResponse(body -> body instanceof PauseMirrorTopicsRequest,
-                pauseMirrorTopicsResponse(Errors.NONE));
-
-            env.adminClient().pauseMirrorTopics("mirror", singleton("topic1"),
-                new PauseMirrorTopicsOptions()).all().get();
-        }
-    }
-
-    @Test
-    public void testPauseMirrorTopicsFailsOnNonRetriableException() throws Exception {
-        try (AdminClientUnitTestEnv env = mirrorClientEnv()) {
-            env.kafkaClient().prepareResponse(body -> body instanceof PauseMirrorTopicsRequest,
-                pauseMirrorTopicsResponse(Errors.INVALID_REQUEST));
-
-            KafkaFuture<Void> future = env.adminClient().pauseMirrorTopics("mirror", singleton("topic1"),
-                new PauseMirrorTopicsOptions()).all();
-            TestUtils.assertFutureThrows(InvalidRequestException.class, future);
-        }
-    }
-
     private ResumeMirrorTopicsResponse resumeMirrorTopicsResponse(Errors error) {
         return new ResumeMirrorTopicsResponse(new ResumeMirrorTopicsResponseData()
             .setErrorCode(error.code())
             .setErrorMessage(error == Errors.NONE ? null : error.message()));
-    }
-
-    @Test
-    public void testResumeMirrorTopicsRetriesOnRetriableException() throws Exception {
-        try (AdminClientUnitTestEnv env = mirrorClientEnv()) {
-            env.kafkaClient().prepareResponse(body -> body instanceof ResumeMirrorTopicsRequest,
-                resumeMirrorTopicsResponse(Errors.NOT_COORDINATOR));
-            env.kafkaClient().prepareResponse(body -> body instanceof ResumeMirrorTopicsRequest,
-                resumeMirrorTopicsResponse(Errors.NONE));
-
-            env.adminClient().resumeMirrorTopics("mirror", singleton("topic1"),
-                new ResumeMirrorTopicsOptions()).all().get();
-        }
-    }
-
-    @Test
-    public void testResumeMirrorTopicsFailsOnNonRetriableException() throws Exception {
-        try (AdminClientUnitTestEnv env = mirrorClientEnv()) {
-            env.kafkaClient().prepareResponse(body -> body instanceof ResumeMirrorTopicsRequest,
-                resumeMirrorTopicsResponse(Errors.INVALID_REQUEST));
-
-            KafkaFuture<Void> future = env.adminClient().resumeMirrorTopics("mirror", singleton("topic1"),
-                new ResumeMirrorTopicsOptions()).all();
-            TestUtils.assertFutureThrows(InvalidRequestException.class, future);
-        }
     }
 }

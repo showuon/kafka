@@ -4841,7 +4841,7 @@ public class KafkaAdminClient extends AdminClient {
                             log.warn("Failed to create mirror, retrying", error.exception());
                             throw error.exception();
                         }
-                        log.error("Create mirror {} failed: {}", mirrorName, response.data().errorMessage());
+                        log.error("Create mirror {} failed", mirrorName, error.exception());
                         future.completeExceptionally(error.exception(response.data().errorMessage()));
                         break;
                 }
@@ -4882,7 +4882,7 @@ public class KafkaAdminClient extends AdminClient {
                             log.warn("Failed to delete mirror, retrying", error.exception());
                             throw error.exception();
                         }
-                        log.error("Delete mirror {} failed: {}", mirrorName, response.data().errorMessage());
+                        log.error("Delete mirror {} failed", mirrorName, error.exception());
                         future.completeExceptionally(error.exception(response.data().errorMessage()));
                         break;
                 }
@@ -4941,7 +4941,7 @@ public class KafkaAdminClient extends AdminClient {
                             log.warn("Failed to start mirror topics, retrying", error.exception());
                             throw error.exception();
                         }
-                        log.error("Mirror topics addition failed: {}", topics);
+                        log.error("Mirror topics addition failed: {}", topics, error.exception());
                         future.completeExceptionally(error.exception());
                         break;
                 }
@@ -5024,7 +5024,7 @@ public class KafkaAdminClient extends AdminClient {
                             log.warn("Failed to stop mirror topics, retrying", error.exception());
                             throw error.exception();
                         }
-                        log.error("Mirror topics removal failed: {}", topics);
+                        log.error("Mirror topics removal failed: {}", topics, error.exception());
                         future.completeExceptionally(error.exception());
                         break;
                 }
@@ -5075,7 +5075,7 @@ public class KafkaAdminClient extends AdminClient {
                             log.warn("Failed to pause mirror topics, retrying", error.exception());
                             throw error.exception();
                         }
-                        log.error("Mirror topics pause failed: {}", topics);
+                        log.error("Mirror topics pause failed: {}", topics, error.exception());
                         future.completeExceptionally(error.exception());
                         break;
                 }
@@ -5116,7 +5116,7 @@ public class KafkaAdminClient extends AdminClient {
                             log.warn("Failed to resume mirror topics, retrying", error.exception());
                             throw error.exception();
                         }
-                        log.error("Mirror topics resume failed: {}", topics);
+                        log.error("Mirror topics resume failed: {}", topics, error.exception());
                         future.completeExceptionally(error.exception());
                         break;
                 }
