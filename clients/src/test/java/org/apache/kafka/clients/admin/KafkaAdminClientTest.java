@@ -95,12 +95,14 @@ import org.apache.kafka.common.message.ApiVersionsResponseData;
 import org.apache.kafka.common.message.ApiVersionsResponseData.ApiVersion;
 import org.apache.kafka.common.message.ConsumerGroupDescribeResponseData;
 import org.apache.kafka.common.message.CreateAclsResponseData;
+import org.apache.kafka.common.message.CreateClusterMirrorResponseData;
 import org.apache.kafka.common.message.CreatePartitionsResponseData;
 import org.apache.kafka.common.message.CreatePartitionsResponseData.CreatePartitionsTopicResult;
 import org.apache.kafka.common.message.CreateTopicsResponseData;
 import org.apache.kafka.common.message.CreateTopicsResponseData.CreatableTopicResult;
 import org.apache.kafka.common.message.CreateTopicsResponseData.CreatableTopicResultCollection;
 import org.apache.kafka.common.message.DeleteAclsResponseData;
+import org.apache.kafka.common.message.DeleteClusterMirrorResponseData;
 import org.apache.kafka.common.message.DeleteGroupsResponseData;
 import org.apache.kafka.common.message.DeleteGroupsResponseData.DeletableGroupResult;
 import org.apache.kafka.common.message.DeleteGroupsResponseData.DeletableGroupResultCollection;
@@ -161,9 +163,13 @@ import org.apache.kafka.common.message.OffsetFetchRequestData;
 import org.apache.kafka.common.message.OffsetFetchRequestData.OffsetFetchRequestGroup;
 import org.apache.kafka.common.message.OffsetFetchRequestData.OffsetFetchRequestTopics;
 import org.apache.kafka.common.message.OffsetFetchResponseData;
+import org.apache.kafka.common.message.PauseMirrorTopicsResponseData;
 import org.apache.kafka.common.message.RemoveRaftVoterRequestData;
 import org.apache.kafka.common.message.RemoveRaftVoterResponseData;
+import org.apache.kafka.common.message.ResumeMirrorTopicsResponseData;
 import org.apache.kafka.common.message.ShareGroupDescribeResponseData;
+import org.apache.kafka.common.message.StartMirrorTopicsResponseData;
+import org.apache.kafka.common.message.StopMirrorTopicsResponseData;
 import org.apache.kafka.common.message.StreamsGroupDescribeResponseData;
 import org.apache.kafka.common.message.UnregisterBrokerResponseData;
 import org.apache.kafka.common.message.WriteTxnMarkersResponseData;
@@ -186,11 +192,15 @@ import org.apache.kafka.common.requests.ApiVersionsResponse;
 import org.apache.kafka.common.requests.ConsumerGroupDescribeRequest;
 import org.apache.kafka.common.requests.ConsumerGroupDescribeResponse;
 import org.apache.kafka.common.requests.CreateAclsResponse;
+import org.apache.kafka.common.requests.CreateClusterMirrorRequest;
+import org.apache.kafka.common.requests.CreateClusterMirrorResponse;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.CreatePartitionsResponse;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.CreateTopicsResponse;
 import org.apache.kafka.common.requests.DeleteAclsResponse;
+import org.apache.kafka.common.requests.DeleteClusterMirrorRequest;
+import org.apache.kafka.common.requests.DeleteClusterMirrorResponse;
 import org.apache.kafka.common.requests.DeleteGroupsResponse;
 import org.apache.kafka.common.requests.DeleteRecordsResponse;
 import org.apache.kafka.common.requests.DeleteShareGroupOffsetsRequest;
@@ -239,10 +249,18 @@ import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.OffsetDeleteResponse;
 import org.apache.kafka.common.requests.OffsetFetchRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
+import org.apache.kafka.common.requests.PauseMirrorTopicsRequest;
+import org.apache.kafka.common.requests.PauseMirrorTopicsResponse;
 import org.apache.kafka.common.requests.RemoveRaftVoterRequest;
 import org.apache.kafka.common.requests.RemoveRaftVoterResponse;
 import org.apache.kafka.common.requests.RequestTestUtils;
+import org.apache.kafka.common.requests.ResumeMirrorTopicsRequest;
+import org.apache.kafka.common.requests.ResumeMirrorTopicsResponse;
 import org.apache.kafka.common.requests.ShareGroupDescribeResponse;
+import org.apache.kafka.common.requests.StartMirrorTopicsRequest;
+import org.apache.kafka.common.requests.StartMirrorTopicsResponse;
+import org.apache.kafka.common.requests.StopMirrorTopicsRequest;
+import org.apache.kafka.common.requests.StopMirrorTopicsResponse;
 import org.apache.kafka.common.requests.StreamsGroupDescribeResponse;
 import org.apache.kafka.common.requests.UnregisterBrokerResponse;
 import org.apache.kafka.common.requests.UpdateFeaturesRequest;
@@ -11667,5 +11685,130 @@ public class KafkaAdminClientTest {
             .setGroupEpoch(2)
             .setAssignmentEpoch(1));
         return data;
+    }
+
+    private static AdminClientUnitTestEnv mirrorClientEnv() {
+        AdminClientUnitTestEnv env = mockClientEnv(AdminClientConfig.RETRY_BACKOFF_MS_CONFIG, "1");
+        env.kafkaClient().setNodeApiVersions(NodeApiVersions.create());
+        return env;
+    }
+
+    private CreateClusterMirrorResponse createClusterMirrorResponse(Errors error) {
+        return new CreateClusterMirrorResponse(new CreateClusterMirrorResponseData()
+            .setErrorCode(error.code())
+            .setErrorMessage(error == Errors.NONE ? null : error.message()));
+    }
+
+    @Test
+    public void testMirrorOperationsRetryOnRetriableExceptions() throws Exception {
+        try (AdminClientUnitTestEnv env = mirrorClientEnv()) {
+            // Given
+            env.kafkaClient().prepareResponse(body -> body instanceof CreateClusterMirrorRequest,
+                createClusterMirrorResponse(Errors.NOT_COORDINATOR));
+            env.kafkaClient().prepareResponse(body -> body instanceof CreateClusterMirrorRequest,
+                createClusterMirrorResponse(Errors.NONE));
+            env.kafkaClient().prepareResponse(body -> body instanceof DeleteClusterMirrorRequest,
+                    deleteClusterMirrorResponse(Errors.NOT_COORDINATOR));
+            env.kafkaClient().prepareResponse(body -> body instanceof DeleteClusterMirrorRequest,
+                    deleteClusterMirrorResponse(Errors.NONE));
+            env.kafkaClient().prepareResponse(body -> body instanceof StartMirrorTopicsRequest,
+                    startMirrorTopicsResponse(Errors.NOT_COORDINATOR));
+            env.kafkaClient().prepareResponse(body -> body instanceof StartMirrorTopicsRequest,
+                    startMirrorTopicsResponse(Errors.NONE));
+            env.kafkaClient().prepareResponse(body -> body instanceof StopMirrorTopicsRequest,
+                    stopMirrorTopicsResponse(Errors.NOT_COORDINATOR));
+            env.kafkaClient().prepareResponse(body -> body instanceof StopMirrorTopicsRequest,
+                    stopMirrorTopicsResponse(Errors.NONE));
+            env.kafkaClient().prepareResponse(body -> body instanceof PauseMirrorTopicsRequest,
+                    pauseMirrorTopicsResponse(Errors.NOT_COORDINATOR));
+            env.kafkaClient().prepareResponse(body -> body instanceof PauseMirrorTopicsRequest,
+                    pauseMirrorTopicsResponse(Errors.NONE));
+            env.kafkaClient().prepareResponse(body -> body instanceof ResumeMirrorTopicsRequest,
+                    resumeMirrorTopicsResponse(Errors.NOT_COORDINATOR));
+            env.kafkaClient().prepareResponse(body -> body instanceof ResumeMirrorTopicsRequest,
+                    resumeMirrorTopicsResponse(Errors.NONE));
+
+            env.adminClient().createClusterMirror("mirror",
+                Map.of(CommonClientConfigs.MIRROR_SOURCE_CLUSTER_ID_CONFIG, "source-cluster-id"),
+                new CreateClusterMirrorOptions()).all().get();
+            env.adminClient().deleteClusterMirror("mirror", new DeleteClusterMirrorOptions()).all().get();
+            env.adminClient().startMirrorTopics("mirror", emptySet(),
+                    new StartMirrorTopicsOptions()).all().get();
+            env.adminClient().stopMirrorTopics("mirror", singleton("topic1"),
+                    new StopMirrorTopicsOptions()).all().get();
+            env.adminClient().pauseMirrorTopics("mirror", singleton("topic1"),
+                    new PauseMirrorTopicsOptions()).all().get();
+            env.adminClient().resumeMirrorTopics("mirror", singleton("topic1"),
+                    new ResumeMirrorTopicsOptions()).all().get();
+        }
+    }
+
+    @Test
+    public void testMirrorOperationsFailOnNonRetriableExceptions() throws Exception {
+        try (AdminClientUnitTestEnv env = mirrorClientEnv()) {
+            env.kafkaClient().prepareResponse(body -> body instanceof CreateClusterMirrorRequest,
+                createClusterMirrorResponse(Errors.INVALID_REQUEST));
+            env.kafkaClient().prepareResponse(body -> body instanceof DeleteClusterMirrorRequest,
+                    deleteClusterMirrorResponse(Errors.INVALID_REQUEST));
+            env.kafkaClient().prepareResponse(body -> body instanceof StartMirrorTopicsRequest,
+                    startMirrorTopicsResponse(Errors.INVALID_REQUEST));
+            env.kafkaClient().prepareResponse(body -> body instanceof StopMirrorTopicsRequest,
+                    stopMirrorTopicsResponse(Errors.INVALID_REQUEST));
+            env.kafkaClient().prepareResponse(body -> body instanceof PauseMirrorTopicsRequest,
+                    pauseMirrorTopicsResponse(Errors.INVALID_REQUEST));
+            env.kafkaClient().prepareResponse(body -> body instanceof ResumeMirrorTopicsRequest,
+                    resumeMirrorTopicsResponse(Errors.INVALID_REQUEST));
+
+            KafkaFuture<Void> create = env.adminClient().createClusterMirror("mirror",
+                Map.of(CommonClientConfigs.MIRROR_SOURCE_CLUSTER_ID_CONFIG, "source-cluster-id"),
+                new CreateClusterMirrorOptions()).all();
+            KafkaFuture<Void> delete = env.adminClient().deleteClusterMirror("mirror",
+                    new DeleteClusterMirrorOptions()).all();
+            KafkaFuture<Void> start = env.adminClient().startMirrorTopics("mirror", emptySet(),
+                    new StartMirrorTopicsOptions()).all();
+            KafkaFuture<Void> stop = env.adminClient().stopMirrorTopics("mirror", singleton("topic1"),
+                    new StopMirrorTopicsOptions()).all();
+            KafkaFuture<Void> pause = env.adminClient().pauseMirrorTopics("mirror", singleton("topic1"),
+                    new PauseMirrorTopicsOptions()).all();
+            KafkaFuture<Void> resume = env.adminClient().resumeMirrorTopics("mirror", singleton("topic1"),
+                    new ResumeMirrorTopicsOptions()).all();
+
+            TestUtils.assertFutureThrows(InvalidRequestException.class, delete);
+            TestUtils.assertFutureThrows(InvalidRequestException.class, create);
+            TestUtils.assertFutureThrows(InvalidRequestException.class, start);
+            TestUtils.assertFutureThrows(InvalidRequestException.class, stop);
+            TestUtils.assertFutureThrows(InvalidRequestException.class, pause);
+            TestUtils.assertFutureThrows(InvalidRequestException.class, resume);
+        }
+    }
+
+    private DeleteClusterMirrorResponse deleteClusterMirrorResponse(Errors error) {
+        return new DeleteClusterMirrorResponse(new DeleteClusterMirrorResponseData()
+            .setErrorCode(error.code())
+            .setErrorMessage(error == Errors.NONE ? null : error.message()));
+    }
+
+    private StartMirrorTopicsResponse startMirrorTopicsResponse(Errors error) {
+        return new StartMirrorTopicsResponse(new StartMirrorTopicsResponseData()
+            .setErrorCode(error.code())
+            .setErrorMessage(error == Errors.NONE ? null : error.message()));
+    }
+
+    private StopMirrorTopicsResponse stopMirrorTopicsResponse(Errors error) {
+        return new StopMirrorTopicsResponse(new StopMirrorTopicsResponseData()
+            .setErrorCode(error.code())
+            .setErrorMessage(error == Errors.NONE ? null : error.message()));
+    }
+
+    private PauseMirrorTopicsResponse pauseMirrorTopicsResponse(Errors error) {
+        return new PauseMirrorTopicsResponse(new PauseMirrorTopicsResponseData()
+            .setErrorCode(error.code())
+            .setErrorMessage(error == Errors.NONE ? null : error.message()));
+    }
+
+    private ResumeMirrorTopicsResponse resumeMirrorTopicsResponse(Errors error) {
+        return new ResumeMirrorTopicsResponse(new ResumeMirrorTopicsResponseData()
+            .setErrorCode(error.code())
+            .setErrorMessage(error == Errors.NONE ? null : error.message()));
     }
 }
