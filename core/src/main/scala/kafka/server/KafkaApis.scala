@@ -4404,7 +4404,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       return
     }
 
-    val describeAll = describeMirrorsRequest.data.mirrorNames.isEmpty
+    val describeAll = describeMirrorsRequest.data.mirrorNames == null
     val requestedMirrors = if (describeAll) {
       mirrorMetadataManager.getConfiguredMirrors().asScala.toSeq
     } else {

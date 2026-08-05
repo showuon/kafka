@@ -420,9 +420,9 @@ public class ConfigurationControlManager {
         if (!patterns.isEmpty()) {
             ApiError patternError = updatePatternsAndStopExcluded(mirrorName, records, Set.of(), replicationControl, (includeSet, excludeSet) -> {
                 for (String pattern : patterns) {
-                    if (!includeSet.remove(pattern)) {
-                        excludeSet.add(pattern);
-                    }
+                    includeSet.remove(pattern);
+                    // we should always add the pattern into exclude set because the include set could be the regex pattern
+                    excludeSet.add(pattern);
                 }
             });
             if (patternError.isFailure()) {

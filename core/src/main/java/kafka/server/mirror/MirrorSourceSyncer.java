@@ -1253,7 +1253,7 @@ class MirrorSourceSyncer {
         DescribeClusterMirrorsOptions options = new DescribeClusterMirrorsOptions()
                 .clusterId(metadataManager.clusterId())
                 .lastMirrorEpochLookups(lookups);
-        DescribeClusterMirrorsResult result = admin.describeClusterMirrors(List.of(), options);
+        DescribeClusterMirrorsResult result = admin.describeClusterMirrors(null, options);
 
         var describeFuture = result.allDescriptions().toCompletionStage().toCompletableFuture();
         var lookupEpochsFuture = result.lookupEpochs().toCompletionStage().toCompletableFuture();
