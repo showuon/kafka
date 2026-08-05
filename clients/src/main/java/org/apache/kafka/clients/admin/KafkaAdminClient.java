@@ -5194,7 +5194,7 @@ public class KafkaAdminClient extends AdminClient {
                         @Override
                         DescribeClusterMirrorsRequest.Builder createRequest(int timeoutMs) {
                             DescribeClusterMirrorsRequestData data = new DescribeClusterMirrorsRequestData()
-                                .setMirrorNames(new ArrayList<>(mirrorNames))
+                                .setMirrorNames(mirrorNames == null ? null : new ArrayList<>(mirrorNames))
                                 .setIncludeAuthorizedOperations(options.includeAuthorizedOperations());
                             if (options.clusterId() != null && !options.lastMirrorEpochLookups().isEmpty()) {
                                 data.setClusterId(options.clusterId());
@@ -5251,8 +5251,8 @@ public class KafkaAdminClient extends AdminClient {
                                KafkaFutureImpl<Map<String, ClusterMirrorDescription>> allFuture,
                                KafkaFutureImpl<Map<Uuid, Map<Integer, Integer>>> lookupFuture) {
             this.partialDescriptions = new HashMap<>();
-            this.requestedMirrors = new HashSet<>(mirrorNames);
-            this.describeAll = mirrorNames.isEmpty();
+            this.requestedMirrors = mirrorNames == null ? new HashSet<>() : new HashSet<>(mirrorNames);
+            this.describeAll = mirrorNames == null;
             this.remaining = new HashSet<>(brokers);
             this.allFuture = allFuture;
             this.lookupFuture = lookupFuture;
