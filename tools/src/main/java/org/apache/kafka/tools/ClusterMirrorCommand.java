@@ -256,7 +256,7 @@ public abstract class ClusterMirrorCommand {
         private void describeClusterMirrors(MirrorCommandOptions opts) throws ExecutionException, InterruptedException {
             List<String> mirrorNames = opts.mirror().isPresent()
                 ? List.of(opts.mirror().get())
-                : List.of();
+                : null;
 
             Map<String, ClusterMirrorDescription> descriptions = adminClient.describeClusterMirrors(
                 mirrorNames, new DescribeClusterMirrorsOptions()).allDescriptions().get();
