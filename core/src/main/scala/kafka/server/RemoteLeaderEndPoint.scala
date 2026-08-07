@@ -264,7 +264,7 @@ class RemoteLeaderEndPoint(logPrefix: String,
       Optional.of(new ReplicaFetch(fetchData.sessionPartitions(), requestBuilder))
     }
 
-    new ResultWithPartitions(fetchRequestOpt, partitionsWithError.asJava, util.Set.of())
+    new ResultWithPartitions(fetchRequestOpt, partitionsWithError.asJava, util.Set.of(), util.Set.of())
   }
 
   /**

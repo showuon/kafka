@@ -289,6 +289,8 @@ public class LogConfig extends AbstractConfig {
     public final List<String> leaderReplicationThrottledReplicas;
     public final List<String> followerReplicationThrottledReplicas;
 
+    public final boolean mirrorSupportUncleanLeaderElection;
+
     private final RemoteLogConfig remoteLogConfig;
     private final int maxMessageSize;
     private final Map<?, ?> props;
@@ -337,6 +339,7 @@ public class LogConfig extends AbstractConfig {
         this.messageTimestampAfterMaxMs = getLong(TopicConfig.MESSAGE_TIMESTAMP_AFTER_MAX_MS_CONFIG);
         this.leaderReplicationThrottledReplicas = Collections.unmodifiableList(getList(QuotaConfig.LEADER_REPLICATION_THROTTLED_REPLICAS_CONFIG));
         this.followerReplicationThrottledReplicas = Collections.unmodifiableList(getList(QuotaConfig.FOLLOWER_REPLICATION_THROTTLED_REPLICAS_CONFIG));
+        this.mirrorSupportUncleanLeaderElection = getBoolean(TopicConfig.MIRROR_SUPPORT_UNCLEAN_LEADER_ELECTION_CONFIG);
 
         remoteLogConfig = new RemoteLogConfig(this);
     }

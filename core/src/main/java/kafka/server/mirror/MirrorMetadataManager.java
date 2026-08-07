@@ -837,6 +837,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 replicaManagerSupplier.get().maybeCreateMirrorFetchers(mirrorName, Set.of(tp));
                 break;
             case ULE_LOG_TRUNCATION:
+                replicaManagerSupplier.get().waitForAllReplicasCaughtUp(
+                        tp, topicPartition -> transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.MIRRORING));
                 break;
             case PAUSING:
                 replicaManagerSupplier.get().mirrorFetcherManager()

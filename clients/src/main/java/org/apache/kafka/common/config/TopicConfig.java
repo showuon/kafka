@@ -219,12 +219,6 @@ public class TopicConfig {
         "configuration. If message.timestamp.type=CreateTime, the message will be rejected if the difference in " +
         "timestamps exceeds this specified threshold. This configuration is ignored if message.timestamp.type=LogAppendTime.";
 
-    // Cluster Mirroring
-    public static final String MIRROR_NAME_CONFIG = "mirror.name";
-    public static final String MIRROR_NAME_DOC = "Identifies the mirror that manages this topic. " +
-            "Topics with this configuration set are read-only and can only be modified through mirror management APIs. " +
-            "This property is filtered out from DescribeConfigs responses to avoid exposing internal state to users.";
-
     public static final String MIRROR_SUPPORT_UNCLEAN_LEADER_ELECTION_CONFIG = "mirror.support.unclean.leader.election";
     public static final String MIRROR_SUPPORT_UNCLEAN_LEADER_ELECTION_DOC = "When enabled, " +
             "LastMirrorEpoch log truncation waits for all replicas (not just ISR members) to join the ISR and complete the truncation.";

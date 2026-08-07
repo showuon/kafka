@@ -24,5 +24,6 @@ import java.util.Set;
 public record ResultWithPartitions<R>(
         R result,
         Set<TopicPartition> partitionsWithError,
-        Set<TopicPartition> partitionsNeedsRefreshMetadata
+        Set<TopicPartition> partitionsNeedsRefreshMetadata,
+        Set<TopicPartition> partitionsNeedsWaitForFollowers
 ) { }

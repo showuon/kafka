@@ -76,6 +76,16 @@ class MirrorFetcherThread(name: String,
       MirrorPartitionState.FAILED, reason))
   }
 
+  override protected def maybeWaitForFollowersCaughtUp(mirrorPartitions: Set[TopicPartition]): Unit = {
+    val uleEnabledPartitions = mirrorPartitions.filter(tp => replicaMgr.getLog(tp).get.config().mirrorSupportUncleanLeaderElection).toSet
+    info("!!! uleEnabledPartitions:" + uleEnabledPartitions + ";; " + mirrorPartitions)
+    if (uleEnabledPartitions.nonEmpty) {
+      removeFetcherForPartitions(uleEnabledPartitions)
+      replicaMgr.mirrorMetadataManager.foreach(_.transitionTo(mirrorName, uleEnabledPartitions.asJava,
+        MirrorPartitionState.ULE_LOG_TRUNCATION))
+    }
+  }
+
   override protected def handlePartitionFailed(topicPartition: TopicPartition, reason: String): Unit = {
     replicaMgr.mirrorMetadataManager.foreach(_.transitionTo(mirrorName, java.util.Set.of(topicPartition),
       MirrorPartitionState.FAILED, reason))
