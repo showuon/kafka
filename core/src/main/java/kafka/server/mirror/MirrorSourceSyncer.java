@@ -510,6 +510,16 @@ class MirrorSourceSyncer {
         try {
             Set<String> allTopics = srcAdmin.listTopics().names().get();
             log.debug("Source topic name list: {}", allTopics);
+            // An empty list may mean the source broker hasn't loaded metadata yet (e.g. after
+            // an unclean leader election on an older ZK-based cluster). Poll until topics appear
+            // or the timeout expires to avoid falsely marking topics as deleted.
+            long deadlineMs = System.currentTimeMillis() + 30_000;
+            while (allTopics.isEmpty() && System.currentTimeMillis() < deadlineMs) {
+                log.debug("Source topic list is empty for mirror {}, waiting for metadata to load", mirrorName);
+                Thread.sleep(2_000);
+                allTopics = srcAdmin.listTopics().names().get();
+                log.debug("Source topic name list after retry: {}", allTopics);
+            }
             deletedSourceTopicNames.removeAll(allTopics);
         } catch (Exception e) {
             log.warn("Failed to list topics for mirror {}, skipping deleted topic detection: {}", mirrorName, e.getMessage());
@@ -523,7 +533,7 @@ class MirrorSourceSyncer {
                 if (topicImage != null) {
                     topicImage.partitions().forEach((partitionId, partition) ->
                             metadataManager.transitionTo(mirrorName, Set.of(new TopicPartition(name, partitionId)),
-                                    MirrorPartitionState.FAILED, "The source topic is deleted.", true));
+                                    MirrorPartitionState.FAILED, "The source topic is deleted", true));
                 }
             }
         });
