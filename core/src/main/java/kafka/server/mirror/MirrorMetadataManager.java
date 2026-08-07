@@ -713,6 +713,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private void transitionTo(String mirrorName, Set<TopicPartition> topicPartitions,
                                MirrorPartitionState state, String errorMessage, boolean isPermFailure,
                                boolean isRemoteRetry) {
+        log.info("Transitioning {} to {} for partitions: {}, message:{}", mirrorName, state, topicPartitions, errorMessage);
         coordinatorWriter.ifPresent(writer -> {
             for (TopicPartition tp : topicPartitions) {
                 MirrorPartitionState currentState = getPartitionState(mirrorName, tp);

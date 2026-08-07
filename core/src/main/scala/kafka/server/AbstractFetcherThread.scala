@@ -291,7 +291,7 @@ abstract class AbstractFetcherThread(name: String,
   // Visibility for unit tests
   protected[server] def truncateOnFetchResponse(epochEndOffsets: Map[TopicPartition, EpochEndOffset]): Unit = {
     inLock(partitionMapLock) {
-      val result = maybeTruncateToEpochEndOffsets(epochEndOffsets, Map.empty)
+      val result = maybeTruncateToEpochEndOffsets(epochEndOffsets, Map.empty, truncateOnResponse = true)
       handlePartitionsWithErrors(result.partitionsWithError.asScala, "truncateOnFetchResponse")
       updateFetchOffsetAndMaybeMarkTruncationComplete(result.result)
     }
@@ -388,7 +388,8 @@ abstract class AbstractFetcherThread(name: String,
   }
 
   private def maybeTruncateToEpochEndOffsets(fetchedEpochs: Map[TopicPartition, EpochEndOffset],
-                                             latestEpochsForPartitions: Map[TopicPartition, EpochData]): ResultWithPartitions[Map[TopicPartition, OffsetTruncationState]] = {
+                                             latestEpochsForPartitions: Map[TopicPartition, EpochData],
+                                             truncateOnResponse: Boolean = false): ResultWithPartitions[Map[TopicPartition, OffsetTruncationState]] = {
     val fetchOffsets = mutable.HashMap.empty[TopicPartition, OffsetTruncationState]
     val partitionsWithError = mutable.HashSet.empty[TopicPartition]
     val partitionsNeedsRefreshMetadata = mutable.HashSet.empty[TopicPartition]
@@ -402,7 +403,7 @@ abstract class AbstractFetcherThread(name: String,
             info(s"Truncating partition $tp with $offsetTruncationState due to leader epoch and offset $leaderEpochOffset")
             if (doTruncate(tp, offsetTruncationState)) {
               fetchOffsets.put(tp, offsetTruncationState)
-              if (!mirrorName.isBlank) {
+              if (truncateOnResponse && !mirrorName.isBlank) {
                 // If it's mirror fetcher thread, the log truncation means the source cluster metadata has unclean leader election.
                 // We should wait for all replicas to catch up with the leader before next fetch.
                 partitionsNeedsWaitForFollowers += tp
