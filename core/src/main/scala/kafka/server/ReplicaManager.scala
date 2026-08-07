@@ -1704,13 +1704,10 @@ class ReplicaManager(val config: KafkaConfig,
     })
   }
 
-  def maybeTruncate(offsets: util.Map[TopicPartition, JLong], callback: Consumer[TopicPartition]): Unit = {
-    offsets.forEach((tp, offset) => {
-      getLog(tp).map(log => {
-        log.truncateTo(offset)
-        val partition = getPartitionOrException(tp)
-        partition.maybeCompleteTruncation(log, onCompleteCallback = Optional.of(callback))
-      })
+  def waitForAllReplicasCaughtUp(tp: TopicPartition, callback: Consumer[TopicPartition]): Unit = {
+    getLog(tp).map(log => {
+      val partition = getPartitionOrException(tp)
+      partition.maybeCompleteTruncation(log, onCompleteCallback = Optional.of(callback))
     })
   }
 

@@ -115,6 +115,8 @@ abstract class AbstractFetcherThread(name: String,
 
   protected def refreshSourceClusterMetadata(mirrorPartitions: Set[TopicPartition], reason: String): Unit = {}
 
+  protected def maybeWaitForFollowersCaughtUp(mirrorPartitions: Set[TopicPartition]): Unit = {}
+
   protected def shouldUpdateMirrorLeaderEpoch(topicPartition: TopicPartition): Boolean = {
     false
   }
@@ -253,6 +255,7 @@ abstract class AbstractFetcherThread(name: String,
     // Ensure we hold a lock during truncation
 
     val partitionsNeedsRefreshMetadata = new util.HashSet[TopicPartition]()
+    val partitionsNeedsWaitForFollowers = new util.HashSet[TopicPartition]()
     inLock(partitionMapLock) {
       //Check no leadership and no leader epoch changes happened whilst we were unlocked, fetching epochs
       val epochEndOffsets = endOffsets.asScala.filter { case (tp, _) =>
@@ -267,6 +270,7 @@ abstract class AbstractFetcherThread(name: String,
 
       val result = maybeTruncateToEpochEndOffsets(epochEndOffsets, latestEpochsForPartitions)
       partitionsNeedsRefreshMetadata.addAll(result.partitionsNeedsRefreshMetadata())
+      partitionsNeedsWaitForFollowers.addAll(result.partitionsNeedsWaitForFollowers())
       handlePartitionsWithErrors(result.partitionsWithError.asScala, "truncateToEpochEndOffsets")
       updateFetchOffsetAndMaybeMarkTruncationComplete(result.result)
     }
@@ -277,6 +281,10 @@ abstract class AbstractFetcherThread(name: String,
       info(s"Refreshing source metadata for mirror name $mirrorName with partitions: $partitionsNeedsRefreshMetadata")
       removeFetcherForPartitions(partitionsNeedsRefreshMetadata.asScala)
       refreshSourceClusterMetadata(partitionsNeedsRefreshMetadata.asScala, "Truncation requires source metadata refresh")
+    }
+    if (!partitionsNeedsWaitForFollowers.isEmpty) {
+      info(s"Waiting for followers to catch up with the leader for partitions: $partitionsNeedsWaitForFollowers")
+      maybeWaitForFollowersCaughtUp(partitionsNeedsWaitForFollowers.asScala)
     }
   }
 
@@ -384,6 +392,7 @@ abstract class AbstractFetcherThread(name: String,
     val fetchOffsets = mutable.HashMap.empty[TopicPartition, OffsetTruncationState]
     val partitionsWithError = mutable.HashSet.empty[TopicPartition]
     val partitionsNeedsRefreshMetadata = mutable.HashSet.empty[TopicPartition]
+    val partitionsNeedsWaitForFollowers = mutable.HashSet.empty[TopicPartition]
 
     fetchedEpochs.foreachEntry { (tp, leaderEpochOffset) =>
       if (partitionStates.contains(tp)) {
@@ -391,8 +400,14 @@ abstract class AbstractFetcherThread(name: String,
           case Errors.NONE =>
             val offsetTruncationState = getOffsetTruncationState(tp, leaderEpochOffset)
             info(s"Truncating partition $tp with $offsetTruncationState due to leader epoch and offset $leaderEpochOffset")
-            if (doTruncate(tp, offsetTruncationState))
+            if (doTruncate(tp, offsetTruncationState)) {
               fetchOffsets.put(tp, offsetTruncationState)
+              if (!mirrorName.isBlank) {
+                // If it's mirror fetcher thread, the log truncation means the source cluster metadata has unclean leader election.
+                // We should wait for all replicas to catch up with the leader before next fetch.
+                partitionsNeedsWaitForFollowers += tp
+              }
+            }
 
           case Errors.FENCED_LEADER_EPOCH =>
             if (mirrorName.isBlank) {
@@ -422,7 +437,7 @@ abstract class AbstractFetcherThread(name: String,
       }
     }
 
-    new ResultWithPartitions(fetchOffsets, partitionsWithError.asJava, partitionsNeedsRefreshMetadata.asJava)
+    new ResultWithPartitions(fetchOffsets, partitionsWithError.asJava, partitionsNeedsRefreshMetadata.asJava, partitionsNeedsWaitForFollowers.asJava)
   }
 
   /**
