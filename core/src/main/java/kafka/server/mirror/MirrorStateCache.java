@@ -153,16 +153,16 @@ public class MirrorStateCache {
 
     // -- Source topic deletion operations --
 
-    public boolean addSourceTopicDeletion(String mirrorName, String topic) {
+    public boolean addSourceDeletion(String mirrorName, String topic) {
         return sourceDeletions.computeIfAbsent(mirrorName, k -> ConcurrentHashMap.newKeySet()).add(topic);
     }
 
-    public boolean isSourceTopicDeletion(String mirrorName, String topic) {
+    public boolean isSourceDeletion(String mirrorName, String topic) {
         Set<String> topics = sourceDeletions.get(mirrorName);
         return topics != null && topics.contains(topic);
     }
 
-    public void removeSourceTopicDeletion(String mirrorName, String topic) {
+    public void removeSourceDeletion(String mirrorName, String topic) {
         Set<String> topics = sourceDeletions.get(mirrorName);
         if (topics != null) {
             topics.remove(topic);
