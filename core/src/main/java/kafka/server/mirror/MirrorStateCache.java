@@ -34,6 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class MirrorStateCache {
     private final Map<MirrorPartitionKey, MirrorPartition> partitions = new ConcurrentHashMap<>();
     private final Map<String, Map<TopicPartition, SourceLeader>> sourceLeaders = new ConcurrentHashMap<>();
+    private final Map<String, Set<String>> sourceDeletions = new ConcurrentHashMap<>();
     private final Set<Integer> loadedCoordPartitions = ConcurrentHashMap.newKeySet();
     private final Set<String> pendingTopicCreations = ConcurrentHashMap.newKeySet();
     private final Set<PendingLeaderEpochBump> pendingLederEpochBumps = ConcurrentHashMap.newKeySet();
@@ -48,6 +49,7 @@ public class MirrorStateCache {
     public void clear() {
         partitions.clear();
         sourceLeaders.clear();
+        sourceDeletions.clear();
         loadedCoordPartitions.clear();
         pendingTopicCreations.clear();
         pendingLederEpochBumps.clear();
@@ -102,6 +104,7 @@ public class MirrorStateCache {
 
     public void removeMirror(String mirrorName) {
         partitions.keySet().removeIf(key -> key.mirrorName().equals(mirrorName));
+        sourceDeletions.remove(mirrorName);
     }
 
     public void updateFailedInfo(MirrorPartitionKey key, MirrorPartitionState currentState,
@@ -146,6 +149,24 @@ public class MirrorStateCache {
 
     public void removeSourceLeaders(String mirrorName) {
         sourceLeaders.remove(mirrorName);
+    }
+
+    // -- Source topic deletion operations --
+
+    public boolean addSourceDeletion(String mirrorName, String topic) {
+        return sourceDeletions.computeIfAbsent(mirrorName, k -> ConcurrentHashMap.newKeySet()).add(topic);
+    }
+
+    public boolean isSourceDeletion(String mirrorName, String topic) {
+        Set<String> topics = sourceDeletions.get(mirrorName);
+        return topics != null && topics.contains(topic);
+    }
+
+    public void removeSourceDeletion(String mirrorName, String topic) {
+        Set<String> topics = sourceDeletions.get(mirrorName);
+        if (topics != null) {
+            topics.remove(topic);
+        }
     }
 
     // -- Loaded coordinator shard operations --

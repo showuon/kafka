@@ -504,8 +504,6 @@ class MirrorSourceSyncer {
             return;
         }
 
-        // In old cluster, it is possible the broker metadata update in progress, and the returned metadata response is stale.
-        // list topic again to make sure it is indeed deleted.
         Admin srcAdmin = metadataManager.getOrCreateSourceAdmin(mirrorName);
         try {
             Set<String> allTopics = srcAdmin.listTopics().names().get();
@@ -518,13 +516,25 @@ class MirrorSourceSyncer {
 
         metadataManager.getConfiguredTopics(mirrorName, true).forEach(name -> {
             if (deletedSourceTopicNames.contains(name)) {
-                log.info("Detected topic {} deleted in remote cluster {}, marking mirror partitions as non-retryable", name, mirrorName);
-                TopicImage topicImage = metadataManager.metadataImage().topics().getTopic(name);
-                if (topicImage != null) {
-                    topicImage.partitions().forEach((partitionId, partition) ->
-                            metadataManager.transitionTo(mirrorName, Set.of(new TopicPartition(name, partitionId)),
-                                    MirrorPartitionState.FAILED, "The source topic is deleted.", true));
+                if (mirrorCache.isSourceDeletion(mirrorName, name)) {
+                    log.info("Detected topic {} deleted in source cluster {}, marking mirror partitions as non-retryable", name, mirrorName);
+                    mirrorCache.removeSourceDeletion(mirrorName, name);
+                    TopicImage topicImage = metadataManager.metadataImage().topics().getTopic(name);
+                    if (topicImage != null) {
+                        topicImage.partitions().forEach((partitionId, partition) ->
+                                metadataManager.transitionTo(mirrorName, Set.of(new TopicPartition(name, partitionId)),
+                                        MirrorPartitionState.FAILED, "The source topic is deleted.", true));
+                    }
+                } else {
+                    // The Admin API cannot distinguish between "metadata still loading" and "no topics"
+                    // (e.g. after an unclean leader election on a ZK-based source cluster), so marking a
+                    // mirror topic as permanently failed on the first observation can be wrong. We require
+                    // two consecutive observations before confirming the deletion.
+                    log.debug("Topic {} not found in source cluster {}, pending deletion confirmation on next sync", name, mirrorName);
+                    mirrorCache.addSourceDeletion(mirrorName, name);
                 }
+            } else {
+                mirrorCache.removeSourceDeletion(mirrorName, name);
             }
         });
     }
@@ -535,7 +545,7 @@ class MirrorSourceSyncer {
      * <p>
      * The race: processSourceTopicState creates a mirror topic on the destination, which
      * triggers onMetadataUpdate. That callback needs the source leader in sourceLeaders to
-     * transition the partition to LOG_TRUNCATION. If the source has not elected a leader yet
+     * transition the partition to log truncation. If the source has not elected a leader yet
      * (or the Admin describeTopics response arrived without one), the partition stays in
      * UNKNOWN. Since onMetadataUpdate only fires on destination metadata changes, it will
      * not retry on its own.
