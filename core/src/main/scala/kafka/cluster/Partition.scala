@@ -925,7 +925,8 @@ class Partition(val topicPartition: TopicPartition,
     followerStartOffset: Long,
     followerFetchTimeMs: Long,
     leaderEndOffset: Long,
-    brokerEpoch: Long
+    brokerEpoch: Long,
+    mirrorState: MirrorPartitionState = MirrorPartitionState.UNKNOWN
   ): Unit = {
     // No need to calculate low watermark if there is no delayed DeleteRecordsRequest
     val oldLeaderLW = if (delayedOperations.numDelayedDelete > 0) lowWatermarkIfLeader else -1L
@@ -949,7 +950,7 @@ class Partition(val topicPartition: TopicPartition,
     val leaderLWIncremented = newLeaderLW > oldLeaderLW
 
     // Check if this in-sync replica needs to be added to the ISR.
-    maybeExpandIsr(replica)
+    maybeExpandIsr(replica, mirrorState)
 
     // Check if HW can be incremented since the replica's LEO may have changed,
     // or if a pending truncation callback needs to complete (followers may already
@@ -1033,15 +1034,15 @@ class Partition(val topicPartition: TopicPartition,
    *
    * This function can be triggered when a replica's LEO has incremented.
    */
-  private def maybeExpandIsr(followerReplica: Replica): Unit = {
+  private def maybeExpandIsr(followerReplica: Replica, mirrorState: MirrorPartitionState): Unit = {
     val needsIsrUpdate = !partitionState.isInflight && canAddReplicaToIsr(followerReplica.brokerId) && inReadLock(leaderIsrUpdateLock) {
-      needsExpandIsr(followerReplica)
+      needsExpandIsr(followerReplica, mirrorState)
     }
     if (needsIsrUpdate) {
       val alterIsrUpdateOpt = inWriteLock(leaderIsrUpdateLock) {
         // check if this replica needs to be added to the ISR
         partitionState match {
-          case currentState: CommittedPartitionState if needsExpandIsr(followerReplica) =>
+          case currentState: CommittedPartitionState if needsExpandIsr(followerReplica, mirrorState) =>
             Some(prepareIsrExpand(currentState, followerReplica.brokerId))
           case _ =>
             None
@@ -1053,8 +1054,8 @@ class Partition(val topicPartition: TopicPartition,
     }
   }
 
-  private def needsExpandIsr(followerReplica: Replica): Boolean = {
-    canAddReplicaToIsr(followerReplica.brokerId) && isFollowerInSync(followerReplica)
+  private def needsExpandIsr(followerReplica: Replica, mirrorState: MirrorPartitionState): Boolean = {
+    canAddReplicaToIsr(followerReplica.brokerId) && isFollowerInSync(followerReplica, mirrorState)
   }
 
   private def canAddReplicaToIsr(followerReplicaId: Int): Boolean = {
@@ -1064,11 +1065,12 @@ class Partition(val topicPartition: TopicPartition,
       isReplicaIsrEligible(followerReplicaId)
   }
 
-  private def isFollowerInSync(followerReplica: Replica): Boolean = {
+  private def isFollowerInSync(followerReplica: Replica, mirrorState: MirrorPartitionState): Boolean = {
     leaderLogIfLocal.exists { leaderLog =>
       val followerEndOffset = followerReplica.stateSnapshot.logEndOffset
-      val followerEndOffsetCaughtUp = if (getMirrorName().isPresent && !getMirrorName().get().isBlank) {
-        // If the partition is a mirrored leader, we can not compare with the leaderEpochStartOffsetOpt because
+
+      val followerEndOffsetCaughtUp = if (getMirrorName().isPresent && mirrorState != MirrorPartitionState.STOPPED) {
+        // If the partition is a mirrored leader and not stopped (readonly), we can not compare with the leaderEpochStartOffsetOpt because
         // it reflects the local leader epoch, not the leader epoch in the log (leaderEpochCache).
         // So we use the leaderEpochCache to check if the follower's end offset equals to the latest epoch in the leader.
         // This is the same semantic as the check: `leaderEpochStartOffsetOpt.exists(followerEndOffset >= _)`
@@ -1577,7 +1579,8 @@ class Partition(val topicPartition: TopicPartition,
     fetchTimeMs: Long,
     maxBytes: Int,
     minOneMessage: Boolean,
-    updateFetchState: Boolean
+    updateFetchState: Boolean,
+    mirrorState: MirrorPartitionState = MirrorPartitionState.UNKNOWN
   ): LogReadInfo = {
     def readFromLocalLog(log: UnifiedLog): LogReadInfo = {
       readRecords(
@@ -1613,7 +1616,8 @@ class Partition(val topicPartition: TopicPartition,
           followerStartOffset = fetchPartitionData.logStartOffset,
           followerFetchTimeMs = fetchTimeMs,
           leaderEndOffset = logReadInfo.logEndOffset,
-          fetchParams.replicaEpoch
+          fetchParams.replicaEpoch,
+          mirrorState = mirrorState
         )
       }
 
