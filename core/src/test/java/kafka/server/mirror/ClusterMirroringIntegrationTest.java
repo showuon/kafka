@@ -1144,7 +1144,6 @@ public class ClusterMirroringIntegrationTest {
         var descriptions = result.allDescriptions().get(5, TimeUnit.SECONDS);
         ClusterMirrorDescription desc = descriptions.get(mirrorName);
         if (desc == null) return false;
-        System.out.println("!!!desc:" + desc);
         var pattern = java.util.regex.Pattern.compile(topicPattern);
         var matched = desc.topics().entrySet().stream()
                 .filter(e -> pattern.matcher(e.getKey()).matches())

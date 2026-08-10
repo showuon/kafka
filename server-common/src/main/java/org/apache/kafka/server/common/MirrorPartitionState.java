@@ -36,11 +36,8 @@ public enum MirrorPartitionState {
 
     /**
      * When mirror.support.unclean.leader.election is enabled and the destination leader has log truncation
-     * (e.g. it becomes leader through an unclean leader election), the state moves from MIRRORING to this
-     * state. It waits for all replicas (not just ISR members) to complete truncation before proceeding,
-     * preventing destination-side divergence after a source unclean leader election, since the mirror only
-     * fetches committed records and only an unclean leader election can cause the mirror leader's log to
-     * truncate. Transitions back to MIRRORING once all replicas have converged.
+     * the state moves from MIRRORING to this state. It waits for all replicas (not just ISR members) to
+     * complete truncation before proceeding.
      * Valid from: MIRRORING only.
      */
     ULE_RECOVERY((byte) 2),
