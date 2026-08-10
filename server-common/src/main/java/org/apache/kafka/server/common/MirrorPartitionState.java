@@ -126,7 +126,7 @@ public enum MirrorPartitionState {
         throw new IllegalArgumentException("Illegal mirror state: " + value);
     }
 
-    @SuppressWarnings("checkstyle:cyclomaticComplexity")
+    @SuppressWarnings({"cyclomaticComplexity", "BooleanExpressionComplexity"})
     public static boolean isValidTransition(MirrorPartitionState source, MirrorPartitionState target) {
         if (source == target) {
             return true;

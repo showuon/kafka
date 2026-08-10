@@ -30,6 +30,7 @@ import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.metadata.MetadataCache;
 import org.apache.kafka.metadata.MockConfigRepository;
+import org.apache.kafka.server.common.MirrorPartitionState;
 import org.apache.kafka.server.replica.Replica;
 import org.apache.kafka.server.util.KafkaScheduler;
 import org.apache.kafka.storage.internals.checkpoint.OffsetCheckpoints;
@@ -158,9 +159,9 @@ public class UpdateFollowerFetchStateBenchmark {
     public void updateFollowerFetchStateBench() {
         // measure the impact of two follower fetches on the leader
         partition.updateFollowerFetchState(replica1, new LogOffsetMetadata(nextOffset, nextOffset, 0),
-                0, 1, nextOffset, -1);
+                0, 1, nextOffset, -1, MirrorPartitionState.UNKNOWN);
         partition.updateFollowerFetchState(replica2, new LogOffsetMetadata(nextOffset, nextOffset, 0),
-                0, 1, nextOffset, -1);
+                0, 1, nextOffset, -1, MirrorPartitionState.UNKNOWN);
         nextOffset++;
     }
 
@@ -170,8 +171,8 @@ public class UpdateFollowerFetchStateBenchmark {
         // measure the impact of two follower fetches on the leader when the follower didn't
         // end up fetching anything
         partition.updateFollowerFetchState(replica1, new LogOffsetMetadata(nextOffset, nextOffset, 0),
-                0, 1, 100, -1);
+                0, 1, 100, -1, MirrorPartitionState.UNKNOWN);
         partition.updateFollowerFetchState(replica2, new LogOffsetMetadata(nextOffset, nextOffset, 0),
-                0, 1, 100, -1);
+                0, 1, 100, -1, MirrorPartitionState.UNKNOWN);
     }
 }
