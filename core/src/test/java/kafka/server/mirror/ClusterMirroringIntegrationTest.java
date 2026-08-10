@@ -56,6 +56,7 @@ import org.apache.kafka.coordinator.mirror.MirrorPartitionKey;
 import org.apache.kafka.coordinator.mirror.MirrorRecordSerde;
 import org.apache.kafka.coordinator.mirror.generated.LastMirrorEpochsKey;
 import org.apache.kafka.coordinator.mirror.generated.MirrorPartitionStateKey;
+import org.apache.kafka.server.common.MirrorPartitionState;
 import org.apache.kafka.server.config.ServerConfigs;
 import org.apache.kafka.server.config.ServerLogConfigs;
 
@@ -74,7 +75,10 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 
+import static org.apache.kafka.common.config.TopicConfig.MIRROR_SUPPORT_UNCLEAN_LEADER_ELECTION_CONFIG;
+import static org.apache.kafka.common.config.TopicConfig.UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG;
 import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
+import static org.apache.kafka.server.config.ReplicationConfigs.DEFAULT_REPLICATION_FACTOR_CONFIG;
 import static org.apache.kafka.test.TestUtils.DEFAULT_MAX_WAIT_MS;
 import static org.apache.kafka.test.TestUtils.waitForCondition;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -111,13 +115,14 @@ public class ClusterMirroringIntegrationTest {
                         String.valueOf(METADATA_REFRESH_INTERVAL_MS))
                 .setConfigProp(ServerLogConfigs.AUTO_CREATE_TOPICS_ENABLE_CONFIG, "false")
                 .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_NUM_PARTITIONS_CONFIG, "3")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_REPLICATION_FACTOR_CONFIG, "1")
-                .setConfigProp(GroupCoordinatorConfig.OFFSETS_TOPIC_REPLICATION_FACTOR_CONFIG, "1")
+                .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_REPLICATION_FACTOR_CONFIG, "2")
+                .setConfigProp(GroupCoordinatorConfig.OFFSETS_TOPIC_REPLICATION_FACTOR_CONFIG, "2")
                 .setConfigProp(ServerConfigs.REQUEST_TIMEOUT_MS_CONFIG, "5000")
                 .setConfigProp(ClusterMirrorConfig.MIRROR_SOCKET_TIMEOUT_MS_CONFIG, "5000")
                 .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_ATTEMPTS_CONFIG, "3")
                 .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_CONFIG, "1000")
                 .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_BACKOFF_MS_CONFIG, "5000")
+                .setConfigProp(DEFAULT_REPLICATION_FACTOR_CONFIG, "2")
                 .setConfigProp(ServerConfigs.UNSTABLE_API_VERSIONS_ENABLE_CONFIG, "true")
                 .setConfigProp(ServerConfigs.UNSTABLE_FEATURE_VERSIONS_ENABLE_CONFIG, "true")
                 .build();
@@ -138,8 +143,9 @@ public class ClusterMirroringIntegrationTest {
                         String.valueOf(METADATA_REFRESH_INTERVAL_MS))
                 .setConfigProp(ServerLogConfigs.AUTO_CREATE_TOPICS_ENABLE_CONFIG, "false")
                 .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_NUM_PARTITIONS_CONFIG, "3")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_REPLICATION_FACTOR_CONFIG, "1")
-                .setConfigProp(GroupCoordinatorConfig.OFFSETS_TOPIC_REPLICATION_FACTOR_CONFIG, "1")
+                .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_REPLICATION_FACTOR_CONFIG, "2")
+                .setConfigProp(GroupCoordinatorConfig.OFFSETS_TOPIC_REPLICATION_FACTOR_CONFIG, "2")
+                .setConfigProp(DEFAULT_REPLICATION_FACTOR_CONFIG, "2")
 
                 // Fast mirror timeouts and retry backoff for testing
                 .setConfigProp(ServerConfigs.REQUEST_TIMEOUT_MS_CONFIG, "5000")
@@ -566,6 +572,69 @@ public class ClusterMirroringIntegrationTest {
                 "mirror.topics.include should contain 'orders-.*' after startMirrorTopics with includePatterns");
     }
 
+    @Test
+    void testULE_RECOVERY() throws Exception {
+        String topic = "test-topic";
+
+        srcAdmin.createTopics(List.of(
+                new NewTopic(topic, 1, (short) 2))).all().get(30, TimeUnit.SECONDS);
+
+        produceRecords(srcCluster, topic, 0, 30);
+
+        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
+                "bootstrap.servers", singleSourceBootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+
+        // Start mirroring
+        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(topic), new StartMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
+
+        var topicResource = new ConfigResource(ConfigResource.Type.TOPIC, topic);
+
+
+        int dstLeader = dstCluster.brokers().get(0).metadataCache()
+                .getLeaderAndIsr(topic, 0).get().leader();
+
+        // shutdown the follower node in destination cluster
+        dstCluster.brokers().values().forEach(broker -> {
+            if (broker.config().nodeId() != dstLeader) {
+                broker.shutdown();
+            }
+        });
+
+        int srcLeader = srcCluster.brokers().get(0).metadataCache()
+                .getLeaderAndIsr(topic, 0).get().leader();
+
+        // simulate the source cluster has unclean leader election and the log truncation happened
+        srcCluster.brokers().get(srcLeader).replicaManager().getLog(new TopicPartition(topic, 0)).get().truncateTo(20);
+
+        // verify it's still in MORRIRNG state because the "mirror.support.unclean.leader.election" is disabled
+        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
+
+        // Enabling "mirror.support.unclean.leader.election"
+        dstAdmin.incrementalAlterConfigs(Map.of(topicResource, List.of(
+                new AlterConfigOp(
+                        new ConfigEntry(MIRROR_SUPPORT_UNCLEAN_LEADER_ELECTION_CONFIG, "true"),
+                        AlterConfigOp.OpType.SET)))).all().get();
+
+        // simulate the source cluster has unclean leader election and the log truncation happened again
+        srcCluster.brokers().get(srcLeader).replicaManager().getLog(new TopicPartition(topic, 0)).get().truncateTo(10);
+
+        // When log truncation happened, we should enter ULE_RECOVERY and stay there because there's one replica is not caught up
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topic, MirrorPartitionState.ULE_RECOVERY.name());
+
+        // start up the follower node in the destination cluster
+        dstCluster.brokers().values().forEach(broker -> {
+            if (broker.config().nodeId() != dstLeader) {
+                broker.startup();
+            }
+        });
+
+        // verify it's entering MORRIRNG state and the lag is 0
+        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
+    }
+
     /**
      * Tests that a mirror can be deleted after all its topics are stopped, and that
      * the mirror no longer appears in listClusterMirrors after deletion.
@@ -843,6 +912,7 @@ public class ClusterMirroringIntegrationTest {
         var descriptions = result.allDescriptions().get(5, TimeUnit.SECONDS);
         ClusterMirrorDescription desc = descriptions.get(mirrorName);
         if (desc == null) return false;
+        System.out.println("!!!desc:" + desc);
         var pattern = java.util.regex.Pattern.compile(topicPattern);
         var matched = desc.topics().entrySet().stream()
                 .filter(e -> pattern.matcher(e.getKey()).matches())

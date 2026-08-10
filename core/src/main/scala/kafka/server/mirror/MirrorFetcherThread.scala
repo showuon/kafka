@@ -82,7 +82,7 @@ class MirrorFetcherThread(name: String,
     if (uleEnabledPartitions.nonEmpty) {
       removeFetcherForPartitions(uleEnabledPartitions)
       replicaMgr.mirrorMetadataManager.foreach(_.transitionTo(mirrorName, uleEnabledPartitions.asJava,
-        MirrorPartitionState.ULE_LOG_TRUNCATION))
+        MirrorPartitionState.ULE_RECOVERY))
     }
   }
 

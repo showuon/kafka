@@ -43,7 +43,7 @@ public enum MirrorPartitionState {
      * truncate. Transitions back to MIRRORING once all replicas have converged.
      * Valid from: MIRRORING only.
      */
-    ULE_LOG_TRUNCATION((byte) 2),
+    ULE_RECOVERY((byte) 2),
 
     /**
      * All ISR members have completed truncation and leader epoch bumping completes. A MirrorFetcherThread is started to
@@ -110,7 +110,7 @@ public enum MirrorPartitionState {
             case 1:
                 return EPOCH_FENCING;
             case 2:
-                return ULE_LOG_TRUNCATION;
+                return ULE_RECOVERY;
             case 3:
                 return MIRRORING;
             case 4:
@@ -142,13 +142,13 @@ public enum MirrorPartitionState {
                         || source == MirrorPartitionState.FAILED;
             case EPOCH_FENCING:
                 return source == MirrorPartitionState.MIRRORING;
-            case ULE_LOG_TRUNCATION:
+            case ULE_RECOVERY:
                 return source == MirrorPartitionState.MIRRORING;
             case MIRRORING:
                 return source == MirrorPartitionState.LOG_TRUNCATION
                         || source == MirrorPartitionState.EPOCH_FENCING
                         || source == MirrorPartitionState.PAUSED
-                        || source == MirrorPartitionState.ULE_LOG_TRUNCATION
+                        || source == MirrorPartitionState.ULE_RECOVERY
                         || source == MirrorPartitionState.FAILED
                         || source == MirrorPartitionState.MIRRORING;
             case PAUSING:
@@ -162,7 +162,7 @@ public enum MirrorPartitionState {
                         || source == MirrorPartitionState.MIRRORING
                         || source == MirrorPartitionState.PAUSING
                         || source == MirrorPartitionState.PAUSED
-                        || source == MirrorPartitionState.ULE_LOG_TRUNCATION
+                        || source == MirrorPartitionState.ULE_RECOVERY
                         || source == MirrorPartitionState.FAILED;
             case STOPPED:
                 return source == MirrorPartitionState.STOPPING;

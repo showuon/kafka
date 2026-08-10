@@ -1067,7 +1067,14 @@ class Partition(val topicPartition: TopicPartition,
   private def isFollowerInSync(followerReplica: Replica): Boolean = {
     leaderLogIfLocal.exists { leaderLog =>
       val followerEndOffset = followerReplica.stateSnapshot.logEndOffset
-      followerEndOffset >= leaderLog.highWatermark && leaderEpochStartOffsetOpt.exists(followerEndOffset >= _)
+      val followerEndOffsetCaughtUp = if (getMirrorName().isPresent && !getMirrorName().get().isBlank) {
+        val latestEpoch = log.get.latestEpoch().get()
+        val followerEpoch = log.get.leaderEpochCache().epochForOffset(followerEndOffset)
+        followerEpoch.getAsInt == latestEpoch
+      } else {
+        leaderEpochStartOffsetOpt.exists(followerEndOffset >= _)
+      }
+      followerEndOffset >= leaderLog.highWatermark && followerEndOffsetCaughtUp
     }
   }
 

@@ -255,7 +255,6 @@ abstract class AbstractFetcherThread(name: String,
     // Ensure we hold a lock during truncation
 
     val partitionsNeedsRefreshMetadata = new util.HashSet[TopicPartition]()
-    val partitionsNeedsWaitForFollowers = new util.HashSet[TopicPartition]()
     inLock(partitionMapLock) {
       //Check no leadership and no leader epoch changes happened whilst we were unlocked, fetching epochs
       val epochEndOffsets = endOffsets.asScala.filter { case (tp, _) =>
@@ -270,7 +269,6 @@ abstract class AbstractFetcherThread(name: String,
 
       val result = maybeTruncateToEpochEndOffsets(epochEndOffsets, latestEpochsForPartitions)
       partitionsNeedsRefreshMetadata.addAll(result.partitionsNeedsRefreshMetadata())
-      partitionsNeedsWaitForFollowers.addAll(result.partitionsNeedsWaitForFollowers())
       handlePartitionsWithErrors(result.partitionsWithError.asScala, "truncateToEpochEndOffsets")
       updateFetchOffsetAndMaybeMarkTruncationComplete(result.result)
     }
@@ -282,18 +280,21 @@ abstract class AbstractFetcherThread(name: String,
       removeFetcherForPartitions(partitionsNeedsRefreshMetadata.asScala)
       refreshSourceClusterMetadata(partitionsNeedsRefreshMetadata.asScala, "Truncation requires source metadata refresh")
     }
-    if (!partitionsNeedsWaitForFollowers.isEmpty) {
-      info(s"Waiting for followers to catch up with the leader for partitions: $partitionsNeedsWaitForFollowers")
-      maybeWaitForFollowersCaughtUp(partitionsNeedsWaitForFollowers.asScala)
-    }
+
   }
 
   // Visibility for unit tests
   protected[server] def truncateOnFetchResponse(epochEndOffsets: Map[TopicPartition, EpochEndOffset]): Unit = {
+    val partitionsNeedsWaitForFollowers = new util.HashSet[TopicPartition]()
     inLock(partitionMapLock) {
       val result = maybeTruncateToEpochEndOffsets(epochEndOffsets, Map.empty, truncateOnResponse = true)
+      partitionsNeedsWaitForFollowers.addAll(result.partitionsNeedsWaitForFollowers())
       handlePartitionsWithErrors(result.partitionsWithError.asScala, "truncateOnFetchResponse")
       updateFetchOffsetAndMaybeMarkTruncationComplete(result.result)
+    }
+    if (!partitionsNeedsWaitForFollowers.isEmpty) {
+      info(s"Waiting for followers to catch up with the leader for partitions: $partitionsNeedsWaitForFollowers")
+      maybeWaitForFollowersCaughtUp(partitionsNeedsWaitForFollowers.asScala)
     }
   }
 
@@ -727,7 +728,7 @@ abstract class AbstractFetcherThread(name: String,
       // Skip stale epoch downgrades for mirror partitions to avoid an infinite truncation loop.
       currentState
     } else if (initialFetchState.initOffset < 0) {
-      fetchOffsetAndTruncate(tp, initialFetchState.topicId, initialFetchState.currentLeaderEpoch, initialFetchState.mirrorLeaderEpoch)
+      fetchOffsetAndTruncate(tp, initialFetchState.topicId, initialFetchState.currentLeaderEpoch, initialFetchState.mirrorLeaderEpoch)._1
     } else if (leader.isTruncationOnFetchSupported && mirrorName.isBlank) {
       // With old message format, latestEpoch will be empty and we use Truncating state to truncate to high watermark
       val lastFetchedEpoch: Optional[Integer] = latestEpoch(tp)
@@ -876,9 +877,10 @@ abstract class AbstractFetcherThread(name: String,
   }
 
   /**
-   * Handle a partition whose offset is out of range and return a new fetch offset.
+   * Handle a partition whose offset is out of range and return a new fetch offset along with
+   * whether log truncation occurred while handling it.
    */
-  private def fetchOffsetAndTruncate(topicPartition: TopicPartition, topicId: Option[Uuid], currentLeaderEpoch: Int, mirrorLeaderEpoch: Optional[Integer]): PartitionFetchState = {
+  private def fetchOffsetAndTruncate(topicPartition: TopicPartition, topicId: Option[Uuid], currentLeaderEpoch: Int, mirrorLeaderEpoch: Optional[Integer]): (PartitionFetchState, Boolean) = {
     val replicaEndOffset = logEndOffset(topicPartition)
 
     /**
@@ -899,8 +901,9 @@ abstract class AbstractFetcherThread(name: String,
       truncate(topicPartition, OffsetTruncationState(leaderEndOffset, truncationCompleted = true))
 
       fetcherLagStats.getAndMaybePut(topicPartition).lag = 0
-      new PartitionFetchState(topicId.toJava, leaderEndOffset, Optional.of(0L), currentLeaderEpoch,
+      val newFetchState = new PartitionFetchState(topicId.toJava, leaderEndOffset, Optional.of(0L), currentLeaderEpoch,
         ReplicaState.FETCHING, latestEpoch(topicPartition), mirrorName, mirrorLeaderEpoch)
+      (newFetchState, true)
     } else {
       /**
        * If the leader's log end offset is greater than the follower's log end offset, there are two possibilities:
@@ -927,7 +930,8 @@ abstract class AbstractFetcherThread(name: String,
       val leaderStartOffset = offsetAndEpoch.offset
       val offsetToFetch = Math.max(leaderStartOffset, replicaEndOffset)
       // Only truncate log when current leader's log start offset is greater than follower's log end offset.
-      if (leaderStartOffset > replicaEndOffset) {
+      val truncated = leaderStartOffset > replicaEndOffset
+      if (truncated) {
         warn(s"Truncate fully and reset fetch offset for partition $topicPartition from $replicaEndOffset to the " +
           s"current leader's start offset $leaderStartOffset because the local replica's end offset is smaller than the " +
           s"current leader's start offsets.")
@@ -939,8 +943,9 @@ abstract class AbstractFetcherThread(name: String,
 
       val initialLag = leaderEndOffset - offsetToFetch
       fetcherLagStats.getAndMaybePut(topicPartition).lag = initialLag
-      new PartitionFetchState(topicId.toJava, offsetToFetch, Optional.of(initialLag), currentLeaderEpoch,
+      val newFetchState = new PartitionFetchState(topicId.toJava, offsetToFetch, Optional.of(initialLag), currentLeaderEpoch,
         ReplicaState.FETCHING, latestEpoch(topicPartition), mirrorName, mirrorLeaderEpoch)
+      (newFetchState, truncated)
     }
   }
 
@@ -962,10 +967,14 @@ abstract class AbstractFetcherThread(name: String,
                                     fetchState: PartitionFetchState,
                                     leaderEpochInRequest: Optional[Integer]): Boolean = {
     try {
-      val newFetchState = fetchOffsetAndTruncate(topicPartition, fetchState.topicId().toScala, fetchState.currentLeaderEpoch, fetchState.mirrorLeaderEpoch)
+      val (newFetchState, truncated) = fetchOffsetAndTruncate(topicPartition, fetchState.topicId().toScala, fetchState.currentLeaderEpoch, fetchState.mirrorLeaderEpoch)
       partitionStates.updateAndMoveToEnd(topicPartition, newFetchState)
       info(s"Current offset ${fetchState.fetchOffset} for partition $topicPartition is " +
-        s"out of range, which typically implies a leader change. Reset fetch offset to ${newFetchState.fetchOffset}")
+        s"out of range, which typically implies a leader change. Reset fetch offset to ${newFetchState.fetchOffset}, " +
+        s"truncated: $truncated")
+      if (truncated) {
+        maybeWaitForFollowersCaughtUp(Set(topicPartition))
+      }
       true
     } catch {
       case _: FencedLeaderEpochException =>
