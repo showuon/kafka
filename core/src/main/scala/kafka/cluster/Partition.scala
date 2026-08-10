@@ -1068,6 +1068,10 @@ class Partition(val topicPartition: TopicPartition,
     leaderLogIfLocal.exists { leaderLog =>
       val followerEndOffset = followerReplica.stateSnapshot.logEndOffset
       val followerEndOffsetCaughtUp = if (getMirrorName().isPresent && !getMirrorName().get().isBlank) {
+        // If the partition is a mirrored leader, we can not compare with the leaderEpochStartOffsetOpt because
+        // it reflects the local leader epoch, not the leader epoch in the log (leaderEpochCache).
+        // So we use the leaderEpochCache to check if the follower's end offset equals to the latest epoch in the leader.
+        // This is the same semantic as the check: `leaderEpochStartOffsetOpt.exists(followerEndOffset >= _)`
         val latestEpoch = log.get.latestEpoch().get()
         val followerEpoch = log.get.leaderEpochCache().epochForOffset(followerEndOffset)
         followerEpoch.getAsInt == latestEpoch

@@ -280,7 +280,6 @@ abstract class AbstractFetcherThread(name: String,
       removeFetcherForPartitions(partitionsNeedsRefreshMetadata.asScala)
       refreshSourceClusterMetadata(partitionsNeedsRefreshMetadata.asScala, "Truncation requires source metadata refresh")
     }
-
   }
 
   // Visibility for unit tests
@@ -970,8 +969,7 @@ abstract class AbstractFetcherThread(name: String,
       val (newFetchState, truncated) = fetchOffsetAndTruncate(topicPartition, fetchState.topicId().toScala, fetchState.currentLeaderEpoch, fetchState.mirrorLeaderEpoch)
       partitionStates.updateAndMoveToEnd(topicPartition, newFetchState)
       info(s"Current offset ${fetchState.fetchOffset} for partition $topicPartition is " +
-        s"out of range, which typically implies a leader change. Reset fetch offset to ${newFetchState.fetchOffset}, " +
-        s"truncated: $truncated")
+        s"out of range, which typically implies a leader change. Reset fetch offset to ${newFetchState.fetchOffset}")
       if (truncated) {
         maybeWaitForFollowersCaughtUp(Set(topicPartition))
       }

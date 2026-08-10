@@ -1698,7 +1698,6 @@ class ReplicaManager(val config: KafkaConfig,
   }
 
   def waitForAllReplicasCaughtUp(tp: TopicPartition, callback: Consumer[TopicPartition]): Unit = {
-    info("!!! waitForAllReplicasCaughtUp")
     getLog(tp).map(log => {
       val partition = getPartitionOrException(tp)
       partition.maybeCompleteTruncation(log, waitForAllReplicas = true, onCompleteCallback = Optional.of(callback))
