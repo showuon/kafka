@@ -2046,7 +2046,7 @@ public class ReplicationControlManager {
         if (topicInfo == null) {
             throw new UnknownTopicOrPartitionException();
         }
-        if (topicInfo.mirrorName() != null && topicInfo.lastStateOffset() > topic.stateOffset()) {
+        if (topicInfo.mirrorName() != null && !topicInfo.mirrorName().isBlank() && topicInfo.lastStateOffset() > topic.stateOffset()) {
             throw new InvalidMirrorStateException("Mirror state for topic " + topicInfo.name() + " changed after broker validated partition states: " +
                     "(brokerState=" + topic.stateOffset() + " quorumState=" + topicInfo.lastStateOffset() + ")");
         }
