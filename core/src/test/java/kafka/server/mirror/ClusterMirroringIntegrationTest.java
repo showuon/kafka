@@ -29,6 +29,7 @@ import org.apache.kafka.clients.admin.DeleteClusterMirrorOptions;
 import org.apache.kafka.clients.admin.DescribeClusterMirrorsOptions;
 import org.apache.kafka.clients.admin.DescribeClusterMirrorsResult;
 import org.apache.kafka.clients.admin.ListConfigResourcesOptions;
+import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.admin.StartMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.StopMirrorTopicsOptions;
@@ -44,6 +45,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.errors.InvalidMirrorStateException;
 import org.apache.kafka.common.message.DescribeClusterMirrorsRequestData;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -71,6 +73,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 
@@ -78,6 +81,7 @@ import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
 import static org.apache.kafka.test.TestUtils.DEFAULT_MAX_WAIT_MS;
 import static org.apache.kafka.test.TestUtils.waitForCondition;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -724,6 +728,32 @@ public class ClusterMirroringIntegrationTest {
                     "Non-retryable partitions must not be restarted by metadata refresh");
             TimeUnit.MILLISECONDS.sleep(1_000);
         }
+    }
+
+    @Test
+    void testCreatePartitionsDisallowedOnNonStoppedMirror() throws Exception {
+        // Create topic and produce data
+        srcAdmin.createTopics(List.of(
+                new NewTopic(TOPIC_NAME, 1, (short) 1)
+        )).all().get(30, TimeUnit.SECONDS);
+
+        // Create mirror and start topic
+        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
+                "bootstrap.servers", singleSourceBootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(TOPIC_NAME), new StartMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "MIRRORING");
+
+        // Attempt to increase partition count
+        ExecutionException e = assertThrows(ExecutionException.class, () -> dstAdmin.createPartitions(Map.of(TOPIC_NAME, NewPartitions.increaseTo(2))).all().get());
+        assertEquals(InvalidMirrorStateException.class, e.getCause().getClass());
+
+        // Stop mirroring and retry
+        dstAdmin.stopMirrorTopics(MIRROR_NAME, Set.of(TOPIC_NAME), new StopMirrorTopicsOptions()).all().get(30, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "STOPPED");
+
+        dstAdmin.createPartitions(Map.of(TOPIC_NAME, NewPartitions.increaseTo(2))).all().get();
     }
 
     private void produceRecords(KafkaClusterTestKit cluster, String topic,
