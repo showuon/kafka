@@ -476,7 +476,9 @@ abstract class AbstractFetcherThread(name: String,
     var fetchException: Option[Throwable] = None
 
     try {
+      info("!!! send:" + fetchRequest)
       responseData = leader.fetch(fetchRequest).asScala
+      info("!!! response:" + responseData)
     } catch {
       case t: Throwable =>
         fetchException = Some(t)
@@ -893,6 +895,7 @@ abstract class AbstractFetcherThread(name: String,
      * There is a potential for a mismatch between the logs of the two replicas here. We don't fix this mismatch as of now.
      */
     val offsetAndEpoch = leader.fetchLatestOffset(topicPartition, currentLeaderEpoch)
+    info("!!! Truncating log for partition " + topicPartition + " to offset " + offsetAndEpoch + " due to offset out of range error.:" + replicaEndOffset)
     val leaderEndOffset = offsetAndEpoch.offset
     if (leaderEndOffset < replicaEndOffset) {
       warn(s"Reset fetch offset for partition $topicPartition from $replicaEndOffset to current " +
