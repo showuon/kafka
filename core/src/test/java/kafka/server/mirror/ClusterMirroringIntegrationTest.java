@@ -24,6 +24,7 @@ import org.apache.kafka.clients.admin.AlterConfigOp;
 import org.apache.kafka.clients.admin.ClusterMirrorDescription;
 import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.clients.admin.CreateClusterMirrorOptions;
+import org.apache.kafka.clients.admin.CreatePartitionsResult;
 import org.apache.kafka.clients.admin.CreateTopicsResult;
 import org.apache.kafka.clients.admin.DeleteClusterMirrorOptions;
 import org.apache.kafka.clients.admin.DescribeClusterMirrorsOptions;
@@ -754,6 +755,115 @@ public class ClusterMirroringIntegrationTest {
         waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "STOPPED");
 
         dstAdmin.createPartitions(Map.of(TOPIC_NAME, NewPartitions.increaseTo(2))).all().get();
+    }
+
+    @Test
+    void testCreatePartitionsAllowedOnNonMirroredTopic() throws Exception {
+        String mirroredTopic = "mirrored-topic";
+        String nonMirroredTopic = "non-mirrored-topic";
+
+        // Source topic that will be actively mirrored to the destination
+        srcAdmin.createTopics(List.of(
+                new NewTopic(mirroredTopic, 1, (short) 1)
+        )).all().get(30, TimeUnit.SECONDS);
+
+        // A regular destination topic that is not part of any mirror
+        dstAdmin.createTopics(List.of(
+                new NewTopic(nonMirroredTopic, 1, (short) 1)
+        )).all().get(30, TimeUnit.SECONDS);
+
+        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
+                "bootstrap.servers", singleSourceBootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(mirroredTopic), new StartMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, mirroredTopic, "MIRRORING");
+
+        // With the cluster mirror feature enabled the broker intercepts CreatePartitions, but a
+        // topic that belongs to no mirror must be forwarded and created without any mirror check.
+        dstAdmin.createPartitions(Map.of(nonMirroredTopic, NewPartitions.increaseTo(2)))
+                .all().get(30, TimeUnit.SECONDS);
+        waitForCondition(() -> describeTopics(dstAdmin, List.of(nonMirroredTopic)).get(nonMirroredTopic).partitions().size() == 2, "Non mirrored topic count not increased");
+    }
+
+    @Test
+    void testCreatePartitionsMixedMirroredAndNonMirroredTopics() throws Exception {
+        String mirroredTopic = "mirrored-topic";
+        String nonMirroredTopic = "non-mirrored-topic";
+
+        srcAdmin.createTopics(List.of(
+                new NewTopic(mirroredTopic, 1, (short) 1)
+        )).all().get(30, TimeUnit.SECONDS);
+        dstAdmin.createTopics(List.of(
+                new NewTopic(nonMirroredTopic, 1, (short) 1)
+        )).all().get(30, TimeUnit.SECONDS);
+
+        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
+                "bootstrap.servers", singleSourceBootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(mirroredTopic), new StartMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, mirroredTopic, "MIRRORING");
+
+        CreatePartitionsResult result = dstAdmin.createPartitions(Map.of(
+                mirroredTopic, NewPartitions.increaseTo(2),
+                nonMirroredTopic, NewPartitions.increaseTo(2)
+        ));
+
+        result.values().get(nonMirroredTopic).get(30, TimeUnit.SECONDS);
+        ExecutionException e = assertThrows(ExecutionException.class,
+                () -> result.values().get(mirroredTopic).get(30, TimeUnit.SECONDS));
+        assertEquals(InvalidMirrorStateException.class, e.getCause().getClass());
+
+        waitForCondition(() -> {
+            Map<String, TopicDescription> descriptionMap = describeTopics(dstAdmin, List.of(mirroredTopic, nonMirroredTopic));
+            return descriptionMap.get(nonMirroredTopic).partitions().size() == 2 && descriptionMap.get(mirroredTopic).partitions().size() == 1;
+        }, "Non mirrored topic count not increased");
+    }
+
+    @Test
+    void testCreatePartitionsMultipleMirroredTopics() throws Exception {
+        String topicA = "mirror-a";
+        String topicB = "mirror-b";
+
+        srcAdmin.createTopics(List.of(
+                new NewTopic(topicA, 1, (short) 1),
+                new NewTopic(topicB, 1, (short) 1)
+        )).all().get(30, TimeUnit.SECONDS);
+
+        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
+                "bootstrap.servers", singleSourceBootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(topicA, topicB), new StartMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topicA, "MIRRORING");
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topicB, "MIRRORING");
+
+        // Both mirrored topics in a single request are rejected while mirroring
+        CreatePartitionsResult result = dstAdmin.createPartitions(Map.of(
+                topicA, NewPartitions.increaseTo(2),
+                topicB, NewPartitions.increaseTo(2)
+        ));
+        for (String topic : List.of(topicA, topicB)) {
+            ExecutionException e = assertThrows(ExecutionException.class,
+                    () -> result.values().get(topic).get(30, TimeUnit.SECONDS));
+            assertEquals(InvalidMirrorStateException.class, e.getCause().getClass(), "for topic " + topic);
+        }
+
+        // After stopping both, the same request succeeds
+        dstAdmin.stopMirrorTopics(MIRROR_NAME, Set.of(topicA, topicB), new StopMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topicA, "STOPPED");
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topicB, "STOPPED");
+
+        dstAdmin.createPartitions(Map.of(
+                topicA, NewPartitions.increaseTo(2),
+                topicB, NewPartitions.increaseTo(2)
+        )).all().get(30, TimeUnit.SECONDS);
+        waitForCondition(() -> {
+            Map<String, TopicDescription> descriptionMap = describeTopics(dstAdmin, List.of(topicA, topicB));
+            return descriptionMap.get(topicA).partitions().size() == 2 && descriptionMap.get(topicB).partitions().size() == 2;
+        }, "Partition count not increased after stopping");
     }
 
     private void produceRecords(KafkaClusterTestKit cluster, String topic,
