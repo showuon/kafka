@@ -36,6 +36,7 @@ import org.apache.kafka.common.errors._
 import org.apache.kafka.common.internals.Topic.{GROUP_METADATA_TOPIC_NAME, SHARE_GROUP_STATE_TOPIC_NAME, TRANSACTION_STATE_TOPIC_NAME, isInternal}
 import org.apache.kafka.common.internals.{FatalExitError, Plugin, Topic}
 import org.apache.kafka.common.message.AddPartitionsToTxnResponseData.{AddPartitionsToTxnResult, AddPartitionsToTxnResultCollection}
+import org.apache.kafka.common.message.CreatePartitionsResponseData.CreatePartitionsTopicResult
 import org.apache.kafka.common.message.DeleteRecordsResponseData.{DeleteRecordsPartitionResult, DeleteRecordsTopicResult}
 import org.apache.kafka.common.message.DeleteShareGroupOffsetsRequestData.DeleteShareGroupOffsetsRequestTopic
 import org.apache.kafka.common.message.DeleteShareGroupOffsetsResponseData.DeleteShareGroupOffsetsResponseTopic
@@ -206,7 +207,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.ALTER_REPLICA_LOG_DIRS => handleAlterReplicaLogDirsRequest(request)
         case ApiKeys.DESCRIBE_LOG_DIRS => handleDescribeLogDirsRequest(request)
         case ApiKeys.SASL_AUTHENTICATE => handleSaslAuthenticateRequest(request)
-        case ApiKeys.CREATE_PARTITIONS => forwardToController(request)
+        case ApiKeys.CREATE_PARTITIONS => handleCreatePartitions(request)
         // Create, renew and expire DelegationTokens must first validate that the connection
         // itself is not authenticated with a delegation token before maybeForwardToController.
         case ApiKeys.CREATE_DELEGATION_TOKEN => handleCreateTokenRequest(request)
@@ -4609,6 +4610,47 @@ class KafkaApis(val requestChannel: RequestChannel,
       mirrorState.put(topic.name(), topicState)
     })
     clusterMirrorCoordinator.writeState(mirrorName, mirrorState, res => requestHelper.sendMaybeThrottle(request, res))
+  }
+
+  def handleCreatePartitions(request: RequestChannel.Request): Unit = {
+    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
+      forwardToController(request)
+      return
+    }
+    val createPartitionsRequest = request.body[CreatePartitionsRequest]
+    val topics = createPartitionsRequest.data().topics().asScala.map(topic => topic.name()).toSet.asJava
+    mirrorMetadataManager.validateTopicOperation(topics, (offsets, errors) => {
+      if (offsets.isEmpty) {
+        val results = topics.asScala.map(topic =>
+          new CreatePartitionsTopicResult()
+            .setName(topic)
+            .setErrorCode(errors.get(topic).code())
+            .setErrorMessage(errors.get(topic).message())
+        ).toList.asJava
+        val response = new CreatePartitionsResponse(new CreatePartitionsResponseData().setResults(results))
+        requestHelper.sendMaybeThrottle(request, response)
+      } else {
+        val filteredData = createPartitionsRequest.data().duplicate()
+        filteredData.topics()
+          .removeIf(topic => errors.containsKey(topic.name()))
+        filteredData.topics().forEach(topic => topic.setStateOffset(offsets.get(topic.name())))
+        forwardingManager.forwardRequest(request, new CreatePartitionsRequest.Builder(filteredData).build(request.header.apiVersion()), {
+          case Some(response) =>
+            val createPartitionsResponse = response.asInstanceOf[CreatePartitionsResponse]
+            createPartitionsResponse.data().results().addAll(
+              errors.entrySet().stream()
+                .map(entry => new CreatePartitionsTopicResult()
+                  .setErrorCode(entry.getValue.code())
+                  .setErrorMessage(entry.getValue.message())
+                  .setName(entry.getKey)
+                )
+                .toList
+            )
+            requestHelper.sendForwardedResponse(request, createPartitionsResponse)
+          case None => handleInvalidVersionsDuringForwarding(request)
+        })
+      }
+    })
   }
 }
 

@@ -98,7 +98,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongConsumer;
@@ -122,6 +124,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             ClusterMirrorConfig.MIRROR_TOPICS_INCLUDE_CONFIG, ClusterMirrorConfig.MIRROR_TOPICS_EXCLUDE_CONFIG,
             ClusterMirrorConfig.MIRROR_GROUPS_INCLUDE_CONFIG, ClusterMirrorConfig.MIRROR_GROUPS_EXCLUDE_CONFIG,
             ClusterMirrorConfig.MIRROR_ACL_INCLUDE_CONFIG);
+    private static final String ALL_TOPICS_REMOTE_READ_FAILURE = "";
 
     private final Logger log;
     private volatile boolean isInitialized = false;
@@ -1352,8 +1355,58 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 .collect(Collectors.toSet());
     }
 
+    /**
+     * Returns the set of topic names configured for all mirrors, filtered by desired state.
+     *
+     * @param includePaused  whether to include topics in PAUSED state
+     * @param includeStopped whether to include topics in STOPPED state
+     * @return map of topic names matching the filter criteria by mirror name
+     */
+    public Map<String, Set<String>> getConfiguredTopics(Set<String> topicNames, boolean includePaused, boolean includeStopped) {
+        return metadataImage.topics().topicsById().values().stream()
+                .filter(topicInfo -> {
+                    if (!topicNames.contains(topicInfo.name())) return false;
+                    String topicMirrorName = topicInfo.mirrorName();
+                    if (topicMirrorName == null || topicMirrorName.isBlank()) return false;
+                    byte state = topicInfo.desiredMirrorState();
+                    if (!includeStopped && state == MirrorPartitionState.STOPPED.value()) return false;
+                    return includePaused || state != MirrorPartitionState.PAUSED.value();
+                })
+                .collect(Collectors.groupingBy(TopicImage::mirrorName, Collectors.mapping(TopicImage::name, Collectors.toSet())));
+    }
+
     public int getActiveTopicCount(String mirrorName) {
         return getConfiguredTopics(mirrorName, false, false).size();
+    }
+
+    public void validateTopicOperation(Set<String> topicNames, BiConsumer<Map<String, Long>, Map<String, Errors>> callback) throws Exception {
+        Map<String, Set<String>> topicsByMirrors = getConfiguredTopics(
+                topicNames,
+                true,
+                true
+        );
+        if (topicsByMirrors.isEmpty()) {
+            callback.accept(topicNames.stream().collect(Collectors.toMap(Function.identity(), unused -> -1L)), Map.of());
+            return;
+        }
+        Map<String, Long> offsetsByTopic = new HashMap<>();
+        Map<String, Errors> errorsByTopic = new HashMap<>();
+        CountDownLatch countDownLatch = new CountDownLatch(topicsByMirrors.size());
+        topicsByMirrors.forEach((mirror, topics) -> validateMirrorStates(
+                mirror,
+                topics,
+                Set.of(MirrorPartitionState.STOPPED),
+                false,
+                (offset, errors) -> {
+                    if (errors != null) {
+                        errorsByTopic.putAll(errors);
+                    }
+                    topics.forEach(topic -> offsetsByTopic.put(topic, offset));
+                    countDownLatch.countDown();
+                }
+        ));
+        countDownLatch.await();
+        callback.accept(offsetsByTopic, errorsByTopic);
     }
 
     public void validateDeleteMirrorStates(DeleteClusterMirrorRequestData data, Consumer<Optional<Errors>> callback) {
@@ -1417,35 +1470,64 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             boolean skipMissingTopics,
             LongConsumer offsetConsumer,
             Consumer<Optional<Errors>> resultHandler) {
-        MetadataImage currentImage = metadataImage;
-        long validationOffset = currentImage.offset();
-        Map<String, Set<Integer>> remotePartitions = new HashMap<>();
-
-        Optional<Errors> localError = validateLocalPartitions(
-                mirrorName, topicNames, validStates, skipMissingTopics, currentImage, remotePartitions);
-        if (localError.isPresent()) {
-            resultHandler.accept(localError);
-            return;
-        }
-
-        if (remotePartitions.isEmpty()) {
-            offsetConsumer.accept(validationOffset);
-            resultHandler.accept(Optional.empty());
-            return;
-        }
-
-        readStateFromRemoteCoordinator(mirrorName, remotePartitions, response -> {
-            Optional<Errors> remoteError = validateRemotePartitions(response, validStates);
-            if (remoteError.isPresent()) {
-                resultHandler.accept(remoteError);
+        validateMirrorStates(mirrorName, topicNames, validStates, skipMissingTopics, (Long offset, Map<String, Errors> errors) -> {
+            if (errors != null && !errors.isEmpty()) {
+                Optional<Errors> error = errors.values().stream().findFirst();
+                resultHandler.accept(error);
             } else {
-                offsetConsumer.accept(validationOffset);
+                offsetConsumer.accept(offset);
                 resultHandler.accept(Optional.empty());
             }
         });
     }
 
-    private Optional<Errors> validateLocalPartitions(
+    /**
+     * Validates partition states on the broker before forwarding a mirror operation to the controller.
+     * Checks that both the desired state (from MetadataImage) and the actual coordinator state
+     * (local cache + remote RPCs) are within {@code validStates}. On success, passes the metadata
+     * offset at validation time to {@code offsetConsumer} so the caller can set it on the request
+     * data. The controller uses this offset for optimistic locking, rejecting the request if any
+     * mirror state changed after the broker's validation.
+     *
+     * @param mirrorName        the mirror being validated
+     * @param topicNames        topic names whose partitions must be checked
+     * @param validStates       the set of states that desired and actual partition states must belong to
+     * @param skipMissingTopics if true, topics not yet in the metadata image are skipped (used by start)
+     * @param resultHandler     receives metadata offset onSuccess so the caller can set it on the request or a Map
+     *                          keyed by topic names to errors
+     */
+    private void validateMirrorStates(
+            String mirrorName,
+            Set<String> topicNames,
+            Set<MirrorPartitionState> validStates,
+            boolean skipMissingTopics,
+            BiConsumer<Long, Map<String, Errors>> resultHandler) {
+        MetadataImage currentImage = metadataImage;
+        long validationOffset = currentImage.offset();
+        Map<String, Set<Integer>> remotePartitions = new HashMap<>();
+
+        Map<String, Errors> localErrors = validateLocalPartitions(
+                mirrorName, topicNames, validStates, skipMissingTopics, currentImage, remotePartitions);
+
+        if (remotePartitions.isEmpty()) {
+            resultHandler.accept(validationOffset, localErrors);
+            return;
+        }
+
+        readStateFromRemoteCoordinator(mirrorName, remotePartitions, response -> {
+            Map<String, Errors> remoteError = validateRemotePartitions(response, validStates);
+            Map<String, Errors> combined = new HashMap<>(localErrors);
+            if (remoteError.size() == 1 && remoteError.containsKey(ALL_TOPICS_REMOTE_READ_FAILURE)) {
+                Errors error = remoteError.get(ALL_TOPICS_REMOTE_READ_FAILURE);
+                remotePartitions.keySet().forEach(topic -> combined.put(topic, error));
+            } else {
+                combined.putAll(remoteError);
+            }
+            resultHandler.accept(validationOffset, combined);
+        });
+    }
+
+    private Map<String, Errors> validateLocalPartitions(
             String mirrorName,
             Set<String> topicNames,
             Set<MirrorPartitionState> validStates,
@@ -1455,19 +1537,21 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         Set<Byte> validDesiredStateValues = validStates.stream()
                 .map(MirrorPartitionState::value).collect(Collectors.toSet());
 
+        Map<String, Errors> errorsByTopic = new HashMap<>();
         for (String topic : topicNames) {
             TopicImage topicImage = currentImage.topics().getTopic(topic);
             if (topicImage == null) {
                 if (!skipMissingTopics) {
                     log.error("Topic {} not found in metadata image.", topic);
-                    return Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATES);
+                    errorsByTopic.put(topic, Errors.INVALID_CLUSTER_MIRROR_STATES);
                 }
                 continue;
             }
             if (!validDesiredStateValues.contains(topicImage.desiredMirrorState())) {
                 log.error("Topic {} desired mirror state is {}, expected one of {}.",
                         topic, MirrorPartitionState.fromValue(topicImage.desiredMirrorState()), validStates);
-                return Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATES);
+                errorsByTopic.put(topic, Errors.INVALID_CLUSTER_MIRROR_STATES);
+                continue;
             }
             for (int i = 0; i < topicImage.partitions().size(); i++) {
                 if (isLocalCoordinator(mirrorName, topic, i)) {
@@ -1477,7 +1561,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                             ? cachedEntry.state() : MirrorPartitionState.UNKNOWN;
                     if (!validStates.contains(state)) {
                         log.error("Partition {}-{} is in {} state, expected one of {}.", topic, i, state, validStates);
-                        return Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATES);
+                        errorsByTopic.put(topic, Errors.INVALID_CLUSTER_MIRROR_STATES);
+                        break;
                     }
                 } else if (metadataImage.topics().getTopic(MIRROR_STATE_TOPIC_NAME) != null) {
                     remotePartitions.computeIfAbsent(topic, k -> new HashSet<>()).add(i);
@@ -1487,33 +1572,36 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 }
             }
         }
-        return Optional.empty();
+        return errorsByTopic;
     }
 
-    private Optional<Errors> validateRemotePartitions(
+    private Map<String, Errors> validateRemotePartitions(
             ReadMirrorStatesResponse response,
             Set<MirrorPartitionState> validStates) {
         if (response.data().errorCode() != Errors.NONE.code()) {
             log.error("Error reading states from remote coordinator. Error code: {} and message: {}",
                     response.data().errorCode(), response.data().errorMessage());
-            return Optional.of(Errors.forCode(response.data().errorCode()));
+            return Map.of(ALL_TOPICS_REMOTE_READ_FAILURE, Errors.forCode(response.data().errorCode()));
         }
+        Map<String, Errors> errorsByTopic = new HashMap<>();
         for (var topicResult : response.data().topics()) {
             for (var partitionResult : topicResult.partitions()) {
                 if (partitionResult.errorCode() != Errors.NONE.code()) {
                     log.error("Error reading state from remote coordinator for partition {}-{}. Error code: {}",
                             topicResult.name(), partitionResult.partitionIndex(), partitionResult.errorCode());
-                    return Optional.of(Errors.forCode(partitionResult.errorCode()));
+                    errorsByTopic.put(topicResult.name(), Errors.forCode(partitionResult.errorCode()));
+                    break;
                 }
                 MirrorPartitionState remoteState = MirrorPartitionState.fromValue(partitionResult.state());
                 if (!validStates.contains(remoteState)) {
                     log.error("Remote partition {}-{} is in {} state, expected one of {}.",
                             topicResult.name(), partitionResult.partitionIndex(), remoteState, validStates);
-                    return Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATES);
+                    errorsByTopic.put(topicResult.name(), Errors.INVALID_CLUSTER_MIRROR_STATES);
+                    break;
                 }
             }
         }
-        return Optional.empty();
+        return errorsByTopic;
     }
 
     // -- MirrorCache proxy --

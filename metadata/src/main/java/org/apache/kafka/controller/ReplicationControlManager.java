@@ -25,6 +25,7 @@ import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.BrokerIdNotRegisteredException;
+import org.apache.kafka.common.errors.InvalidMirrorStateException;
 import org.apache.kafka.common.errors.InvalidPartitionsException;
 import org.apache.kafka.common.errors.InvalidReplicaAssignmentException;
 import org.apache.kafka.common.errors.InvalidReplicationFactorException;
@@ -2044,6 +2045,10 @@ public class ReplicationControlManager {
         TopicControlInfo topicInfo = topics.get(topicId);
         if (topicInfo == null) {
             throw new UnknownTopicOrPartitionException();
+        }
+        if (topicInfo.mirrorName() != null && topicInfo.lastStateOffset() > topic.stateOffset()) {
+            throw new InvalidMirrorStateException("Mirror state for topic " + topicInfo.name() + " changed after broker validated partition states: " +
+                    "(brokerState=" + topic.stateOffset() + " quorumState=" + topicInfo.lastStateOffset() + ")");
         }
         if (topic.count() == topicInfo.parts.size()) {
             throw new InvalidPartitionsException("Topic already has " +

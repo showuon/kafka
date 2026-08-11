@@ -24,7 +24,7 @@
   //
   // Version 3 is identical to version 2 but may return a THROTTLING_QUOTA_EXCEEDED error
   // in the response if the partitions creation is throttled (KIP-599).
-  "validVersions": "0-3",
+  "validVersions": "0-4",
   "flexibleVersions": "2+",
   "fields": [
     { "name": "Topics", "type": "[]CreatePartitionsTopic", "versions": "0+",
@@ -37,7 +37,9 @@
         "about": "The new partition assignments.", "fields": [
         { "name": "BrokerIds", "type": "[]int32", "versions": "0+", "entityType": "brokerId",
           "about": "The assigned broker IDs." }
-      ]}
+      ]},
+      { "name": "StateOffset", "type": "int64", "versions": "4+", "default": "-1",
+      "about": "Cluster metadata log offset used for validating partition state preconditions."}
     ]},
     { "name": "TimeoutMs", "type": "int32", "versions": "0+",
       "about": "The time in ms to wait for the partitions to be created." },

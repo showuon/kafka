@@ -23,7 +23,7 @@
   //
   // Version 3 is identical to version 2 but may return a THROTTLING_QUOTA_EXCEEDED error
   // in the response if the partitions creation is throttled (KIP-599).
-  "validVersions": "0-3",
+  "validVersions": "0-4",
   "flexibleVersions": "2+",
   "fields": [
     { "name": "ThrottleTimeMs", "type": "int32", "versions": "0+",
