@@ -98,7 +98,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -1379,34 +1379,44 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         return getConfiguredTopics(mirrorName, false, false).size();
     }
 
-    public void validateTopicOperation(Set<String> topicNames, BiConsumer<Map<String, Long>, Map<String, Errors>> callback) throws Exception {
-        Map<String, Set<String>> topicsByMirrors = getConfiguredTopics(
-                topicNames,
-                true,
-                true
-        );
+    public void validateTopicOperation(Set<String> topicNames,
+                                       BiConsumer<Map<String, Long>, Map<String, Errors>> callback) {
+        Map<String, Set<String>> topicsByMirrors = getConfiguredTopics(topicNames, true, true);
         if (topicsByMirrors.isEmpty()) {
             callback.accept(topicNames.stream().collect(Collectors.toMap(Function.identity(), unused -> -1L)), Map.of());
             return;
         }
-        Map<String, Long> offsetsByTopic = new HashMap<>();
-        Map<String, Errors> errorsByTopic = new HashMap<>();
-        CountDownLatch countDownLatch = new CountDownLatch(topicsByMirrors.size());
-        topicsByMirrors.forEach((mirror, topics) -> validateMirrorStates(
-                mirror,
-                topics,
-                Set.of(MirrorPartitionState.STOPPED),
-                false,
-                (offset, errors) -> {
-                    if (errors != null) {
-                        errorsByTopic.putAll(errors);
+
+        List<CompletableFuture<Map.Entry<Map<String, Long>, Map<String, Errors>>>> futures = new ArrayList<>();
+        topicsByMirrors.forEach((mirror, topics) -> {
+            CompletableFuture<Map.Entry<Map<String, Long>, Map<String, Errors>>> future = new CompletableFuture<>();
+            validateMirrorStates(mirror, topics, Set.of(MirrorPartitionState.STOPPED), false,
+                    (offset, errors) -> {
+                        Map<String, Long> offsets = new HashMap<>();
+                        topics.forEach(topic -> offsets.put(topic, offset));
+                        future.complete(Map.entry(offsets, errors == null ? Map.of() : errors));
+                    });
+            futures.add(future);
+        });
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture<?>[0]))
+                .orTimeout(10, TimeUnit.SECONDS)
+                .whenComplete((v, t) -> {
+                    Map<String, Long> offsetsByTopic = new HashMap<>();
+                    Map<String, Errors> errorsByTopic = new HashMap<>();
+                    if (t != null) {
+                        // Time out
+                        topicsByMirrors.forEach((mirror, topics) ->
+                                topics.forEach(topic -> errorsByTopic.put(topic, Errors.forException(t.getCause()))));
+                    } else {
+                        for (var f : futures) {
+                            var entry = f.join();
+                            offsetsByTopic.putAll(entry.getKey());
+                            errorsByTopic.putAll(entry.getValue());
+                        }
                     }
-                    topics.forEach(topic -> offsetsByTopic.put(topic, offset));
-                    countDownLatch.countDown();
-                }
-        ));
-        countDownLatch.await();
-        callback.accept(offsetsByTopic, errorsByTopic);
+                    callback.accept(offsetsByTopic, errorsByTopic);
+                });
     }
 
     public void validateDeleteMirrorStates(DeleteClusterMirrorRequestData data, Consumer<Optional<Errors>> callback) {
