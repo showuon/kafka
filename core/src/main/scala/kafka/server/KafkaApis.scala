@@ -4620,7 +4620,11 @@ class KafkaApis(val requestChannel: RequestChannel,
     val createPartitionsRequest = request.body[CreatePartitionsRequest]
     val topics = createPartitionsRequest.data().topics().asScala.map(topic => topic.name()).toSet.asJava
     mirrorMetadataManager.validateTopicOperation(topics, (offsets, errors) => {
-      if (offsets.isEmpty) {
+      val filteredData = createPartitionsRequest.data().duplicate()
+      filteredData.topics()
+        .removeIf(topic => errors.containsKey(topic.name()))
+      filteredData.topics().forEach(topic => topic.setStateOffset(Option(offsets.get(topic.name())).map(_.longValue()).getOrElse(-1L)))
+      if (filteredData.topics().isEmpty) {
         val results = topics.asScala.map(topic =>
           new CreatePartitionsTopicResult()
             .setName(topic)
@@ -4630,10 +4634,6 @@ class KafkaApis(val requestChannel: RequestChannel,
         val response = new CreatePartitionsResponse(new CreatePartitionsResponseData().setResults(results))
         requestHelper.sendMaybeThrottle(request, response)
       } else {
-        val filteredData = createPartitionsRequest.data().duplicate()
-        filteredData.topics()
-          .removeIf(topic => errors.containsKey(topic.name()))
-        filteredData.topics().forEach(topic => topic.setStateOffset(offsets.get(topic.name())))
         forwardingManager.forwardRequest(request, new CreatePartitionsRequest.Builder(filteredData).build(request.header.apiVersion()), {
           case Some(response) =>
             val createPartitionsResponse = response.asInstanceOf[CreatePartitionsResponse]
