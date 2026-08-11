@@ -1074,9 +1074,9 @@ class Partition(val topicPartition: TopicPartition,
         // it reflects the local leader epoch, not the leader epoch in the log (leaderEpochCache).
         // So we use the leaderEpochCache to check if the follower's end offset equals to the latest epoch in the leader.
         // This is the same semantic as the check: `leaderEpochStartOffsetOpt.exists(followerEndOffset >= _)`
-        val latestEpoch = log.get.latestEpoch().get()
+        val latestEpoch = log.get.latestEpoch().orElse(-1)
         val followerEpoch = log.get.leaderEpochCache().epochForOffset(followerEndOffset)
-        followerEpoch.getAsInt == latestEpoch
+        followerEpoch.orElse(-1) == latestEpoch
       } else {
         leaderEpochStartOffsetOpt.exists(followerEndOffset >= _)
       }
