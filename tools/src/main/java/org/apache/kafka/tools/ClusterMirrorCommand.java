@@ -167,8 +167,7 @@ public abstract class ClusterMirrorCommand {
             String mirrorName = opts.mirror().get();
             List<String> patterns = opts.topics();
 
-            // Resolve topics on destination that match the patterns
-            Set<String> topics = resolveTopicsOnDestination(patterns);
+            Set<String> topics = resolveTopicsForMirror(mirrorName, patterns);
 
             adminClient.stopMirrorTopics(mirrorName, topics,
                     new StopMirrorTopicsOptions().patterns(patterns))
@@ -197,7 +196,7 @@ public abstract class ClusterMirrorCommand {
 
         private void pauseMirrorTopics(MirrorCommandOptions opts) throws Exception {
             String mirrorName = opts.mirror().get();
-            Set<String> topics = resolveTopicsOnDestination(opts.topics());
+            Set<String> topics = resolveTopicsForMirror(mirrorName, opts.topics());
 
             PauseMirrorTopicsResult result = adminClient.pauseMirrorTopics(mirrorName, topics, new PauseMirrorTopicsOptions());
             result.all().get();
@@ -206,18 +205,22 @@ public abstract class ClusterMirrorCommand {
 
         private void resumeMirrorTopics(MirrorCommandOptions opts) throws Exception {
             String mirrorName = opts.mirror().get();
-            Set<String> topics = resolveTopicsOnDestination(opts.topics());
+            Set<String> topics = resolveTopicsForMirror(mirrorName, opts.topics());
 
             ResumeMirrorTopicsResult result = adminClient.resumeMirrorTopics(mirrorName, topics, new ResumeMirrorTopicsOptions());
             result.all().get();
             System.out.printf("Resumed mirroring for %d topic(s) in mirror %s: %s%n", topics.size(), mirrorName, topics);
         }
 
-        private Set<String> resolveTopicsOnDestination(List<String> patterns) throws Exception {
-            Set<String> allTopics = adminClient.listTopics().names().get();
+        private Set<String> resolveTopicsForMirror(String mirrorName, List<String> patterns) throws Exception {
+            Map<String, ClusterMirrorDescription> descriptions = adminClient.describeClusterMirrors(
+                    List.of(mirrorName), new DescribeClusterMirrorsOptions()).allDescriptions().get();
+            ClusterMirrorDescription description = descriptions.get(mirrorName);
+            if (description == null) return Set.of();
+            Set<String> mirrorTopics = description.topics().keySet();
             Pattern compiled = MirrorUtils.compilePatternList(patterns);
             if (compiled == null) return Set.of();
-            return allTopics.stream()
+            return mirrorTopics.stream()
                     .filter(t -> compiled.matcher(t).matches())
                     .collect(Collectors.toSet());
         }
@@ -456,12 +459,13 @@ public abstract class ClusterMirrorCommand {
                 .describedAs("mirror")
                 .ofType(String.class);
 
-            topicsOpt = parser.accepts("topics", "Comma-separated list of topic names or regex patterns (e.g., 'my-topic,orders-.*,payments').")
+            topicsOpt = parser.accepts("topics", "Comma-separated list of topic names or regex patterns (e.g., 'payments, orders-.*'). " +
+                            "Defaults to '.*' (all topics).")
                 .withRequiredArg()
                 .describedAs("topics")
                 .ofType(String.class);
 
-            excludeOpt = parser.accepts("exclude", "Comma-separated list of topic names or regex patterns to exclude from mirroring. " +
+            excludeOpt = parser.accepts("exclude", "Comma-separated list of topic names or regex patterns to exclude (e.g., 'users-.*'). " +
                             "Only valid with --start.")
                 .withRequiredArg()
                 .describedAs("exclude patterns")
@@ -547,7 +551,7 @@ public abstract class ClusterMirrorCommand {
         }
 
         private List<String> topics() {
-            if (!has(topicsOpt)) return List.of();
+            if (!has(topicsOpt)) return List.of(".*");
             return Arrays.stream(options.valueOf(topicsOpt).split(","))
                     .map(String::trim)
                     .filter(s -> !s.isEmpty())
@@ -587,17 +591,6 @@ public abstract class ClusterMirrorCommand {
             if (has(createOpt) && !has(mirrorConfigOpt))
                 throw new IllegalArgumentException("--mirror-config must be specified when creating a mirror");
 
-            if (has(startOpt) && !has(topicsOpt))
-                throw new IllegalArgumentException("--topics must be specified when starting mirror topic(s)");
-
-            if (has(stopOpt) && !has(topicsOpt))
-                throw new IllegalArgumentException("--topics must be specified when stopping mirror topic(s)");
-
-            if (has(pauseOpt) && !has(topicsOpt))
-                throw new IllegalArgumentException("--topics must be specified when pausing mirror topic(s)");
-
-            if (has(resumeOpt) && !has(topicsOpt))
-                throw new IllegalArgumentException("--topics must be specified when resuming mirror topic(s)");
 
             if (has(excludeOpt) && !has(startOpt))
                 throw new IllegalArgumentException("--exclude is only valid with --start");
