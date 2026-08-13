@@ -38,9 +38,10 @@ public class CoreBridgeImpl implements CoreBridge {
     @Override
     public void initialize(
         CoordinatorWriter coordinatorWriter,
+        CoordinatorReader coordinatorReader,
         Function<MirrorPartitionKey, Integer> coordPartFinder
     ) {
-        metadataManager.initialize(coordinatorWriter, coordPartFinder);
+        metadataManager.initialize(coordinatorWriter, coordinatorReader, coordPartFinder);
     }
 
     @Override

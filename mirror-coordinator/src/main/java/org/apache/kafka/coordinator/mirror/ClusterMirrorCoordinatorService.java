@@ -218,6 +218,13 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                                 mirrorName, partitions);
                     }
                 },
+                new CoreBridge.CoordinatorReader() {
+                    @Override
+                    public CompletableFuture<ReadMirrorStatesResponseData> readPartitionState(
+                            String mirrorName, TopicPartition tp) {
+                        return ClusterMirrorCoordinatorService.this.readPartitionState(mirrorName, tp);
+                    }
+                },
                 this::partitionFor);
             log.info("Startup complete");
         } finally {
@@ -403,6 +410,21 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                 }
                 callback.accept(new WriteMirrorStatesResponse(data));
             });
+    }
+
+    /**
+     * Reads a single partition's current state from the local coordinator shard. Called from
+     * {@code MirrorMetadataManager#readStateFromLocalCoordinator} via {@code CoreBridge.CoordinatorReader}.
+     */
+    private CompletableFuture<ReadMirrorStatesResponseData> readPartitionState(
+            String mirrorName, TopicPartition tp
+    ) {
+        throwIfNotActive();
+        TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME,
+                partitionFor(MirrorPartitionKey.of(mirrorName, bridge.getTopicId(tp.topic()), tp.partition())));
+        Map<String, Set<Integer>> partitions = Map.of(tp.topic(), Set.of(tp.partition()));
+        return runtime.scheduleReadOperation("read-partition-state", mirrorStateTp,
+                (shard, offset) -> shard.readState(mirrorName, partitions));
     }
 
     /** Persists a partition state record. Called from {@code MirrorMetadataManager#transitionTo}. */
