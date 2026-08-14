@@ -30,6 +30,7 @@ import org.apache.kafka.common.errors.InvalidReplicaAssignmentException;
 import org.apache.kafka.common.errors.InvalidReplicationFactorException;
 import org.apache.kafka.common.errors.InvalidRequestException;
 import org.apache.kafka.common.errors.InvalidTopicException;
+import org.apache.kafka.common.errors.MirrorTopicNotStoppedException;
 import org.apache.kafka.common.errors.NoReassignmentInProgressException;
 import org.apache.kafka.common.errors.PolicyViolationException;
 import org.apache.kafka.common.errors.ThrottlingQuotaExceededException;
@@ -2044,6 +2045,10 @@ public class ReplicationControlManager {
         TopicControlInfo topicInfo = topics.get(topicId);
         if (topicInfo == null) {
             throw new UnknownTopicOrPartitionException();
+        }
+        if (topicInfo.mirrorName() != null && !topicInfo.mirrorName().isBlank() &&
+                topicInfo.mirrorState() != MirrorPartitionState.STOPPED.value()) {
+            throw new MirrorTopicNotStoppedException("The topic " + " has a mirror " + topicInfo.mirrorName() + " which is not in stopped state");
         }
         if (topic.count() == topicInfo.parts.size()) {
             throw new InvalidPartitionsException("Topic already has " +
