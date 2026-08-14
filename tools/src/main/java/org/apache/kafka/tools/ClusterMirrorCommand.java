@@ -167,8 +167,7 @@ public abstract class ClusterMirrorCommand {
             String mirrorName = opts.mirror().get();
             List<String> patterns = opts.topics();
 
-            // Resolve topics on destination that match the patterns
-            Set<String> topics = resolveTopicsOnDestination(patterns);
+            Set<String> topics = resolveTopicsForMirror(mirrorName, patterns);
 
             adminClient.stopMirrorTopics(mirrorName, topics,
                     new StopMirrorTopicsOptions().patterns(patterns))
@@ -197,7 +196,7 @@ public abstract class ClusterMirrorCommand {
 
         private void pauseMirrorTopics(MirrorCommandOptions opts) throws Exception {
             String mirrorName = opts.mirror().get();
-            Set<String> topics = resolveTopicsOnDestination(opts.topics());
+            Set<String> topics = resolveTopicsForMirror(mirrorName, opts.topics());
 
             PauseMirrorTopicsResult result = adminClient.pauseMirrorTopics(mirrorName, topics, new PauseMirrorTopicsOptions());
             result.all().get();
@@ -206,18 +205,22 @@ public abstract class ClusterMirrorCommand {
 
         private void resumeMirrorTopics(MirrorCommandOptions opts) throws Exception {
             String mirrorName = opts.mirror().get();
-            Set<String> topics = resolveTopicsOnDestination(opts.topics());
+            Set<String> topics = resolveTopicsForMirror(mirrorName, opts.topics());
 
             ResumeMirrorTopicsResult result = adminClient.resumeMirrorTopics(mirrorName, topics, new ResumeMirrorTopicsOptions());
             result.all().get();
             System.out.printf("Resumed mirroring for %d topic(s) in mirror %s: %s%n", topics.size(), mirrorName, topics);
         }
 
-        private Set<String> resolveTopicsOnDestination(List<String> patterns) throws Exception {
-            Set<String> allTopics = adminClient.listTopics().names().get();
+        private Set<String> resolveTopicsForMirror(String mirrorName, List<String> patterns) throws Exception {
+            Map<String, ClusterMirrorDescription> descriptions = adminClient.describeClusterMirrors(
+                    List.of(mirrorName), new DescribeClusterMirrorsOptions()).allDescriptions().get();
+            ClusterMirrorDescription description = descriptions.get(mirrorName);
+            if (description == null) return Set.of();
+            Set<String> mirrorTopics = description.topics().keySet();
             Pattern compiled = MirrorUtils.compilePatternList(patterns);
             if (compiled == null) return Set.of();
-            return allTopics.stream()
+            return mirrorTopics.stream()
                     .filter(t -> compiled.matcher(t).matches())
                     .collect(Collectors.toSet());
         }
