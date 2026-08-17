@@ -16,7 +16,6 @@
  */
 package kafka.server.mirror;
 
-import com.yammer.metrics.core.Meter;
 import kafka.server.KafkaConfig;
 import kafka.server.mirror.MirrorStateCache.SourceLeader;
 
@@ -77,11 +76,13 @@ import org.apache.kafka.metadata.authorizer.StandardAcl;
 import org.apache.kafka.server.common.ControllerRequestCompletionHandler;
 import org.apache.kafka.server.common.MirrorPartitionState;
 import org.apache.kafka.server.common.NodeToControllerChannelManager;
+import org.apache.kafka.server.metrics.KafkaMetricsGroup;
 import org.apache.kafka.server.util.KafkaScheduler;
 import org.apache.kafka.server.util.MirrorUtils;
 import org.apache.kafka.storage.internals.log.UnifiedLog;
 
 import com.google.re2j.Pattern;
+import com.yammer.metrics.core.Meter;
 
 import org.slf4j.Logger;
 
@@ -133,6 +134,7 @@ class MirrorSourceSyncer {
     private final Meter consumerGroupOffsetSyncError;
     private final Meter shareGroupOffsetSyncError;
     private final Meter aclSyncError;
+    private final KafkaMetricsGroup metricsGroup;
 
     MirrorSourceSyncer(
         KafkaConfig brokerConfig,
@@ -145,7 +147,8 @@ class MirrorSourceSyncer {
         Meter topicConfigSyncError,
         Meter consumerGroupOffsetSyncError,
         Meter shareGroupOffsetSyncError,
-        Meter aclSyncError
+        Meter aclSyncError,
+        KafkaMetricsGroup metricsGroup
     ) {
         this.brokerConfig = brokerConfig;
         this.nodeId = brokerConfig.nodeId();
@@ -163,6 +166,7 @@ class MirrorSourceSyncer {
         this.consumerGroupOffsetSyncError = consumerGroupOffsetSyncError;
         this.shareGroupOffsetSyncError = shareGroupOffsetSyncError;
         this.aclSyncError = aclSyncError;
+        this.metricsGroup = metricsGroup;
     }
 
     /**
@@ -197,6 +201,11 @@ class MirrorSourceSyncer {
         log.info("Scheduled metadata refresh with interval {} ms", intervalMs);
     }
 
+    private void updateMirrorTopicMetrics(String mirrorName) {
+        metricsGroup.newGauge("MirrorTopicCount",
+                () -> metadataManager.getActiveTopicCount(mirrorName), Map.of("mirrorName", mirrorName));
+    }
+
     /**
      * Periodic source sync callback. Every broker syncs topic state from the source
      * (needed for source leader caches, deletion detection, and missed partition recovery).
@@ -215,6 +224,7 @@ class MirrorSourceSyncer {
         for (String mirrorName : mirrors) {
             try {
                 validateSourceClusterId(mirrorName);
+                updateMirrorTopicMetrics(mirrorName);
                 var topicState = syncSourceTopicState(mirrorName);
                 syncSourceConfigsAndOffsets(mirrorName, topicState);
             } catch (Exception e) {
@@ -235,6 +245,7 @@ class MirrorSourceSyncer {
         for (String mirrorName : staleMirrors) {
             log.info("Found stale partition states for deleted mirror '{}'. Writing tombstones.", mirrorName);
             metadataManager.tombstoneMirror(mirrorName);
+            metricsGroup.removeMetric("MirrorTopicCount", Map.of("mirrorName", mirrorName));
         }
     }
 

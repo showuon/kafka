@@ -16,7 +16,6 @@
  */
 package kafka.server.mirror;
 
-import com.yammer.metrics.core.Meter;
 import kafka.server.KafkaConfig;
 import kafka.server.NetworkUtils;
 import kafka.server.ReplicaManager;
@@ -81,6 +80,8 @@ import org.apache.kafka.server.util.KafkaScheduler;
 import org.apache.kafka.server.util.RequestAndCompletionHandler;
 import org.apache.kafka.storage.internals.log.AppendOrigin;
 import org.apache.kafka.storage.internals.log.UnifiedLog;
+
+import com.yammer.metrics.core.Meter;
 
 import org.slf4j.Logger;
 
@@ -148,6 +149,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private Optional<CoreBridge.CoordinatorWriter> coordinatorWriter = Optional.empty();
     private Optional<Function<MirrorPartitionKey, Integer>> coordPartFinder = Optional.empty();
 
+    private final KafkaMetricsGroup metricsGroup;
+
     private final Meter metadataRefreshError;
     private final Meter topicConfigSyncError;
     private final Meter consumerGroupOffsetSyncError;
@@ -179,7 +182,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         this.metrics = metrics;
         this.time = time;
 
-        KafkaMetricsGroup metricsGroup = new KafkaMetricsGroup(this.getClass());
+        this.metricsGroup = new KafkaMetricsGroup(this.getClass());
         this.topicConfigSyncError = metricsGroup.newMeter("TopicConfigSyncError", "errors", TimeUnit.SECONDS);
         this.consumerGroupOffsetSyncError = metricsGroup.newMeter("ConsumerGroupOffsetSyncError", "errors", TimeUnit.SECONDS);
         this.shareGroupOffsetSyncError = metricsGroup.newMeter("ShareGroupOffsetSyncError", "errors", TimeUnit.SECONDS);
@@ -227,7 +230,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
         this.sourceSyncer = new MirrorSourceSyncer(brokerConfig, this,
                 channelManager, metadataCache, mirrorCache, scheduler, metadataRefreshError,
-                topicConfigSyncError, consumerGroupOffsetSyncError, shareGroupOffsetSyncError, aclSyncError);
+                topicConfigSyncError, consumerGroupOffsetSyncError, shareGroupOffsetSyncError, aclSyncError, metricsGroup);
         sourceSyncer.scheduleMetadataRefresh(brokerConfig.mirrorConfig().metadataRefreshIntervalMs());
 
         // MMM call the writer whenever it needs to persist state to the __mirror_state shard
@@ -384,6 +387,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                         if (mirrorDeleted) {
                             log.info("Mirror '{}' has been deleted. Writing tombstone records.", mirrorName);
                             tombstoneMirror(mirrorName);
+                            metricsGroup.removeMetric("MirrorTopicCount", Map.of("mirrorName", mirrorName));
                         }
 
                         boolean connectionConfigChanged = e.getValue().changes().keySet().stream()
