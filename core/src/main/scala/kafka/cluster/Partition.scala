@@ -1072,7 +1072,7 @@ class Partition(val topicPartition: TopicPartition,
       val followerEndOffsetCaughtUp = if (getMirrorName().isPresent && mirrorState != MirrorPartitionState.STOPPED) {
         // If the partition is a mirrored leader and not stopped (readonly), we can not compare with the leaderEpochStartOffsetOpt because
         // it reflects the local leader epoch, not the leader epoch in the log (leaderEpochCache).
-        // So we use the leaderEpochCache to check if the follower's end offset equals to the latest epoch in the leader.
+        // So we use the leaderEpochCache to check if the epoch corresponding to follower's end offset equals to the latest epoch in the leader.
         // This is the same semantic as the check: `leaderEpochStartOffsetOpt.exists(followerEndOffset >= _)`
         val latestEpoch = log.get.latestEpoch().orElse(-1)
         val followerEpoch = log.get.leaderEpochCache().epochForOffset(followerEndOffset)
@@ -1235,19 +1235,18 @@ class Partition(val topicPartition: TopicPartition,
    * Attempts to complete log truncation for a mirrored partition by
    * verifying that all replicas have converged with the leader.
    *
-   * Truncation uses a two phase protocol:
-   * <ol>
-   *   <li>Wait until every replica in the ISR has caught up to the leader's
-   *       log end offset, then invoke the {@code onCaughtupCallback} so the
-   *       leader can perform the actual log truncation.</li>
-   *   <li>After truncation, wait until every replica has truncated to the
-   *       expected offset, then invoke the {@code onCompleteCallback} to
-   *       signal that the partition is ready to transition to its next
-   *       state.</li>
-   * </ol>
+   * Because the log truncation always truncates as a batch( no partially truncated
+   * batch is possible), there is no need to wait for all replicas caught up before truncating.
    *
-   * When the partition has no follower replicas (single node cluster), both
-   * callbacks are invoked immediately and the method returns {@code true},
+   * This method's only job is to wait until every relevant replica has
+   * itself converged to less or equal to the leader's log end offset,
+   * then invoke the {@code onCompleteCallback} to signal that the partition
+   * is ready to transition to its next state. "Relevant" replicas are the
+   * ISR by default, or all assigned replicas when {@code waitForAllReplicas}
+   * is set (used when unclean leader election is enabled).
+   *
+   * When the partition has no follower replicas (single node cluster), the
+   * callback is invoked immediately and the method returns {@code true},
    * because there are no replica fetch requests that would otherwise drive
    * convergence checks forward.
    *

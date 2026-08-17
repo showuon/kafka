@@ -616,7 +616,7 @@ public class ClusterMirroringIntegrationTest {
         // simulate the source cluster has unclean leader election and the log truncation happened
         srcCluster.brokers().get(srcLeader).replicaManager().getLog(new TopicPartition(topic, 0)).get().truncateTo(20);
 
-        // verify it's still in MORRIRNG state because the "mirror.support.unclean.leader.election" is disabled
+        // verify it's still in MIRRORING state because the "mirror.support.unclean.leader.election" is disabled
         waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
 
         // Enabling "mirror.support.unclean.leader.election"
