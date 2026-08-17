@@ -16,6 +16,7 @@
  */
 package kafka.server.mirror;
 
+import com.yammer.metrics.core.Meter;
 import kafka.server.KafkaConfig;
 import kafka.server.mirror.MirrorStateCache.SourceLeader;
 
@@ -99,7 +100,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 import scala.Option;
@@ -128,11 +128,11 @@ class MirrorSourceSyncer {
 
     private volatile ScheduledFuture<?> metadataRefreshFuture;
 
-    private final AtomicLong metadataRefreshError;
-    private final AtomicLong topicConfigSyncError;
-    private final AtomicLong consumerGroupOffsetSyncError;
-    private final AtomicLong shareGroupOffsetSyncError;
-    private final AtomicLong aclSyncError;
+    private final Meter metadataRefreshError;
+    private final Meter topicConfigSyncError;
+    private final Meter consumerGroupOffsetSyncError;
+    private final Meter shareGroupOffsetSyncError;
+    private final Meter aclSyncError;
 
     MirrorSourceSyncer(
         KafkaConfig brokerConfig,
@@ -141,11 +141,11 @@ class MirrorSourceSyncer {
         MetadataCache metadataCache,
         MirrorStateCache mirrorCache,
         KafkaScheduler scheduler,
-        AtomicLong metadataRefreshError,
-        AtomicLong topicConfigSyncError,
-        AtomicLong consumerGroupOffsetSyncError,
-        AtomicLong shareGroupOffsetSyncError,
-        AtomicLong aclSyncError
+        Meter metadataRefreshError,
+        Meter topicConfigSyncError,
+        Meter consumerGroupOffsetSyncError,
+        Meter shareGroupOffsetSyncError,
+        Meter aclSyncError
     ) {
         this.brokerConfig = brokerConfig;
         this.nodeId = brokerConfig.nodeId();
@@ -223,7 +223,7 @@ class MirrorSourceSyncer {
         }
 
         // TODO: This is incremented on every metadata refresh for testing purpose, as we don't have error handling at this stage
-        metadataRefreshError.incrementAndGet();
+        metadataRefreshError.mark();
     }
 
     private void retryPendingTombstoneWrites() {
@@ -617,7 +617,7 @@ class MirrorSourceSyncer {
         Set<String> topics = metadataManager.getConfiguredTopics(mirrorName, false);
         log.debug("Describing topic configs for topics: {}", topics);
         // TODO: This is incremented on every metadata refresh for testing purpose, as we don't have error handling at this stage
-        topicConfigSyncError.incrementAndGet();
+        topicConfigSyncError.mark();
 
         Collection<ConfigResource> resources = topics.stream()
                 .map(topic -> new ConfigResource(ConfigResource.Type.TOPIC, topic))
@@ -721,7 +721,7 @@ class MirrorSourceSyncer {
     private void syncConsumerGroupOffsets(Admin srcAdmin, String mirrorName, Set<String> mirrorTopics,
                                           Pattern groupsIncludePattern, Pattern groupsExcludePattern) {
         // TODO: This is incremented on every metadata refresh for testing purpose, as we don't have error handling at this stage
-        consumerGroupOffsetSyncError.incrementAndGet();
+        consumerGroupOffsetSyncError.mark();
         try {
             List<String> sourceGroupIds = listSourceGroupIds(srcAdmin, ListGroupsOptions.forConsumerGroups(),
                     groupsIncludePattern, groupsExcludePattern);
@@ -802,7 +802,7 @@ class MirrorSourceSyncer {
     private void syncShareGroupOffsets(Admin srcAdmin, String mirrorName, Set<String> mirrorTopics,
                                        Pattern groupsIncludePattern, Pattern groupsExcludePattern) {
         // TODO: This is incremented on every metadata refresh for testing purpose, as we don't have error handling at this stage
-        shareGroupOffsetSyncError.incrementAndGet();
+        shareGroupOffsetSyncError.mark();
         try {
             List<String> sourceGroupIds;
             try {
@@ -915,7 +915,7 @@ class MirrorSourceSyncer {
         Admin srcAdmin = metadataManager.getOrCreateSourceAdmin(mirrorName);
 
         // TODO: This is incremented on every metadata refresh for testing purpose, as we don't have error handling at this stage
-        aclSyncError.incrementAndGet();
+        aclSyncError.mark();
 
         try {
             Collection<AclBinding> sourceAcls = srcAdmin.describeAcls(AclBindingFilter.ANY)

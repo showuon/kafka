@@ -16,6 +16,7 @@
  */
 package kafka.server.mirror;
 
+import com.yammer.metrics.core.Meter;
 import kafka.server.KafkaConfig;
 import kafka.server.NetworkUtils;
 import kafka.server.ReplicaManager;
@@ -98,7 +99,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongConsumer;
@@ -147,11 +148,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private Optional<CoreBridge.CoordinatorWriter> coordinatorWriter = Optional.empty();
     private Optional<Function<MirrorPartitionKey, Integer>> coordPartFinder = Optional.empty();
 
-    private final AtomicLong metadataRefreshError;
-    private final AtomicLong topicConfigSyncError;
-    private final AtomicLong consumerGroupOffsetSyncError;
-    private final AtomicLong shareGroupOffsetSyncError;
-    private final AtomicLong aclSyncError;
+    private final Meter metadataRefreshError;
+    private final Meter topicConfigSyncError;
+    private final Meter consumerGroupOffsetSyncError;
+    private final Meter shareGroupOffsetSyncError;
+    private final Meter aclSyncError;
 
     public MirrorMetadataManager(
         String clusterId,
@@ -179,17 +180,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         this.time = time;
 
         KafkaMetricsGroup metricsGroup = new KafkaMetricsGroup(this.getClass());
-        this.metadataRefreshError = new AtomicLong();
-        this.topicConfigSyncError = new AtomicLong();
-        this.consumerGroupOffsetSyncError = new AtomicLong();
-        this.shareGroupOffsetSyncError = new AtomicLong();
-        this.aclSyncError = new AtomicLong();
-
-        metricsGroup.newGauge("TopicConfigSyncError", topicConfigSyncError::get);
-        metricsGroup.newGauge("ConsumerGroupOffsetSyncError", consumerGroupOffsetSyncError::get);
-        metricsGroup.newGauge("ShareGroupOffsetSyncError", shareGroupOffsetSyncError::get);
-        metricsGroup.newGauge("AclSyncError", aclSyncError::get);
-        metricsGroup.newGauge("TopicMetadataRefreshError", metadataRefreshError::get);
+        this.topicConfigSyncError = metricsGroup.newMeter("TopicConfigSyncError", "errors", TimeUnit.SECONDS);
+        this.consumerGroupOffsetSyncError = metricsGroup.newMeter("ConsumerGroupOffsetSyncError", "errors", TimeUnit.SECONDS);
+        this.shareGroupOffsetSyncError = metricsGroup.newMeter("ShareGroupOffsetSyncError", "errors", TimeUnit.SECONDS);
+        this.aclSyncError = metricsGroup.newMeter("AclSyncError", "errors", TimeUnit.SECONDS);
+        this.metadataRefreshError = metricsGroup.newMeter("TopicMetadataRefreshError", "errors", TimeUnit.SECONDS);
         metricsGroup.newGauge("LogTruncationPartitionState", () -> mirrorCache.partitionStateCount(MirrorPartitionState.LOG_TRUNCATION));
         metricsGroup.newGauge("EpochFencingPartitionState", () -> mirrorCache.partitionStateCount(MirrorPartitionState.EPOCH_FENCING));
         metricsGroup.newGauge("MirroringPartitionState", () -> mirrorCache.partitionStateCount(MirrorPartitionState.MIRRORING));
