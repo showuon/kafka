@@ -27,12 +27,14 @@ import org.apache.kafka.clients.admin.CreateClusterMirrorOptions;
 import org.apache.kafka.clients.admin.CreatePartitionsResult;
 import org.apache.kafka.clients.admin.CreateTopicsResult;
 import org.apache.kafka.clients.admin.DeleteClusterMirrorOptions;
+import org.apache.kafka.clients.admin.DeleteRecordsResult;
 import org.apache.kafka.clients.admin.DeleteTopicsResult;
 import org.apache.kafka.clients.admin.DescribeClusterMirrorsOptions;
 import org.apache.kafka.clients.admin.DescribeClusterMirrorsResult;
 import org.apache.kafka.clients.admin.ListConfigResourcesOptions;
 import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.admin.RecordsToDelete;
 import org.apache.kafka.clients.admin.StartMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.StopMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.TopicDescription;
@@ -892,6 +894,66 @@ public class ClusterMirroringIntegrationTest {
         ExecutionException e = assertThrows(ExecutionException.class,
                 () -> result.topicNameValues().get(mirroredTopic).get(30, TimeUnit.SECONDS));
         assertEquals(MirrorTopicNotStoppedException.class, e.getCause().getClass());
+    }
+
+    @Test
+    void testDeleteRecordsDisallowedOnNonStoppedMirror() throws Exception {
+        // Create topic and produce data
+        srcAdmin.createTopics(List.of(
+                new NewTopic(TOPIC_NAME, 1, (short) 1)
+        )).all().get(30, TimeUnit.SECONDS);
+        produceRecords(srcCluster, TOPIC_NAME, 0, 10);
+
+        // Create mirror and start topic
+        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
+                "bootstrap.servers", singleSourceBootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(TOPIC_NAME), new StartMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, TOPIC_NAME);
+
+        // Attempt to delete records while the topic is actively mirroring
+        TopicPartition tp = new TopicPartition(TOPIC_NAME, 0);
+        ExecutionException e = assertThrows(ExecutionException.class,
+                () -> dstAdmin.deleteRecords(Map.of(tp, RecordsToDelete.beforeOffset(5))).all().get());
+        assertEquals(MirrorTopicNotStoppedException.class, e.getCause().getClass());
+
+        // Stop mirroring and retry
+        dstAdmin.stopMirrorTopics(MIRROR_NAME, Set.of(TOPIC_NAME), new StopMirrorTopicsOptions()).all().get(30, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "STOPPED");
+
+        DeleteRecordsResult result = dstAdmin.deleteRecords(Map.of(tp, RecordsToDelete.beforeOffset(5)));
+        assertEquals(5, result.lowWatermarks().get(tp).get(30, TimeUnit.SECONDS).lowWatermark());
+    }
+
+    @Test
+    void testDeleteRecordsAllowedOnNonMirroredTopic() throws Exception {
+        String mirroredTopic = "mirrored-topic";
+        String nonMirroredTopic = "non-mirrored-topic";
+
+        // Source topic that will be actively mirrored to the destination
+        srcAdmin.createTopics(List.of(
+                new NewTopic(mirroredTopic, 1, (short) 1)
+        )).all().get(30, TimeUnit.SECONDS);
+
+        // A regular destination topic that is not part of any mirror
+        dstAdmin.createTopics(List.of(
+                new NewTopic(nonMirroredTopic, 1, (short) 1)
+        )).all().get(30, TimeUnit.SECONDS);
+        produceRecords(dstCluster, nonMirroredTopic, 0, 10);
+
+        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
+                "bootstrap.servers", singleSourceBootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(mirroredTopic), new StartMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, mirroredTopic, "MIRRORING");
+
+        // With the cluster mirror feature enabled the broker intercepts DeleteRecords, but a
+        // topic that belongs to no mirror must be handled without any mirror check.
+        TopicPartition tp = new TopicPartition(nonMirroredTopic, 0);
+        DeleteRecordsResult result = dstAdmin.deleteRecords(Map.of(tp, RecordsToDelete.beforeOffset(5)));
+        assertEquals(5, result.lowWatermarks().get(tp).get(30, TimeUnit.SECONDS).lowWatermark());
     }
 
     private void produceRecords(KafkaClusterTestKit cluster, String topic,

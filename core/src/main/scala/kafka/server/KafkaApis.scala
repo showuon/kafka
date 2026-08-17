@@ -1657,9 +1657,22 @@ class KafkaApis(val requestChannel: RequestChannel,
         authorizedForDeleteTopicOffsets += (topicPartition -> offset)
     }
 
+    val nonStoppedMirroredTopicPartitionResponses = mirrorMetadataManager.getConfiguredMirrors.asScala
+      .flatMap(mirrorName => mirrorMetadataManager.getMirrorStates(mirrorName).asScala)
+      .filter { case (topicPartition, state) =>
+        authorizedForDeleteTopicOffsets.contains(topicPartition) && state != MirrorPartitionState.STOPPED
+      }
+      .map { case (topicPartition, _) =>
+        topicPartition -> new DeleteRecordsPartitionResult()
+          .setLowWatermark(DeleteRecordsResponse.INVALID_LOW_WATERMARK)
+          .setErrorCode(Errors.MIRROR_TOPIC_NOT_STOPPED.code)
+      }
+      .toMap
+    nonStoppedMirroredTopicPartitionResponses.keys.foreach(authorizedForDeleteTopicOffsets.remove)
+
     // the callback for sending a DeleteRecordsResponse
     def sendResponseCallback(authorizedTopicResponses: Map[TopicPartition, DeleteRecordsPartitionResult]): Unit = {
-      val mergedResponseStatus = authorizedTopicResponses ++ unauthorizedTopicResponses ++ nonExistingTopicResponses
+      val mergedResponseStatus = authorizedTopicResponses ++ unauthorizedTopicResponses ++ nonExistingTopicResponses ++ nonStoppedMirroredTopicPartitionResponses
       mergedResponseStatus.foreachEntry { (topicPartition, status) =>
         if (status.errorCode != Errors.NONE.code) {
           debug("DeleteRecordsRequest with correlation id %d from client %s on partition %s failed due to %s".format(
