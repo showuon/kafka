@@ -188,7 +188,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         this.shareGroupOffsetSyncError = metricsGroup.newMeter("ShareGroupOffsetSyncError", "errors", TimeUnit.SECONDS);
         this.aclSyncError = metricsGroup.newMeter("AclSyncError", "errors", TimeUnit.SECONDS);
         this.metadataRefreshError = metricsGroup.newMeter("TopicMetadataRefreshError", "errors", TimeUnit.SECONDS);
-        metricsGroup.newGauge("LogTruncationPartitionState", () -> mirrorCache.partitionStateCount(MirrorPartitionState.LOG_TRUNCATION));
+        metricsGroup.newGauge("LogTruncationPartitionState", () -> mirrorCache.partitionStateCount(MirrorPartitionState.LOG_ALIGNMENT));
         metricsGroup.newGauge("EpochFencingPartitionState", () -> mirrorCache.partitionStateCount(MirrorPartitionState.EPOCH_FENCING));
         metricsGroup.newGauge("MirroringPartitionState", () -> mirrorCache.partitionStateCount(MirrorPartitionState.MIRRORING));
         metricsGroup.newGauge("PausingPartitionState", () -> mirrorCache.partitionStateCount(MirrorPartitionState.PAUSING));
@@ -652,16 +652,16 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * <p>
      * When stopRequested=false and pauseRequested=false:
      *   1. if it's in PAUSED state, we should move it to MIRRORING state. It will happen when users resume mirroring
-     *   2. if it's in UNKNOWN, STOPPED, or FAILED state, we should move it to LOG_TRUNCATION state.
+     *   2. if it's in UNKNOWN, STOPPED, or FAILED state, we should move it to LOG_ALIGNMENT state.
      *      UNKNOWN/STOPPED happens on startMirrorTopics. FAILED happens on manual restart after retries are exhausted.
      *   3. else, keep the same state as is. This could happen like leadership change, and the new leader should
      *      continue to complete the process in previous leader
      * <p>
      * If the current state is FAILED, we only allow it to enter FAILED state because if we move the FAILED state based on
      * the "desired state", that means we ignore its previous state stored in MirrorPartition.
-     * Ex: one partition failed when LOG_TRUNCATION. We should retry LOG_TRUNCATION until exhausted. But if we honor the
+     * Ex: one partition failed when LOG_ALIGNMENT. We should retry LOG_ALIGNMENT until exhausted. But if we honor the
      * desired state, we might move this failed state into PAUSING or STOPPING state due to user's update.
-     * This breaks the state machine diagram that a LOG_TRUNCATION state cannot move to PAUSING or STOPPING state.
+     * This breaks the state machine diagram that a LOG_ALIGNMENT state cannot move to PAUSING or STOPPING state.
      */
     private void applyStateTransition(String mirrorName, TopicPartition tp,
                                       MirrorPartitionState curState, MirrorPartitionState fetchedState,
@@ -684,7 +684,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.MIRRORING);
         } else if (curState == MirrorPartitionState.UNKNOWN
                 || curState == MirrorPartitionState.STOPPED) {
-            transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.LOG_TRUNCATION);
+            transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.LOG_ALIGNMENT);
         } else {
             transitionTo(mirrorName, Set.of(tp), fetchedState != null ? fetchedState : curState);
         }
@@ -810,13 +810,13 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     /**
      * Dispatches side effects after a coordinator write commits.
-     * Each state triggers a specific action: LOG_TRUNCATION starts truncation,
+     * Each state triggers a specific action: LOG_ALIGNMENT starts truncation,
      * EPOCH_FENCING bumps the leader epoch, MIRRORING creates fetchers,
      * PAUSING/STOPPING removes fetchers, FAILED schedules a retry.
      */
     private void onStateTransition(String mirrorName, TopicPartition tp, MirrorPartitionState newState) {
         switch (newState) {
-            case LOG_TRUNCATION:
+            case LOG_ALIGNMENT:
                 scheduleTruncation(mirrorName, tp);
                 break;
             case EPOCH_FENCING:
@@ -954,7 +954,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             CommonClientConfigs.RETRY_BACKOFF_JITTER);
         long delay = backoff.backoff(attempt);
         MirrorPartitionState targetState = (mp.prevState() == null || mp.prevState() == MirrorPartitionState.UNKNOWN)
-            ? MirrorPartitionState.LOG_TRUNCATION : mp.prevState();
+            ? MirrorPartitionState.LOG_ALIGNMENT : mp.prevState();
         log.info("Scheduling retry #{} for {} in {} ms targeting {}.", attempt, tp, delay, targetState);
         scheduler.scheduleOnce("failed-retry-" + tp,
             () -> transitionTo(mirrorName, Set.of(tp), targetState), delay);

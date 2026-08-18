@@ -173,7 +173,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                     .withStateEpoch(stateValue.stateEpoch());
             if (state == MirrorPartitionState.FAILED) {
                 mp = mp.withError(stateValue.errorMessage(), stateValue.retryAttempt(), previousState);
-            } else if (state == MirrorPartitionState.LOG_TRUNCATION
+            } else if (state == MirrorPartitionState.LOG_ALIGNMENT
                     || state == MirrorPartitionState.STOPPED
                     || state == MirrorPartitionState.PAUSED) {
                 mp = mp.clearError();
