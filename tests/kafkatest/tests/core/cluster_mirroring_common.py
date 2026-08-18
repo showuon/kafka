@@ -63,15 +63,15 @@ class MirrorConfig:
             "bootstrap.servers": bootstrap_servers,
         }
         if mirror_topic_properties_exclude is not None:
-            self.properties["mirror.topic.properties.exclude"] = (
+            self.properties["topic.properties.exclude"] = (
                 mirror_topic_properties_exclude
             )
         if mirror_groups_include is not None:
-            self.properties["mirror.groups.include"] = mirror_groups_include
+            self.properties["groups.include"] = mirror_groups_include
         if mirror_groups_exclude is not None:
-            self.properties["mirror.groups.exclude"] = mirror_groups_exclude
+            self.properties["groups.exclude"] = mirror_groups_exclude
         if mirror_acl_include is not None:
-            self.properties["mirror.acls.include"] = mirror_acl_include
+            self.properties["acls.include"] = mirror_acl_include
 
         if (
             security_config is not None

@@ -44,7 +44,6 @@ class ClusterMirroringCompTest(MirrorUtils, Test):
         ["mirror.state.topic.replication.factor", "2"],
         ["mirror.metadata.refresh.interval.ms", "5000"],
         ["mirror.num.replica.fetchers", "2"],
-        ["mirror.socket.timeout.ms", "5000"],
         ["mirror.failed.retry.max.backoff.ms", "5000"],
     ]
 

@@ -48,7 +48,6 @@ class ClusterMirroringTest(MirrorUtils, Test):
             ["mirror.state.topic.replication.factor", "2"],
             ["mirror.metadata.refresh.interval.ms", "5000"],
             ["mirror.num.replica.fetchers", "2"],
-            ["mirror.socket.timeout.ms", "5000"],
             ["mirror.failed.retry.max.backoff.ms", "5000"],
         ]
         self.source_kafka = KafkaService(
@@ -574,7 +573,7 @@ class ClusterMirroringTest(MirrorUtils, Test):
 
         self.logger.info("Add payments to include pattern via alter config")
         self.dest_kafka.alter_mirror_config(
-            self.client_node, "my-mirror", "mirror.topics.include=[orders-.*,payments]")
+            self.client_node, "my-mirror", "topics.include=[orders-.*,payments]")
 
         MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["payments"], "MIRRORING")
         MirrorUtils.wait_mirror_lag_zero(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["payments"])
