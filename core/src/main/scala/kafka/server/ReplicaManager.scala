@@ -1692,7 +1692,7 @@ class ReplicaManager(val config: KafkaConfig,
           .get(TopicConfig.MIRROR_SUPPORT_UNCLEAN_LEADER_ELECTION_CONFIG).asInstanceOf[String]
         val waitForAllReplicas = mirrorUncleanLeaderElection != null && mirrorUncleanLeaderElection.toBoolean
 
-        partition.maybeCompleteTruncation(log, waitForAllReplicas = waitForAllReplicas, onCompleteCallback = Optional.of(callback))
+        partition.maybeCompleteReplicaConvergence(log, waitForAllReplicas = waitForAllReplicas, onCompleteCallback = Optional.of(callback))
       })
     })
   }
@@ -1700,7 +1700,7 @@ class ReplicaManager(val config: KafkaConfig,
   def waitForAllReplicasCaughtUp(tp: TopicPartition, callback: Consumer[TopicPartition]): Unit = {
     getLog(tp).map(log => {
       val partition = getPartitionOrException(tp)
-      partition.maybeCompleteTruncation(log, waitForAllReplicas = true, onCompleteCallback = Optional.of(callback))
+      partition.maybeCompleteReplicaConvergence(log, waitForAllReplicas = true, onCompleteCallback = Optional.of(callback))
     })
   }
 

@@ -830,7 +830,7 @@ class Partition(val topicPartition: TopicPartition,
       partitionEpoch = partitionState.partitionEpoch
       leaderReplicaIdOpt = Some(localBrokerId)
 
-      maybeCompleteTruncation(leaderLog)
+      maybeCompleteReplicaConvergence(leaderLog)
       // We may need to increment high watermark since ISR could be down to 1.
       (maybeIncrementLeaderHW(leaderLog, currentTimeMs = currentTimeMs), isNewLeader)
     }
@@ -961,7 +961,7 @@ class Partition(val topicPartition: TopicPartition,
       // leaderIsrUpdateLock to prevent adding new hw to invalid log.
       inReadLock(leaderIsrUpdateLock) {
         leaderLogIfLocal.exists(leaderLog => {
-          maybeCompleteTruncation(leaderLog, followerFetchTimeMs)
+          maybeCompleteReplicaConvergence(leaderLog, followerFetchTimeMs)
           maybeIncrementLeaderHW(leaderLog, followerFetchTimeMs)
         })
       }
@@ -1262,10 +1262,10 @@ class Partition(val topicPartition: TopicPartition,
    * @return true if truncation completed (callbacks invoked), false if
    *         still waiting for replicas or no callback was registered
    */
-  def maybeCompleteTruncation(leaderLog: UnifiedLog,
-                              currentTimeMs: Long = time.milliseconds,
-                              waitForAllReplicas: Boolean = false,
-                              onCompleteCallback: Optional[Consumer[TopicPartition]] = Optional.empty()): Boolean = {
+  def maybeCompleteReplicaConvergence(leaderLog: UnifiedLog,
+                                      currentTimeMs: Long = time.milliseconds,
+                                      waitForAllReplicas: Boolean = false,
+                                      onCompleteCallback: Optional[Consumer[TopicPartition]] = Optional.empty()): Boolean = {
     // Put callbacks and flags into instance state
     if (onCompleteCallback.isPresent) {
       this.onCompleteCallback = onCompleteCallback
@@ -2120,7 +2120,7 @@ class Partition(val topicPartition: TopicPartition,
 
       // we may need to increment high watermark since ISR could be down to 1
       leaderLogIfLocal.exists(log => {
-        maybeCompleteTruncation(log)
+        maybeCompleteReplicaConvergence(log)
         maybeIncrementLeaderHW(log)
       })
     }
