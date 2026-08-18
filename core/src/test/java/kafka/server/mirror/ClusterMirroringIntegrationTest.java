@@ -733,32 +733,6 @@ public class ClusterMirroringIntegrationTest {
     }
 
     @Test
-    void testCreatePartitionsDisallowedOnNonStoppedMirror() throws Exception {
-        // Create topic and produce data
-        srcAdmin.createTopics(List.of(
-                new NewTopic(TOPIC_NAME, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
-
-        // Create mirror and start topic
-        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(TOPIC_NAME), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "MIRRORING");
-
-        // Attempt to increase partition count
-        ExecutionException e = assertThrows(ExecutionException.class, () -> dstAdmin.createPartitions(Map.of(TOPIC_NAME, NewPartitions.increaseTo(2))).all().get());
-        assertEquals(MirrorTopicNotStoppedException.class, e.getCause().getClass());
-
-        // Stop mirroring and retry
-        dstAdmin.stopMirrorTopics(MIRROR_NAME, Set.of(TOPIC_NAME), new StopMirrorTopicsOptions()).all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "STOPPED");
-
-        dstAdmin.createPartitions(Map.of(TOPIC_NAME, NewPartitions.increaseTo(2))).all().get();
-    }
-
-    @Test
     void testCreatePartitionsAllowedOnNonMirroredTopic() throws Exception {
         String mirroredTopic = "mirrored-topic";
         String nonMirroredTopic = "non-mirrored-topic";

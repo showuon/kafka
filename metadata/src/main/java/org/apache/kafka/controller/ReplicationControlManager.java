@@ -2136,7 +2136,7 @@ public class ReplicationControlManager {
     private static void maybeVerifyMirrorStopped(TopicControlInfo topicInfo) {
         if (topicInfo.mirrorName() != null && !topicInfo.mirrorName().isBlank() &&
                 topicInfo.mirrorState() != MirrorPartitionState.STOPPED.value()) {
-            throw new MirrorTopicNotStoppedException("The topic " + " has a mirror " + topicInfo.mirrorName() + " which is not in stopped state");
+            throw new MirrorTopicNotStoppedException("The topic " + topicInfo.name() + " has a mirror " + topicInfo.mirrorName() + " which is not in stopped state");
         }
     }
 
