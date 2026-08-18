@@ -1213,6 +1213,7 @@ public class ReplicationControlManager {
         if (topic == null) {
             throw new UnknownTopicIdException(UNKNOWN_TOPIC_ID.message());
         }
+        maybeVerifyMirrorStopped(topic);
         int numPartitions = topic.parts.size();
         log.trace("Deleting topic {} with ID {} and {} partitions", topic.name, id, numPartitions);
         try {
@@ -2046,10 +2047,7 @@ public class ReplicationControlManager {
         if (topicInfo == null) {
             throw new UnknownTopicOrPartitionException();
         }
-        if (topicInfo.mirrorName() != null && !topicInfo.mirrorName().isBlank() &&
-                topicInfo.mirrorState() != MirrorPartitionState.STOPPED.value()) {
-            throw new MirrorTopicNotStoppedException("The topic " + " has a mirror " + topicInfo.mirrorName() + " which is not in stopped state");
-        }
+        maybeVerifyMirrorStopped(topicInfo);
         if (topic.count() == topicInfo.parts.size()) {
             throw new InvalidPartitionsException("Topic already has " +
                 topicInfo.parts.size() + " partition(s).");
@@ -2132,6 +2130,13 @@ public class ReplicationControlManager {
                         setEligibleLeaderReplicasEnabled(featureControl.isElrFeatureEnabled()).
                         build()));
             partitionId++;
+        }
+    }
+
+    private static void maybeVerifyMirrorStopped(TopicControlInfo topicInfo) {
+        if (topicInfo.mirrorName() != null && !topicInfo.mirrorName().isBlank() &&
+                topicInfo.mirrorState() != MirrorPartitionState.STOPPED.value()) {
+            throw new MirrorTopicNotStoppedException("The topic " + topicInfo.name() + " has a mirror " + topicInfo.mirrorName() + " which is not in stopped state");
         }
     }
 
