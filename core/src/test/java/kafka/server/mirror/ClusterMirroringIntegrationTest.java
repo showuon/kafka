@@ -922,8 +922,10 @@ public class ClusterMirroringIntegrationTest {
         dstAdmin.stopMirrorTopics(MIRROR_NAME, Set.of(TOPIC_NAME), new StopMirrorTopicsOptions()).all().get(30, TimeUnit.SECONDS);
         waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "STOPPED");
 
-        DeleteRecordsResult result = dstAdmin.deleteRecords(Map.of(tp, RecordsToDelete.beforeOffset(5)));
-        assertEquals(5, result.lowWatermarks().get(tp).get(30, TimeUnit.SECONDS).lowWatermark());
+        waitForCondition(() -> {
+            DeleteRecordsResult result = dstAdmin.deleteRecords(Map.of(tp, RecordsToDelete.beforeOffset(5)));
+            return result.lowWatermarks().get(tp).get(30, TimeUnit.SECONDS).lowWatermark() == 5;
+        }, "Records not deleted");
     }
 
     @Test

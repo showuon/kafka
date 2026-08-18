@@ -1635,6 +1635,7 @@ class KafkaApis(val requestChannel: RequestChannel,
 
     val unauthorizedTopicResponses = mutable.Map[TopicPartition, DeleteRecordsPartitionResult]()
     val nonExistingTopicResponses = mutable.Map[TopicPartition, DeleteRecordsPartitionResult]()
+    val nonStoppedMirroredTopicPartitionResponses = mutable.Map[TopicPartition, DeleteRecordsPartitionResult]()
     val authorizedForDeleteTopicOffsets = mutable.Map[TopicPartition, Long]()
 
     val topics = deleteRecordsRequest.data.topics.asScala
@@ -1653,22 +1654,15 @@ class KafkaApis(val requestChannel: RequestChannel,
         nonExistingTopicResponses += topicPartition -> new DeleteRecordsPartitionResult()
           .setLowWatermark(DeleteRecordsResponse.INVALID_LOW_WATERMARK)
           .setErrorCode(Errors.UNKNOWN_TOPIC_OR_PARTITION.code)
-      else
-        authorizedForDeleteTopicOffsets += (topicPartition -> offset)
+      else {
+        if (!mirrorMetadataManager.validateDeleteRecords(topicPartition))
+          nonStoppedMirroredTopicPartitionResponses += topicPartition -> new DeleteRecordsPartitionResult()
+            .setLowWatermark(DeleteRecordsResponse.INVALID_LOW_WATERMARK)
+            .setErrorCode(Errors.MIRROR_TOPIC_NOT_STOPPED.code)
+        else
+          authorizedForDeleteTopicOffsets += (topicPartition -> offset)
+      }
     }
-
-    val nonStoppedMirroredTopicPartitionResponses = mirrorMetadataManager.getConfiguredMirrors.asScala
-      .flatMap(mirrorName => mirrorMetadataManager.getMirrorStates(mirrorName).asScala)
-      .filter { case (topicPartition, state) =>
-        authorizedForDeleteTopicOffsets.contains(topicPartition) && state != MirrorPartitionState.STOPPED
-      }
-      .map { case (topicPartition, _) =>
-        topicPartition -> new DeleteRecordsPartitionResult()
-          .setLowWatermark(DeleteRecordsResponse.INVALID_LOW_WATERMARK)
-          .setErrorCode(Errors.MIRROR_TOPIC_NOT_STOPPED.code)
-      }
-      .toMap
-    nonStoppedMirroredTopicPartitionResponses.keys.foreach(authorizedForDeleteTopicOffsets.remove)
 
     // the callback for sending a DeleteRecordsResponse
     def sendResponseCallback(authorizedTopicResponses: Map[TopicPartition, DeleteRecordsPartitionResult]): Unit = {
