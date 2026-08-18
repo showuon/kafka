@@ -81,6 +81,8 @@ import org.apache.kafka.server.util.RequestAndCompletionHandler;
 import org.apache.kafka.storage.internals.log.AppendOrigin;
 import org.apache.kafka.storage.internals.log.UnifiedLog;
 
+import com.yammer.metrics.core.Meter;
+
 import org.slf4j.Logger;
 
 import java.nio.ByteBuffer;
@@ -98,7 +100,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongConsumer;
@@ -147,11 +149,13 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private Optional<CoreBridge.CoordinatorWriter> coordinatorWriter = Optional.empty();
     private Optional<Function<MirrorPartitionKey, Integer>> coordPartFinder = Optional.empty();
 
-    private final AtomicLong metadataRefreshError;
-    private final AtomicLong topicConfigSyncError;
-    private final AtomicLong consumerGroupOffsetSyncError;
-    private final AtomicLong shareGroupOffsetSyncError;
-    private final AtomicLong aclSyncError;
+    private final KafkaMetricsGroup metricsGroup;
+
+    private final Meter metadataRefreshError;
+    private final Meter topicConfigSyncError;
+    private final Meter consumerGroupOffsetSyncError;
+    private final Meter shareGroupOffsetSyncError;
+    private final Meter aclSyncError;
 
     public MirrorMetadataManager(
         String clusterId,
@@ -178,18 +182,12 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         this.metrics = metrics;
         this.time = time;
 
-        KafkaMetricsGroup metricsGroup = new KafkaMetricsGroup(this.getClass());
-        this.metadataRefreshError = new AtomicLong();
-        this.topicConfigSyncError = new AtomicLong();
-        this.consumerGroupOffsetSyncError = new AtomicLong();
-        this.shareGroupOffsetSyncError = new AtomicLong();
-        this.aclSyncError = new AtomicLong();
-
-        metricsGroup.newGauge("TopicConfigSyncError", topicConfigSyncError::get);
-        metricsGroup.newGauge("ConsumerGroupOffsetSyncError", consumerGroupOffsetSyncError::get);
-        metricsGroup.newGauge("ShareGroupOffsetSyncError", shareGroupOffsetSyncError::get);
-        metricsGroup.newGauge("AclSyncError", aclSyncError::get);
-        metricsGroup.newGauge("TopicMetadataRefreshError", metadataRefreshError::get);
+        this.metricsGroup = new KafkaMetricsGroup(this.getClass());
+        this.topicConfigSyncError = metricsGroup.newMeter("TopicConfigSyncError", "errors", TimeUnit.SECONDS);
+        this.consumerGroupOffsetSyncError = metricsGroup.newMeter("ConsumerGroupOffsetSyncError", "errors", TimeUnit.SECONDS);
+        this.shareGroupOffsetSyncError = metricsGroup.newMeter("ShareGroupOffsetSyncError", "errors", TimeUnit.SECONDS);
+        this.aclSyncError = metricsGroup.newMeter("AclSyncError", "errors", TimeUnit.SECONDS);
+        this.metadataRefreshError = metricsGroup.newMeter("TopicMetadataRefreshError", "errors", TimeUnit.SECONDS);
         metricsGroup.newGauge("LogTruncationPartitionState", () -> mirrorCache.partitionStateCount(MirrorPartitionState.LOG_TRUNCATION));
         metricsGroup.newGauge("EpochFencingPartitionState", () -> mirrorCache.partitionStateCount(MirrorPartitionState.EPOCH_FENCING));
         metricsGroup.newGauge("MirroringPartitionState", () -> mirrorCache.partitionStateCount(MirrorPartitionState.MIRRORING));
@@ -232,7 +230,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
         this.sourceSyncer = new MirrorSourceSyncer(brokerConfig, this,
                 channelManager, metadataCache, mirrorCache, scheduler, metadataRefreshError,
-                topicConfigSyncError, consumerGroupOffsetSyncError, shareGroupOffsetSyncError, aclSyncError);
+                topicConfigSyncError, consumerGroupOffsetSyncError, shareGroupOffsetSyncError, aclSyncError, metricsGroup);
         sourceSyncer.scheduleMetadataRefresh(brokerConfig.mirrorConfig().metadataRefreshIntervalMs());
 
         // MMM call the writer whenever it needs to persist state to the __mirror_state shard
@@ -389,6 +387,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                         if (mirrorDeleted) {
                             log.info("Mirror '{}' has been deleted. Writing tombstone records.", mirrorName);
                             tombstoneMirror(mirrorName);
+                            metricsGroup.removeMetric("MirrorTopicCount", Map.of("mirrorName", mirrorName));
                         }
 
                         boolean connectionConfigChanged = e.getValue().changes().keySet().stream()
