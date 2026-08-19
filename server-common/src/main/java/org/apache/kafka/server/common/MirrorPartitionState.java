@@ -35,18 +35,26 @@ public enum MirrorPartitionState {
     EPOCH_FENCING((byte) 1),
 
     /**
+     * When mirror.support.unclean.leader.election is enabled and the destination leader has log truncation
+     * the state moves from MIRRORING to this state. It waits for all replicas (not just ISR members) to
+     * complete truncation before proceeding.
+     * Valid from: MIRRORING only.
+     */
+    ULE_RECOVERY((byte) 2),
+
+    /**
      * All ISR members have completed truncation and leader epoch bumping completes. A MirrorFetcherThread is started to
      * continuously replicate records from the source cluster.
-     * Valid from: EPOCH_FENCING, PAUSED.
+     * Valid from: EPOCH_FENCING, PAUSED, ULE_LOG_TRUNCATION.
      */
-    MIRRORING((byte) 2),
+    MIRRORING((byte) 3),
 
     /**
      * Triggered by PauseMirrorTopics API.
      * The system removes fetchers for the affected partitions.
      * Valid from: MIRRORING only.
      */
-    PAUSING((byte) 3),
+    PAUSING((byte) 4),
 
     /**
      * Fetchers have been removed. The partition stays read-only with no active fetchers
@@ -54,27 +62,27 @@ public enum MirrorPartitionState {
      * directly to MIRRORING (fetchers resume from local LEO, no truncation needed).
      * Valid from: PAUSING only.
      */
-    PAUSED((byte) 4),
+    PAUSED((byte) 5),
 
     /**
      * Triggered by StopMirrorTopics API (failover) or topic deletion on the source.
      * The system records the last mirrored offset to the internal topic.
-     * Valid from: LOG_ALIGNMENT, MIRRORING, PAUSING (race guard), PAUSED, FAILED.
+     * Valid from: LOG_ALIGNMENT, MIRRORING, PAUSING (race guard), PAUSED, ULE_LOG_TRUNCATION, FAILED.
      */
-    STOPPING((byte) 5),
+    STOPPING((byte) 6),
 
     /**
      * Last mirrored offsets have been persisted. The topic becomes writable on the
      * destination cluster (fetcher removed, read-only flag cleared).
      * Valid from: STOPPING only.
      */
-    STOPPED((byte) 6),
+    STOPPED((byte) 7),
 
     /**
      * An error occurred. Can transition back to LOG_ALIGNMENT to retry.
      * Valid from: any state.
      */
-    FAILED((byte) 7),
+    FAILED((byte) 8),
 
     /**
      * No cached state (broker just became leader, state not loaded yet).
@@ -99,16 +107,18 @@ public enum MirrorPartitionState {
             case 1:
                 return EPOCH_FENCING;
             case 2:
-                return MIRRORING;
+                return ULE_RECOVERY;
             case 3:
-                return PAUSING;
+                return MIRRORING;
             case 4:
-                return PAUSED;
+                return PAUSING;
             case 5:
-                return STOPPING;
+                return PAUSED;
             case 6:
-                return STOPPED;
+                return STOPPING;
             case 7:
+                return STOPPED;
+            case 8:
                 return FAILED;
             case -1:
                 return UNKNOWN;
@@ -116,7 +126,7 @@ public enum MirrorPartitionState {
         throw new IllegalArgumentException("Illegal mirror state: " + value);
     }
 
-    @SuppressWarnings("checkstyle:cyclomaticComplexity")
+    @SuppressWarnings({"cyclomaticComplexity", "BooleanExpressionComplexity"})
     public static boolean isValidTransition(MirrorPartitionState source, MirrorPartitionState target) {
         if (source == target) {
             return true;
@@ -129,10 +139,13 @@ public enum MirrorPartitionState {
                         || source == MirrorPartitionState.FAILED;
             case EPOCH_FENCING:
                 return source == MirrorPartitionState.MIRRORING;
+            case ULE_RECOVERY:
+                return source == MirrorPartitionState.MIRRORING;
             case MIRRORING:
                 return source == MirrorPartitionState.LOG_ALIGNMENT
                         || source == MirrorPartitionState.EPOCH_FENCING
                         || source == MirrorPartitionState.PAUSED
+                        || source == MirrorPartitionState.ULE_RECOVERY
                         || source == MirrorPartitionState.FAILED
                         || source == MirrorPartitionState.MIRRORING;
             case PAUSING:
@@ -146,6 +159,7 @@ public enum MirrorPartitionState {
                         || source == MirrorPartitionState.MIRRORING
                         || source == MirrorPartitionState.PAUSING
                         || source == MirrorPartitionState.PAUSED
+                        || source == MirrorPartitionState.ULE_RECOVERY
                         || source == MirrorPartitionState.FAILED;
             case STOPPED:
                 return source == MirrorPartitionState.STOPPING;

@@ -743,6 +743,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                     log.warn("Skipping invalid transition from {} to {} for {}.", currentState, state, tp);
                     continue;
                 }
+                if (state == MirrorPartitionState.FAILED) {
+                    log.info("Transitioning partition {} from {} to {} due to {} with isPermFailure: {}.", topicPartitions, currentState, state, errorMessage, isPermFailure);
+                } else {
+                    log.info("Transitioning partition {} from {} to {}.", tp, currentState, state);
+                }
                 MirrorPartitionKey key = MirrorPartitionKey.of(
                         mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
                 int leaderEpoch = getLeaderEpoch(tp);
@@ -837,6 +842,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * Each state triggers a specific action: LOG_ALIGNMENT starts truncation,
      * EPOCH_FENCING bumps the leader epoch, MIRRORING creates fetchers,
      * PAUSING/STOPPING removes fetchers, FAILED schedules a retry.
+     * ULE_LOG_TRUNCATION waits for all replicas (not just ISR) to converge
+     * before returning to MIRRORING
      */
     private void onStateTransition(String mirrorName, TopicPartition tp, MirrorPartitionState newState) {
         switch (newState) {
@@ -855,6 +862,10 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 break;
             case MIRRORING:
                 replicaManagerSupplier.get().maybeCreateMirrorFetchers(mirrorName, Set.of(tp));
+                break;
+            case ULE_RECOVERY:
+                replicaManagerSupplier.get().waitForAllReplicasCaughtUp(
+                        tp, topicPartition -> transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.MIRRORING));
                 break;
             case PAUSING:
                 replicaManagerSupplier.get().mirrorFetcherManager()

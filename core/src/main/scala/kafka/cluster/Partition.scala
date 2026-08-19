@@ -342,9 +342,8 @@ class Partition(val topicPartition: TopicPartition,
   @volatile private[cluster] var partitionState: PartitionState = CommittedPartitionState(Set.empty, LeaderRecoveryState.RECOVERED)
   @volatile var assignmentState: AssignmentState = SimpleAssignmentState(Seq.empty)
 
-  // Mutable state for the two phase truncation protocol used for Cluster Mirroring.
+  // Mutable state for truncation protocol used for Cluster Mirroring.
   // Latched by maybeCompleteTruncation and cleared by completeTruncationCallbacks.
-  @volatile private var onCaughtupCallback: Optional[Consumer[TopicPartition]] = Optional.empty()
   @volatile private var onCompleteCallback: Optional[Consumer[TopicPartition]] = Optional.empty()
   @volatile private var requireFullReplicaConvergence: Boolean = false
 
@@ -831,7 +830,7 @@ class Partition(val topicPartition: TopicPartition,
       partitionEpoch = partitionState.partitionEpoch
       leaderReplicaIdOpt = Some(localBrokerId)
 
-      maybeCompleteTruncation(leaderLog)
+      maybeCompleteReplicaConvergence(leaderLog)
       // We may need to increment high watermark since ISR could be down to 1.
       (maybeIncrementLeaderHW(leaderLog, currentTimeMs = currentTimeMs), isNewLeader)
     }
@@ -926,7 +925,8 @@ class Partition(val topicPartition: TopicPartition,
     followerStartOffset: Long,
     followerFetchTimeMs: Long,
     leaderEndOffset: Long,
-    brokerEpoch: Long
+    brokerEpoch: Long,
+    mirrorState: MirrorPartitionState = MirrorPartitionState.UNKNOWN
   ): Unit = {
     // No need to calculate low watermark if there is no delayed DeleteRecordsRequest
     val oldLeaderLW = if (delayedOperations.numDelayedDelete > 0) lowWatermarkIfLeader else -1L
@@ -950,7 +950,7 @@ class Partition(val topicPartition: TopicPartition,
     val leaderLWIncremented = newLeaderLW > oldLeaderLW
 
     // Check if this in-sync replica needs to be added to the ISR.
-    maybeExpandIsr(replica)
+    maybeExpandIsr(replica, mirrorState)
 
     // Check if HW can be incremented since the replica's LEO may have changed,
     // or if a pending truncation callback needs to complete (followers may already
@@ -961,7 +961,7 @@ class Partition(val topicPartition: TopicPartition,
       // leaderIsrUpdateLock to prevent adding new hw to invalid log.
       inReadLock(leaderIsrUpdateLock) {
         leaderLogIfLocal.exists(leaderLog => {
-          maybeCompleteTruncation(leaderLog, followerFetchTimeMs)
+          maybeCompleteReplicaConvergence(leaderLog, followerFetchTimeMs)
           maybeIncrementLeaderHW(leaderLog, followerFetchTimeMs)
         })
       }
@@ -1034,15 +1034,15 @@ class Partition(val topicPartition: TopicPartition,
    *
    * This function can be triggered when a replica's LEO has incremented.
    */
-  private def maybeExpandIsr(followerReplica: Replica): Unit = {
+  private def maybeExpandIsr(followerReplica: Replica, mirrorState: MirrorPartitionState): Unit = {
     val needsIsrUpdate = !partitionState.isInflight && canAddReplicaToIsr(followerReplica.brokerId) && inReadLock(leaderIsrUpdateLock) {
-      needsExpandIsr(followerReplica)
+      needsExpandIsr(followerReplica, mirrorState)
     }
     if (needsIsrUpdate) {
       val alterIsrUpdateOpt = inWriteLock(leaderIsrUpdateLock) {
         // check if this replica needs to be added to the ISR
         partitionState match {
-          case currentState: CommittedPartitionState if needsExpandIsr(followerReplica) =>
+          case currentState: CommittedPartitionState if needsExpandIsr(followerReplica, mirrorState) =>
             Some(prepareIsrExpand(currentState, followerReplica.brokerId))
           case _ =>
             None
@@ -1054,8 +1054,8 @@ class Partition(val topicPartition: TopicPartition,
     }
   }
 
-  private def needsExpandIsr(followerReplica: Replica): Boolean = {
-    canAddReplicaToIsr(followerReplica.brokerId) && isFollowerInSync(followerReplica)
+  private def needsExpandIsr(followerReplica: Replica, mirrorState: MirrorPartitionState): Boolean = {
+    canAddReplicaToIsr(followerReplica.brokerId) && isFollowerInSync(followerReplica, mirrorState)
   }
 
   private def canAddReplicaToIsr(followerReplicaId: Int): Boolean = {
@@ -1065,10 +1065,22 @@ class Partition(val topicPartition: TopicPartition,
       isReplicaIsrEligible(followerReplicaId)
   }
 
-  private def isFollowerInSync(followerReplica: Replica): Boolean = {
+  private def isFollowerInSync(followerReplica: Replica, mirrorState: MirrorPartitionState): Boolean = {
     leaderLogIfLocal.exists { leaderLog =>
       val followerEndOffset = followerReplica.stateSnapshot.logEndOffset
-      followerEndOffset >= leaderLog.highWatermark && leaderEpochStartOffsetOpt.exists(followerEndOffset >= _)
+
+      val followerEndOffsetCaughtUp = if (getMirrorName().isPresent && mirrorState != MirrorPartitionState.STOPPED) {
+        // If the partition is a mirrored leader and not stopped (readonly), we can not compare with the leaderEpochStartOffsetOpt because
+        // it reflects the local leader epoch, not the leader epoch in the log (leaderEpochCache).
+        // So we use the leaderEpochCache to check if the epoch corresponding to follower's end offset equals to the latest epoch in the leader.
+        // This is the same semantic as the check: `leaderEpochStartOffsetOpt.exists(followerEndOffset >= _)`
+        val latestEpoch = leaderLog.latestEpoch().orElse(-1)
+        val followerEpoch = leaderLog.leaderEpochCache().epochForOffset(followerEndOffset)
+        followerEpoch.orElse(-1) == latestEpoch
+      } else {
+        leaderEpochStartOffsetOpt.exists(followerEndOffset >= _)
+      }
+      followerEndOffset >= leaderLog.highWatermark && followerEndOffsetCaughtUp
     }
   }
 
@@ -1223,19 +1235,18 @@ class Partition(val topicPartition: TopicPartition,
    * Attempts to complete log truncation for a mirrored partition by
    * verifying that all replicas have converged with the leader.
    *
-   * Truncation uses a two phase protocol:
-   * <ol>
-   *   <li>Wait until every replica in the ISR has caught up to the leader's
-   *       log end offset, then invoke the {@code onCaughtupCallback} so the
-   *       leader can perform the actual log truncation.</li>
-   *   <li>After truncation, wait until every replica has truncated to the
-   *       expected offset, then invoke the {@code onCompleteCallback} to
-   *       signal that the partition is ready to transition to its next
-   *       state.</li>
-   * </ol>
+   * Because the log truncation always truncates as a batch( no partially truncated
+   * batch is possible), there is no need to wait for all replicas caught up before truncating.
    *
-   * When the partition has no follower replicas (single node cluster), both
-   * callbacks are invoked immediately and the method returns {@code true},
+   * This method's only job is to wait until every relevant replica has
+   * itself converged to less or equal to the leader's log end offset,
+   * then invoke the {@code onCompleteCallback} to signal that the partition
+   * is ready to transition to its next state. "Relevant" replicas are the
+   * ISR by default, or all assigned replicas when {@code waitForAllReplicas}
+   * is set (used when unclean leader election is enabled).
+   *
+   * When the partition has no follower replicas (single node cluster), the
+   * callback is invoked immediately and the method returns {@code true},
    * because there are no replica fetch requests that would otherwise drive
    * convergence checks forward.
    *
@@ -1244,9 +1255,6 @@ class Partition(val topicPartition: TopicPartition,
    * @param waitForAllReplicas  if true, require all assigned replicas (not
    *                            just the ISR) to catch up before completing;
    *                            used when unclean leader election is enabled
-   * @param onCaughtupCallback  callback invoked once all replicas have
-   *                            caught up to the leader's LEO, signaling
-   *                            that the leader should begin truncation
    * @param onCompleteCallback  callback invoked when truncation is fully
    *                            complete and the partition can move to its
    *                            next state; if absent and no prior callback
@@ -1254,20 +1262,16 @@ class Partition(val topicPartition: TopicPartition,
    * @return true if truncation completed (callbacks invoked), false if
    *         still waiting for replicas or no callback was registered
    */
-  def maybeCompleteTruncation(leaderLog: UnifiedLog,
-                              currentTimeMs: Long = time.milliseconds,
-                              waitForAllReplicas: Boolean = false,
-                              onCaughtupCallback: Optional[Consumer[TopicPartition]] = Optional.empty(),
-                              onCompleteCallback: Optional[Consumer[TopicPartition]] = Optional.empty()): Boolean = {
+  def maybeCompleteReplicaConvergence(leaderLog: UnifiedLog,
+                                      currentTimeMs: Long = time.milliseconds,
+                                      waitForAllReplicas: Boolean = false,
+                                      onCompleteCallback: Optional[Consumer[TopicPartition]] = Optional.empty()): Boolean = {
     // Put callbacks and flags into instance state
     if (onCompleteCallback.isPresent) {
       this.onCompleteCallback = onCompleteCallback
     }
     if (this.onCompleteCallback.isEmpty) {
       return false
-    }
-    if (onCaughtupCallback.isPresent) {
-      this.onCaughtupCallback = onCaughtupCallback
     }
     if (waitForAllReplicas) {
       requireFullReplicaConvergence = true
@@ -1293,16 +1297,6 @@ class Partition(val topicPartition: TopicPartition,
       return true
     }
 
-    // Phase 1: ISR number > min.isr or all replicas are in ISR, trigger leader log truncation.
-    // Two phases needed because truncation may land mid batch; followers
-    // cannot sync until catching up the leader.
-    if (onCaughtupCallback.isPresent) {
-      onCaughtupCallback.get().accept(topicPartition)
-      this.onCaughtupCallback = Optional.empty()
-      return false
-    }
-
-
     // Check replicas convergence (no relevant replica has LEO ahead of the leader).
     // Uses the maximal ISR (committed + pending, see KIP-497) so replicas about
     // to join the ISR are also required to converge before proceeding.
@@ -1324,16 +1318,12 @@ class Partition(val topicPartition: TopicPartition,
       return false
     }
 
-    // Phase 2: leader truncated and all replicas caught up to the new LEO
+    // leader truncated and all replicas caught up to the new LEO
     completeTruncationCallbacks()
     true
   }
 
   private def completeTruncationCallbacks(): Unit = {
-    onCaughtupCallback.ifPresent(callback => {
-      callback.accept(topicPartition)
-      this.onCaughtupCallback = Optional.empty()
-    })
     onCompleteCallback.ifPresent(callback => {
       callback.accept(topicPartition)
       this.onCompleteCallback = Optional.empty()
@@ -1588,7 +1578,8 @@ class Partition(val topicPartition: TopicPartition,
     fetchTimeMs: Long,
     maxBytes: Int,
     minOneMessage: Boolean,
-    updateFetchState: Boolean
+    updateFetchState: Boolean,
+    mirrorState: MirrorPartitionState = MirrorPartitionState.UNKNOWN
   ): LogReadInfo = {
     def readFromLocalLog(log: UnifiedLog): LogReadInfo = {
       readRecords(
@@ -1624,7 +1615,8 @@ class Partition(val topicPartition: TopicPartition,
           followerStartOffset = fetchPartitionData.logStartOffset,
           followerFetchTimeMs = fetchTimeMs,
           leaderEndOffset = logReadInfo.logEndOffset,
-          fetchParams.replicaEpoch
+          fetchParams.replicaEpoch,
+          mirrorState = mirrorState
         )
       }
 
@@ -2128,7 +2120,7 @@ class Partition(val topicPartition: TopicPartition,
 
       // we may need to increment high watermark since ISR could be down to 1
       leaderLogIfLocal.exists(log => {
-        maybeCompleteTruncation(log)
+        maybeCompleteReplicaConvergence(log)
         maybeIncrementLeaderHW(log)
       })
     }
