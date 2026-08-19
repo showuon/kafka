@@ -152,7 +152,6 @@ public class MirrorStateCache {
     }
 
     // -- Source topic deletion operations --
-
     public boolean addSourceDeletion(String mirrorName, String topic) {
         return sourceDeletions.computeIfAbsent(mirrorName, k -> ConcurrentHashMap.newKeySet()).add(topic);
     }
@@ -167,20 +166,6 @@ public class MirrorStateCache {
         if (topics != null) {
             topics.remove(topic);
         }
-    }
-
-    // -- Loaded coordinator shard operations --
-
-    public boolean isShardLoaded(int coordPartition) {
-        return loadedCoordPartitions.contains(coordPartition);
-    }
-
-    public void addLoadedShard(int coordPartition) {
-        loadedCoordPartitions.add(coordPartition);
-    }
-
-    public void removeLoadedShard(int coordPartition) {
-        loadedCoordPartitions.remove(coordPartition);
     }
 
     // -- Pending topic creation operations --

@@ -18,6 +18,7 @@ package org.apache.kafka.coordinator.mirror;
 
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.message.ReadMirrorStatesResponseData;
 import org.apache.kafka.server.common.MirrorPartitionState;
 
 import java.util.Optional;
@@ -32,6 +33,7 @@ import java.util.function.Function;
 public interface CoreBridge {
     void initialize(
         CoordinatorWriter coordinatorWriter,
+        CoordinatorReader coordinatorReader,
         Function<MirrorPartitionKey, Integer> coordPartFinder
     );
 
@@ -87,6 +89,20 @@ public interface CoreBridge {
         CompletableFuture<Void> writeTombstone(
             String mirrorName,
             Set<TopicPartition> partitions
+        );
+    }
+
+    /**
+     * Callback for reading partition state from the {@code __mirror_state} shard
+     * via the {@code CoordinatorRuntime}. Delegating the read through the runtime
+     * (rather than reading MMM's local cache directly) ensures that a shard still
+     * loading surfaces as {@code COORDINATOR_LOAD_IN_PROGRESS} instead of returning
+     * possibly-incomplete cached state.
+     */
+    interface CoordinatorReader {
+        CompletableFuture<ReadMirrorStatesResponseData> readPartitionState(
+            String mirrorName,
+            TopicPartition tp
         );
     }
 }

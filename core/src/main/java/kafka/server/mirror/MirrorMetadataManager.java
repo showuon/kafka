@@ -147,6 +147,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private volatile Admin dstAdmin;
 
     private Optional<CoreBridge.CoordinatorWriter> coordinatorWriter = Optional.empty();
+    private Optional<CoreBridge.CoordinatorReader> coordinatorReader = Optional.empty();
     private Optional<Function<MirrorPartitionKey, Integer>> coordPartFinder = Optional.empty();
 
     private final KafkaMetricsGroup metricsGroup;
@@ -220,6 +221,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * Creates the {@link MirrorSourceSyncer} and schedules periodic metadata refresh.
      */
     public void initialize(CoreBridge.CoordinatorWriter coordinatorWriter,
+                           CoreBridge.CoordinatorReader coordinatorReader,
                            Function<MirrorPartitionKey, Integer> coordPartFinder) {
         if (mirrorStateSender == null) {
             this.mirrorStateSender = new MirrorStateSender(MirrorStateSender.class.getSimpleName(),
@@ -233,8 +235,10 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 topicConfigSyncError, consumerGroupOffsetSyncError, shareGroupOffsetSyncError, aclSyncError, metricsGroup);
         sourceSyncer.scheduleMetadataRefresh(brokerConfig.mirrorConfig().metadataRefreshIntervalMs());
 
-        // MMM call the writer whenever it needs to persist state to the __mirror_state shard
+        // MMM call the writer whenever it needs to persist state to the __mirror_state shard locally
         this.coordinatorWriter = Optional.of(coordinatorWriter);
+        // MMM call the reader whenever it needs to read local coordinator state
+        this.coordinatorReader = Optional.of(coordinatorReader);
 
         this.coordPartFinder = Optional.of(coordPartFinder);
         this.isInitialized = true;
@@ -490,13 +494,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     /**
-     * Called after a coordinator shard finishes loading. Marks the shard as ready
-     * so that {@link #processStateTransitions} accepts local writes for its partitions,
-     * then re-evaluates mirror leader partitions that map to this coordinator partition.
+     * Called after a coordinator shard finishes loading. Re-evaluates mirror leader partitions
+     * that map to this coordinator partition
      */
     public void onShardLoaded(int coordPartition) {
         log.debug("Coordinator shard {} loaded.", coordPartition);
-        mirrorCache.addLoadedShard(coordPartition);
         if (!isInitialized || metadataImage == null || !coordPartFinder.isPresent()) {
             return;
         }
@@ -521,13 +523,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     /**
-     * Called when a coordinator shard is unloaded. Marks the shard as not ready
-     * so that {@link #processStateTransitions} skips local writes for its partitions,
-     * then clears cached state for partitions that mapped to this shard.
+     * Called when a coordinator shard is unloaded. Clears cached state for partitions
+     * that mapped to this shard.
      */
     public void onShardUnloaded(int coordPartition, int coordPartitionCount) {
         log.debug("Coordinator shard {} unloaded.", coordPartition);
-        mirrorCache.removeLoadedShard(coordPartition);
         mirrorCache.clearPartition(coordPartition, coordPartitionCount);
     }
 
@@ -546,17 +546,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             boolean stopRequested = desiredMirrorState == MirrorPartitionState.STOPPED.value();
             boolean pauseRequested = desiredMirrorState == MirrorPartitionState.PAUSED.value();
 
-            MirrorPartitionKey key = MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
-            if (isLocalCoordinator(key.mirrorName(), tp.topic(), tp.partition())) {
-                int cp = coordPartFinder.get().apply(key);
-                if (!mirrorCache.isShardLoaded(cp)) {
-                    log.debug("Skipping transition for {} (shard {} not loaded).", tp, cp);
-                    return;
-                }
-                MirrorPartition entry = mirrorCache.getPartition(key);
-                MirrorPartitionState curState = entry != null ? entry.state() : MirrorPartitionState.UNKNOWN;
-                log.debug("Local transition for {} (current: {})", tp, curState);
-                applyStateTransition(key.mirrorName(), tp, curState, null, stopRequested, pauseRequested);
+            if (isLocalCoordinator(mirrorName, tp.topic(), tp.partition())) {
+                readStateFromLocalCoordinator(mirrorName, tp, stopRequested, pauseRequested);
             } else {
                 remoteDesiredStates
                         .computeIfAbsent(mirrorName, k -> new HashMap<>())
@@ -587,6 +578,39 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                                 applyStateTransition(mirrorName, resTp, curState, state, stopRequested, pauseRequested);
                             })));
         });
+    }
+
+    /**
+     * Reads a mirror partition's current state from the local coordinator via
+     * {@link CoreBridge.CoordinatorReader}, then applies the appropriate state transition.
+     * If the shard is still loading, the coordinator responds with
+     * {@link CoordinatorLoadInProgressException} and the transition is skipped; it will be
+     * retried once {@link #onShardLoaded} re-evaluates local leader partitions for that shard.
+     */
+    private void readStateFromLocalCoordinator(String mirrorName, TopicPartition tp,
+                                                boolean stopRequested, boolean pauseRequested) {
+        coordinatorReader.ifPresent(reader ->
+                reader.readPartitionState(mirrorName, tp).whenComplete((data, ex) -> {
+                    if (ex != null) {
+                        Throwable cause = (ex instanceof CompletionException && ex.getCause() != null) ? ex.getCause() : ex;
+                        if (cause instanceof CoordinatorLoadInProgressException) {
+                            log.debug("Skipping transition for {} (shard loading).", tp);
+                        } else {
+                            log.warn("Failed to read local coordinator state for {}", tp, cause);
+                        }
+                        return;
+                    }
+                    data.topics().forEach(topic -> topic.partitions().forEach(partition -> {
+                        if (partition.errorCode() != Errors.NONE.code()) {
+                            log.warn("Error reading local coordinator state for {}-{}: {}",
+                                    topic.name(), partition.partitionIndex(), Errors.forCode(partition.errorCode()));
+                            return;
+                        }
+                        MirrorPartitionState curState = MirrorPartitionState.fromValue(partition.state());
+                        log.debug("Local transition for {} (current: {})", tp, curState);
+                        applyStateTransition(mirrorName, tp, curState, null, stopRequested, pauseRequested);
+                    }));
+                }));
     }
 
     /** Completes epoch bump futures whose requested epochs are now reflected in the metadata image. */
