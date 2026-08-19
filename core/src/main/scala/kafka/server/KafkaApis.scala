@@ -1635,6 +1635,7 @@ class KafkaApis(val requestChannel: RequestChannel,
 
     val unauthorizedTopicResponses = mutable.Map[TopicPartition, DeleteRecordsPartitionResult]()
     val nonExistingTopicResponses = mutable.Map[TopicPartition, DeleteRecordsPartitionResult]()
+    val nonStoppedMirroredTopicPartitionResponses = mutable.Map[TopicPartition, DeleteRecordsPartitionResult]()
     val authorizedForDeleteTopicOffsets = mutable.Map[TopicPartition, Long]()
 
     val topics = deleteRecordsRequest.data.topics.asScala
@@ -1653,13 +1654,19 @@ class KafkaApis(val requestChannel: RequestChannel,
         nonExistingTopicResponses += topicPartition -> new DeleteRecordsPartitionResult()
           .setLowWatermark(DeleteRecordsResponse.INVALID_LOW_WATERMARK)
           .setErrorCode(Errors.UNKNOWN_TOPIC_OR_PARTITION.code)
-      else
-        authorizedForDeleteTopicOffsets += (topicPartition -> offset)
+      else {
+        if (!mirrorMetadataManager.validateDeleteRecords(topicPartition))
+          nonStoppedMirroredTopicPartitionResponses += topicPartition -> new DeleteRecordsPartitionResult()
+            .setLowWatermark(DeleteRecordsResponse.INVALID_LOW_WATERMARK)
+            .setErrorCode(Errors.MIRROR_TOPIC_NOT_STOPPED.code)
+        else
+          authorizedForDeleteTopicOffsets += (topicPartition -> offset)
+      }
     }
 
     // the callback for sending a DeleteRecordsResponse
     def sendResponseCallback(authorizedTopicResponses: Map[TopicPartition, DeleteRecordsPartitionResult]): Unit = {
-      val mergedResponseStatus = authorizedTopicResponses ++ unauthorizedTopicResponses ++ nonExistingTopicResponses
+      val mergedResponseStatus = authorizedTopicResponses ++ unauthorizedTopicResponses ++ nonExistingTopicResponses ++ nonStoppedMirroredTopicPartitionResponses
       mergedResponseStatus.foreachEntry { (topicPartition, status) =>
         if (status.errorCode != Errors.NONE.code) {
           debug("DeleteRecordsRequest with correlation id %d from client %s on partition %s failed due to %s".format(

@@ -1395,6 +1395,31 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     /**
+     * Validates if records in the given TopicPartition can be safely deleted.
+     * @return true if the topic has no active mirror
+     */
+    public boolean validateDeleteRecords(TopicPartition topicPartition) {
+        MetadataImage currentImage = metadataImage;
+        TopicImage topicImage = currentImage.topics().getTopic(topicPartition.topic());
+
+        // This shouldn't happen because we validate topic existence before. We perform the check anyway to avoid an NPE
+        if (topicImage == null) {
+            return false;
+        }
+
+        if (topicImage.mirrorName() == null || topicImage.mirrorName().isBlank()) {
+            return true;
+        }
+
+        if (topicImage.desiredMirrorState() != MirrorPartitionState.STOPPED.value()) {
+            return false;
+        }
+
+        Map<TopicPartition, MirrorPartitionState> currentState = getMirrorStates(topicImage.mirrorName());
+        return currentState.getOrDefault(topicPartition, MirrorPartitionState.UNKNOWN) == MirrorPartitionState.STOPPED;
+    }
+
+    /**
      * Validates partition states on the broker before forwarding a mirror operation to the controller.
      * Checks that both the desired state (from MetadataImage) and the actual coordinator state
      * (local cache + remote RPCs) are within {@code validStates}. On success, passes the metadata
