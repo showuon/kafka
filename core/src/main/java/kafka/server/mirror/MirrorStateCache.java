@@ -114,7 +114,7 @@ public class MirrorStateCache {
             int attempt = existing.nextAttempt(isPermFailure);
             MirrorPartitionState previousState = existing.resolvePrevState(currentState);
             partitions.compute(key, (k, e) -> MirrorPartition.orEmpty(e).withError(errorMessage, attempt, previousState));
-        } else if (newState == MirrorPartitionState.LOG_TRUNCATION
+        } else if (newState == MirrorPartitionState.LOG_ALIGNMENT
                 || newState == MirrorPartitionState.STOPPED
                 || newState == MirrorPartitionState.PAUSED) {
             clearFailedInfo(key);

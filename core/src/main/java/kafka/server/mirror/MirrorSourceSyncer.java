@@ -589,8 +589,8 @@ class MirrorSourceSyncer {
             }
             var partition = topicImage.partitions().get(tp.partition());
             if (partition != null && partition.leader == nodeId) {
-                log.info("Source leader for {} discovered after initial onMetadataUpdate, transitioning to LOG_TRUNCATION", tp);
-                metadataManager.transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.LOG_TRUNCATION);
+                log.info("Source leader for {} discovered after initial onMetadataUpdate, transitioning to LOG_ALIGNMENT", tp);
+                metadataManager.transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.LOG_ALIGNMENT);
             }
         });
     }

@@ -862,9 +862,9 @@ class ClusterMirroringTest(MirrorUtils, Test):
             timeout_sec=120, backoff_sec=2,
             err_msg="Failed to start reverse mirror topics",
         )
-        # Mirror stays in LOG_TRUNCATION until all source replicas rejoin ISR for LME truncation
+        # Mirror stays in LOG_ALIGNMENT until all source replicas rejoin ISR for LME truncation
         MirrorUtils.wait_mirror_state(self.logger, self.source_kafka, self.client_node,
-                        "new-mirror", ["my-topic"], "LOG_TRUNCATION")
+                        "new-mirror", ["my-topic"], "LOG_ALIGNMENT")
 
         self.logger.info("Start the stopped source broker so all replicas rejoin ISR for LME truncation")
         self.source_kafka.start_node(src_broker0)
