@@ -813,6 +813,10 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * Each state triggers a specific action: LOG_ALIGNMENT starts truncation,
      * EPOCH_FENCING bumps the leader epoch, MIRRORING creates fetchers,
      * PAUSING/STOPPING removes fetchers, FAILED schedules a retry.
+     * ULE_LOG_TRUNCATION waits for all replicas (not just ISR) to converge
+     * before returning to MIRRORING; the wait itself is driven by the
+     * replica-side truncation completion callback (see Partition#maybeCompleteTruncation),
+     * which transitions back to MIRRORING once every replica has caught up.
      */
     private void onStateTransition(String mirrorName, TopicPartition tp, MirrorPartitionState newState) {
         switch (newState) {
@@ -831,6 +835,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 break;
             case MIRRORING:
                 replicaManagerSupplier.get().maybeCreateMirrorFetchers(mirrorName, Set.of(tp));
+                break;
+            case ULE_LOG_TRUNCATION:
                 break;
             case PAUSING:
                 replicaManagerSupplier.get().mirrorFetcherManager()
