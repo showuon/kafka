@@ -264,6 +264,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.READ_MIRROR_STATES => handleReadMirrorStates(request)
         case ApiKeys.WRITE_MIRROR_STATES => handleWriteMirrorStates(request)
         case ApiKeys.BUMP_LEADER_EPOCHS => forwardToController(request)
+        case ApiKeys.RECOVER_MIRROR_TOPICS => handlePauseMirrorTopics(request)
         case _ => throw new IllegalStateException(s"No handler for request api key ${request.header.apiKey}")
       }
     } catch {
@@ -4289,6 +4290,27 @@ class KafkaApis(val requestChannel: RequestChannel,
           new StopMirrorTopicsResponseData().setErrorCode(errOpt.get().code()).setErrorMessage(errOpt.get().message())))
       } else {
         forwardingManager.forwardRequest(request, new StopMirrorTopicsRequest(data, request.header.apiVersion()), {
+          case Some(response) => requestHelper.sendForwardedResponse(request, response)
+          case None => handleInvalidVersionsDuringForwarding(request)
+        })
+      }
+    })
+  }
+
+  def handleRecoverMirrorTopics(request: RequestChannel.Request): Unit = {
+    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
+      logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring pause mirror topics request")
+      requestHelper.sendMaybeThrottle(request, new PauseMirrorTopicsResponse(
+        new PauseMirrorTopicsResponseData().setErrorCode(Errors.UNSUPPORTED_VERSION.code)))
+      return
+    }
+    val data = request.body[PauseMirrorTopicsRequest].data()
+    mirrorMetadataManager.validatePauseMirrorStates(data, errOpt => {
+      if (errOpt.isPresent) {
+        requestHelper.sendMaybeThrottle(request, new PauseMirrorTopicsResponse(
+          new PauseMirrorTopicsResponseData().setErrorCode(errOpt.get().code()).setErrorMessage(errOpt.get().message())))
+      } else {
+        forwardingManager.forwardRequest(request, new PauseMirrorTopicsRequest(data, request.header.apiVersion()), {
           case Some(response) => requestHelper.sendForwardedResponse(request, response)
           case None => handleInvalidVersionsDuringForwarding(request)
         })

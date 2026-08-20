@@ -149,6 +149,8 @@ import org.apache.kafka.clients.admin.PauseMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.PauseMirrorTopicsResult;
 import org.apache.kafka.clients.admin.RaftVoterEndpoint;
 import org.apache.kafka.clients.admin.RecordsToDelete;
+import org.apache.kafka.clients.admin.RecoverMirrorTopicsOptions;
+import org.apache.kafka.clients.admin.RecoverMirrorTopicsResult;
 import org.apache.kafka.clients.admin.RemoveMembersFromConsumerGroupOptions;
 import org.apache.kafka.clients.admin.RemoveMembersFromConsumerGroupResult;
 import org.apache.kafka.clients.admin.RemoveRaftVoterOptions;

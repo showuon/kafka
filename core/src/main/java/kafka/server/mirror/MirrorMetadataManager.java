@@ -1390,6 +1390,12 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         return getConfiguredTopics(mirrorName, false, false).size();
     }
 
+    public void recoverMirrorTopics(String mirrorName, Set<String> topics) {
+        // 1. get current states for all the partitions under the topics
+        // 2. If there are FAILED partitions, write a MirrorPartitionState record to set the retryAttempt=0
+        // 3. After write completes, transition to previousState
+    }
+
     public void validateDeleteMirrorStates(DeleteClusterMirrorRequestData data, Consumer<Optional<Errors>> callback) {
         Set<String> topics = getConfiguredTopics(data.mirrorName(), true, true);
         validateMirrorStates(data.mirrorName(), topics,
