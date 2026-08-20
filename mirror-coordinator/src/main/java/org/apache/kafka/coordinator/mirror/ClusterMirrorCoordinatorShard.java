@@ -270,7 +270,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                 try {
                     CoordinatorResult<Void, CoordinatorRecord> result =
                             writePartitionState(mirrorName, tp, partition.state(),
-                                    partition.leaderEpoch(), partition.stateEpoch(), null, false);
+                                    partition.leaderEpoch(), partition.stateEpoch(), null, false, false);
                     records.addAll(result.records());
                     int newEpoch = stateEpochMap.getOrDefault(
                             MirrorPartitionKey.of(mirrorName, coreBridge.getTopicId(topic), tp.partition()), 0);
@@ -292,7 +292,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
 
     public CoordinatorResult<Void, CoordinatorRecord> writePartitionState(
             String mirrorName, TopicPartition tp, MirrorPartitionState state,
-            int leaderEpoch, int expectedStateEpoch, String errorMessage, boolean isPermFailure
+            int leaderEpoch, int expectedStateEpoch, String errorMessage, boolean isPermFailure, boolean isRecovery
     ) {
         MirrorPartitionKey pk = MirrorPartitionKey.of(mirrorName, coreBridge.getTopicId(tp.topic()), tp.partition());
         if (leaderEpoch != -1 && leaderEpochMap.containsKey(pk) && leaderEpochMap.get(pk) > leaderEpoch) {
@@ -310,7 +310,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
             return new CoordinatorResult<>(List.of(), null);
         }
         log.debug("Transitioning partition {} from {} to {}.", tp, currentState, state);
-        coreBridge.updateFailedInfo(pk, currentState, state, errorMessage, isPermFailure);
+        coreBridge.updateFailedInfo(pk, currentState, state, errorMessage, isPermFailure, isRecovery);
 
         maybeUpdateLeaderEpochMap(pk, leaderEpoch);
         int newEpoch = currentStateEpoch + 1;
