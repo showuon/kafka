@@ -1398,6 +1398,11 @@ public class MockAdminClient extends AdminClient {
     }
 
     @Override
+    public RecoverMirrorTopicsResult recoverMirrorTopics(String mirrorName, Set<String> topics, RecoverMirrorTopicsOptions options) {
+        throw new UnsupportedOperationException("Not implemented yet");
+    }
+
+    @Override
     public DeleteClusterMirrorResult deleteClusterMirror(String mirrorName, DeleteClusterMirrorOptions options) {
         throw new UnsupportedOperationException("Not implemented yet");
     }

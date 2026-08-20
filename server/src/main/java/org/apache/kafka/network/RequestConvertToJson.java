@@ -174,6 +174,8 @@ import org.apache.kafka.common.message.ReadShareGroupStateRequestDataJsonConvert
 import org.apache.kafka.common.message.ReadShareGroupStateResponseDataJsonConverter;
 import org.apache.kafka.common.message.ReadShareGroupStateSummaryRequestDataJsonConverter;
 import org.apache.kafka.common.message.ReadShareGroupStateSummaryResponseDataJsonConverter;
+import org.apache.kafka.common.message.RecoverMirrorTopicsRequestDataJsonConverter;
+import org.apache.kafka.common.message.RecoverMirrorTopicsResponseDataJsonConverter;
 import org.apache.kafka.common.message.RemoveRaftVoterRequestDataJsonConverter;
 import org.apache.kafka.common.message.RemoveRaftVoterResponseDataJsonConverter;
 import org.apache.kafka.common.message.RenewDelegationTokenRequestDataJsonConverter;
@@ -380,6 +382,8 @@ import org.apache.kafka.common.requests.ReadShareGroupStateRequest;
 import org.apache.kafka.common.requests.ReadShareGroupStateResponse;
 import org.apache.kafka.common.requests.ReadShareGroupStateSummaryRequest;
 import org.apache.kafka.common.requests.ReadShareGroupStateSummaryResponse;
+import org.apache.kafka.common.requests.RecoverMirrorTopicsRequest;
+import org.apache.kafka.common.requests.RecoverMirrorTopicsResponse;
 import org.apache.kafka.common.requests.RemoveRaftVoterRequest;
 import org.apache.kafka.common.requests.RemoveRaftVoterResponse;
 import org.apache.kafka.common.requests.RenewDelegationTokenRequest;
@@ -640,6 +644,8 @@ public class RequestConvertToJson {
                 return PauseMirrorTopicsRequestDataJsonConverter.write(((PauseMirrorTopicsRequest) request).data(), request.version());
             case RESUME_MIRROR_TOPICS:
                 return ResumeMirrorTopicsRequestDataJsonConverter.write(((ResumeMirrorTopicsRequest) request).data(), request.version());
+            case RECOVER_MIRROR_TOPICS:
+                return RecoverMirrorTopicsRequestDataJsonConverter.write(((RecoverMirrorTopicsRequest) request).data(), request.version());
             case DELETE_CLUSTER_MIRROR:
                 return DeleteClusterMirrorRequestDataJsonConverter.write(((DeleteClusterMirrorRequest) request).data(), request.version());
             default:
@@ -850,6 +856,8 @@ public class RequestConvertToJson {
                 return PauseMirrorTopicsResponseDataJsonConverter.write(((PauseMirrorTopicsResponse) response).data(), version);
             case RESUME_MIRROR_TOPICS:
                 return ResumeMirrorTopicsResponseDataJsonConverter.write(((ResumeMirrorTopicsResponse) response).data(), version);
+            case RECOVER_MIRROR_TOPICS:
+                return RecoverMirrorTopicsResponseDataJsonConverter.write(((RecoverMirrorTopicsResponse) response).data(), version);
             case DELETE_CLUSTER_MIRROR:
                 return DeleteClusterMirrorResponseDataJsonConverter.write(((DeleteClusterMirrorResponse) response).data(), version);
             default:

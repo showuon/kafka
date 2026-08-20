@@ -1732,6 +1732,20 @@ public interface Admin extends AutoCloseable {
     ResumeMirrorTopicsResult resumeMirrorTopics(String mirrorName, Set<String> topics, ResumeMirrorTopicsOptions options);
 
     /**
+     * Recover mirroring for the specified topics.
+     *
+     * This operation is typically used to bring topics back into a healthy mirroring state after an
+     * error or inconsistency has been detected, without requiring the topics to be stopped and
+     * re-started from scratch.
+     *
+     * @param mirrorName The cluster mirror name
+     * @param topics Set of topic names to recover mirroring for
+     * @param options Options for the recover mirror topics operation
+     * @return The RecoverMirrorTopicsResult containing futures for each topic
+     */
+    RecoverMirrorTopicsResult recoverMirrorTopics(String mirrorName, Set<String> topics, RecoverMirrorTopicsOptions options);
+
+    /**
      * Delete a cluster mirror including its configuration.
      *
      * The mirror must be empty (no topics) or all its topics must have been removed (in STOPPED

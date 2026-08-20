@@ -231,6 +231,8 @@ import org.apache.kafka.common.message.ReadShareGroupStateRequestData;
 import org.apache.kafka.common.message.ReadShareGroupStateResponseData;
 import org.apache.kafka.common.message.ReadShareGroupStateSummaryRequestData;
 import org.apache.kafka.common.message.ReadShareGroupStateSummaryResponseData;
+import org.apache.kafka.common.message.RecoverMirrorTopicsRequestData;
+import org.apache.kafka.common.message.RecoverMirrorTopicsResponseData;
 import org.apache.kafka.common.message.RemoveRaftVoterRequestData;
 import org.apache.kafka.common.message.RemoveRaftVoterResponseData;
 import org.apache.kafka.common.message.RenewDelegationTokenRequestData;
@@ -1109,6 +1111,7 @@ public class RequestResponseTest {
             case WRITE_MIRROR_STATES: return createWriteMirrorStatesRequest(version);
             case PAUSE_MIRROR_TOPICS: return createPauseMirrorTopicsRequest(version);
             case RESUME_MIRROR_TOPICS: return createResumeMirrorTopicsRequest(version);
+            case RECOVER_MIRROR_TOPICS: return createRecoverMirrorTopicsRequest(version);
             case DELETE_CLUSTER_MIRROR: return createDeleteClusterMirrorRequest(version);
             case BUMP_LEADER_EPOCHS: return createBumpLeaderEpochsRequest(version);
             default: throw new IllegalArgumentException("Unknown API key " + apikey);
@@ -1216,6 +1219,7 @@ public class RequestResponseTest {
             case WRITE_MIRROR_STATES: return createWriteMirrorStatesResponse();
             case PAUSE_MIRROR_TOPICS: return createPauseMirrorTopicsResponse();
             case RESUME_MIRROR_TOPICS: return createResumeMirrorTopicsResponse();
+            case RECOVER_MIRROR_TOPICS: return createRecoverMirrorTopicsResponse();
             case DELETE_CLUSTER_MIRROR: return createDeleteClusterMirrorResponse();
             case BUMP_LEADER_EPOCHS: return createBumpLeaderEpochsResponse();
             default: throw new IllegalArgumentException("Unknown API key " + apikey);
@@ -1376,6 +1380,25 @@ public class RequestResponseTest {
                         .setName("topic")
                 ));
         return new ResumeMirrorTopicsResponse(data);
+    }
+
+    public RecoverMirrorTopicsRequest createRecoverMirrorTopicsRequest(short version) {
+        RecoverMirrorTopicsRequestData.TopicMetadataCollection topics = new RecoverMirrorTopicsRequestData.TopicMetadataCollection();
+        topics.add(new RecoverMirrorTopicsRequestData.TopicMetadata()
+                .setTopicName("topic")
+        );
+        RecoverMirrorTopicsRequestData data = new RecoverMirrorTopicsRequestData()
+                .setMirrorName("mirror")
+                .setTopics(topics);
+        return new RecoverMirrorTopicsRequest.Builder(data).build(version);
+    }
+
+    public RecoverMirrorTopicsResponse createRecoverMirrorTopicsResponse() {
+        RecoverMirrorTopicsResponseData data = new RecoverMirrorTopicsResponseData()
+                .setTopics(List.of(new RecoverMirrorTopicsResponseData.TopicResult()
+                        .setName("topic")
+                ));
+        return new RecoverMirrorTopicsResponse(data);
     }
 
     public DeleteClusterMirrorRequest createDeleteClusterMirrorRequest(short version) {

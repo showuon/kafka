@@ -454,6 +454,11 @@ public class TestingMetricsInterceptingAdminClient extends AdminClient {
     }
 
     @Override
+    public RecoverMirrorTopicsResult recoverMirrorTopics(final String mirrorName, final Set<String> topics, final RecoverMirrorTopicsOptions options) {
+        return adminDelegate.recoverMirrorTopics(mirrorName, topics, options);
+    }
+
+    @Override
     public DeleteClusterMirrorResult deleteClusterMirror(final String mirrorName, final DeleteClusterMirrorOptions options) {
         return adminDelegate.deleteClusterMirror(mirrorName, options);
     }

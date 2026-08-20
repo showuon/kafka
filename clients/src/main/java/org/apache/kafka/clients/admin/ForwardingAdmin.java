@@ -291,6 +291,11 @@ public class ForwardingAdmin implements Admin {
     }
 
     @Override
+    public RecoverMirrorTopicsResult recoverMirrorTopics(String mirrorName, Set<String> topics, RecoverMirrorTopicsOptions options) {
+        return delegate.recoverMirrorTopics(mirrorName, topics, options);
+    }
+
+    @Override
     public StartMirrorTopicsResult startMirrorTopics(String mirrorName, Set<String> topics, StartMirrorTopicsOptions options) {
         return delegate.startMirrorTopics(mirrorName, topics, options);
     }

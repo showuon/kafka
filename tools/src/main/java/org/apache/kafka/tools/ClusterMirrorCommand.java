@@ -28,6 +28,8 @@ import org.apache.kafka.clients.admin.DescribeClusterMirrorsOptions;
 import org.apache.kafka.clients.admin.ListClusterMirrorsResult;
 import org.apache.kafka.clients.admin.PauseMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.PauseMirrorTopicsResult;
+import org.apache.kafka.clients.admin.RecoverMirrorTopicsOptions;
+import org.apache.kafka.clients.admin.RecoverMirrorTopicsResult;
 import org.apache.kafka.clients.admin.ResumeMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.ResumeMirrorTopicsResult;
 import org.apache.kafka.clients.admin.StartMirrorTopicsOptions;
@@ -99,7 +101,7 @@ public abstract class ClusterMirrorCommand {
             } else if (opts.hasDescribeOption()) {
                 mirrorService.describeClusterMirrors(opts);
             } else if (opts.hasRecoverOption()) {
-                mirrorService.pauseMirrorTopics(opts);
+                mirrorService.recoverMirrorTopics(opts);
             }
         }
     }
@@ -200,9 +202,9 @@ public abstract class ClusterMirrorCommand {
             String mirrorName = opts.mirror().get();
             Set<String> topics = resolveTopicsForMirror(mirrorName, opts.topics());
 
-            PauseMirrorTopicsResult result = adminClient.pauseMirrorTopics(mirrorName, topics, new PauseMirrorTopicsOptions());
+            RecoverMirrorTopicsResult result = adminClient.recoverMirrorTopics(mirrorName, topics, new RecoverMirrorTopicsOptions());
             result.all().get();
-            System.out.printf("Paused mirroring for %d topic(s) in mirror %s: %s%n", topics.size(), mirrorName, topics);
+            System.out.printf("Recovered mirroring for %d topic(s) in mirror %s: %s%n", topics.size(), mirrorName, topics);
         }
 
         private void pauseMirrorTopics(MirrorCommandOptions opts) throws Exception {
@@ -592,15 +594,15 @@ public abstract class ClusterMirrorCommand {
             // should have exactly one action
             if ((has(createOpt) ? 1 : 0) + (has(startOpt) ? 1 : 0) + (has(stopOpt) ? 1 : 0)
                     + (has(deleteOpt) ? 1 : 0) + (has(pauseOpt) ? 1 : 0) + (has(resumeOpt) ? 1 : 0)
-                    + (has(listOpt) ? 1 : 0) + (has(describeOpt) ? 1 : 0) != 1)
+                    + (has(listOpt) ? 1 : 0) + (has(describeOpt) ? 1 : 0) + (has(recoverOpt) ? 1 : 0) != 1)
                 CommandLineUtils.printUsageAndExit(parser, "Command must include exactly one action: --create, --start, " +
-                        "--stop, --delete, --pause, --resume, --list, or --describe");
+                        "--stop, --delete, --pause, --resume, --list, --describe, or --recover");
 
             // check required args
             if (!has(bootstrapServerOpt))
                 throw new IllegalArgumentException("--bootstrap-server must be specified");
 
-            // --mirror is required for create, start, stop, pause, resume, and delete operations, but optional for list and describe
+            // --mirror is required for create, start, stop, pause, resume, recover, and delete operations, but optional for list and describe
             if (!has(listOpt) && !has(describeOpt) && !has(mirrorOpt))
                 throw new IllegalArgumentException("--mirror must be specified");
 
@@ -618,6 +620,9 @@ public abstract class ClusterMirrorCommand {
 
             if (has(resumeOpt) && !has(topicsOpt))
                 throw new IllegalArgumentException("--topics must be specified when resuming mirror topic(s)");
+
+            if (has(recoverOpt) && !has(topicsOpt))
+                throw new IllegalArgumentException("--topics must be specified when recovering mirror topic(s)");
 
             if (has(excludeOpt) && !has(startOpt))
                 throw new IllegalArgumentException("--exclude is only valid with --start");

@@ -258,6 +258,8 @@ import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.PauseMirrorTopicsRequest;
 import org.apache.kafka.common.requests.PauseMirrorTopicsResponse;
+import org.apache.kafka.common.requests.RecoverMirrorTopicsRequest;
+import org.apache.kafka.common.requests.RecoverMirrorTopicsResponse;
 import org.apache.kafka.common.requests.RemoveRaftVoterRequest;
 import org.apache.kafka.common.requests.RemoveRaftVoterResponse;
 import org.apache.kafka.common.requests.RenewDelegationTokenRequest;
@@ -5129,6 +5131,47 @@ public class KafkaAdminClient extends AdminClient {
         };
         runnable.call(call, now);
         return new ResumeMirrorTopicsResult(future);
+    }
+
+    @Override
+    public RecoverMirrorTopicsResult recoverMirrorTopics(String mirrorName, Set<String> topics, RecoverMirrorTopicsOptions options) {
+        final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
+        final long now = time.milliseconds();
+        final Call call = new Call("recoverMirrorTopics", calcDeadlineMs(now, options.timeoutMs()),
+                new LeastLoadedBrokerOrActiveKController()) {
+
+            @Override
+            RecoverMirrorTopicsRequest.Builder createRequest(int timeoutMs) {
+                return new RecoverMirrorTopicsRequest.Builder(mirrorName, topics);
+            }
+
+            @Override
+            void handleResponse(AbstractResponse abstractResponse) {
+                final RecoverMirrorTopicsResponse response =
+                        (RecoverMirrorTopicsResponse) abstractResponse;
+                Errors error = Errors.forCode(response.data().errorCode());
+                switch (error) {
+                    case NONE:
+                        future.complete(null);
+                        break;
+                    default:
+                        if (error.exception() instanceof RetriableException) {
+                            log.warn("Failed to recover mirror topics, retrying", error.exception());
+                            throw error.exception();
+                        }
+                        log.error("Mirror topics recovery failed: {}", topics, error.exception());
+                        future.completeExceptionally(error.exception());
+                        break;
+                }
+            }
+
+            @Override
+            void handleFailure(Throwable throwable) {
+                future.completeExceptionally(throwable);
+            }
+        };
+        runnable.call(call, now);
+        return new RecoverMirrorTopicsResult(future);
     }
 
     @Override
