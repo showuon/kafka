@@ -98,6 +98,8 @@ public abstract class ClusterMirrorCommand {
                 mirrorService.listClusterMirrors();
             } else if (opts.hasDescribeOption()) {
                 mirrorService.describeClusterMirrors(opts);
+            } else if (opts.hasRecoverOption()) {
+                mirrorService.pauseMirrorTopics(opts);
             }
         }
     }
@@ -192,6 +194,15 @@ public abstract class ClusterMirrorCommand {
                 props.put(entry.name(), entry.value());
             }
             return props;
+        }
+
+        private void recoverMirrorTopics(MirrorCommandOptions opts) throws Exception {
+            String mirrorName = opts.mirror().get();
+            Set<String> topics = resolveTopicsForMirror(mirrorName, opts.topics());
+
+            PauseMirrorTopicsResult result = adminClient.pauseMirrorTopics(mirrorName, topics, new PauseMirrorTopicsOptions());
+            result.all().get();
+            System.out.printf("Paused mirroring for %d topic(s) in mirror %s: %s%n", topics.size(), mirrorName, topics);
         }
 
         private void pauseMirrorTopics(MirrorCommandOptions opts) throws Exception {
@@ -421,6 +432,7 @@ public abstract class ClusterMirrorCommand {
         private final OptionSpecBuilder resumeOpt;
         private final OptionSpecBuilder listOpt;
         private final OptionSpecBuilder describeOpt;
+        private final OptionSpecBuilder recoverOpt;
         private final ArgumentAcceptingOptionSpec<String> mirrorOpt;
         private final ArgumentAcceptingOptionSpec<String> topicsOpt;
         private final ArgumentAcceptingOptionSpec<String> excludeOpt;
@@ -453,6 +465,7 @@ public abstract class ClusterMirrorCommand {
             listOpt = parser.accepts("list", "List all cluster mirrors.");
             describeOpt = parser.accepts("describe", "Describe a cluster mirror including partition lag and state.");
             deleteOpt = parser.accepts("delete", "Delete a cluster mirror.");
+            recoverOpt = parser.accepts("recover", "Recover topics matching the given patterns.");
 
             mirrorOpt = parser.accepts("mirror", "The name of the cluster mirror.")
                 .withRequiredArg()
@@ -523,6 +536,10 @@ public abstract class ClusterMirrorCommand {
 
         private boolean hasDescribeOption() {
             return has(describeOpt);
+        }
+
+        private boolean hasRecoverOption() {
+            return has(recoverOpt);
         }
 
         private Optional<String> bootstrapServer() {
