@@ -146,7 +146,8 @@ public enum ApiKeys {
     PAUSE_MIRROR_TOPICS(ApiMessageType.PAUSE_MIRROR_TOPICS, false, true),
     RESUME_MIRROR_TOPICS(ApiMessageType.RESUME_MIRROR_TOPICS, false, true),
     DELETE_CLUSTER_MIRROR(ApiMessageType.DELETE_CLUSTER_MIRROR, false, true),
-    BUMP_LEADER_EPOCHS(ApiMessageType.BUMP_LEADER_EPOCHS, false, true);
+    BUMP_LEADER_EPOCHS(ApiMessageType.BUMP_LEADER_EPOCHS, false, true),
+    RECOVER_MIRROR_TOPICS(ApiMessageType.RECOVER_MIRROR_TOPICS, false, true);
 
     private static final Map<ApiMessageType.ListenerType, EnumSet<ApiKeys>> APIS_BY_LISTENER =
         new EnumMap<>(ApiMessageType.ListenerType.class);
