@@ -144,6 +144,7 @@ class ControllerApis(
         case ApiKeys.RESUME_MIRROR_TOPICS => handleResumeMirrorTopics(request)
         case ApiKeys.DELETE_CLUSTER_MIRROR => handleDeleteClusterMirror(request)
         case ApiKeys.BUMP_LEADER_EPOCHS => handleBumpLeaderEpoch(request)
+        case ApiKeys.RECOVER_MIRROR_TOPICS => handleRecoverMirrorTopics(request)
         case _ => throw new ApiException(s"Unsupported ApiKey ${request.context.header.apiKey}")
       }
 
@@ -1346,6 +1347,36 @@ class ControllerApis(
         } else {
           requestHelper.sendResponseMaybeThrottle(request, throttleMs =>
             new ResumeMirrorTopicsResponse(response.setThrottleTimeMs(throttleMs)))
+        }
+      }
+    CompletableFuture.completedFuture[Unit](())
+  }
+
+  def handleRecoverMirrorTopics(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val recoverRequest = request.body[RecoverMirrorTopicsRequest]
+    val mirrorName = recoverRequest.data().mirrorName()
+    if (!authHelper.authorize(request.context, ALTER, CLUSTER_MIRROR, mirrorName))
+      throw new ClusterMirrorAuthorizationException(s"Request $request needs ALTER permission on ClusterMirror:$mirrorName.")
+    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures))
+      throw new UnsupportedVersionException("Cluster mirroring requires mirror.version >= 1.")
+    if (!request.isForwarded)
+      throw new InvalidRequestException("This request must be sent to a broker, not directly to the controller")
+
+    val topics: util.Set[String] = new util.HashSet[String]()
+    recoverRequest.data().topics().forEach(topic => topics.add(topic.topicName()))
+    val unauthorizedTopics = topics.asScala.filterNot(topic =>
+      authHelper.authorize(request.context, ALTER_CONFIGS, TOPIC, topic, logIfDenied = false))
+    if (unauthorizedTopics.nonEmpty)
+      throw new TopicAuthorizationException(unauthorizedTopics.asJava)
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.recoverMirrorTopics(context, mirrorName, topics)
+      .handle[Unit] { (response, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, throttleMs =>
+            new RecoverMirrorTopicsResponse(response.setThrottleTimeMs(throttleMs)))
         }
       }
     CompletableFuture.completedFuture[Unit](())

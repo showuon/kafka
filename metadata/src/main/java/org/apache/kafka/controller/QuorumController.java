@@ -58,6 +58,7 @@ import org.apache.kafka.common.message.ExpireDelegationTokenResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData;
 import org.apache.kafka.common.message.PauseMirrorTopicsResponseData;
+import org.apache.kafka.common.message.RecoverMirrorTopicsResponseData;
 import org.apache.kafka.common.message.RenewDelegationTokenRequestData;
 import org.apache.kafka.common.message.RenewDelegationTokenResponseData;
 import org.apache.kafka.common.message.ResumeMirrorTopicsResponseData;
@@ -1834,6 +1835,16 @@ public final class QuorumController implements Controller {
     ) {
         return appendWriteEvent("resumeMirrorTopics", context.deadlineNs(),
                 () -> configurationControl.resumeMirrorTopics(mirrorName, topics, replicationControl, stateOffset));
+    }
+
+    @Override
+    public CompletableFuture<RecoverMirrorTopicsResponseData> recoverMirrorTopics(
+            ControllerRequestContext context,
+            String mirrorName,
+            Set<String> topics
+    ) {
+        return appendWriteEvent("recoverMirrorTopics", context.deadlineNs(),
+                () -> configurationControl.recoverMirrorTopics(mirrorName, topics, replicationControl));
     }
 
     @Override

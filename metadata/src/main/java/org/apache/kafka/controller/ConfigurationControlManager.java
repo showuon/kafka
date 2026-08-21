@@ -30,6 +30,7 @@ import org.apache.kafka.common.config.types.Password;
 import org.apache.kafka.common.message.CreateClusterMirrorResponseData;
 import org.apache.kafka.common.message.DeleteClusterMirrorResponseData;
 import org.apache.kafka.common.message.PauseMirrorTopicsResponseData;
+import org.apache.kafka.common.message.RecoverMirrorTopicsResponseData;
 import org.apache.kafka.common.message.ResumeMirrorTopicsResponseData;
 import org.apache.kafka.common.message.StartMirrorTopicsResponseData;
 import org.apache.kafka.common.message.StopMirrorTopicsResponseData;
@@ -607,6 +608,48 @@ public class ConfigurationControlManager {
                 (short) 0));
         }
         data.setTopics(topicResList);
+
+        return ControllerResult.of(records, data);
+    }
+
+    ControllerResult<RecoverMirrorTopicsResponseData> recoverMirrorTopics(String mirrorName, Set<String> topics, ReplicationControlManager replicationControl) {
+        List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
+        RecoverMirrorTopicsResponseData data = new RecoverMirrorTopicsResponseData();
+
+        List<RecoverMirrorTopicsResponseData.TopicResult> topicResList = new ArrayList<>();
+        for (String topic : topics) {
+            RecoverMirrorTopicsResponseData.TopicResult topicRes = new RecoverMirrorTopicsResponseData.TopicResult();
+            Uuid topicId = replicationControl.getTopicId(topic);
+            ReplicationControlManager.TopicControlInfo topicInfo = replicationControl.getTopic(topicId);
+            if (topicInfo == null) {
+                topicRes.setErrorCode(Errors.UNKNOWN_TOPIC_OR_PARTITION.code()).setName(topic);
+                topicResList.add(topicRes);
+                continue;
+            }
+
+            String currMirrorName = topicInfo.mirrorName();
+            if (currMirrorName == null || currMirrorName.isBlank()) {
+                topicRes.setErrorCode(Errors.UNKNOWN_CLUSTER_MIRROR.code()).setName(topic);
+                topicResList.add(topicRes);
+                continue;
+            }
+
+            if (!currMirrorName.equals(mirrorName)) {
+                topicRes.setErrorCode(Errors.TOPIC_NOT_IN_CLUSTER_MIRROR.code()).setName(topic);
+                topicResList.add(topicRes);
+                continue;
+            }
+
+            records.add(new ApiMessageAndVersion(
+                    new MirrorTopicStateChangeRecord()
+                            .setTopicId(topicId)
+                            .setMirrorName(mirrorName)
+                            .setDesiredState(topicInfo.mirrorState()),
+                    (short) 0));
+        }
+        data.setTopics(topicResList);
+
+        log.info("!!! recovering, add:" + records);
 
         return ControllerResult.of(records, data);
     }
