@@ -4327,9 +4327,17 @@ class KafkaApis(val requestChannel: RequestChannel,
           .setErrorMessage(s"Not authorized to alter topic(s): ${unauthorizedTopics.mkString(", ")}")))
       return
     }
-    mirrorMetadataManager.recoverMirrorTopics(mirrorName, topics, responseData =>
-      requestHelper.sendResponseMaybeThrottle(request, throttleMs =>
-        new RecoverMirrorTopicsResponse(responseData.setThrottleTimeMs(throttleMs))))
+    mirrorMetadataManager.recoverMirrorTopics(mirrorName, topics, responseDataOpt =>
+      if (responseDataOpt.isPresent) {
+        requestHelper.sendResponseMaybeThrottle(request, throttleMs =>
+          new RecoverMirrorTopicsResponse(responseDataOpt.get().setThrottleTimeMs(throttleMs)))
+      } else {
+        forwardingManager.forwardRequest(request, new RecoverMirrorTopicsRequest(data, request.header.apiVersion()), {
+          case Some(response) => requestHelper.sendForwardedResponse(request, response)
+          case None => handleInvalidVersionsDuringForwarding(request)
+        })
+      })
+
   }
 
   def handlePauseMirrorTopics(request: RequestChannel.Request): Unit = {

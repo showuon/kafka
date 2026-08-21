@@ -1410,10 +1410,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * were already healthy are omitted).
      */
     public void recoverMirrorTopics(String mirrorName, Set<String> topics,
-                                     Consumer<RecoverMirrorTopicsResponseData> callback) {
+                                     Consumer<Optional<RecoverMirrorTopicsResponseData>> callback) {
         MetadataImage currentImage = metadataImage;
         Map<String, Set<Integer>> remotePartitions = new HashMap<>();
         Map<String, RecoverMirrorTopicsResponseData.TopicResult> resultsByTopic = new HashMap<>();
+        Set<String> topicsHasFailedPartitions = new HashSet<>();
 
         topics.forEach(topic -> {
             RecoverMirrorTopicsResponseData.TopicResult topicResult =
@@ -1431,9 +1432,10 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                     MirrorPartitionKey key = MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(topic), partition);
                     MirrorPartition mp = MirrorPartition.orEmpty(mirrorCache.getPartition(key));
                     if (mp.state() == MirrorPartitionState.FAILED) {
-                        recoverFailedPartition(mirrorName, tp, mp.prevState());
-                        topicResult.partitions().add(new RecoverMirrorTopicsResponseData.PartitionResult()
-                                .setPartitionIndex(partition));
+//                        recoverFailedPartition(mirrorName, tp, mp.prevState());
+//                        topicResult.partitions().add(new RecoverMirrorTopicsResponseData.PartitionResult()
+//                                .setPartitionIndex(partition));
+                        topicsHasFailedPartitions.add(topic);
                     }
                 } else {
                     remotePartitions.computeIfAbsent(topic, k -> new HashSet<>()).add(partition);
@@ -1442,8 +1444,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         });
 
         if (remotePartitions.isEmpty()) {
-            callback.accept(new RecoverMirrorTopicsResponseData()
-                    .setTopics(new ArrayList<>(resultsByTopic.values())));
+            callback.accept(Optional.of(new RecoverMirrorTopicsResponseData()
+                    .setTopics(new ArrayList<>(resultsByTopic.values()))));
             return;
         }
 
@@ -1457,16 +1459,28 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                             return;
                         }
                         if (partitionResult.state() == MirrorPartitionState.FAILED.value()) {
-                            TopicPartition tp = new TopicPartition(topicResult.name(), partitionResult.partitionIndex());
-                            recoverFailedPartition(mirrorName, tp,
-                                    MirrorPartitionState.fromValue(partitionResult.previousState()));
-                            resultsByTopic.get(topicResult.name()).partitions()
-                                    .add(new RecoverMirrorTopicsResponseData.PartitionResult()
-                                            .setPartitionIndex(partitionResult.partitionIndex()));
+                            topicsHasFailedPartitions.add(topicResult.name());
+//                            TopicPartition tp = new TopicPartition(topicResult.name(), partitionResult.partitionIndex());
+//                            recoverFailedPartition(mirrorName, tp,
+//                                    MirrorPartitionState.fromValue(partitionResult.previousState()));
+//                            resultsByTopic.get(topicResult.name()).partitions()
+//                                    .add(new RecoverMirrorTopicsResponseData.PartitionResult()
+//                                            .setPartitionIndex(partitionResult.partitionIndex()));
                         }
                     }));
-            callback.accept(new RecoverMirrorTopicsResponseData()
-                    .setTopics(new ArrayList<>(resultsByTopic.values())));
+            Set<String> diff = new HashSet<>(topics);
+            diff.removeAll(topicsHasFailedPartitions);
+            if (!diff.isEmpty()) {
+                String errMsg = "Cannot recover topics: " + diff + " because they don't have partition in FAILED state";
+                log.error(errMsg);
+                callback.accept(Optional.of(new RecoverMirrorTopicsResponseData().setErrorCode(Errors.INVALID_REQUEST.code()).setErrorMessage(errMsg)));
+            } else {
+                // luke
+                callback.accept(Optional.empty());
+            }
+
+//            callback.accept(new RecoverMirrorTopicsResponseData()
+//                    .setTopics(new ArrayList<>(resultsByTopic.values())));
         });
     }
 
@@ -1474,7 +1488,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         MirrorPartitionState targetState = (prevState == null || prevState == MirrorPartitionState.UNKNOWN)
                 ? MirrorPartitionState.LOG_ALIGNMENT : prevState;
         log.info("Recovering FAILED partition {} for mirror '{}', retrying from {}.", tp, mirrorName, targetState);
-        transitionTo(mirrorName, Set.of(tp), targetState, null, false, true, false);
+
     }
 
     public void validateDeleteMirrorStates(DeleteClusterMirrorRequestData data, Consumer<Optional<Errors>> callback) {

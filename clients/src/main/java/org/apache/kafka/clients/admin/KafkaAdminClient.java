@@ -5135,7 +5135,6 @@ public class KafkaAdminClient extends AdminClient {
 
     @Override
     public RecoverMirrorTopicsResult recoverMirrorTopics(String mirrorName, Set<String> topics, RecoverMirrorTopicsOptions options) {
-        final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
         final KafkaFutureImpl<Set<TopicPartition>> recoveredPartitionsFuture = new KafkaFutureImpl<>();
         final long now = time.milliseconds();
         final Call call = new Call("recoverMirrorTopics", calcDeadlineMs(now, options.timeoutMs()),
@@ -5159,7 +5158,6 @@ public class KafkaAdminClient extends AdminClient {
                                         recoveredPartitions.add(new TopicPartition(
                                                 topicResult.name(), partitionResult.partitionIndex()))));
                         recoveredPartitionsFuture.complete(recoveredPartitions);
-                        future.complete(null);
                         break;
                     default:
                         if (error.exception() instanceof RetriableException) {
@@ -5167,7 +5165,6 @@ public class KafkaAdminClient extends AdminClient {
                             throw error.exception();
                         }
                         log.error("Mirror topics recovery failed: {}", topics, error.exception());
-                        future.completeExceptionally(error.exception());
                         recoveredPartitionsFuture.completeExceptionally(error.exception());
                         break;
                 }
@@ -5175,12 +5172,11 @@ public class KafkaAdminClient extends AdminClient {
 
             @Override
             void handleFailure(Throwable throwable) {
-                future.completeExceptionally(throwable);
                 recoveredPartitionsFuture.completeExceptionally(throwable);
             }
         };
         runnable.call(call, now);
-        return new RecoverMirrorTopicsResult(future, recoveredPartitionsFuture);
+        return new RecoverMirrorTopicsResult(recoveredPartitionsFuture);
     }
 
     @Override

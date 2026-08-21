@@ -26,16 +26,14 @@ import java.util.Set;
  * The result of the {@link Admin#recoverMirrorTopics(String, Set, RecoverMirrorTopicsOptions)} call.
  */
 public class RecoverMirrorTopicsResult {
-    private final KafkaFuture<Void> future;
     private final KafkaFuture<Set<TopicPartition>> recoveredPartitionsFuture;
 
-    RecoverMirrorTopicsResult(final KafkaFuture<Void> future, final KafkaFuture<Set<TopicPartition>> recoveredPartitionsFuture) {
-        this.future = future;
+    RecoverMirrorTopicsResult(final KafkaFuture<Set<TopicPartition>> recoveredPartitionsFuture) {
         this.recoveredPartitionsFuture = recoveredPartitionsFuture;
     }
 
     public KafkaFuture<Void> all() {
-        return future;
+        return recoveredPartitionsFuture.thenApply(partitions -> null);
     }
 
     /**

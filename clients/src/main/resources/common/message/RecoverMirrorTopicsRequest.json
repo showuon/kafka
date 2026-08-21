@@ -16,7 +16,7 @@
 {
   "apiKey": 106,
   "type": "request",
-  "listeners": ["broker"],
+  "listeners": ["broker", "controller"],
   "name": "RecoverMirrorTopicsRequest",
   // Version 0 is the initial version.
   "validVersions": "0",
