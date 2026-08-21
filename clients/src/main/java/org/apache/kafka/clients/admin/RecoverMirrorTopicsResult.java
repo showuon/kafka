@@ -18,6 +18,7 @@
 package org.apache.kafka.clients.admin;
 
 import org.apache.kafka.common.KafkaFuture;
+import org.apache.kafka.common.TopicPartition;
 
 import java.util.Set;
 
@@ -26,12 +27,22 @@ import java.util.Set;
  */
 public class RecoverMirrorTopicsResult {
     private final KafkaFuture<Void> future;
+    private final KafkaFuture<Set<TopicPartition>> recoveredPartitionsFuture;
 
-    RecoverMirrorTopicsResult(final KafkaFuture<Void> future) {
+    RecoverMirrorTopicsResult(final KafkaFuture<Void> future, final KafkaFuture<Set<TopicPartition>> recoveredPartitionsFuture) {
         this.future = future;
+        this.recoveredPartitionsFuture = recoveredPartitionsFuture;
     }
 
     public KafkaFuture<Void> all() {
         return future;
+    }
+
+    /**
+     * Returns the set of partitions that were found in a FAILED state and had recovery triggered.
+     * Partitions that were already healthy are not included.
+     */
+    public KafkaFuture<Set<TopicPartition>> recoveredPartitions() {
+        return recoveredPartitionsFuture;
     }
 }

@@ -264,7 +264,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.READ_MIRROR_STATES => handleReadMirrorStates(request)
         case ApiKeys.WRITE_MIRROR_STATES => handleWriteMirrorStates(request)
         case ApiKeys.BUMP_LEADER_EPOCHS => forwardToController(request)
-        case ApiKeys.RECOVER_MIRROR_TOPICS => handlePauseMirrorTopics(request)
+        case ApiKeys.RECOVER_MIRROR_TOPICS => handleRecoverMirrorTopics(request)
         case _ => throw new IllegalStateException(s"No handler for request api key ${request.header.apiKey}")
       }
     } catch {
@@ -4297,25 +4297,39 @@ class KafkaApis(val requestChannel: RequestChannel,
     })
   }
 
+  // Unlike pause/resume/stop/start, recovering FAILED partitions doesn't persist any desired
+  // state to controller metadata, it's purely a broker-local action against the mirror
+  // coordinator, so this is handled directly here rather than forwarded to the controller.
   def handleRecoverMirrorTopics(request: RequestChannel.Request): Unit = {
     if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
-      logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring pause mirror topics request")
-      requestHelper.sendMaybeThrottle(request, new PauseMirrorTopicsResponse(
-        new PauseMirrorTopicsResponseData().setErrorCode(Errors.UNSUPPORTED_VERSION.code)))
+      logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring recover mirror topics request")
+      requestHelper.sendMaybeThrottle(request, new RecoverMirrorTopicsResponse(
+        new RecoverMirrorTopicsResponseData().setErrorCode(Errors.UNSUPPORTED_VERSION.code)))
       return
     }
-    val data = request.body[PauseMirrorTopicsRequest].data()
-    mirrorMetadataManager.validatePauseMirrorStates(data, errOpt => {
-      if (errOpt.isPresent) {
-        requestHelper.sendMaybeThrottle(request, new PauseMirrorTopicsResponse(
-          new PauseMirrorTopicsResponseData().setErrorCode(errOpt.get().code()).setErrorMessage(errOpt.get().message())))
-      } else {
-        forwardingManager.forwardRequest(request, new PauseMirrorTopicsRequest(data, request.header.apiVersion()), {
-          case Some(response) => requestHelper.sendForwardedResponse(request, response)
-          case None => handleInvalidVersionsDuringForwarding(request)
-        })
-      }
-    })
+    val data = request.body[RecoverMirrorTopicsRequest].data()
+    val mirrorName = data.mirrorName()
+    if (!authHelper.authorize(request.context, ALTER, CLUSTER_MIRROR, mirrorName, logIfDenied = false)) {
+      requestHelper.sendMaybeThrottle(request, new RecoverMirrorTopicsResponse(
+        new RecoverMirrorTopicsResponseData()
+          .setErrorCode(Errors.CLUSTER_MIRROR_AUTHORIZATION_FAILED.code)
+          .setErrorMessage(Errors.CLUSTER_MIRROR_AUTHORIZATION_FAILED.message)))
+      return
+    }
+    val topics: util.Set[String] = new util.HashSet[String]()
+    data.topics().forEach(topic => topics.add(topic.topicName()))
+    val unauthorizedTopics = topics.asScala.filterNot(topic =>
+      authHelper.authorize(request.context, ALTER_CONFIGS, TOPIC, topic, logIfDenied = false))
+    if (unauthorizedTopics.nonEmpty) {
+      requestHelper.sendMaybeThrottle(request, new RecoverMirrorTopicsResponse(
+        new RecoverMirrorTopicsResponseData()
+          .setErrorCode(Errors.TOPIC_AUTHORIZATION_FAILED.code)
+          .setErrorMessage(s"Not authorized to alter topic(s): ${unauthorizedTopics.mkString(", ")}")))
+      return
+    }
+    mirrorMetadataManager.recoverMirrorTopics(mirrorName, topics, responseData =>
+      requestHelper.sendResponseMaybeThrottle(request, throttleMs =>
+        new RecoverMirrorTopicsResponse(responseData.setThrottleTimeMs(throttleMs))))
   }
 
   def handlePauseMirrorTopics(request: RequestChannel.Request): Unit = {

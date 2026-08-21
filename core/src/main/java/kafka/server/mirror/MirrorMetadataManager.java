@@ -39,6 +39,7 @@ import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.message.MirrorPidResetRecord;
 import org.apache.kafka.common.message.PauseMirrorTopicsRequestData;
 import org.apache.kafka.common.message.ReadMirrorStatesRequestData;
+import org.apache.kafka.common.message.RecoverMirrorTopicsResponseData;
 import org.apache.kafka.common.message.ResumeMirrorTopicsRequestData;
 import org.apache.kafka.common.message.StartMirrorTopicsRequestData;
 import org.apache.kafka.common.message.StopMirrorTopicsRequestData;
@@ -1402,14 +1403,26 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * {@link MirrorStateCache#updateFailedInfo}), and once it completes, the normal
      * state-transition side effects for the target state are triggered via
      * {@link #onStateTransition}. Partitions that are not currently FAILED are left untouched.
+     * <p>
+     * {@code callback} receives one {@code TopicResult} per requested topic. Unknown topics are
+     * reported with {@link Errors#UNKNOWN_TOPIC_OR_PARTITION}; known topics list only the
+     * partitions that were actually found FAILED and had recovery triggered (partitions that
+     * were already healthy are omitted).
      */
-    public void recoverMirrorTopics(String mirrorName, Set<String> topics) {
+    public void recoverMirrorTopics(String mirrorName, Set<String> topics,
+                                     Consumer<RecoverMirrorTopicsResponseData> callback) {
         MetadataImage currentImage = metadataImage;
         Map<String, Set<Integer>> remotePartitions = new HashMap<>();
+        Map<String, RecoverMirrorTopicsResponseData.TopicResult> resultsByTopic = new HashMap<>();
 
         topics.forEach(topic -> {
+            RecoverMirrorTopicsResponseData.TopicResult topicResult =
+                    new RecoverMirrorTopicsResponseData.TopicResult().setName(topic);
+            resultsByTopic.put(topic, topicResult);
+
             TopicImage topicImage = currentImage.topics().getTopic(topic);
             if (topicImage == null) {
+                topicResult.setErrorCode(Errors.UNKNOWN_TOPIC_OR_PARTITION.code());
                 return;
             }
             topicImage.partitions().keySet().forEach(partition -> {
@@ -1419,6 +1432,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                     MirrorPartition mp = MirrorPartition.orEmpty(mirrorCache.getPartition(key));
                     if (mp.state() == MirrorPartitionState.FAILED) {
                         recoverFailedPartition(mirrorName, tp, mp.prevState());
+                        topicResult.partitions().add(new RecoverMirrorTopicsResponseData.PartitionResult()
+                                .setPartitionIndex(partition));
                     }
                 } else {
                     remotePartitions.computeIfAbsent(topic, k -> new HashSet<>()).add(partition);
@@ -1427,24 +1442,32 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         });
 
         if (remotePartitions.isEmpty()) {
+            callback.accept(new RecoverMirrorTopicsResponseData()
+                    .setTopics(new ArrayList<>(resultsByTopic.values())));
             return;
         }
 
-        readStateFromRemoteCoordinator(mirrorName, remotePartitions, response ->
-                response.data().topics().forEach(topicResult ->
-                        topicResult.partitions().forEach(partitionResult -> {
-                            if (partitionResult.errorCode() != Errors.NONE.code()) {
-                                log.warn("Error reading mirror state for {}-{} while recovering: {}",
-                                        topicResult.name(), partitionResult.partitionIndex(),
-                                        Errors.forCode(partitionResult.errorCode()));
-                                return;
-                            }
-                            if (partitionResult.state() == MirrorPartitionState.FAILED.value()) {
-                                TopicPartition tp = new TopicPartition(topicResult.name(), partitionResult.partitionIndex());
-                                recoverFailedPartition(mirrorName, tp,
-                                        MirrorPartitionState.fromValue(partitionResult.previousState()));
-                            }
-                        })));
+        readStateFromRemoteCoordinator(mirrorName, remotePartitions, response -> {
+            response.data().topics().forEach(topicResult ->
+                    topicResult.partitions().forEach(partitionResult -> {
+                        if (partitionResult.errorCode() != Errors.NONE.code()) {
+                            log.warn("Error reading mirror state for {}-{} while recovering: {}",
+                                    topicResult.name(), partitionResult.partitionIndex(),
+                                    Errors.forCode(partitionResult.errorCode()));
+                            return;
+                        }
+                        if (partitionResult.state() == MirrorPartitionState.FAILED.value()) {
+                            TopicPartition tp = new TopicPartition(topicResult.name(), partitionResult.partitionIndex());
+                            recoverFailedPartition(mirrorName, tp,
+                                    MirrorPartitionState.fromValue(partitionResult.previousState()));
+                            resultsByTopic.get(topicResult.name()).partitions()
+                                    .add(new RecoverMirrorTopicsResponseData.PartitionResult()
+                                            .setPartitionIndex(partitionResult.partitionIndex()));
+                        }
+                    }));
+            callback.accept(new RecoverMirrorTopicsResponseData()
+                    .setTopics(new ArrayList<>(resultsByTopic.values())));
+        });
     }
 
     private void recoverFailedPartition(String mirrorName, TopicPartition tp, MirrorPartitionState prevState) {

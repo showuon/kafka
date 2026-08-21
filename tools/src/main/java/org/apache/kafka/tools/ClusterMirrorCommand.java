@@ -34,6 +34,7 @@ import org.apache.kafka.clients.admin.ResumeMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.ResumeMirrorTopicsResult;
 import org.apache.kafka.clients.admin.StartMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.StopMirrorTopicsOptions;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.common.utils.Utils;
@@ -204,7 +205,13 @@ public abstract class ClusterMirrorCommand {
 
             RecoverMirrorTopicsResult result = adminClient.recoverMirrorTopics(mirrorName, topics, new RecoverMirrorTopicsOptions());
             result.all().get();
-            System.out.printf("Recovered mirroring for %d topic(s) in mirror %s: %s%n", topics.size(), mirrorName, topics);
+            Set<TopicPartition> recoveredPartitions = result.recoveredPartitions().get();
+            if (recoveredPartitions.isEmpty()) {
+                System.out.printf("No FAILED partitions found for mirror %s under topic(s): %s%n", mirrorName, topics);
+            } else {
+                System.out.printf("Recovered %d partition(s) for mirror %s: %s%n",
+                        recoveredPartitions.size(), mirrorName, recoveredPartitions);
+            }
         }
 
         private void pauseMirrorTopics(MirrorCommandOptions opts) throws Exception {

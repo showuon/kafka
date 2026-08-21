@@ -5136,6 +5136,7 @@ public class KafkaAdminClient extends AdminClient {
     @Override
     public RecoverMirrorTopicsResult recoverMirrorTopics(String mirrorName, Set<String> topics, RecoverMirrorTopicsOptions options) {
         final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
+        final KafkaFutureImpl<Set<TopicPartition>> recoveredPartitionsFuture = new KafkaFutureImpl<>();
         final long now = time.milliseconds();
         final Call call = new Call("recoverMirrorTopics", calcDeadlineMs(now, options.timeoutMs()),
                 new LeastLoadedBrokerOrActiveKController()) {
@@ -5152,6 +5153,12 @@ public class KafkaAdminClient extends AdminClient {
                 Errors error = Errors.forCode(response.data().errorCode());
                 switch (error) {
                     case NONE:
+                        Set<TopicPartition> recoveredPartitions = new HashSet<>();
+                        response.data().topics().forEach(topicResult ->
+                                topicResult.partitions().forEach(partitionResult ->
+                                        recoveredPartitions.add(new TopicPartition(
+                                                topicResult.name(), partitionResult.partitionIndex()))));
+                        recoveredPartitionsFuture.complete(recoveredPartitions);
                         future.complete(null);
                         break;
                     default:
@@ -5161,6 +5168,7 @@ public class KafkaAdminClient extends AdminClient {
                         }
                         log.error("Mirror topics recovery failed: {}", topics, error.exception());
                         future.completeExceptionally(error.exception());
+                        recoveredPartitionsFuture.completeExceptionally(error.exception());
                         break;
                 }
             }
@@ -5168,10 +5176,11 @@ public class KafkaAdminClient extends AdminClient {
             @Override
             void handleFailure(Throwable throwable) {
                 future.completeExceptionally(throwable);
+                recoveredPartitionsFuture.completeExceptionally(throwable);
             }
         };
         runnable.call(call, now);
-        return new RecoverMirrorTopicsResult(future);
+        return new RecoverMirrorTopicsResult(future, recoveredPartitionsFuture);
     }
 
     @Override
