@@ -49,6 +49,8 @@ public class FetchRequest extends AbstractRequest {
     public static final int DEBUGGING_CONSUMER_ID = -2;
     public static final int FUTURE_LOCAL_REPLICA_ID = -3;
 
+    public static final int CLUSTER_MIRROR_REPLICA_ID = -4;
+
     private final FetchRequestData data;
 
     // This is an immutable read-only structures derived from FetchRequestData
@@ -182,6 +184,11 @@ public class FetchRequest extends AbstractRequest {
         public static Builder forConsumer(short maxVersion, int maxWait, int minBytes, Map<TopicPartition, PartitionData> fetchData) {
             return new Builder(ApiKeys.FETCH.oldestVersion(), maxVersion,
                 CONSUMER_REPLICA_ID,  -1, maxWait, minBytes, fetchData);
+        }
+
+        public static Builder forClusterMirror(short maxVersion, int maxWait, int minBytes, Map<TopicPartition, PartitionData> fetchData) {
+            return new Builder(ApiKeys.FETCH.oldestVersion(), maxVersion,
+                    CLUSTER_MIRROR_REPLICA_ID,  -1, maxWait, minBytes, fetchData);
         }
 
         public static Builder forReplica(short allowedVersion, int replicaId, long replicaEpoch, int maxWait, int minBytes,
