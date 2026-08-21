@@ -156,6 +156,8 @@ class DelayedFetch(
   override def onExpiration(): Unit = {
     if (params.isFromFollower)
       DelayedFetchMetrics.followerExpiredRequestMeter.mark()
+    else if (params.isFromClusterMirror)
+      DelayedFetchMetrics.clusterMirrorExpiredRequestMeter.mark()
     else
       DelayedFetchMetrics.consumerExpiredRequestMeter.mark()
   }
@@ -191,5 +193,6 @@ object DelayedFetchMetrics {
   private val FetcherTypeKey = "fetcherType"
   val followerExpiredRequestMeter: Meter = metricsGroup.newMeter("ExpiresPerSec", "requests", TimeUnit.SECONDS, Map(FetcherTypeKey -> "follower").asJava)
   val consumerExpiredRequestMeter: Meter = metricsGroup.newMeter("ExpiresPerSec", "requests", TimeUnit.SECONDS, Map(FetcherTypeKey -> "consumer").asJava)
+  val clusterMirrorExpiredRequestMeter: Meter = metricsGroup.newMeter("ExpiresPerSec", "requests", TimeUnit.SECONDS, Map(FetcherTypeKey -> "mirror").asJava)
 }
 

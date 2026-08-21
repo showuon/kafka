@@ -22,6 +22,7 @@ import org.apache.kafka.common.requests.FetchRequest;
 import java.util.Objects;
 import java.util.Optional;
 
+import static org.apache.kafka.common.requests.FetchRequest.CLUSTER_MIRROR_REPLICA_ID;
 import static org.apache.kafka.common.requests.FetchRequest.FUTURE_LOCAL_REPLICA_ID;
 
 public class FetchParams {
@@ -79,8 +80,14 @@ public class FetchParams {
         return FetchRequest.isConsumer(replicaId);
     }
 
+    public boolean isFromClusterMirror() {
+        return replicaId == CLUSTER_MIRROR_REPLICA_ID;
+    }
+
     public boolean fetchOnlyLeader() {
-        return isFromFollower() || (isFromConsumer() && clientMetadata.isEmpty()) || shareFetchRequest;
+        return isFromFollower() ||
+                ((isFromConsumer() || isFromClusterMirror()) && clientMetadata.isEmpty()) ||
+                shareFetchRequest;
     }
 
     @Override
