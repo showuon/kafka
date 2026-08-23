@@ -133,38 +133,38 @@ public final class ClusterMirrorConfig {
     // Fetch and network configuration.
     // The replica.* equivalents use a mirror.* prefix to avoid ambiguity with broker-level configs.
     // The others reuse the existing key names since they have no replica.* prefix.
-    public static final String MIRROR_FETCH_WAIT_MAX_MS_CONFIG = "mirror.fetch.wait.max.ms";
+    public static final String MIRROR_FETCH_WAIT_MAX_MS_CONFIG = "fetch.wait.max.ms";
     public static final int MIRROR_FETCH_WAIT_MAX_MS_DEFAULT = 1000;
     public static final String MIRROR_FETCH_WAIT_MAX_MS_DOC = "The maximum wait time for each fetcher request issued by mirror replicas.";
 
-    public static final String MIRROR_FETCH_BACKOFF_MS_CONFIG = "mirror.fetch.backoff.ms";
+    public static final String MIRROR_FETCH_BACKOFF_MS_CONFIG = "fetch.backoff.ms";
     public static final long MIRROR_FETCH_BACKOFF_MS_DEFAULT = 1000;
     public static final String MIRROR_FETCH_BACKOFF_MS_DOC = "The amount of time to wait before retrying mirror fetch requests after a failure. " +
             "This controls the backoff for mirror fetcher threads on connection errors or other exceptions from the source cluster.";
 
-    public static final String MIRROR_FETCH_MIN_BYTES_CONFIG = "mirror.fetch.min.bytes";
+    public static final String MIRROR_FETCH_MIN_BYTES_CONFIG = "fetch.min.bytes";
     public static final int MIRROR_FETCH_MIN_BYTES_DEFAULT = 1;
     public static final String MIRROR_FETCH_MIN_BYTES_DOC = "Minimum bytes expected for each fetch response.";
 
-    public static final String MIRROR_FETCH_RESPONSE_MAX_BYTES_CONFIG = "mirror.fetch.response.max.bytes";
+    public static final String MIRROR_FETCH_RESPONSE_MAX_BYTES_CONFIG = "fetch.response.max.bytes";
     public static final int MIRROR_FETCH_RESPONSE_MAX_BYTES_DEFAULT = 10 * 1024 * 1024;
     public static final String MIRROR_FETCH_RESPONSE_MAX_BYTES_DOC = "Maximum bytes expected for the entire fetch response. Records are fetched in batches, " +
             "and if the first record batch in the first non-empty partition is larger than this value, the record batch will still be returned.";
 
-    public static final String MIRROR_FETCH_MAX_BYTES_CONFIG = "mirror.fetch.max.bytes";
+    public static final String MIRROR_FETCH_MAX_BYTES_CONFIG = "fetch.max.bytes";
     public static final int MIRROR_FETCH_MAX_BYTES_DEFAULT = 1024 * 1024;
     public static final String MIRROR_FETCH_MAX_BYTES_DOC = "The number of bytes of messages to attempt to fetch for each partition.";
 
-    public static final String MIRROR_SOCKET_TIMEOUT_MS_CONFIG = "mirror.socket.timeout.ms";
+    public static final String MIRROR_SOCKET_TIMEOUT_MS_CONFIG = "socket.timeout.ms";
     public static final int MIRROR_SOCKET_TIMEOUT_MS_DEFAULT = 30 * 1000;
     public static final String MIRROR_SOCKET_TIMEOUT_MS_DOC = "The socket timeout for network requests.";
 
-    public static final String MIRROR_SOCKET_RECEIVE_BUFFER_BYTES_CONFIG = "mirror.socket.receive.buffer.bytes";
+    public static final String MIRROR_SOCKET_RECEIVE_BUFFER_BYTES_CONFIG = "socket.receive.buffer.bytes";
     public static final int MIRROR_SOCKET_RECEIVE_BUFFER_BYTES_DEFAULT = 64 * 1024;
     public static final String MIRROR_SOCKET_RECEIVE_BUFFER_BYTES_DOC = "The socket receive buffer for network requests to the leader for replicating data.";
 
     // Filter configuration
-    public static final String MIRROR_TOPIC_PROPERTIES_EXCLUDE_CONFIG = "mirror.topic.properties.exclude";
+    public static final String MIRROR_TOPIC_PROPERTIES_EXCLUDE_CONFIG = "topic.properties.exclude";
     public static final String MIRROR_TOPIC_PROPERTIES_EXCLUDE_DEFAULT =
             "follower.replication.throttled.replicas,"
                     + "leader.replication.throttled.replicas,"
@@ -178,31 +178,31 @@ public final class ClusterMirrorConfig {
             + "Properties in this list will not be replicated from the source cluster. "
             + "The mirror.name property is always excluded regardless of this setting.";
 
-    public static final String MIRROR_TOPICS_INCLUDE_CONFIG = "mirror.topics.include";
+    public static final String MIRROR_TOPICS_INCLUDE_CONFIG = "topics.include";
     public static final String MIRROR_TOPICS_INCLUDE_DEFAULT = "";
     public static final String MIRROR_TOPICS_INCLUDE_DOC = "A comma-separated list of regex patterns for topic names to include in mirroring. "
             + "Topics on the source cluster whose names match at least one of the patterns will be automatically discovered and mirrored "
             + "(mirror.topics.exclude takes precedence over this). "
             + "When empty (default), only explicitly added topics are mirrored.";
 
-    public static final String MIRROR_TOPICS_EXCLUDE_CONFIG = "mirror.topics.exclude";
+    public static final String MIRROR_TOPICS_EXCLUDE_CONFIG = "topics.exclude";
     public static final String MIRROR_TOPICS_EXCLUDE_DEFAULT = "__.*";
     public static final String MIRROR_TOPICS_EXCLUDE_DOC = "A comma-separated list of regex patterns for topic names to exclude from mirroring "
             + "(this takes precedence over mirror.topics.include). "
             + "Internal topics are excluded by default.";
 
-    public static final String MIRROR_GROUPS_INCLUDE_CONFIG = "mirror.groups.include";
+    public static final String MIRROR_GROUPS_INCLUDE_CONFIG = "groups.include";
     public static final String MIRROR_GROUPS_INCLUDE_DEFAULT = ".*";
     public static final String MIRROR_GROUPS_INCLUDE_DOC = "A comma-separated list of regex patterns for consumer group IDs to include in offset synchronization. "
             + "Only consumer groups whose IDs match at least one of the patterns will have their offsets replicated from the source cluster "
             + "(mirror.groups.exclude takes precedence over this).";
 
-    public static final String MIRROR_GROUPS_EXCLUDE_CONFIG = "mirror.groups.exclude";
+    public static final String MIRROR_GROUPS_EXCLUDE_CONFIG = "groups.exclude";
     public static final String MIRROR_GROUPS_EXCLUDE_DEFAULT = "";
     public static final String MIRROR_GROUPS_EXCLUDE_DOC = "A comma-separated list of regex patterns for consumer group IDs to exclude from offset synchronization "
             + "(this takes precedence over mirror.groups.include).";
 
-    public static final String MIRROR_ACL_INCLUDE_CONFIG = "mirror.acls.include";
+    public static final String MIRROR_ACL_INCLUDE_CONFIG = "acls.include";
     public static final String MIRROR_ACL_INCLUDE_DEFAULT = "*";
     public static final String MIRROR_ACL_INCLUDE_DOC = "A comma-separated list of ACL include rules. Each rule uses semicolon-separated fields: "
             + "resourceType;resourceName;operation;permissionType;principal. Use '*' as wildcard for any field. The resourceName field supports "
@@ -563,13 +563,6 @@ public final class ClusterMirrorConfig {
                 .define(MIRROR_METADATA_REFRESH_INTERVAL_MS_CONFIG, LONG, MIRROR_METADATA_REFRESH_INTERVAL_MS_DEFAULT, atLeast(0L), MEDIUM, MIRROR_METADATA_REFRESH_INTERVAL_MS_DOC)
                 .define(MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_CONFIG, LONG, MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_DEFAULT, atLeast(1L), MEDIUM, MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_DOC)
                 .define(MIRROR_FAILED_RETRY_MAX_BACKOFF_MS_CONFIG, LONG, MIRROR_FAILED_RETRY_MAX_BACKOFF_MS_DEFAULT, atLeast(1L), MEDIUM, MIRROR_FAILED_RETRY_MAX_BACKOFF_MS_DOC)
-                .define(MIRROR_FAILED_RETRY_MAX_ATTEMPTS_CONFIG, INT, MIRROR_FAILED_RETRY_MAX_ATTEMPTS_DEFAULT, between(0, Short.MAX_VALUE), MEDIUM, MIRROR_FAILED_RETRY_MAX_ATTEMPTS_DOC)
-                .define(MIRROR_FETCH_BACKOFF_MS_CONFIG, LONG, MIRROR_FETCH_BACKOFF_MS_DEFAULT, atLeast(0L), MEDIUM, MIRROR_FETCH_BACKOFF_MS_DOC)
-                .define(MIRROR_FETCH_WAIT_MAX_MS_CONFIG, INT, MIRROR_FETCH_WAIT_MAX_MS_DEFAULT, atLeast(0), MEDIUM, MIRROR_FETCH_WAIT_MAX_MS_DOC)
-                .define(MIRROR_FETCH_MIN_BYTES_CONFIG, INT, MIRROR_FETCH_MIN_BYTES_DEFAULT, atLeast(0), MEDIUM, MIRROR_FETCH_MIN_BYTES_DOC)
-                .define(MIRROR_FETCH_RESPONSE_MAX_BYTES_CONFIG, INT, MIRROR_FETCH_RESPONSE_MAX_BYTES_DEFAULT, atLeast(0), MEDIUM, MIRROR_FETCH_RESPONSE_MAX_BYTES_DOC)
-                .define(MIRROR_FETCH_MAX_BYTES_CONFIG, INT, MIRROR_FETCH_MAX_BYTES_DEFAULT, atLeast(0), MEDIUM, MIRROR_FETCH_MAX_BYTES_DOC)
-                .define(MIRROR_SOCKET_TIMEOUT_MS_CONFIG, INT, MIRROR_SOCKET_TIMEOUT_MS_DEFAULT, atLeast(0), MEDIUM, MIRROR_SOCKET_TIMEOUT_MS_DOC)
-                .define(MIRROR_SOCKET_RECEIVE_BUFFER_BYTES_CONFIG, INT, MIRROR_SOCKET_RECEIVE_BUFFER_BYTES_DEFAULT, atLeast(0), MEDIUM, MIRROR_SOCKET_RECEIVE_BUFFER_BYTES_DOC);
+                .define(MIRROR_FAILED_RETRY_MAX_ATTEMPTS_CONFIG, INT, MIRROR_FAILED_RETRY_MAX_ATTEMPTS_DEFAULT, between(0, Short.MAX_VALUE), MEDIUM, MIRROR_FAILED_RETRY_MAX_ATTEMPTS_DOC);
     }
 }

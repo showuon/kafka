@@ -739,8 +739,8 @@ public class ConfigurationControlManager {
         ConfigResource mirrorResource = new ConfigResource(Type.CLUSTER_MIRROR, mirrorName);
         TimelineHashMap<String, String> mirrorConfigs = configData.get(mirrorResource);
 
-        String currentInclude = mirrorConfigs != null ? mirrorConfigs.getOrDefault("mirror.topics.include", "") : "";
-        String currentExclude = mirrorConfigs != null ? mirrorConfigs.getOrDefault("mirror.topics.exclude", "") : "";
+        String currentInclude = mirrorConfigs != null ? mirrorConfigs.getOrDefault("topics.include", "") : "";
+        String currentExclude = mirrorConfigs != null ? mirrorConfigs.getOrDefault("topics.exclude", "") : "";
 
         Set<String> includeSet = parseCsvToSet(currentInclude);
         Set<String> excludeSet = parseCsvToSet(currentExclude);
@@ -759,8 +759,8 @@ public class ConfigurationControlManager {
         }
 
         Map<String, Entry<OpType, String>> ops = Map.of(
-                "mirror.topics.include", new AbstractMap.SimpleImmutableEntry<>(SET, String.join(",", includeSet)),
-                "mirror.topics.exclude", new AbstractMap.SimpleImmutableEntry<>(SET, String.join(",", excludeSet)));
+                "topics.include", new AbstractMap.SimpleImmutableEntry<>(SET, String.join(",", includeSet)),
+                "topics.exclude", new AbstractMap.SimpleImmutableEntry<>(SET, String.join(",", excludeSet)));
         ControllerResult<ApiError> result = incrementalAlterConfig(mirrorResource, ops, false);
         if (result.response().isFailure()) {
             return result.response();
