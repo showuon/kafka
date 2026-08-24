@@ -16,7 +16,7 @@
 {
   "apiKey": 101,
   "type": "request",
-  "listeners": ["broker", "controller"],
+  "listeners": ["broker"],
   "name": "WriteMirrorStatesRequest",
   // Version 0 is the initial version.
   "validVersions": "0",
@@ -41,7 +41,6 @@
         { "name": "LastMirrorEpoch", "type": "int32", "versions": "0+", "default": "-1",
           "about": "The last mirrored leader epoch, or -1 if not available." }
       ]}
-    ]},
-    { "name": "StoppedTopics", "type": "[]string", "versions": "0+", "about": "The topic names to be stopped." }
+    ]}
   ]
 }

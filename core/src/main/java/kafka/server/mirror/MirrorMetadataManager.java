@@ -1211,7 +1211,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                     .setPartitions(partitionDataList)));
 
             data.setTopics(topicDataList);
-            data.setStoppedTopics(new ArrayList<>(stoppedTopics));
 
             mirrorStateSender.enqueue(new RequestAndCompletionHandler(
                 time.milliseconds(),
@@ -1259,8 +1258,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         CompletableFuture<Void> result = new CompletableFuture<>();
         CompletableFuture<ProduceResponse.PartitionResponse> future = new CompletableFuture<>();
         MirrorPidResetRecord pidResetRecord = new MirrorPidResetRecord()
-                .setVersion(ControlRecordUtils.MIRROR_PID_RESET_CURRENT_VERSION)
-                .setSourceClusterId(sourceClusterId);
+                .setVersion(ControlRecordUtils.MIRROR_PID_RESET_CURRENT_VERSION);
         try {
             var topicIdPartition = rm.topicIdPartition(tp);
             int bufferSize = DefaultRecordBatch.RECORD_BATCH_OVERHEAD + 256;

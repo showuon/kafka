@@ -16,7 +16,7 @@
 {
   "apiKey": 105,
   "type": "request",
-  "listeners": ["broker", "controller"],
+  "listeners": ["controller"],
   "name": "BumpLeaderEpochsRequest",
   // Version 0 is the initial version.
   "validVersions": "0",

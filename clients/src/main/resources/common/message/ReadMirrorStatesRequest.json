@@ -16,7 +16,7 @@
 {
   "apiKey": 100,
   "type": "request",
-  "listeners": ["broker", "controller"],
+  "listeners": ["broker"],
   "name": "ReadMirrorStatesRequest",
   // Version 0 is the initial version.
   "validVersions": "0",
