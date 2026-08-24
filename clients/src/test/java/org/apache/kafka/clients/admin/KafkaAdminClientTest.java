@@ -11729,7 +11729,7 @@ public class KafkaAdminClientTest {
                     resumeMirrorTopicsResponse(Errors.NONE));
 
             env.adminClient().createClusterMirror("mirror",
-                Map.of(CommonClientConfigs.MIRROR_SOURCE_CLUSTER_ID_CONFIG, "source-cluster-id"),
+                Map.of(CommonClientConfigs.SOURCE_CLUSTER_ID_CONFIG, "source-cluster-id"),
                 new CreateClusterMirrorOptions()).all().get();
             env.adminClient().deleteClusterMirror("mirror", new DeleteClusterMirrorOptions()).all().get();
             env.adminClient().startMirrorTopics("mirror", emptySet(),
@@ -11760,7 +11760,7 @@ public class KafkaAdminClientTest {
                     resumeMirrorTopicsResponse(Errors.INVALID_REQUEST));
 
             KafkaFuture<Void> create = env.adminClient().createClusterMirror("mirror",
-                Map.of(CommonClientConfigs.MIRROR_SOURCE_CLUSTER_ID_CONFIG, "source-cluster-id"),
+                Map.of(CommonClientConfigs.SOURCE_CLUSTER_ID_CONFIG, "source-cluster-id"),
                 new CreateClusterMirrorOptions()).all();
             KafkaFuture<Void> delete = env.adminClient().deleteClusterMirror("mirror",
                     new DeleteClusterMirrorOptions()).all();

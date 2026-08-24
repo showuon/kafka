@@ -121,9 +121,9 @@ import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
 @SuppressWarnings({"ClassDataAbstractionCoupling", "ClassFanOutComplexity"})
 public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private static final Set<String> NON_CONNECTION_CONFIGS = Set.of(
-            ClusterMirrorConfig.MIRROR_TOPICS_INCLUDE_CONFIG, ClusterMirrorConfig.MIRROR_TOPICS_EXCLUDE_CONFIG,
-            ClusterMirrorConfig.MIRROR_GROUPS_INCLUDE_CONFIG, ClusterMirrorConfig.MIRROR_GROUPS_EXCLUDE_CONFIG,
-            ClusterMirrorConfig.MIRROR_ACL_INCLUDE_CONFIG);
+            ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG, ClusterMirrorConfig.TOPICS_EXCLUDE_CONFIG,
+            ClusterMirrorConfig.GROUPS_INCLUDE_CONFIG, ClusterMirrorConfig.GROUPS_EXCLUDE_CONFIG,
+            ClusterMirrorConfig.ACLS_INCLUDE_CONFIG);
 
     private final Logger log;
     private volatile boolean isInitialized = false;
@@ -1329,7 +1329,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     public String getSourceClusterId(String mirrorName) {
         Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName));
-        return (String) props.get(CommonClientConfigs.MIRROR_SOURCE_CLUSTER_ID_CONFIG);
+        return (String) props.get(CommonClientConfigs.SOURCE_CLUSTER_ID_CONFIG);
     }
 
     public String getSourceBootstrap(String mirrorName) {
