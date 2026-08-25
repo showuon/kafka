@@ -191,8 +191,30 @@ class DelayedFetch(
 object DelayedFetchMetrics {
   private val metricsGroup = new KafkaMetricsGroup(DelayedFetchMetrics.getClass)
   private val FetcherTypeKey = "fetcherType"
-  val followerExpiredRequestMeter: Meter = metricsGroup.newMeter("ExpiresPerSec", "requests", TimeUnit.SECONDS, Map(FetcherTypeKey -> "follower").asJava)
-  val consumerExpiredRequestMeter: Meter = metricsGroup.newMeter("ExpiresPerSec", "requests", TimeUnit.SECONDS, Map(FetcherTypeKey -> "consumer").asJava)
-  val clusterMirrorExpiredRequestMeter: Meter = metricsGroup.newMeter("ExpiresPerSec", "requests", TimeUnit.SECONDS, Map(FetcherTypeKey -> "mirror").asJava)
+
+  private def createExpiredRequestMeter(fetcherTypeValue: String): Meter = {
+    metricsGroup.newMeter(
+      "ExpiresPerSec",
+      "requests",
+      TimeUnit.SECONDS,
+      Map(FetcherTypeKey -> fetcherTypeValue).asJava
+    )
+  }
+
+  var followerExpiredRequestMeter: Meter = _
+  var consumerExpiredRequestMeter: Meter = _
+  var mirrorExpiredRequestMeter: Meter = _
+
+  private[server] def registerMetrics(): Unit = {
+    followerExpiredRequestMeter = createExpiredRequestMeter("follower")
+    consumerExpiredRequestMeter = createExpiredRequestMeter("consumer")
+    mirrorExpiredRequestMeter = createExpiredRequestMeter("mirror")
+  }
+
+  private[server] def unregisterMetrics(): Unit = {
+    metricsGroup.removeMetric("ExpiresPerSec", Map(FetcherTypeKey -> "follower").asJava)
+    metricsGroup.removeMetric("ExpiresPerSec", Map(FetcherTypeKey -> "consumer").asJava)
+    metricsGroup.removeMetric("ExpiresPerSec", Map(FetcherTypeKey -> "mirror").asJava)
+  }
 }
 
