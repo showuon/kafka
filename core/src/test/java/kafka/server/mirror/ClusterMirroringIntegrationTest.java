@@ -125,7 +125,7 @@ public class ClusterMirroringIntegrationTest {
                 .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_REPLICATION_FACTOR_CONFIG, "2")
                 .setConfigProp(GroupCoordinatorConfig.OFFSETS_TOPIC_REPLICATION_FACTOR_CONFIG, "2")
                 .setConfigProp(ServerConfigs.REQUEST_TIMEOUT_MS_CONFIG, "5000")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_SOCKET_TIMEOUT_MS_CONFIG, "5000")
+                .setConfigProp(ClusterMirrorConfig.SOCKET_TIMEOUT_MS_CONFIG, "5000")
                 .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_ATTEMPTS_CONFIG, "3")
                 .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_CONFIG, "1000")
                 .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_BACKOFF_MS_CONFIG, "5000")
@@ -156,7 +156,7 @@ public class ClusterMirroringIntegrationTest {
 
                 // Fast mirror timeouts and retry backoff for testing
                 .setConfigProp(ServerConfigs.REQUEST_TIMEOUT_MS_CONFIG, "5000")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_SOCKET_TIMEOUT_MS_CONFIG, "5000")
+                .setConfigProp(ClusterMirrorConfig.SOCKET_TIMEOUT_MS_CONFIG, "5000")
                 .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_ATTEMPTS_CONFIG, "3")
                 .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_CONFIG, "1000")
                 .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_BACKOFF_MS_CONFIG, "5000")
@@ -364,7 +364,7 @@ public class ClusterMirroringIntegrationTest {
         // Create mirror with mirror.topics.include=orders-.* — auto-discovery picks up orders-us
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleSourceBootstrapServer,
-                ClusterMirrorConfig.MIRROR_TOPICS_INCLUDE_CONFIG, "orders-.*"
+                ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG, "orders-.*"
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
         waitForMirrorLagZero(dstAdmin, MIRROR_NAME, ".*");
 
@@ -399,8 +399,8 @@ public class ClusterMirroringIntegrationTest {
         // Create mirror: include orders-.* but exclude orders-internal
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleSourceBootstrapServer,
-                ClusterMirrorConfig.MIRROR_TOPICS_INCLUDE_CONFIG, "orders-.*",
-                ClusterMirrorConfig.MIRROR_TOPICS_EXCLUDE_CONFIG, "orders-internal"
+                ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG, "orders-.*",
+                ClusterMirrorConfig.TOPICS_EXCLUDE_CONFIG, "orders-internal"
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
         waitForMirrorLagZero(dstAdmin, MIRROR_NAME, includedTopic);
 
@@ -433,7 +433,7 @@ public class ClusterMirroringIntegrationTest {
         // Create mirror with include=.* and no explicit exclude — default __.*  applies
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleSourceBootstrapServer,
-                ClusterMirrorConfig.MIRROR_TOPICS_INCLUDE_CONFIG, ".*"
+                ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG, ".*"
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
         waitForMirrorLagZero(dstAdmin, MIRROR_NAME, userTopic);
 
@@ -460,7 +460,7 @@ public class ClusterMirroringIntegrationTest {
 
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleSourceBootstrapServer,
-                ClusterMirrorConfig.MIRROR_TOPICS_INCLUDE_CONFIG, "payments"
+                ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG, "payments"
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
         waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
 
@@ -489,7 +489,7 @@ public class ClusterMirroringIntegrationTest {
         // Include literal "payments" and regex "orders-.*"
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleSourceBootstrapServer,
-                ClusterMirrorConfig.MIRROR_TOPICS_INCLUDE_CONFIG, "payments,orders-.*"
+                ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG, "payments,orders-.*"
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
         waitForMirrorLagZero(dstAdmin, MIRROR_NAME, literalTopic, regexMatchedTopic);
 
@@ -520,7 +520,7 @@ public class ClusterMirroringIntegrationTest {
 
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleSourceBootstrapServer,
-                ClusterMirrorConfig.MIRROR_TOPICS_INCLUDE_CONFIG, "orders-.*"
+                ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG, "orders-.*"
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
         waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topicA, topicB);
 
@@ -574,7 +574,7 @@ public class ClusterMirroringIntegrationTest {
         ConfigResource mirrorResource = new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, MIRROR_NAME);
         var configResult = dstAdmin.describeConfigs(List.of(mirrorResource)).all().get(30, TimeUnit.SECONDS);
         var mirrorConfigEntries = configResult.get(mirrorResource);
-        ConfigEntry includeEntry = mirrorConfigEntries.get(ClusterMirrorConfig.MIRROR_TOPICS_INCLUDE_CONFIG);
+        ConfigEntry includeEntry = mirrorConfigEntries.get(ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG);
         assertTrue(includeEntry != null && includeEntry.value().contains("orders-.*"),
                 "mirror.topics.include should contain 'orders-.*' after startMirrorTopics with includePatterns");
     }
@@ -1123,7 +1123,7 @@ public class ClusterMirroringIntegrationTest {
         var mirrorConfigEntries = configResult.get(mirrorResource);
 
         String existingValue = "";
-        ConfigEntry existingEntry = mirrorConfigEntries.get(ClusterMirrorConfig.MIRROR_TOPICS_INCLUDE_CONFIG);
+        ConfigEntry existingEntry = mirrorConfigEntries.get(ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG);
         if (existingEntry != null && existingEntry.value() != null && !existingEntry.value().isEmpty()) {
             existingValue = existingEntry.value();
         }
@@ -1131,7 +1131,7 @@ public class ClusterMirroringIntegrationTest {
 
         dstAdmin.incrementalAlterConfigs(Map.of(mirrorResource, List.of(
                 new AlterConfigOp(
-                        new ConfigEntry(ClusterMirrorConfig.MIRROR_TOPICS_INCLUDE_CONFIG, newValue),
+                        new ConfigEntry(ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG, newValue),
                         AlterConfigOp.OpType.SET)
         ))).all().get(30, TimeUnit.SECONDS);
     }

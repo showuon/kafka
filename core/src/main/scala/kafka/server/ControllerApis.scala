@@ -1138,8 +1138,8 @@ class ControllerApis(
       throw new InvalidRequestException(s"Missing required config ${CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG} in CreateClusterMirrorRequest")
     }
 
-    if (!altersByName.containsKey(CommonClientConfigs.MIRROR_SOURCE_CLUSTER_ID_CONFIG)) {
-      throw new InvalidRequestException(s"Missing required config ${CommonClientConfigs.MIRROR_SOURCE_CLUSTER_ID_CONFIG} in CreateClusterMirrorRequest")
+    if (!altersByName.containsKey(CommonClientConfigs.SOURCE_CLUSTER_ID_CONFIG)) {
+      throw new InvalidRequestException(s"Missing required config ${CommonClientConfigs.SOURCE_CLUSTER_ID_CONFIG} in CreateClusterMirrorRequest")
     }
 
     controller.createClusterMirror(context, createRequest.data().mirrorName(), altersByName)
