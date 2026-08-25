@@ -29,7 +29,7 @@ public enum FetchIsolation {
     }
 
     public static FetchIsolation of(int replicaId, IsolationLevel isolationLevel) {
-        if (!FetchRequest.isConsumer(replicaId)) {
+        if (!FetchRequest.isConsumer(replicaId) && !FetchRequest.isMirror(replicaId)) {
             return LOG_END;
         } else if (isolationLevel == IsolationLevel.READ_COMMITTED) {
             return TXN_COMMITTED;
