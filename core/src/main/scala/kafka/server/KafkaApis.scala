@@ -4512,21 +4512,15 @@ class KafkaApis(val requestChannel: RequestChannel,
 
     // Collect (mirror -> topic -> partitions) for LME lookup
     val mirrorPartitions = new util.HashMap[String, util.Map[String, util.Set[Integer]]]()
-    // Track topicId for each topicName so we can map results back
-    val topicNameToId = new util.HashMap[String, Uuid]()
 
     lastMirrorEpochLookups.forEach { lookup =>
-      val topicNameOpt = metadataCache.getTopicName(lookup.topicId)
-      if (topicNameOpt.isPresent) {
-        val topicName = topicNameOpt.get
-        topicNameToId.put(topicName, lookup.topicId)
-        matchingMirrors.foreach { mirrorName =>
-          lookup.partitions.forEach { partIdx =>
-            mirrorPartitions
-              .computeIfAbsent(mirrorName, _ => new util.HashMap[String, util.Set[Integer]]())
-              .computeIfAbsent(topicName, _ => new util.HashSet[Integer]())
-              .add(partIdx)
-          }
+      val topicName = lookup.topicName
+      matchingMirrors.foreach { mirrorName =>
+        lookup.partitions.forEach { partIdx =>
+          mirrorPartitions
+            .computeIfAbsent(mirrorName, _ => new util.HashMap[String, util.Set[Integer]]())
+            .computeIfAbsent(topicName, _ => new util.HashSet[Integer]())
+            .add(partIdx)
         }
       }
     }
@@ -4539,19 +4533,16 @@ class KafkaApis(val requestChannel: RequestChannel,
     val lmeResults = mirrorMetadataManager.processLastMirrorEpochLookup(mirrorPartitions)
 
     // Aggregate across mirrors: take max LME per (topic, partition)
-    val aggregated = new util.HashMap[Uuid, util.Map[Integer, Integer]]()
+    val aggregated = new util.HashMap[String, util.Map[Integer, Integer]]()
     lmeResults.forEach { (_, tpEpochs) =>
       tpEpochs.forEach { (tp, lme) =>
-        val topicId = topicNameToId.get(tp.topic)
-        if (topicId != null) {
-          aggregated
-            .computeIfAbsent(topicId, _ => new util.HashMap[Integer, Integer]())
-            .merge(tp.partition, lme, (a: Integer, b: Integer) => Math.max(a, b))
-        }
+        aggregated
+          .computeIfAbsent(tp.topic, _ => new util.HashMap[Integer, Integer]())
+          .merge(tp.partition, lme, (a: Integer, b: Integer) => Math.max(a, b))
       }
     }
 
-    aggregated.forEach { (topicId, partitions) =>
+    aggregated.forEach { (topicName, partitions) =>
       val partitionResults = new util.ArrayList[DescribeClusterMirrorsResponseData.PartitionResult]()
       partitions.forEach { (partIdx, lme) =>
         partitionResults.add(new DescribeClusterMirrorsResponseData.PartitionResult()
@@ -4559,7 +4550,7 @@ class KafkaApis(val requestChannel: RequestChannel,
           .setLastMirrorEpoch(lme))
       }
       responseData.lookupResults().add(new DescribeClusterMirrorsResponseData.LookupResult()
-        .setTopicId(topicId)
+        .setTopicName(topicName)
         .setPartitions(partitionResults))
     }
 

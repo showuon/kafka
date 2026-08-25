@@ -50,7 +50,7 @@ public record TopicImage(String name, Uuid id, String mirrorName, byte desiredMi
             setTopicId(id));
         if (mirrorName != null) {
             writer.write(0, new MirrorTopicStateChangeRecord().
-                    setTopicId(id).
+                    setTopicName(name).
                     setMirrorName(mirrorName).
                     setDesiredState(desiredMirrorState));
         }

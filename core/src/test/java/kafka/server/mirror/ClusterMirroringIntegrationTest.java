@@ -230,7 +230,6 @@ public class ClusterMirroringIntegrationTest {
 
         CreateTopicsResult createTopicsResult = srcAdmin.createTopics(List.of(new NewTopic(topic, 1, (short) 1)));
         createTopicsResult.all().get(30, TimeUnit.SECONDS);
-        Uuid topicId = createTopicsResult.topicId(topic).get();
         produceRecords(srcCluster, topic, 0, 10);
 
         // Forward: src -> dst
@@ -250,14 +249,14 @@ public class ClusterMirroringIntegrationTest {
         // Sending a describeClusterMirror request with LME lookup info
         DescribeClusterMirrorsRequestData.LastMirrorEpochLookup lastMirrorEpochLookup =
                 new DescribeClusterMirrorsRequestData.LastMirrorEpochLookup();
-        lastMirrorEpochLookup.setTopicId(topicId).setPartitions(List.of(0));
+        lastMirrorEpochLookup.setTopicName(topic).setPartitions(List.of(0));
         String srcClusterId = srcCluster.controllers().values().stream().findFirst().get().clusterId();
         DescribeClusterMirrorsResult describeClusterMirrors = dstAdmin.describeClusterMirrors(List.of(reverseMirror),
                 new DescribeClusterMirrorsOptions().clusterId(srcClusterId).lastMirrorEpochLookups(List.of(lastMirrorEpochLookup)));
-        Map<Uuid, Map<Integer, Integer>> lookupEpochs = describeClusterMirrors.lookupEpochs().get(30, TimeUnit.SECONDS);
+        Map<String, Map<Integer, Integer>> lookupEpochs = describeClusterMirrors.lookupEpochs().get(30, TimeUnit.SECONDS);
         assertEquals(1, lookupEpochs.size(), "Should have one lookup result");
-        assertEquals(1, lookupEpochs.get(topicId).size(), "Should have one partition");
-        assertTrue(lookupEpochs.get(topicId).get(0) >= 0, "Should have LME >= 0");
+        assertEquals(1, lookupEpochs.get(topic).size(), "Should have one partition");
+        assertTrue(lookupEpochs.get(topic).get(0) >= 0, "Should have LME >= 0");
 
         // Failback: src mirrors from dst under a different name
         srcAdmin.createClusterMirror(reverseMirror, Map.of(

@@ -609,13 +609,18 @@ public class ReplicationControlManager {
     }
 
     public void replay(MirrorTopicStateChangeRecord record, long offset) {
-        TopicControlInfo topicInfo = topics.get(record.topicId());
+        Uuid topicId = topicsByName.get(record.topicName());
+        if (topicId == null) {
+            throw new UnknownTopicIdException("Can't find topic with name " + record.topicName() +
+                    " to update cluster mirror state.");
+        }
+        TopicControlInfo topicInfo = topics.get(topicId);
         if (topicInfo == null) {
-            throw new UnknownTopicIdException("Can't find topic with ID " + record.topicId() +
+            throw new UnknownTopicIdException("Can't find topic with name " + record.topicName() +
                     " to update cluster mirror state.");
         } else {
-            topics.put(record.topicId(), new TopicControlInfo(topicInfo, record.mirrorName(), record.desiredState(), offset));
-            log.info("Replayed MirrorTopicStateChangeRecord for topic {} with ID {}, mirror name {}, state {} in offset {}.", topicInfo.name, record.topicId(), record.mirrorName(), record.desiredState(), offset);
+            topics.put(topicId, new TopicControlInfo(topicInfo, record.mirrorName(), record.desiredState(), offset));
+            log.info("Replayed MirrorTopicStateChangeRecord for topic {}, mirror name {}, state {} in offset {}.", record.topicName(), record.mirrorName(), record.desiredState(), offset);
         }
     }
 
@@ -1011,13 +1016,13 @@ public class ReplicationControlManager {
         return ApiError.NONE;
     }
 
-    public ControllerResult<BumpLeaderEpochsResponseData> bumpLeaderEpochs(Map<Uuid, Map<Integer, Integer>> partitionLeaderEpochs) {
+    public ControllerResult<BumpLeaderEpochsResponseData> bumpLeaderEpochs(Map<String, Map<Integer, Integer>> partitionLeaderEpochs) {
         List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
-        for (Entry<Uuid, Map<Integer, Integer>> partitionLeaderEpoch : partitionLeaderEpochs.entrySet()) {
-            Uuid topicId = partitionLeaderEpoch.getKey();
+        for (Entry<String, Map<Integer, Integer>> partitionLeaderEpoch : partitionLeaderEpochs.entrySet()) {
+            String topicName = partitionLeaderEpoch.getKey();
             Map<Integer, Integer> leaderEpochs = partitionLeaderEpoch.getValue();
+            Uuid topicId = topicsByName.get(topicName);
             TopicControlInfo info = topics.get(topicId);
-            String topicName = info.name;
             leaderEpochs.forEach((partitionId, leaderEpoch) -> {
                 PartitionRegistration partition = info.parts.get(partitionId);
                 // Skip if the current epoch already exceeds the requested value

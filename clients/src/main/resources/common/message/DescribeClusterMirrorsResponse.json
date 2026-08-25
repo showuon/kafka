@@ -63,8 +63,8 @@
     { "name": "LookupResults", "type": "[]LookupResult", "versions": "0+",
       "taggedVersions": "0+", "tag": 0, "ignorable": true,
       "about": "Last mirror epoch lookup results used for incremental mirroring during failback.", "fields": [
-      { "name": "TopicId", "type": "uuid", "versions": "0+",
-        "about": "The topic id." },
+      { "name": "TopicName", "type": "string", "versions": "0+", "entityType": "topicName",
+        "about": "The topic name." },
       { "name": "Partitions", "type": "[]PartitionResult", "versions": "0+",
         "about": "The per-partition last mirror epoch results.", "fields": [
         { "name": "PartitionIndex", "type": "int32", "versions": "0+",

@@ -1382,13 +1382,13 @@ class ControllerApis(
     val bumpLeaderEpochRequest = request.body[BumpLeaderEpochsRequest]
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
-    val partitionLeaderEpochs: util.Map[Uuid, util.Map[Integer, Integer]] = new util.HashMap[Uuid, util.Map[Integer, Integer]]()
+    val partitionLeaderEpochs: util.Map[String, util.Map[Integer, Integer]] = new util.HashMap[String, util.Map[Integer, Integer]]()
     bumpLeaderEpochRequest.data().topics().forEach( topic => {
       val map = new util.HashMap[Integer, Integer]()
       topic.partitions().forEach(par => {
         map.put(par.partitionIndex(), par.minLeaderEpoch())
       })
-      partitionLeaderEpochs.put(topic.topicId(), map)
+      partitionLeaderEpochs.put(topic.topicName(), map)
     })
     controller.bumpLeaderEpoch(context, partitionLeaderEpochs)
       .handle[Unit] { (response, exception) =>

@@ -33,8 +33,8 @@
     { "name": "LastMirrorEpochLookups", "type": "[]LastMirrorEpochLookup", "versions": "0+",
       "taggedVersions": "0+", "tag": 1, "ignorable": true,
       "about": "Last mirror epoch lookups for incremental mirroring when failing back.", "fields": [
-      { "name": "TopicId", "type": "uuid", "versions": "0+",
-        "about": "The topic id." },
+      { "name": "TopicName", "type": "string", "versions": "0+", "entityType": "topicName",
+        "about": "The topic name." },
       { "name": "Partitions", "type": "[]int32", "versions": "0+",
         "about": "The partition indexes." }
     ]}

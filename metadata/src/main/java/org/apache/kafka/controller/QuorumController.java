@@ -1849,7 +1849,7 @@ public final class QuorumController implements Controller {
     @Override
     public CompletableFuture<BumpLeaderEpochsResponseData> bumpLeaderEpoch(
             ControllerRequestContext context,
-            Map<Uuid, Map<Integer, Integer>> partitionLeaderEpochs
+            Map<String, Map<Integer, Integer>> partitionLeaderEpochs
     ) {
         return appendWriteEvent("bumpLeaderEpochs", context.deadlineNs(),
                 () -> replicationControl.bumpLeaderEpochs(partitionLeaderEpochs));

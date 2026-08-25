@@ -1392,7 +1392,7 @@ public class RequestResponseTest {
     public BumpLeaderEpochsRequest createBumpLeaderEpochsRequest(short version) {
         BumpLeaderEpochsRequestData data = new BumpLeaderEpochsRequestData()
                 .setTopics(List.of(new BumpLeaderEpochsRequestData.TopicState()
-                        .setTopicId(Uuid.randomUuid())
+                        .setTopicName("topic")
                         .setPartitions(List.of(new BumpLeaderEpochsRequestData.LeaderEpochState()
                                 .setMinLeaderEpoch(1)
                                 .setPartitionIndex(1)

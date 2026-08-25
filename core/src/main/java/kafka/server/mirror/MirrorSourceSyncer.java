@@ -1143,7 +1143,7 @@ class MirrorSourceSyncer {
                 TopicPartition tp = new TopicPartition(topic, partitionId);
                 topicLeaderEpoch.add(new BumpLeaderEpochsRequestData.LeaderEpochState().setMinLeaderEpoch(partitionMinEpochs.get(tp)).setPartitionIndex(partitionId));
             });
-            topicState.setTopicId(metadataCache.getTopicId(topic)).setPartitions(topicLeaderEpoch);
+            topicState.setTopicName(topic).setPartitions(topicLeaderEpoch);
             topicStates.add(topicState);
         });
 
@@ -1286,11 +1286,9 @@ class MirrorSourceSyncer {
             .thenApply(lookupEpochs -> {
                 Map<TopicPartition, Integer> epochs = new HashMap<>();
                 if (!lookupEpochs.isEmpty()) {
-                    lookupEpochs.forEach((topicId, partitionEpochs) -> {
-                        Optional<String> topicName = metadataCache.getTopicName(topicId);
-                        topicName.ifPresent(name ->
-                                partitionEpochs.forEach((partIdx, lme) ->
-                                        epochs.put(new TopicPartition(name, partIdx), lme)));
+                    lookupEpochs.forEach((topicName, partitionEpochs) -> {
+                        partitionEpochs.forEach((partIdx, lme) ->
+                                epochs.put(new TopicPartition(topicName, partIdx), lme));
                     });
                 }
                 log.info("Last mirror epoch lookup response for mirror {}: {}", mirrorName, epochs);
@@ -1306,9 +1304,8 @@ class MirrorSourceSyncer {
      */
     private List<DescribeClusterMirrorsRequestData.LastMirrorEpochLookup> buildLastMirrorEpochLookup(
             TopicPartition tp) {
-        Uuid topicId = metadataCache.getTopicId(tp.topic());
         return List.of(new DescribeClusterMirrorsRequestData.LastMirrorEpochLookup()
-                .setTopicId(topicId)
+                .setTopicName(tp.topic())
                 .setPartitions(List.of(tp.partition())));
     }
 
