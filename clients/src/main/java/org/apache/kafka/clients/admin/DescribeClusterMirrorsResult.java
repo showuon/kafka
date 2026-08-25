@@ -18,7 +18,6 @@
 package org.apache.kafka.clients.admin;
 
 import org.apache.kafka.common.KafkaFuture;
-import org.apache.kafka.common.Uuid;
 
 import java.util.Collections;
 import java.util.Map;
