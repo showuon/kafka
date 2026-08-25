@@ -1143,7 +1143,7 @@ class MirrorSourceSyncer {
                 TopicPartition tp = new TopicPartition(topic, partitionId);
                 topicLeaderEpoch.add(new BumpLeaderEpochsRequestData.LeaderEpochState().setMinLeaderEpoch(partitionMinEpochs.get(tp)).setPartitionIndex(partitionId));
             });
-            topicState.setTopicId(metadataCache.getTopicId(topic)).setPartitions(topicLeaderEpoch);
+            topicState.setTopicName(topic).setPartitions(topicLeaderEpoch);
             topicStates.add(topicState);
         });
 
@@ -1306,9 +1306,8 @@ class MirrorSourceSyncer {
      */
     private List<DescribeClusterMirrorsRequestData.LastMirrorEpochLookup> buildLastMirrorEpochLookup(
             TopicPartition tp) {
-        Uuid topicId = metadataCache.getTopicId(tp.topic());
         return List.of(new DescribeClusterMirrorsRequestData.LastMirrorEpochLookup()
-                .setTopicId(topicId)
+                .setTopicName(tp.topic())
                 .setPartitions(List.of(tp.partition())));
     }
 

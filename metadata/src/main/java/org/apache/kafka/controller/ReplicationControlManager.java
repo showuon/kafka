@@ -1011,13 +1011,13 @@ public class ReplicationControlManager {
         return ApiError.NONE;
     }
 
-    public ControllerResult<BumpLeaderEpochsResponseData> bumpLeaderEpochs(Map<Uuid, Map<Integer, Integer>> partitionLeaderEpochs) {
+    public ControllerResult<BumpLeaderEpochsResponseData> bumpLeaderEpochs(Map<String, Map<Integer, Integer>> partitionLeaderEpochs) {
         List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
-        for (Entry<Uuid, Map<Integer, Integer>> partitionLeaderEpoch : partitionLeaderEpochs.entrySet()) {
-            Uuid topicId = partitionLeaderEpoch.getKey();
+        for (Entry<String, Map<Integer, Integer>> partitionLeaderEpoch : partitionLeaderEpochs.entrySet()) {
+            String topicName = partitionLeaderEpoch.getKey();
             Map<Integer, Integer> leaderEpochs = partitionLeaderEpoch.getValue();
+            Uuid topicId = topicsByName.get(topicName);
             TopicControlInfo info = topics.get(topicId);
-            String topicName = info.name;
             leaderEpochs.forEach((partitionId, leaderEpoch) -> {
                 PartitionRegistration partition = info.parts.get(partitionId);
                 // Skip if the current epoch already exceeds the requested value

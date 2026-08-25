@@ -210,7 +210,7 @@ public interface Controller extends AclMutator, AutoCloseable {
 
     CompletableFuture<BumpLeaderEpochsResponseData> bumpLeaderEpoch(
             ControllerRequestContext context,
-            Map<Uuid, Map<Integer, Integer>> partitionLeaderEpochs
+            Map<String, Map<Integer, Integer>> partitionLeaderEpochs
     );
 
     /**
