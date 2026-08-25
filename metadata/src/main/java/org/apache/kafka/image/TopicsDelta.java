@@ -97,8 +97,19 @@ public final class TopicsDelta {
     }
 
     public void replay(MirrorTopicStateChangeRecord record) {
-        TopicDelta topicDelta = getOrCreateTopicDelta(record.topicId());
-        topicDelta.replay(record);
+        // CreatedTopics contains the latest topic IDs. It should be checked first in case the topic is deleted and
+        // created in the same batch.
+        Uuid topicId = createdTopics.get(record.topicName());
+        if (topicId == null) {
+            TopicImage topicImage = image.getTopic(record.topicName());
+            if (topicImage != null) {
+                topicId = topicImage.id();
+            }
+        }
+        if (topicId != null) {
+            TopicDelta topicDelta = getOrCreateTopicDelta(topicId);
+            topicDelta.replay(record);
+        }
     }
 
     private void maybeReplayClearElrRecord(Uuid topicId) {

@@ -609,13 +609,18 @@ public class ReplicationControlManager {
     }
 
     public void replay(MirrorTopicStateChangeRecord record, long offset) {
-        TopicControlInfo topicInfo = topics.get(record.topicId());
+        Uuid topicId = topicsByName.get(record.topicName());
+        if (topicId == null) {
+            throw new UnknownTopicIdException("Can't find topic with name " + record.topicName() +
+                    " to update cluster mirror state.");
+        }
+        TopicControlInfo topicInfo = topics.get(topicId);
         if (topicInfo == null) {
-            throw new UnknownTopicIdException("Can't find topic with ID " + record.topicId() +
+            throw new UnknownTopicIdException("Can't find topic with name " + record.topicName() +
                     " to update cluster mirror state.");
         } else {
-            topics.put(record.topicId(), new TopicControlInfo(topicInfo, record.mirrorName(), record.desiredState(), offset));
-            log.info("Replayed MirrorTopicStateChangeRecord for topic {} with ID {}, mirror name {}, state {} in offset {}.", topicInfo.name, record.topicId(), record.mirrorName(), record.desiredState(), offset);
+            topics.put(topicId, new TopicControlInfo(topicInfo, record.mirrorName(), record.desiredState(), offset));
+            log.info("Replayed MirrorTopicStateChangeRecord for topic {}, mirror name {}, state {} in offset {}.", record.topicName(), record.mirrorName(), record.desiredState(), offset);
         }
     }
 

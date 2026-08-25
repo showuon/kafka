@@ -383,7 +383,7 @@ public class ConfigurationControlManager {
 
             records.add(new ApiMessageAndVersion(
                     new MirrorTopicStateChangeRecord()
-                            .setTopicId(topicId)
+                            .setTopicName(topicName)
                             .setMirrorName(mirrorName)
                             .setDesiredState(MirrorPartitionState.MIRRORING.value()),
                     (short) 0));
@@ -470,7 +470,7 @@ public class ConfigurationControlManager {
 
             records.add(new ApiMessageAndVersion(
                     new MirrorTopicStateChangeRecord()
-                            .setTopicId(topicId)
+                            .setTopicName(topic)
                             .setMirrorName(mirrorName)
                             .setDesiredState(MirrorPartitionState.STOPPED.value()),
                     (short) 0));
@@ -538,7 +538,7 @@ public class ConfigurationControlManager {
 
             records.add(new ApiMessageAndVersion(
                 new MirrorTopicStateChangeRecord()
-                    .setTopicId(topicId)
+                    .setTopicName(topic)
                     .setMirrorName(mirrorName)
                     .setDesiredState(MirrorPartitionState.PAUSED.value()),
                 (short) 0));
@@ -601,7 +601,7 @@ public class ConfigurationControlManager {
 
             records.add(new ApiMessageAndVersion(
                 new MirrorTopicStateChangeRecord()
-                    .setTopicId(topicId)
+                    .setTopicName(topic)
                     .setMirrorName(mirrorName)
                     .setDesiredState(MirrorPartitionState.MIRRORING.value()),
                 (short) 0));
@@ -666,7 +666,7 @@ public class ConfigurationControlManager {
             if (curMirrorName.equals(mirrorName) && desiredMirrorState == MirrorPartitionState.STOPPED.value()) {
                 records.add(new ApiMessageAndVersion(
                     new MirrorTopicStateChangeRecord()
-                        .setTopicId(topicInfo.topicId())
+                        .setTopicName(topicInfo.name())
                         .setMirrorName(null)
                         .setDesiredState(MirrorPartitionState.UNKNOWN.value()),
                     (short) 0));
@@ -807,7 +807,7 @@ public class ConfigurationControlManager {
 
             if (excludePattern.matcher(topicName).matches()) {
                 records.add(new ApiMessageAndVersion(new MirrorTopicStateChangeRecord()
-                    .setTopicId(topicInfo.topicId())
+                    .setTopicName(topicName)
                     .setMirrorName(mirrorName)
                     .setDesiredState(MirrorPartitionState.STOPPED.value()), (short) 0));
             }
