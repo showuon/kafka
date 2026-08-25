@@ -37,6 +37,7 @@ public class RequestMetrics {
 
     public static final String CONSUMER_FETCH_METRIC_NAME = ApiKeys.FETCH.name + "Consumer";
     public static final String FOLLOW_FETCH_METRIC_NAME = ApiKeys.FETCH.name + "Follower";
+    public static final String MIRROR_FETCH_METRIC_NAME = ApiKeys.FETCH.name + "Mirror";
     public static final String VERIFY_PARTITIONS_IN_TXN_METRIC_NAME = ApiKeys.ADD_PARTITIONS_TO_TXN.name + "Verification";
     // The ListClientMetricsResourcesRequest (v0) is renamed to ListConfigResourcesRequest (v1) in 4.1.
     // To record correct request name, we keep the old name for v0 and use the new name for v1+.
