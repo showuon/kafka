@@ -48,8 +48,7 @@ public class FetchRequest extends AbstractRequest {
     public static final int ORDINARY_CONSUMER_ID = -1;
     public static final int DEBUGGING_CONSUMER_ID = -2;
     public static final int FUTURE_LOCAL_REPLICA_ID = -3;
-
-    public static final int CLUSTER_MIRROR_REPLICA_ID = -4;
+    public static final int MIRROR_REPLICA_ID = -4;
 
     private final FetchRequestData data;
 
@@ -183,12 +182,12 @@ public class FetchRequest extends AbstractRequest {
 
         public static Builder forConsumer(short maxVersion, int maxWait, int minBytes, Map<TopicPartition, PartitionData> fetchData) {
             return new Builder(ApiKeys.FETCH.oldestVersion(), maxVersion,
-                CONSUMER_REPLICA_ID,  -1, maxWait, minBytes, fetchData);
+                CONSUMER_REPLICA_ID, -1, maxWait, minBytes, fetchData);
         }
 
-        public static Builder forClusterMirror(short maxVersion, int maxWait, int minBytes, Map<TopicPartition, PartitionData> fetchData) {
+        public static Builder forMirror(short maxVersion, int maxWait, int minBytes, Map<TopicPartition, PartitionData> fetchData) {
             return new Builder(ApiKeys.FETCH.oldestVersion(), maxVersion,
-                    CLUSTER_MIRROR_REPLICA_ID,  -1, maxWait, minBytes, fetchData);
+                    MIRROR_REPLICA_ID, -1, maxWait, minBytes, fetchData);
         }
 
         public static Builder forReplica(short allowedVersion, int replicaId, long replicaEpoch, int maxWait, int minBytes,
@@ -496,11 +495,16 @@ public class FetchRequest extends AbstractRequest {
         return replicaId < 0 && replicaId != FUTURE_LOCAL_REPLICA_ID;
     }
 
+    public static boolean isMirror(int replicaId) {
+        return replicaId == MIRROR_REPLICA_ID;
+    }
+
     public static String describeReplicaId(int replicaId) {
         switch (replicaId) {
             case ORDINARY_CONSUMER_ID: return "consumer";
             case DEBUGGING_CONSUMER_ID: return "debug consumer";
             case FUTURE_LOCAL_REPLICA_ID: return "future local replica";
+            case MIRROR_REPLICA_ID: return "mirror";
             default: {
                 if (isValidBrokerId(replicaId))
                     return "replica [" + replicaId + "]";

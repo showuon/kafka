@@ -156,8 +156,8 @@ class DelayedFetch(
   override def onExpiration(): Unit = {
     if (params.isFromFollower)
       DelayedFetchMetrics.followerExpiredRequestMeter.mark()
-    else if (params.isFromClusterMirror)
-      DelayedFetchMetrics.clusterMirrorExpiredRequestMeter.mark()
+    else if (params.isFromMirror)
+      DelayedFetchMetrics.mirrorExpiredRequestMeter.mark()
     else
       DelayedFetchMetrics.consumerExpiredRequestMeter.mark()
   }
