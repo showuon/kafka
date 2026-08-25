@@ -28,14 +28,14 @@ import java.util.Map;
  */
 public class DescribeClusterMirrorsResult {
     private final KafkaFuture<Map<String, ClusterMirrorDescription>> future;
-    private final KafkaFuture<Map<Uuid, Map<Integer, Integer>>> lookupEpochsFuture;
+    private final KafkaFuture<Map<String, Map<Integer, Integer>>> lookupEpochsFuture;
 
     DescribeClusterMirrorsResult(KafkaFuture<Map<String, ClusterMirrorDescription>> future) {
         this(future, KafkaFuture.completedFuture(Collections.emptyMap()));
     }
 
     DescribeClusterMirrorsResult(KafkaFuture<Map<String, ClusterMirrorDescription>> future,
-                                 KafkaFuture<Map<Uuid, Map<Integer, Integer>>> lookupEpochsFuture) {
+                                 KafkaFuture<Map<String, Map<Integer, Integer>>> lookupEpochsFuture) {
         this.future = future;
         this.lookupEpochsFuture = lookupEpochsFuture;
     }
@@ -51,7 +51,7 @@ public class DescribeClusterMirrorsResult {
      * Return a future containing last mirror epoch lookup results.
      * Keyed by topicId, then partitionIndex to lastMirrorEpoch.
      */
-    public KafkaFuture<Map<Uuid, Map<Integer, Integer>>> lookupEpochs() {
+    public KafkaFuture<Map<String, Map<Integer, Integer>>> lookupEpochs() {
         return lookupEpochsFuture;
     }
 }

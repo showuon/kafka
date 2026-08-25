@@ -1286,11 +1286,9 @@ class MirrorSourceSyncer {
             .thenApply(lookupEpochs -> {
                 Map<TopicPartition, Integer> epochs = new HashMap<>();
                 if (!lookupEpochs.isEmpty()) {
-                    lookupEpochs.forEach((topicId, partitionEpochs) -> {
-                        Optional<String> topicName = metadataCache.getTopicName(topicId);
-                        topicName.ifPresent(name ->
-                                partitionEpochs.forEach((partIdx, lme) ->
-                                        epochs.put(new TopicPartition(name, partIdx), lme)));
+                    lookupEpochs.forEach((topicName, partitionEpochs) -> {
+                        partitionEpochs.forEach((partIdx, lme) ->
+                                epochs.put(new TopicPartition(topicName, partIdx), lme));
                     });
                 }
                 log.info("Last mirror epoch lookup response for mirror {}: {}", mirrorName, epochs);

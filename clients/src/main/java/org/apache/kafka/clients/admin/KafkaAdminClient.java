@@ -5179,7 +5179,7 @@ public class KafkaAdminClient extends AdminClient {
     @Override
     public DescribeClusterMirrorsResult describeClusterMirrors(Collection<String> mirrorNames, DescribeClusterMirrorsOptions options) {
         final KafkaFutureImpl<Map<String, ClusterMirrorDescription>> all = new KafkaFutureImpl<>();
-        final KafkaFutureImpl<Map<Uuid, Map<Integer, Integer>>> lineageAll = new KafkaFutureImpl<>();
+        final KafkaFutureImpl<Map<String, Map<Integer, Integer>>> lineageAll = new KafkaFutureImpl<>();
         final long nowMetadata = time.milliseconds();
         final long deadline = calcDeadlineMs(nowMetadata, options.timeoutMs());
 
@@ -5257,13 +5257,13 @@ public class KafkaAdminClient extends AdminClient {
         private final boolean describeAll;
         private final HashSet<Node> remaining;
         private final KafkaFutureImpl<Map<String, ClusterMirrorDescription>> allFuture;
-        private final KafkaFutureImpl<Map<Uuid, Map<Integer, Integer>>> lookupFuture;
-        private final Map<Uuid, Map<Integer, Integer>> lookupEpochs;
+        private final KafkaFutureImpl<Map<String, Map<Integer, Integer>>> lookupFuture;
+        private final Map<String, Map<Integer, Integer>> lookupEpochs;
 
         DescribeClusterMirrorsResults(Collection<Node> brokers,
                                Collection<String> mirrorNames,
                                KafkaFutureImpl<Map<String, ClusterMirrorDescription>> allFuture,
-                               KafkaFutureImpl<Map<Uuid, Map<Integer, Integer>>> lookupFuture) {
+                               KafkaFutureImpl<Map<String, Map<Integer, Integer>>> lookupFuture) {
             this.partialDescriptions = new HashMap<>();
             this.requestedMirrors = mirrorNames == null ? new HashSet<>() : new HashSet<>(mirrorNames);
             this.describeAll = mirrorNames == null;
@@ -5300,7 +5300,7 @@ public class KafkaAdminClient extends AdminClient {
 
         synchronized void handleLookupResults(List<DescribeClusterMirrorsResponseData.LookupResult> results) {
             for (DescribeClusterMirrorsResponseData.LookupResult result : results) {
-                Map<Integer, Integer> partitionEpochs = lookupEpochs.computeIfAbsent(result.topicId(), k -> new HashMap<>());
+                Map<Integer, Integer> partitionEpochs = lookupEpochs.computeIfAbsent(result.topicName(), k -> new HashMap<>());
                 // Merge across all brokers
                 for (DescribeClusterMirrorsResponseData.PartitionResult partition : result.partitions()) {
                     partitionEpochs.merge(partition.partitionIndex(), partition.lastMirrorEpoch(), Math::max);
