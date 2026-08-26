@@ -37,7 +37,6 @@ import org.apache.kafka.clients.admin.StartMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.StopMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
-import org.apache.kafka.common.GroupState;
 import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
@@ -125,16 +124,16 @@ class MirrorSourceSyncer {
     private final NodeToControllerChannelManager channelManager;
     private final MirrorStateCache mirrorCache;
     private final MetadataCache metadataCache;
-    private final KafkaScheduler scheduler;
+    private volatile KafkaScheduler syncScheduler;
 
-    private volatile ScheduledFuture<?> metadataRefreshFuture;
+    private volatile ScheduledFuture<?> syncFuture;
 
+    private final KafkaMetricsGroup metricsGroup;
     private final Meter metadataRefreshError;
     private final Meter topicConfigSyncError;
     private final Meter consumerGroupOffsetSyncError;
     private final Meter shareGroupOffsetSyncError;
     private final Meter aclSyncError;
-    private final KafkaMetricsGroup metricsGroup;
 
     MirrorSourceSyncer(
         KafkaConfig brokerConfig,
@@ -142,13 +141,12 @@ class MirrorSourceSyncer {
         NodeToControllerChannelManager channelManager,
         MetadataCache metadataCache,
         MirrorStateCache mirrorCache,
-        KafkaScheduler scheduler,
+        KafkaMetricsGroup metricsGroup,
         Meter metadataRefreshError,
         Meter topicConfigSyncError,
         Meter consumerGroupOffsetSyncError,
         Meter shareGroupOffsetSyncError,
-        Meter aclSyncError,
-        KafkaMetricsGroup metricsGroup
+        Meter aclSyncError
     ) {
         this.brokerConfig = brokerConfig;
         this.nodeId = brokerConfig.nodeId();
@@ -159,14 +157,24 @@ class MirrorSourceSyncer {
         this.channelManager = channelManager;
         this.mirrorCache = mirrorCache;
         this.metadataCache = metadataCache;
-        this.scheduler = scheduler;
 
+        this.metricsGroup = metricsGroup;
         this.metadataRefreshError = metadataRefreshError;
         this.topicConfigSyncError = topicConfigSyncError;
         this.consumerGroupOffsetSyncError = consumerGroupOffsetSyncError;
         this.shareGroupOffsetSyncError = shareGroupOffsetSyncError;
         this.aclSyncError = aclSyncError;
-        this.metricsGroup = metricsGroup;
+    }
+
+    void close() {
+        if (syncScheduler != null) {
+            try {
+                syncScheduler.shutdown();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("Interrupted while shutting down sync scheduler", e);
+            }
+        }
     }
 
     /**
@@ -191,14 +199,19 @@ class MirrorSourceSyncer {
      * Each tick validates the source cluster ID, then on the coordinator broker
      * syncs topic state, configs, group offsets, ACLs, and topic patterns.
      */
-    void scheduleMetadataRefresh(long intervalMs) {
-        ScheduledFuture<?> oldFuture = metadataRefreshFuture;
+    void scheduleSourceClusterSync(long intervalMs) {
+        if (syncScheduler == null) {
+            syncScheduler = new KafkaScheduler(1, true, "SyncScheduler-");
+            syncScheduler.startup();
+        }
+
+        ScheduledFuture<?> oldFuture = syncFuture;
         if (oldFuture != null) {
             oldFuture.cancel(false);
         }
-        metadataRefreshFuture = scheduler.schedule("MirrorMetadataRefresh",
-                this::runMetadataRefresh, intervalMs, intervalMs);
-        log.info("Scheduled metadata refresh with interval {} ms", intervalMs);
+        syncFuture = syncScheduler.schedule("SourceClusterSync",
+                this::runSourceClusterSync, intervalMs, intervalMs);
+        log.info("Scheduled source cluster sync with interval {} ms", intervalMs);
     }
 
     private void updateMirrorTopicMetrics(String mirrorName) {
@@ -211,7 +224,7 @@ class MirrorSourceSyncer {
      * (needed for source leader caches, deletion detection, and missed partition recovery).
      * Only the coordinator syncs configs, group offsets, and ACLs.
      */
-    private void runMetadataRefresh() {
+    private void runSourceClusterSync() {
         retryPendingTombstoneWrites();
 
         Set<String> mirrors = metadataManager.getConfiguredMirrors();
@@ -354,7 +367,7 @@ class MirrorSourceSyncer {
 
     /** Schedules an immediate one-shot source topic state sync for the given mirror. */
     void scheduleSourceTopicStateSync(String mirrorName) {
-        scheduler.scheduleOnce("source-topic-state-sync", () -> syncSourceTopicState(mirrorName));
+        syncScheduler.scheduleOnce("source-topic-state-sync", () -> syncSourceTopicState(mirrorName));
     }
 
     /**
@@ -415,7 +428,9 @@ class MirrorSourceSyncer {
                 }
             });
 
-            // Pre-KIP-516 sources (Kafka < 2.8) return ZERO_UUID; fall back to name-based lookup
+            // Pre-KIP-516 sources (Kafka < 2.8) return ZERO_UUID; fall back to name-based lookup.
+            // Name-based lookup cannot detect topic delete-and-recreate on the source. If this
+            // happens, the operator must stop mirroring and delete the destination topic manually.
             TopicImage destTopic = !ti.topicId().equals(Uuid.ZERO_UUID)
                     ? metadataManager.metadataImage().topics().getTopic(ti.topicId())
                     : metadataManager.metadataImage().topics().getTopic(ti.topic());
@@ -746,17 +761,8 @@ class MirrorSourceSyncer {
             Map<String, Map<TopicPartition, OffsetAndMetadata>> allOffsets = srcAdmin
                     .listConsumerGroupOffsets(groupSpecs).all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
 
-            Optional<Set<String>> activeDestGroups = getActiveDestinationGroupIds(ListGroupsOptions.forConsumerGroups());
-            if (activeDestGroups.isEmpty()) {
-                return;
-            }
-
             for (var entry : allOffsets.entrySet()) {
                 String groupId = entry.getKey();
-                if (activeDestGroups.get().contains(groupId)) {
-                    log.warn("Skipping consumer group offset sync for group {} in mirror {}: active on destination", groupId, mirrorName);
-                    continue;
-                }
 
                 Map<TopicPartition, OffsetAndMetadata> filtered = new HashMap<>();
                 entry.getValue().entrySet().stream()
@@ -777,7 +783,8 @@ class MirrorSourceSyncer {
                             if (finalOffset == sourceGroupOffsetAndMetadata.offset()) {
                                 filtered.put(topicPartition, sourceGroupOffsetAndMetadata);
                             } else if (finalOffset == logEndOffset.get()) {
-                                int logEndEpoch = metadataManager.replicaManagerSupplier().get().getLog(topicPartition).map(l -> l.leaderEpochCache().epochForOffset(logEndOffset.get()).orElse(-1)).getOrElse(() -> -1);
+                                int logEndEpoch = metadataManager.replicaManagerSupplier().get().getLog(topicPartition)
+                                    .map(l -> l.leaderEpochCache().epochForOffset(logEndOffset.get()).orElse(-1)).getOrElse(() -> -1);
                                 if (logEndEpoch < 0) {
                                     log.debug("Cannot get the log end epoch for partition {}, skip consumer group sync for it.", topicPartition);
                                 } else {
@@ -785,7 +792,8 @@ class MirrorSourceSyncer {
                                 }
                             } else {
                                 // finalOffset == logStartOffset
-                                int logStartEpoch = metadataManager.replicaManagerSupplier().get().getLog(topicPartition).map(l -> l.leaderEpochCache().epochForOffset(logStartOffset.get()).orElse(-1)).getOrElse(() -> -1);
+                                int logStartEpoch = metadataManager.replicaManagerSupplier().get().getLog(topicPartition)
+                                    .map(l -> l.leaderEpochCache().epochForOffset(logStartOffset.get()).orElse(-1)).getOrElse(() -> -1);
                                 if (logStartEpoch < 0) {
                                     log.debug("Cannot get the log start epoch for partition {}, skip consumer group sync for it.", topicPartition);
                                 } else {
@@ -798,9 +806,13 @@ class MirrorSourceSyncer {
                     continue;
                 }
 
+                // No pre-filtering of active destination groups: the group coordinator
+                // rejects commits for groups with active members, so per-group error
+                // handling is sufficient and avoids a racy ListGroups RPC every cycle.
                 try {
                     log.debug("Committing consumer group offsets for group {} on destination, partitions={}", groupId, filtered.keySet());
-                    metadataManager.getOrCreateDestAdmin().alterConsumerGroupOffsets(groupId, filtered).all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
+                    metadataManager.getOrCreateDestAdmin().alterConsumerGroupOffsets(groupId, filtered)
+                        .all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
                 } catch (Exception e) {
                     log.warn("Failed to commit consumer group offsets for group {} in mirror {}: {}", groupId, mirrorName, e.getMessage());
                 }
@@ -837,17 +849,8 @@ class MirrorSourceSyncer {
             Map<String, Map<TopicPartition, OffsetAndMetadata>> allOffsets = srcAdmin
                     .listShareGroupOffsets(groupSpecs).all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
 
-            Optional<Set<String>> activeDestGroups = getActiveDestinationGroupIds(ListGroupsOptions.forShareGroups());
-            if (activeDestGroups.isEmpty()) {
-                return;
-            }
-
             for (var entry : allOffsets.entrySet()) {
                 String groupId = entry.getKey();
-                if (activeDestGroups.get().contains(groupId)) {
-                    log.warn("Skipping share group offset sync for group {} in mirror {}: active on destination", groupId, mirrorName);
-                    continue;
-                }
 
                 Map<TopicPartition, Long> filtered = new  HashMap<>();
                 entry.getValue().entrySet().stream()
@@ -869,6 +872,9 @@ class MirrorSourceSyncer {
                     continue;
                 }
 
+                // No pre-filtering of active destination groups: the group coordinator
+                // rejects commits for groups with active members, so per-group error
+                // handling is sufficient and avoids a racy ListGroups RPC every cycle.
                 try {
                     log.debug("Committing share group offsets for group {} on destination, partitions={}", groupId, filtered.keySet());
                     metadataManager.getOrCreateDestAdmin().alterShareGroupOffsets(groupId, filtered).all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
@@ -891,29 +897,6 @@ class MirrorSourceSyncer {
                 .toList();
     }
 
-    /**
-     * Returns the set of destination group IDs that should not be overwritten during offset sync
-     * (groups in STABLE, PREPARING_REBALANCE, COMPLETING_REBALANCE, ASSIGNING, or RECONCILING state).
-     *
-     * @return the group IDs to skip, or empty Optional on failure so the caller can skip the sync cycle
-     */
-    private Optional<Set<String>> getActiveDestinationGroupIds(ListGroupsOptions typeFilter) {
-        try {
-            var options = typeFilter.inGroupStates(Set.of(
-                    GroupState.STABLE,
-                    GroupState.PREPARING_REBALANCE,
-                    GroupState.COMPLETING_REBALANCE,
-                    GroupState.ASSIGNING,
-                    GroupState.RECONCILING));
-            return Optional.of(metadataManager.getOrCreateDestAdmin().listGroups(options).all()
-                    .get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS).stream()
-                    .map(GroupListing::groupId)
-                    .collect(Collectors.toSet()));
-        } catch (Exception e) {
-            log.warn("Failed to list destination groups, skipping offset sync cycle.", e);
-            return Optional.empty();
-        }
-    }
 
     private void syncAcls(String mirrorName, ClusterMirrorConfig mirrorConfig) {
         // TODO: We currently mirror all ACLs from the source to the target.
@@ -1100,7 +1083,7 @@ class MirrorSourceSyncer {
     /** Schedules a source topic state sync followed by a leader epoch bump request. */
     CompletableFuture<Void> scheduleBumpLeaderEpoch(String mirrorName, TopicPartition tp) {
         CompletableFuture<Void> future = new CompletableFuture<>();
-        scheduler.scheduleOnce("bump-leader-epoch-" + tp, () -> {
+        syncScheduler.scheduleOnce("bump-leader-epoch-" + tp, () -> {
             Optional<List<SourceTopicState>> sourceTopicStates = syncSourceTopicState(mirrorName);
             maybeBumpLeaderEpochs(mirrorName, sourceTopicStates, Set.of(tp))
                     .whenComplete((v, ex) -> {

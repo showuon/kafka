@@ -94,7 +94,7 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
       }
 
       def addAndStartFetcherThread(fetcherKey: FetcherKey): MirrorFetcherThread = {
-        val fetcherThread = createFetcherThread(fetcherKey.fetcherId, fetcherKey.mirrorName, fetcherKey.sourceBroker)
+        val fetcherThread = createFetcherThread(fetcherKey.fetcherId, fetcherKey.sourceBroker, fetcherKey.mirrorName)
         mirrorFetcherThreadMap.put(fetcherKey, fetcherThread)
         fetcherThread.start()
         fetcherThread
@@ -132,8 +132,8 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
     }
   }
 
-  private def createFetcherThread(fetcherId: Int, mirrorName: String, srcEndpoint: BrokerEndPoint): MirrorFetcherThread = {
-    info(s"Creating mirror fetcher thread: fetcherId = $fetcherId, mirrorName = $mirrorName, srcEndpoint = $srcEndpoint")
+  private def createFetcherThread(fetcherId: Int, srcEndpoint: BrokerEndPoint, mirrorName: String): MirrorFetcherThread = {
+    info(s"Creating mirror fetcher thread: fetcherId = $fetcherId, srcEndpoint = $srcEndpoint, mirrorName = $mirrorName")
     val threadName = s"MirrorFetcherThread-$fetcherId-${srcEndpoint.id}-$mirrorName"
     val logContext = new LogContext(s"[MirrorFetcher id=${brokerConfig.brokerId}, fetcherId=$fetcherId, leaderId=${srcEndpoint.id}, mirrorName=$mirrorName] ")
 

@@ -273,8 +273,8 @@ abstract class AbstractFetcherThread(name: String,
       updateFetchOffsetAndMaybeMarkTruncationComplete(result.result)
     }
     // Log truncation has completed, so it's safe to release the lock for source metadata refresh.
-    // We will need to acquire both MirrorFetcherThread lock and partitionMapLock when removing fetchers, which might cause potential deadlock
-    // if we keep the partitionMapLock here.
+    // We will need to acquire both MirrorFetcherThread lock and partitionMapLock when removing fetchers,
+    // which might cause potential deadlock if we keep the partitionMapLock here.
     if (!partitionsNeedsRefreshMetadata.isEmpty) {
       info(s"Refreshing source metadata for mirror name $mirrorName with partitions: $partitionsNeedsRefreshMetadata")
       removeFetcherForPartitions(partitionsNeedsRefreshMetadata.asScala)
@@ -715,9 +715,7 @@ abstract class AbstractFetcherThread(name: String,
   protected def handlePartitionFailed(topicPartition: TopicPartition, reason: String): Unit = {}
 
   /**
-   * Returns initial partition fetch state based on current state and the provided `initialFetchState`.
-   * From IBP 2.7 onwards, we can rely on truncation based on diverging data returned in fetch responses.
-   * For older versions, we can skip the truncation step iff the leader epoch matches the existing epoch.
+   * Returns initial partition fetch state based on current state and the provided initialFetchState.
    */
   private def partitionFetchState(tp: TopicPartition, initialFetchState: InitialFetchState, currentState: PartitionFetchState): PartitionFetchState = {
     if (currentState != null && currentState.currentLeaderEpoch == initialFetchState.currentLeaderEpoch) {
@@ -735,7 +733,7 @@ abstract class AbstractFetcherThread(name: String,
         state, lastFetchedEpoch, initialFetchState.mirrorName, initialFetchState.mirrorLeaderEpoch)
     } else {
       // Mirror threads always skip truncation-on-fetch and use the explicit OffsetsForLeaderEpochRequest
-      // path because older source brokers may not include diverging epoch info in fetch responses.
+      // path because older source brokers does not include diverging epoch info in fetch responses.
       new PartitionFetchState(initialFetchState.topicId.toJava, initialFetchState.initOffset, Optional.empty(), initialFetchState.currentLeaderEpoch,
         ReplicaState.TRUNCATING, Optional.empty(), initialFetchState.mirrorName, initialFetchState.mirrorLeaderEpoch)
     }
