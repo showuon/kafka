@@ -631,6 +631,49 @@ class ClusterMirroringTest(MirrorUtils, Test):
 
     @cluster(num_nodes=7)
     @defaults(metadata_quorum=[quorum.isolated_kraft])
+    def test_groups_filtering(self, metadata_quorum):
+        """Verify consumer group offset mirroring with include/exclude filtering."""
+        self.source_kafka.create_topic({"topic": "my-topic", "partitions": 1, "replication-factor": 2})
+
+        self.logger.info("Produce messages to source")
+        MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "my-topic", 3)
+
+        self.logger.info("Create consumer groups on source by consuming all messages")
+        for group in ["app-group1", "app-group2", "internal-group1"]:
+            MirrorUtils.consume_messages(self.logger, self.source_kafka, self.client_node, "my-topic", group, max_messages=3)
+
+        self.logger.info("Start mirror with groups include (app-.*) and exclude (app-group2)")
+        mirror_cfg = MirrorConfig(
+            self.source_kafka.bootstrap_servers(),
+            mirror_groups_include="app-.*",
+            mirror_groups_exclude="app-group2",
+        )
+        wait_until(
+            lambda: self.dest_kafka.create_cluster_mirror(
+                self.client_node, "my-mirror", mirror_cfg),
+            timeout_sec=120, backoff_sec=2,
+            err_msg="Failed to create cluster mirror",
+        )
+        wait_until(
+            lambda: "Started" in self.dest_kafka.start_cluster_mirror_topics(
+                self.client_node, "my-mirror", "my-topic"),
+            timeout_sec=120, backoff_sec=2,
+            err_msg="Failed to start mirror topics",
+        )
+        MirrorUtils.wait_mirror_lag_zero(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"])
+        MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.client_node, "my-mirror")
+
+        self.logger.info("Verify only app-group1 is synced on destination")
+        groups_output = self.dest_kafka.list_consumer_groups(self.client_node)
+        assert "app-group1" in groups_output, \
+            "Expected app-group1 to be synced on destination"
+        assert "app-group2" not in groups_output, \
+            "Expected app-group2 to be excluded from destination"
+        assert "internal-group1" not in groups_output, \
+            "Expected internal-group1 to not be included on destination"
+
+    @cluster(num_nodes=7)
+    @defaults(metadata_quorum=[quorum.isolated_kraft])
     def test_log_convergence(self, metadata_quorum):
         """Verify that mirrored log segments are byte identical to source after bouncing both clusters."""
         self.logger.info("Create source topics and produce initial data")
