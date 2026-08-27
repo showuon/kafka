@@ -346,7 +346,7 @@ class BrokerServer(
 
       // Shared scheduler for one-shot state transitions (truncation, retries, epoch bumps).
       // Shutdown by ClusterMirrorCoordinatorService.
-      val mirrorSharedScheduler = new KafkaScheduler(2, true, "MirrorShared-")
+      val mirrorSharedScheduler = new KafkaScheduler(1, true, "MirrorShared-")
       mirrorSharedScheduler.startup()
 
       mirrorMetadataManager = new MirrorMetadataManager(
