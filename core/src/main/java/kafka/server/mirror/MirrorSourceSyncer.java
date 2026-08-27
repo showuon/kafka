@@ -44,7 +44,9 @@ import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.acl.AclBinding;
 import org.apache.kafka.common.acl.AclBindingFilter;
 import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.errors.GroupNotEmptyException;
 import org.apache.kafka.common.errors.SecurityDisabledException;
+import org.apache.kafka.common.errors.UnknownMemberIdException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.message.BumpLeaderEpochsRequestData;
@@ -124,7 +126,7 @@ class MirrorSourceSyncer {
     private final NodeToControllerChannelManager channelManager;
     private final MirrorStateCache mirrorCache;
     private final MetadataCache metadataCache;
-    private volatile KafkaScheduler syncScheduler;
+    private final KafkaScheduler syncScheduler;
 
     private volatile ScheduledFuture<?> syncFuture;
 
@@ -158,6 +160,9 @@ class MirrorSourceSyncer {
         this.mirrorCache = mirrorCache;
         this.metadataCache = metadataCache;
 
+        this.syncScheduler = new KafkaScheduler(1, true, "SyncScheduler-");
+        this.syncScheduler.startup();
+
         this.metricsGroup = metricsGroup;
         this.metadataRefreshError = metadataRefreshError;
         this.topicConfigSyncError = topicConfigSyncError;
@@ -167,13 +172,11 @@ class MirrorSourceSyncer {
     }
 
     void close() {
-        if (syncScheduler != null) {
-            try {
-                syncScheduler.shutdown();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.warn("Interrupted while shutting down sync scheduler", e);
-            }
+        try {
+            syncScheduler.shutdown();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("Interrupted while shutting down sync scheduler", e);
         }
     }
 
@@ -200,11 +203,6 @@ class MirrorSourceSyncer {
      * syncs topic state, configs, group offsets, ACLs, and topic patterns.
      */
     void scheduleSourceClusterSync(long intervalMs) {
-        if (syncScheduler == null) {
-            syncScheduler = new KafkaScheduler(1, true, "SyncScheduler-");
-            syncScheduler.startup();
-        }
-
         ScheduledFuture<?> oldFuture = syncFuture;
         if (oldFuture != null) {
             oldFuture.cancel(false);
@@ -814,7 +812,11 @@ class MirrorSourceSyncer {
                     metadataManager.getOrCreateDestAdmin().alterConsumerGroupOffsets(groupId, filtered)
                         .all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
                 } catch (Exception e) {
-                    log.warn("Failed to commit consumer group offsets for group {} in mirror {}: {}", groupId, mirrorName, e.getMessage());
+                    if (e instanceof ExecutionException && e.getCause() instanceof UnknownMemberIdException) {
+                        log.debug("Skipped consumer group offset sync for active group {} in mirror {}", groupId, mirrorName);
+                    } else {
+                        log.warn("Failed to commit consumer group offsets for group {} in mirror {}: {}", groupId, mirrorName, e.getMessage());
+                    }
                 }
             }
         } catch (Exception e) {
@@ -879,7 +881,11 @@ class MirrorSourceSyncer {
                     log.debug("Committing share group offsets for group {} on destination, partitions={}", groupId, filtered.keySet());
                     metadataManager.getOrCreateDestAdmin().alterShareGroupOffsets(groupId, filtered).all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
                 } catch (Exception e) {
-                    log.warn("Failed to commit share group offsets for group {} in mirror {}: {}", groupId, mirrorName, e);
+                    if (e instanceof ExecutionException && e.getCause() instanceof GroupNotEmptyException) {
+                        log.error("Skipped share group offset sync for active group {} in mirror {}", groupId, mirrorName);
+                    } else {
+                        log.warn("Failed to commit share group offsets for group {} in mirror {}: {}", groupId, mirrorName, e.getMessage());
+                    }
                 }
             }
         } catch (Exception e) {

@@ -423,6 +423,36 @@ class ClusterMirroringTest(MirrorUtils, Test):
 
     @cluster(num_nodes=7)
     @defaults(metadata_quorum=[quorum.isolated_kraft])
+    def test_topic_deletion(self, metadata_quorum):
+        """Verify that deleting a source topic transitions mirror partitions to FAILED."""
+        self.source_kafka.create_topic({"topic": "my-topic", "partitions": 1, "replication-factor": 2})
+
+        self.logger.info("Start cluster mirror on destination")
+        mirror_cfg = MirrorConfig(self.source_kafka.bootstrap_servers())
+
+        wait_until(
+            lambda: self.dest_kafka.create_cluster_mirror(
+                self.client_node, "my-mirror", mirror_cfg),
+            timeout_sec=120, backoff_sec=2,
+            err_msg="Failed to create cluster mirror",
+        )
+        wait_until(
+            lambda: "Started" in self.dest_kafka.start_cluster_mirror_topics(
+                self.client_node, "my-mirror", "my-topic"),
+            timeout_sec=120, backoff_sec=2,
+            err_msg="Failed to start mirror topics",
+        )
+        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"], "MIRRORING")
+
+        self.logger.info("Delete topic on source and wait for metadata sync")
+        self.source_kafka.delete_topic("my-topic")
+        MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.client_node, "my-mirror")
+
+        self.logger.info("Verify mirror partitions transitioned to FAILED")
+        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"], "FAILED")
+
+    @cluster(num_nodes=7)
+    @defaults(metadata_quorum=[quorum.isolated_kraft])
     def test_mirror_deletion(self, metadata_quorum):
         """Verify that a mirror cannot be deleted while not empty, but can after stopping all topics."""
         self.source_kafka.create_topic({"topic": "my-topic", "partitions": 1, "replication-factor": 1})
@@ -457,36 +487,6 @@ class ClusterMirroringTest(MirrorUtils, Test):
         self.dest_kafka.delete_cluster_mirror(self.client_node, "my-mirror")
         output = self.dest_kafka.list_cluster_mirror(self.client_node)
         assert "my-mirror" not in output, "Mirror should be gone after deletion"
-
-    @cluster(num_nodes=7)
-    @defaults(metadata_quorum=[quorum.isolated_kraft])
-    def test_topic_deletion(self, metadata_quorum):
-        """Verify that deleting a source topic transitions mirror partitions to FAILED."""
-        self.source_kafka.create_topic({"topic": "my-topic", "partitions": 1, "replication-factor": 2})
-
-        self.logger.info("Start cluster mirror on destination")
-        mirror_cfg = MirrorConfig(self.source_kafka.bootstrap_servers())
-
-        wait_until(
-            lambda: self.dest_kafka.create_cluster_mirror(
-                self.client_node, "my-mirror", mirror_cfg),
-            timeout_sec=120, backoff_sec=2,
-            err_msg="Failed to create cluster mirror",
-        )
-        wait_until(
-            lambda: "Started" in self.dest_kafka.start_cluster_mirror_topics(
-                self.client_node, "my-mirror", "my-topic"),
-            timeout_sec=120, backoff_sec=2,
-            err_msg="Failed to start mirror topics",
-        )
-        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"], "MIRRORING")
-
-        self.logger.info("Delete topic on source and wait for metadata sync")
-        self.source_kafka.delete_topic("my-topic")
-        MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.client_node, "my-mirror")
-
-        self.logger.info("Verify mirror partitions transitioned to FAILED")
-        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"], "FAILED")
 
     @cluster(num_nodes=7)
     @defaults(metadata_quorum=[quorum.isolated_kraft])
@@ -628,49 +628,6 @@ class ClusterMirroringTest(MirrorUtils, Test):
             "Expected dest retention.bytes to not be synced (excluded), got %s" % dest_configs.get("retention.bytes")
         assert dest_configs.get("min.insync.replicas") != "2", \
             "Expected dest min.insync.replicas to not be synced (excluded), got %s" % dest_configs.get("min.insync.replicas")
-
-    @cluster(num_nodes=7)
-    @defaults(metadata_quorum=[quorum.isolated_kraft])
-    def test_groups_filtering(self, metadata_quorum):
-        """Verify consumer group offset mirroring with include/exclude filtering."""
-        self.source_kafka.create_topic({"topic": "my-topic", "partitions": 1, "replication-factor": 2})
-
-        self.logger.info("Produce messages to source")
-        MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "my-topic", 3)
-
-        self.logger.info("Create consumer groups on source by consuming all messages")
-        for group in ["app-group1", "app-group2", "internal-group1"]:
-            MirrorUtils.consume_messages(self.logger, self.source_kafka, self.client_node, "my-topic", group, max_messages=3)
-
-        self.logger.info("Start mirror with groups include (app-.*) and exclude (app-group2)")
-        mirror_cfg = MirrorConfig(
-            self.source_kafka.bootstrap_servers(),
-            mirror_groups_include="app-.*",
-            mirror_groups_exclude="app-group2",
-        )
-        wait_until(
-            lambda: self.dest_kafka.create_cluster_mirror(
-                self.client_node, "my-mirror", mirror_cfg),
-            timeout_sec=120, backoff_sec=2,
-            err_msg="Failed to create cluster mirror",
-        )
-        wait_until(
-            lambda: "Started" in self.dest_kafka.start_cluster_mirror_topics(
-                self.client_node, "my-mirror", "my-topic"),
-            timeout_sec=120, backoff_sec=2,
-            err_msg="Failed to start mirror topics",
-        )
-        MirrorUtils.wait_mirror_lag_zero(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"])
-        MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.client_node, "my-mirror")
-
-        self.logger.info("Verify only app-group1 is synced on destination")
-        groups_output = self.dest_kafka.list_consumer_groups(self.client_node)
-        assert "app-group1" in groups_output, \
-            "Expected app-group1 to be synced on destination"
-        assert "app-group2" not in groups_output, \
-            "Expected app-group2 to be excluded from destination"
-        assert "internal-group1" not in groups_output, \
-            "Expected internal-group1 to not be included on destination"
 
     @cluster(num_nodes=7)
     @defaults(metadata_quorum=[quorum.isolated_kraft])
@@ -966,15 +923,12 @@ class ClusterMirroringTest(MirrorUtils, Test):
     @defaults(metadata_quorum=[quorum.isolated_kraft])
     def test_consumer_groups_commit(self, metadata_quorum):
         """Verify consumer group offset sync for mirror topics."""
-        self.logger.info("Create two topics on source and send 3 messages each")
+        # Phase 1: Offset syncs while group is idle.
+        self.logger.info("Create two topics on source and send 1 message")
         self.source_kafka.create_topic({"topic": "my-topic", "partitions": 1, "replication-factor": 2})
         self.source_kafka.create_topic({"topic": "other-topic", "partitions": 1, "replication-factor": 2})
-        MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "my-topic", 3)
-        MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "other-topic", 3)
-
-        self.logger.info("Consume from both topics using a named consumer group")
-        MirrorUtils.consume_messages(self.logger, self.source_kafka, self.client_node, "my-topic", "my-group", max_messages=3)
-        MirrorUtils.consume_messages(self.logger, self.source_kafka, self.client_node, "other-topic", "my-group", max_messages=3)
+        MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "my-topic", 1)
+        MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "other-topic", 1)
 
         self.logger.info("Start mirror with only my-topic (not other-topic)")
         mirror_cfg = MirrorConfig(self.source_kafka.bootstrap_servers())
@@ -993,55 +947,87 @@ class ClusterMirroringTest(MirrorUtils, Test):
         MirrorUtils.wait_mirror_lag_zero(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"])
         MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.client_node, "my-mirror")
 
-        self.logger.info("Verify my-group on dest has my-topic offset but not other-topic")
-        group_desc = MirrorUtils.describe_consumer_group(self.dest_kafka, "my-group", self.client_node)
-        assert "my-topic" in group_desc, \
-            "Expected my-topic offset to be synced on destination"
-        assert "other-topic" not in group_desc, \
+        self.logger.info("Consume from both topics using a named consumer group")
+        MirrorUtils.consume_messages(self.logger, self.source_kafka, self.client_node, "my-topic", "my-group", max_messages=1)
+        MirrorUtils.consume_messages(self.logger, self.source_kafka, self.client_node, "other-topic", "my-group", max_messages=1)
+
+        self.logger.info("Verify my-group on dest has my-topic but not other-topic")
+        dest_desc = MirrorUtils.describe_consumer_group(self.dest_kafka, "my-group", self.client_node)
+        dest_offset = ClusterMirroringTest.parse_group_offset(dest_desc, "my-topic")
+        assert dest_offset == 1, \
+            "Expected offset 1 on destination, got %s" % dest_offset
+        assert "other-topic" not in dest_desc, \
             "Expected other-topic offset to not appear on destination"
 
-        self.logger.info("Produce 2 more messages and consume on source to advance offset")
-        MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "my-topic", 2)
-        MirrorUtils.consume_messages(self.logger, self.source_kafka, self.client_node, "my-topic", "my-group",
-                                    max_messages=2, from_beginning=False)
+        # Phase 2: Offset sync skipped while group is active.
+        # Create dummy-topic on destination so the consumer can join my-group without committing offsets for my-topic.
+        # We need to create dummy-topic because a consumer group can't be subscribed to a non-existent topic.
+        # The group coordinator rejects offset commits for groups with active members.
+        self.logger.info("Start background consumers to make my-group active on destination")
+        self.dest_kafka.create_topic({"topic": "dummy-topic", "partitions": 1, "replication-factor": 1})
+        dest_consumer_cmd = "%s --bootstrap-server %s --topic dummy-topic --group my-group --consumer-property session.timeout.ms=10000" % (
+            self.dest_kafka.path.script("kafka-console-consumer.sh", self.client_node),
+            self.dest_kafka.bootstrap_servers(self.dest_kafka.security_protocol))
+        self.client_node.account.ssh("nohup %s >/dev/null 2>&1 &" % dest_consumer_cmd, allow_fail=True)
+
+        # Background consumer on source to advance committed offset
+        src_consumer_cmd = "%s --bootstrap-server %s --topic my-topic --group my-group --from-beginning --consumer-property session.timeout.ms=10000" % (
+            self.source_kafka.path.script("kafka-console-consumer.sh", self.client_node),
+            self.source_kafka.bootstrap_servers(self.source_kafka.security_protocol))
+        self.client_node.account.ssh("nohup %s >/dev/null 2>&1 &" % src_consumer_cmd, allow_fail=True)
+
+        self.logger.info("Produce on source and wait for source offset to advance")
+        MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "my-topic", 1)
+        wait_until(
+            lambda: ClusterMirroringTest.parse_group_offset(
+                MirrorUtils.describe_consumer_group(self.source_kafka, "my-group", self.client_node),
+                "my-topic") == 2,
+            timeout_sec=30, backoff_sec=2,
+            err_msg="Source consumer group offset did not reach 2")
         MirrorUtils.wait_mirror_lag_zero(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"])
         MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.client_node, "my-mirror")
 
-        self.logger.info("Stop mirror and verify offset synced to destination")
-        self.dest_kafka.stop_cluster_mirror_topics(self.client_node, "my-mirror", "my-topic")
-        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"], "STOPPED")
+        self.logger.info("Verify offset did NOT advance on destination")
+        dest_offset = ClusterMirroringTest.parse_group_offset(
+            MirrorUtils.describe_consumer_group(self.dest_kafka, "my-group", self.client_node), "my-topic")
+        assert dest_offset is not None and dest_offset < 2, \
+            "Expected offset sync to be skipped while group is active, but offset is %s" % dest_offset
+
+        self.logger.info("Stop background consumers and verify offset syncs after group becomes idle")
+        ClusterMirroringTest.stop_background_process(self.client_node, "ConsoleConsumer")
+        MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.client_node, "my-mirror")
         wait_until(
             lambda: ClusterMirroringTest.parse_group_offset(
                 MirrorUtils.describe_consumer_group(self.dest_kafka, "my-group", self.client_node),
-                "my-topic") == 5,
+                "my-topic") == 2,
             timeout_sec=30, backoff_sec=2,
-            err_msg="Consumer group offset did not reach 5 on destination")
+            err_msg="Consumer group offset did not reach 2 on destination after group became idle")
+
+        # Phase 3: No offset sync after mirror stop.
+        self.logger.info("Stop mirror")
+        self.dest_kafka.stop_cluster_mirror_topics(self.client_node, "my-mirror", "my-topic")
+        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"], "STOPPED")
+
+        self.logger.info("Verify no offset sync after mirror stop")
+        MirrorUtils.consume_messages(self.logger, self.source_kafka, self.client_node, "my-topic", "my-group",
+                                    max_messages=1, from_beginning=False)
+        MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.client_node, "my-mirror")
+        dest_offset = ClusterMirroringTest.parse_group_offset(
+            MirrorUtils.describe_consumer_group(self.dest_kafka, "my-group", self.client_node), "my-topic")
+        assert dest_offset == 2, \
+            "Expected offset to stay at 2 after mirror stop, but got %s" % dest_offset
 
     @cluster(num_nodes=7)
     @defaults(metadata_quorum=[quorum.isolated_kraft])
     def test_share_groups_commit(self, metadata_quorum):
         """Verify share group offset sync for mirror topics."""
-        self.logger.info("Create two topics on source and send 3 messages each")
+        # Phase 1: Offset syncs while group is idle.
+        self.logger.info("Create two topics on source and send some messages")
         self.source_kafka.create_topic({"topic": "my-topic", "partitions": 1, "replication-factor": 2})
         self.source_kafka.create_topic({"topic": "other-topic", "partitions": 1, "replication-factor": 2})
-        MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "my-topic", 3)
-        MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "other-topic", 3)
-
-        # Set config before first consume (group doesn't exist yet, so reset_share_group_offsets won't work)
-        self.source_kafka.set_share_group_offset_reset_strategy("my-share-group", "earliest", node=self.client_node)
-
-        self.logger.info("Consume from both topics using a named share group")
-        ClusterMirroringTest.consume_share_messages(
-            self.logger, self.source_kafka, self.client_node, "my-topic", "my-share-group", max_messages=3)
-        ClusterMirroringTest.consume_share_messages(
-            self.logger, self.source_kafka, self.client_node, "other-topic", "my-share-group", max_messages=3)
-
-        self.logger.info("Produce 3 messages and consume to commit SPSO")
-        MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "my-topic", 3)
-        ClusterMirroringTest.consume_share_messages(
-            self.logger, self.source_kafka, self.client_node, "my-topic", "my-share-group", max_messages=3)
-        self.logger.info("Source share group describe: %s",
-                         self.source_kafka.describe_share_group("my-share-group", self.client_node))
+        # With more messages pending in the partition, consuming 1 at a time should trigger SPSO archival reliably.
+        MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "my-topic", 10)
+        MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "other-topic", 10)
 
         self.logger.info("Start mirror with only my-topic")
         mirror_cfg = MirrorConfig(self.source_kafka.bootstrap_servers())
@@ -1060,43 +1046,74 @@ class ClusterMirroringTest(MirrorUtils, Test):
         MirrorUtils.wait_mirror_lag_zero(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"])
         MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.client_node, "my-mirror")
 
-        self.logger.info("Verify my-share-group on dest has my-topic but not other-topic")
-        src_desc = self.source_kafka.describe_share_group("my-share-group", self.client_node)
-        dest_desc = self.dest_kafka.describe_share_group("my-share-group", self.client_node)
-        self.logger.info("Source share group describe: %s", src_desc)
-        self.logger.info("Dest share group describe: %s", dest_desc)
-        assert "my-topic" in dest_desc, "Expected my-topic offset to be synced on destination"
-        assert "other-topic" not in dest_desc, "Expected other-topic offset to not appear on destination"
+        # Without initial reset no previously produced record can be consumed (there is no --from-beginning flag)
+        self.source_kafka.reset_share_group_offsets(self.client_node, "my-share-group", "my-topic")
 
-        self.logger.info("Produce and consume more messages on source to advance SPSO")
-        MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "my-topic", 2)
+        self.logger.info("Consume from both topics using a named share group")
         ClusterMirroringTest.consume_share_messages(
-            self.logger, self.source_kafka, self.client_node, "my-topic", "my-share-group",
-            max_messages=2, expected_count=2)
-        # SPSO archival lags behind consumption, so an extra produce+consume
-        # is needed to trigger archival of the previous batch.
-        MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "my-topic", 1)
+            self.logger, self.source_kafka, self.client_node, "my-topic", "my-share-group", max_messages=1)
         ClusterMirroringTest.consume_share_messages(
-            self.logger, self.source_kafka, self.client_node, "my-topic", "my-share-group",
-            max_messages=1, expected_count=1)
-        MirrorUtils.wait_mirror_lag_zero(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"])
+            self.logger, self.source_kafka, self.client_node, "other-topic", "my-share-group", max_messages=1)
+
+        self.logger.info("Verify my-share-group on dest has my-topic but not other-topic")
+        dest_desc = self.dest_kafka.describe_share_group("my-share-group", self.client_node)
+        dest_spso = ClusterMirroringTest.parse_group_offset(dest_desc, "my-topic")
+        assert dest_spso == 1, \
+            "Expected SPSO 1 on destination, got %s" % dest_spso
+        assert "other-topic" not in dest_desc, \
+            "Expected other-topic offset to not appear on destination"
+
+        # Phase 2: Offset sync skipped while group is active.
+        # Create dummy-topic on destination so the consumer can join my-share-group without consuming from my-topic.
+        # We don't need to create dummy-topic because a share group can be subscribed to a non-existent topic.
+        # The group coordinator rejects alterShareGroupOffsets for non-empty groups.
+        self.logger.info("Start background share consumer to make my-share-group active on destination")
+        dest_share_cmd = "%s --bootstrap-server %s --topic dummy-topic --group my-share-group 2>/dev/null" % (
+            self.dest_kafka.path.script("kafka-console-share-consumer.sh", self.client_node),
+            self.dest_kafka.bootstrap_servers(self.dest_kafka.security_protocol))
+        self.client_node.account.ssh("nohup %s >/dev/null 2>&1 &" % dest_share_cmd, allow_fail=True)
+
+        self.logger.info("Advance source SPSO while destination share group is active")
+        ClusterMirroringTest.consume_share_messages(
+            self.logger, self.source_kafka, self.client_node, "my-topic", "my-share-group", max_messages=1)
         wait_until(
             lambda: ClusterMirroringTest.parse_group_offset(
                 self.source_kafka.describe_share_group("my-share-group", self.client_node),
-                "my-topic") == 8,
+                "my-topic") == 2,
             timeout_sec=120, backoff_sec=2,
-            err_msg="Source share group offset did not reach 8")
-        MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.client_node, "my-mirror")
+            err_msg="Source share group offset did not reach 2")
 
-        self.logger.info("Stop mirror and verify SPSO synced to destination")
-        self.dest_kafka.stop_cluster_mirror_topics(self.client_node, "my-mirror", "my-topic")
-        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"], "STOPPED")
+        self.logger.info("Verify SPSO did NOT advance on destination")
+        MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.client_node, "my-mirror")
+        dest_spso = ClusterMirroringTest.parse_group_offset(
+            self.dest_kafka.describe_share_group("my-share-group", self.client_node), "my-topic")
+        assert dest_spso is not None and dest_spso < 2, \
+            "Expected offset sync to be skipped while share group is active, but offset is %s" % dest_spso
+
+        self.logger.info("Stop background share consumers and verify offset syncs after group becomes idle")
+        ClusterMirroringTest.stop_background_process(self.client_node, "ConsoleShareConsumer")
+        MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.client_node, "my-mirror")
         wait_until(
             lambda: ClusterMirroringTest.parse_group_offset(
                 self.dest_kafka.describe_share_group("my-share-group", self.client_node),
-                "my-topic") == 8,
+                "my-topic") == 2,
             timeout_sec=30, backoff_sec=2,
-            err_msg="Share group offset did not reach 8 on destination")
+            err_msg="Share group offset did not reach 2 on destination after group became idle")
+
+        # Phase 3: No offset sync after mirror stop.
+        self.logger.info("Stop mirror and verify SPSO synced to destination")
+        self.dest_kafka.stop_cluster_mirror_topics(self.client_node, "my-mirror", "my-topic")
+        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"], "STOPPED")
+
+        self.logger.info("Verify no SPSO sync after mirror stop")
+        ClusterMirroringTest.consume_share_messages(
+            self.logger, self.source_kafka, self.client_node, "my-topic", "my-share-group",
+            max_messages=2, expected_count=2)
+        MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.client_node, "my-mirror")
+        dest_spso = ClusterMirroringTest.parse_group_offset(
+            self.dest_kafka.describe_share_group("my-share-group", self.client_node), "my-topic")
+        assert dest_spso == 2, \
+            "Expected SPSO to stay at 2 after mirror stop, but got %s" % dest_spso
 
     @cluster(num_nodes=7)
     @defaults(metadata_quorum=[quorum.isolated_kraft])

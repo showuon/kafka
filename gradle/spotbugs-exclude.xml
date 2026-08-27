@@ -163,6 +163,9 @@ For a detailed description of spotbugs bug categories, see https://spotbugs.read
              Given that, this bug pattern doesn't make sense for Scala code. -->
         <Or>
             <Class name="kafka.log.Log"/>
+            <!-- Nested try-catch for group offset sync: the outer catch wraps listSourceGroupIds
+                 (throws Exception) while the inner catch discriminates expected vs unexpected errors. -->
+            <Class name="kafka.server.mirror.MirrorSourceSyncer"/>
         </Or>
         <Bug pattern="REC_CATCH_EXCEPTION"/>
     </Match>
