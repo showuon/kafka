@@ -137,7 +137,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private volatile MetadataImage metadataImage = MetadataImage.EMPTY;
     private final MetadataCache metadataCache;
     private final MirrorStateCache mirrorCache;
-    private final KafkaScheduler scheduler;
+    private final KafkaScheduler sharedScheduler;
     private final Metrics metrics;
     private final Time time;
 
@@ -164,7 +164,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         NodeToControllerChannelManager channelManager,
         Supplier<ReplicaManager> replicaManagerSupplier,
         MetadataCache metadataCache,
-        KafkaScheduler scheduler,
+        KafkaScheduler sharedScheduler,
         Metrics metrics,
         Time time
     ) {
@@ -179,17 +179,18 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         this.metadataCache = metadataCache;
         this.mirrorCache = MirrorStateCache.empty();
 
-        this.scheduler = scheduler;
+        this.sharedScheduler = sharedScheduler;
         this.metrics = metrics;
         this.time = time;
 
         this.metricsGroup = new KafkaMetricsGroup(this.getClass());
+        this.metadataRefreshError = metricsGroup.newMeter("TopicMetadataRefreshError", "errors", TimeUnit.SECONDS);
         this.topicConfigSyncError = metricsGroup.newMeter("TopicConfigSyncError", "errors", TimeUnit.SECONDS);
         this.consumerGroupOffsetSyncError = metricsGroup.newMeter("ConsumerGroupOffsetSyncError", "errors", TimeUnit.SECONDS);
         this.shareGroupOffsetSyncError = metricsGroup.newMeter("ShareGroupOffsetSyncError", "errors", TimeUnit.SECONDS);
         this.aclSyncError = metricsGroup.newMeter("AclSyncError", "errors", TimeUnit.SECONDS);
-        this.metadataRefreshError = metricsGroup.newMeter("TopicMetadataRefreshError", "errors", TimeUnit.SECONDS);
-        metricsGroup.newGauge("LogTruncationPartitionState", () -> mirrorCache.partitionStateCount(MirrorPartitionState.LOG_ALIGNMENT));
+        metricsGroup.newGauge("LogAlignmentPartitionState", () -> mirrorCache.partitionStateCount(MirrorPartitionState.LOG_ALIGNMENT));
+        metricsGroup.newGauge("UleRecoveryPartitionState", () -> mirrorCache.partitionStateCount(MirrorPartitionState.ULE_RECOVERY));
         metricsGroup.newGauge("EpochFencingPartitionState", () -> mirrorCache.partitionStateCount(MirrorPartitionState.EPOCH_FENCING));
         metricsGroup.newGauge("MirroringPartitionState", () -> mirrorCache.partitionStateCount(MirrorPartitionState.MIRRORING));
         metricsGroup.newGauge("PausingPartitionState", () -> mirrorCache.partitionStateCount(MirrorPartitionState.PAUSING));
@@ -231,9 +232,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         }
 
         this.sourceSyncer = new MirrorSourceSyncer(brokerConfig, this,
-                channelManager, metadataCache, mirrorCache, scheduler, metadataRefreshError,
-                topicConfigSyncError, consumerGroupOffsetSyncError, shareGroupOffsetSyncError, aclSyncError, metricsGroup);
-        sourceSyncer.scheduleMetadataRefresh(brokerConfig.mirrorConfig().metadataRefreshIntervalMs());
+                channelManager, metadataCache, mirrorCache, metricsGroup, metadataRefreshError,
+                topicConfigSyncError, consumerGroupOffsetSyncError, shareGroupOffsetSyncError, aclSyncError);
+        sourceSyncer.scheduleSourceClusterSync(brokerConfig.mirrorConfig().metadataRefreshIntervalMs());
 
         // MMM call the writer whenever it needs to persist state to the __mirror_state shard locally
         this.coordinatorWriter = Optional.of(coordinatorWriter);
@@ -641,6 +642,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         if (mirrorStateSender != null) {
             mirrorStateSender.shutdown();
         }
+        if (sourceSyncer != null) {
+            sourceSyncer.close();
+        }
         closeSourceAdmins();
         if (dstAdmin != null) {
             dstAdmin.close(Duration.ZERO);
@@ -925,7 +929,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private void scheduleTruncation(String mirrorName, TopicPartition tp) {
         final Consumer<TopicPartition> truncateCallback =
             partition -> transitionTo(mirrorName, Set.of(partition), MirrorPartitionState.MIRRORING);
-        scheduler.scheduleOnce("truncation-" + mirrorName + "-" + tp,
+        sharedScheduler.scheduleOnce("truncation-" + mirrorName + "-" + tp,
             () -> {
                 try {
                     var sourceMirrors = listSourceClusterMirrors(mirrorName);
@@ -991,7 +995,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         MirrorPartitionState targetState = (mp.prevState() == null || mp.prevState() == MirrorPartitionState.UNKNOWN)
             ? MirrorPartitionState.LOG_ALIGNMENT : mp.prevState();
         log.info("Scheduling retry #{} for {} in {} ms targeting {}.", attempt, tp, delay, targetState);
-        scheduler.scheduleOnce("failed-retry-" + tp,
+        sharedScheduler.scheduleOnce("failed-retry-" + tp,
             () -> transitionTo(mirrorName, Set.of(tp), targetState), delay);
     }
 
@@ -1006,7 +1010,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             .whenComplete((v, ex) -> {
                 if (ex != null) {
                     log.error("Failed to write PID reset record for {} in mirror {}", tp, mirrorName, ex);
-                    scheduler.scheduleOnce("pid-reset-retry-" + tp,
+                    sharedScheduler.scheduleOnce("pid-reset-retry-" + tp,
                         () -> writePidResetBarrier(mirrorName, tp).thenAccept(r -> result.complete(null)), 5000);
                 } else {
                     result.complete(null);
@@ -1617,8 +1621,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     // -- Source syncer proxy --
 
-    public void scheduleMetadataRefresh(long intervalMs) {
-        sourceSyncer.scheduleMetadataRefresh(intervalMs);
+    public void scheduleSourceClusterSync(long intervalMs) {
+        sourceSyncer.scheduleSourceClusterSync(intervalMs);
     }
 
     public void scheduleSourceTopicStateSync(String mirrorName) {

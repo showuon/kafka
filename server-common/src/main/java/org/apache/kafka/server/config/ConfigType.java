@@ -27,7 +27,7 @@ public enum ConfigType {
     IP("ips"),
     CLIENT_METRICS("client-metrics"),
     GROUP("groups"),
-    CLUSTER_MIRRORS("cluster-mirrors");
+    CLUSTER_MIRROR("cluster-mirrors");
 
     private final String value;
 

@@ -156,7 +156,7 @@ public abstract class ClusterMirrorCommand {
                             .excludePatterns(excludePatterns))
                     .all().get();
             if (!matchingTopicNames.isEmpty()) {
-                System.out.printf("Started %d mirror topic(s) in mirror %s: %s%n",
+                System.out.printf("Started %d topic(s) in mirror %s: %s%n",
                         matchingTopicNames.size(), mirrorName, matchingTopicNames);
             } else {
                 System.out.printf("No matching topics found yet. Patterns saved to mirror %s for auto-discovery.%n", mirrorName);
@@ -172,7 +172,7 @@ public abstract class ClusterMirrorCommand {
             adminClient.stopMirrorTopics(mirrorName, topics,
                     new StopMirrorTopicsOptions().patterns(patterns))
                     .all().get();
-            System.out.printf("Stopped mirroring for topics %s in mirror %s%n", topics, mirrorName);
+            System.out.printf("Stopped %s topic(s) in mirror %s%n", topics, mirrorName);
         }
 
         private org.apache.kafka.clients.admin.Config describeMirrorConfig(String mirrorName) throws Exception {
@@ -200,7 +200,7 @@ public abstract class ClusterMirrorCommand {
 
             PauseMirrorTopicsResult result = adminClient.pauseMirrorTopics(mirrorName, topics, new PauseMirrorTopicsOptions());
             result.all().get();
-            System.out.printf("Paused mirroring for %d topic(s) in mirror %s: %s%n", topics.size(), mirrorName, topics);
+            System.out.printf("Paused %d topic(s) in mirror %s: %s%n", topics.size(), mirrorName, topics);
         }
 
         private void resumeMirrorTopics(MirrorCommandOptions opts) throws Exception {
@@ -209,7 +209,7 @@ public abstract class ClusterMirrorCommand {
 
             ResumeMirrorTopicsResult result = adminClient.resumeMirrorTopics(mirrorName, topics, new ResumeMirrorTopicsOptions());
             result.all().get();
-            System.out.printf("Resumed mirroring for %d topic(s) in mirror %s: %s%n", topics.size(), mirrorName, topics);
+            System.out.printf("Resumed %d topic(s) in mirror %s: %s%n", topics.size(), mirrorName, topics);
         }
 
         private Set<String> resolveTopicsForMirror(String mirrorName, List<String> patterns) throws Exception {

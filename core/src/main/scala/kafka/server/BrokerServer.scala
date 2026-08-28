@@ -344,10 +344,10 @@ class BrokerServer(
        */
       val defaultActionQueue = new DelayedActionQueue
 
-      // Two threads: one for metadata refresh (can block on RPC timeouts against
-      // unreachable sources) and one for state transitions (truncation, retries).
-      val mirrorScheduler = new KafkaScheduler(2, true, "ClusterMirror-")
-      mirrorScheduler.startup();
+      // Shared scheduler for one-shot state transitions (truncation, retries, epoch bumps).
+      // Shutdown by ClusterMirrorCoordinatorService.
+      val mirrorSharedScheduler = new KafkaScheduler(1, true, "MirrorShared-")
+      mirrorSharedScheduler.startup()
 
       mirrorMetadataManager = new MirrorMetadataManager(
         clusterId,
@@ -355,7 +355,7 @@ class BrokerServer(
         clientToControllerChannelManager,
         () => replicaManager,
         metadataCache,
-        mirrorScheduler,
+        mirrorSharedScheduler,
         metrics,
         time
       )
@@ -410,7 +410,7 @@ class BrokerServer(
         new KafkaScheduler(1, true, "transaction-log-manager-"),
         producerIdManagerSupplier, metrics, metadataCache, Time.SYSTEM)
 
-      clusterMirrorCoordinator = createClusterMirrorCoordinator(mirrorScheduler)
+      clusterMirrorCoordinator = createClusterMirrorCoordinator(mirrorSharedScheduler)
 
       autoTopicCreationManager = new DefaultAutoTopicCreationManager(
         config, clientToControllerChannelManager, groupCoordinator,
