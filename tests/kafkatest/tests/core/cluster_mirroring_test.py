@@ -988,11 +988,11 @@ class ClusterMirroringTest(MirrorUtils, Test):
             err_msg="Failed to start mirror topics",
         )
         MirrorUtils.wait_mirror_lag_zero(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"])
-        MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.client_node, "my-mirror")
 
         self.logger.info("Consume from both topics using a named consumer group")
         MirrorUtils.consume_messages(self.logger, self.source_kafka, self.client_node, "my-topic", "my-group", max_messages=1)
         MirrorUtils.consume_messages(self.logger, self.source_kafka, self.client_node, "other-topic", "my-group", max_messages=1)
+        MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.client_node, "my-mirror")
 
         self.logger.info("Verify my-group on dest has my-topic but not other-topic")
         dest_desc = MirrorUtils.describe_consumer_group(self.dest_kafka, "my-group", self.client_node)
@@ -1087,7 +1087,6 @@ class ClusterMirroringTest(MirrorUtils, Test):
             err_msg="Failed to start mirror topics",
         )
         MirrorUtils.wait_mirror_lag_zero(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"])
-        MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.client_node, "my-mirror")
 
         # Without initial reset no previously produced record can be consumed (there is no --from-beginning flag)
         self.source_kafka.reset_share_group_offsets(self.client_node, "my-share-group", "my-topic")
@@ -1097,6 +1096,7 @@ class ClusterMirroringTest(MirrorUtils, Test):
             self.logger, self.source_kafka, self.client_node, "my-topic", "my-share-group", max_messages=1)
         ClusterMirroringTest.consume_share_messages(
             self.logger, self.source_kafka, self.client_node, "other-topic", "my-share-group", max_messages=1)
+        MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.client_node, "my-mirror")
 
         self.logger.info("Verify my-share-group on dest has my-topic but not other-topic")
         dest_desc = self.dest_kafka.describe_share_group("my-share-group", self.client_node)
