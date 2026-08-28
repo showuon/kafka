@@ -34,7 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class MirrorStateCache {
     private final Map<MirrorPartitionKey, MirrorPartition> partitions = new ConcurrentHashMap<>();
     private final Map<String, Map<TopicPartition, SourceLeader>> sourceLeaders = new ConcurrentHashMap<>();
-    private final Map<String, Set<String>> sourceDeletions = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, Integer>> sourceDeletions = new ConcurrentHashMap<>();
     private final Set<Integer> loadedCoordPartitions = ConcurrentHashMap.newKeySet();
     private final Set<String> pendingTopicCreations = ConcurrentHashMap.newKeySet();
     private final Set<PendingLeaderEpochBump> pendingLederEpochBumps = ConcurrentHashMap.newKeySet();
@@ -152,17 +152,24 @@ public class MirrorStateCache {
     }
 
     // -- Source topic deletion operations --
-    public boolean addSourceDeletion(String mirrorName, String topic) {
-        return sourceDeletions.computeIfAbsent(mirrorName, k -> ConcurrentHashMap.newKeySet()).add(topic);
+
+    public int addSourceDeletion(String mirrorName, String topic) {
+        return sourceDeletions
+                .computeIfAbsent(mirrorName, k -> new ConcurrentHashMap<>())
+                .merge(topic, 1, Integer::sum);
     }
 
-    public boolean isSourceDeletion(String mirrorName, String topic) {
-        Set<String> topics = sourceDeletions.get(mirrorName);
-        return topics != null && topics.contains(topic);
+    public boolean isDeletionConfirmed(String mirrorName, String topic, int minCount) {
+        Map<String, Integer> topics = sourceDeletions.get(mirrorName);
+        if (topics == null) {
+            return false;
+        }
+        Integer count = topics.get(topic);
+        return count != null && count >= minCount;
     }
 
     public void removeSourceDeletion(String mirrorName, String topic) {
-        Set<String> topics = sourceDeletions.get(mirrorName);
+        Map<String, Integer> topics = sourceDeletions.get(mirrorName);
         if (topics != null) {
             topics.remove(topic);
         }

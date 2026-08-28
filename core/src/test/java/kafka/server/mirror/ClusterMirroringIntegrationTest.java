@@ -579,7 +579,7 @@ public class ClusterMirroringIntegrationTest {
     }
 
     @Test
-    void testULE_RECOVERY() throws Exception {
+    void testUleRecoveryProcess() throws Exception {
         String topic = "test-topic";
 
         srcAdmin.createTopics(List.of(

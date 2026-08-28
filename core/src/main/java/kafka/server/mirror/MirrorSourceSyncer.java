@@ -117,6 +117,7 @@ import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
 class MirrorSourceSyncer {
     static final int LEADER_EPOCH_BUMP_THRESHOLD = 3;
     static final int LEADER_EPOCH_BUMP_INCREMENT = 10;
+    static final int MIN_DELETION_OBSERVATIONS = 10;
 
     private final Logger log;
     private final KafkaConfig brokerConfig;
@@ -540,8 +541,14 @@ class MirrorSourceSyncer {
 
         metadataManager.getConfiguredTopics(mirrorName, true).forEach(name -> {
             if (deletedSourceTopicNames.contains(name)) {
-                if (mirrorCache.isSourceDeletion(mirrorName, name)) {
-                    log.info("Detected topic {} deleted in source cluster {}, marking mirror partitions as non-retryable", name, mirrorName);
+                // The Admin API cannot distinguish between "metadata still loading" and "no topics"
+                // (e.g. after an unclean leader election on a ZK-based source cluster). We require
+                // MIN_DELETION_OBSERVATIONS consecutive observations before confirming a deletion
+                // to avoid false positives during transient outages.
+                int count = mirrorCache.addSourceDeletion(mirrorName, name);
+                if (mirrorCache.isDeletionConfirmed(mirrorName, name, MIN_DELETION_OBSERVATIONS)) {
+                    log.error("Detected topic {} deleted in source cluster {} after {} observations, marking as non-retryable",
+                            name, mirrorName, count);
                     mirrorCache.removeSourceDeletion(mirrorName, name);
                     TopicImage topicImage = metadataManager.metadataImage().topics().getTopic(name);
                     if (topicImage != null) {
@@ -550,12 +557,7 @@ class MirrorSourceSyncer {
                                         MirrorPartitionState.FAILED, "The source topic is deleted.", true));
                     }
                 } else {
-                    // The Admin API cannot distinguish between "metadata still loading" and "no topics"
-                    // (e.g. after an unclean leader election on a ZK-based source cluster), so marking a
-                    // mirror topic as permanently failed on the first observation can be wrong. We require
-                    // two consecutive observations before confirming the deletion.
-                    log.debug("Topic {} not found in source cluster {}, pending deletion confirmation on next sync", name, mirrorName);
-                    mirrorCache.addSourceDeletion(mirrorName, name);
+                    log.debug("Topic {} not found in source cluster {}, observation {}/{}", name, mirrorName, count, MIN_DELETION_OBSERVATIONS);
                 }
             } else {
                 mirrorCache.removeSourceDeletion(mirrorName, name);
