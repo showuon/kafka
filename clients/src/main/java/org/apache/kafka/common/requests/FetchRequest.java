@@ -491,7 +491,7 @@ public class FetchRequest extends AbstractRequest {
         return brokerId >= 0;
     }
 
-    public static boolean isConsumer(int replicaId) {
+    public static boolean isConsumerOrMirror(int replicaId) {
         return replicaId < 0 && replicaId != FUTURE_LOCAL_REPLICA_ID;
     }
 
