@@ -79,8 +79,14 @@ public class FetchParams {
         return FetchRequest.isConsumer(replicaId);
     }
 
+    public boolean isFromMirror() {
+        return FetchRequest.isMirror(replicaId);
+    }
+
     public boolean fetchOnlyLeader() {
-        return isFromFollower() || (isFromConsumer() && clientMetadata.isEmpty()) || shareFetchRequest;
+        return isFromFollower() ||
+                ((isFromConsumer() || isFromMirror()) && clientMetadata.isEmpty()) ||
+                shareFetchRequest;
     }
 
     @Override

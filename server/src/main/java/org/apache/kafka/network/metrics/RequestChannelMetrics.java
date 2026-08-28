@@ -37,6 +37,7 @@ public class RequestChannelMetrics {
         for (String name : Arrays.asList(
             RequestMetrics.CONSUMER_FETCH_METRIC_NAME,
             RequestMetrics.FOLLOW_FETCH_METRIC_NAME,
+            RequestMetrics.MIRROR_FETCH_METRIC_NAME,
             RequestMetrics.VERIFY_PARTITIONS_IN_TXN_METRIC_NAME,
             RequestMetrics.LIST_CLIENT_METRICS_RESOURCES_METRIC_NAME
         )) {

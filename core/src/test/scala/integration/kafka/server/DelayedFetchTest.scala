@@ -28,7 +28,7 @@ import org.apache.kafka.common.requests.FetchRequest
 import org.apache.kafka.server.LogReadResult
 import org.apache.kafka.server.storage.log.{FetchIsolation, FetchParams, FetchPartitionData}
 import org.apache.kafka.storage.internals.log.{FetchDataInfo, LogOffsetMetadata, LogOffsetSnapshot}
-import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.{BeforeEach, Test}
 import org.junit.jupiter.api.Assertions._
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
@@ -39,6 +39,12 @@ class DelayedFetchTest {
   private val maxBytes = 1024
   private val replicaManager: ReplicaManager = mock(classOf[ReplicaManager])
   private val replicaQuota: ReplicaQuota = mock(classOf[ReplicaQuota])
+
+  @BeforeEach
+  def beforeEach(): Unit = {
+    DelayedFetchMetrics.unregisterMetrics()
+    DelayedFetchMetrics.registerMetrics()
+  }
 
   @Test
   def testFetchWithFencedEpoch(): Unit = {
@@ -225,6 +231,26 @@ class DelayedFetchTest {
     }
   }
 
+  @Test
+  def testDelayedFetchMetricForMirrorMarked(): Unit = {
+    // Given
+    val fetchParams = buildMirrorFetchParams(maxWaitMs = 500)
+
+    val delayedFetch = new DelayedFetch(
+      params = fetchParams,
+      fetchPartitionStatus = Seq(),
+      replicaManager = replicaManager,
+      quota = replicaQuota,
+      responseCallback = mock[Seq[(TopicIdPartition, FetchPartitionData)] => Unit]()
+    )
+
+    // When
+    delayedFetch.onExpiration()
+
+    // Then
+    assertEquals(1, DelayedFetchMetrics.mirrorExpiredRequestMeter.count())
+  }
+
   private def buildFollowerFetchParams(
     replicaId: Int,
     maxWaitMs: Int,
@@ -237,6 +263,21 @@ class DelayedFetchTest {
       minBytes,
       maxBytes,
       FetchIsolation.LOG_END,
+      Optional.empty()
+    )
+  }
+
+  private def buildMirrorFetchParams(
+                                      maxWaitMs: Int,
+                                      minBytes: Int = 1,
+                                    ): FetchParams = {
+    new FetchParams(
+      FetchRequest.MIRROR_REPLICA_ID,
+      1,
+      maxWaitMs,
+      minBytes,
+      maxBytes,
+      FetchIsolation.TXN_COMMITTED,
       Optional.empty()
     )
   }
