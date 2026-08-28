@@ -43,7 +43,6 @@ import org.apache.kafka.server.util.ShutdownableThread
 import org.apache.kafka.storage.internals.log.LogAppendInfo
 import org.apache.kafka.storage.log.metrics.BrokerTopicStats
 
-import java.io.IOException
 import java.nio.ByteBuffer
 import java.util
 import java.util.Optional
@@ -169,10 +168,12 @@ abstract class AbstractFetcherThread(name: String,
                                          fetchException: Option[Throwable] = None): Unit = {
     if (partitions.nonEmpty) {
       debug(s"Handling errors in $methodName for partitions $partitions")
-      if (fetchException.exists(_.isInstanceOf[IOException]) && mirrorName.nonEmpty && isRunning) {
+      // if the fetchException is not empty, it means the fetch request failed. If it's mirroring, it doesn't help
+      // to delay the fetch because the source metadata might be stale.
+      if (mirrorName.nonEmpty && isRunning && fetchException.nonEmpty) {
         try {
           partitions.foreach(markPartitionRemoved)
-          refreshSourceClusterMetadata(partitions.toSet, s"Fetch IO error: ${fetchException.get.getMessage}")
+          refreshSourceClusterMetadata(partitions.toSet, s"Fetch error: ${fetchException.get.getMessage}")
         } catch {
           case t: Throwable =>
             warn(s"Failed to re-resolve source leader for mirror $mirrorName", t)
@@ -727,7 +728,7 @@ abstract class AbstractFetcherThread(name: String,
       currentState
     } else if (initialFetchState.initOffset < 0) {
       fetchOffsetAndTruncate(tp, initialFetchState.topicId, initialFetchState.currentLeaderEpoch, initialFetchState.mirrorLeaderEpoch)._1
-    } else if (leader.isTruncationOnFetchSupported && mirrorName.isBlank) {
+    } else if (leader.isTruncationOnFetchSupported) {
       // With old message format, latestEpoch will be empty and we use Truncating state to truncate to high watermark
       val lastFetchedEpoch: Optional[Integer] = latestEpoch(tp)
       val state = if (lastFetchedEpoch.isPresent) ReplicaState.FETCHING else ReplicaState.TRUNCATING

@@ -20,7 +20,7 @@ package kafka.server
 import java.util.{Collections, Optional}
 import kafka.utils.Logging
 import org.apache.kafka.clients.FetchSessionHandler
-import org.apache.kafka.common.errors.KafkaStorageException
+import org.apache.kafka.common.errors.{KafkaStorageException, UnsupportedVersionException}
 import org.apache.kafka.common.{IsolationLevel, Node, TopicPartition, Uuid}
 import org.apache.kafka.common.message.{FetchResponseData, OffsetForLeaderEpochRequestData}
 import org.apache.kafka.common.message.ListOffsetsRequestData.{ListOffsetsPartition, ListOffsetsTopic}
@@ -83,8 +83,11 @@ class RemoteLeaderEndPoint(logPrefix: String,
   private val maxBytes: Int = mirrorConfig.map(_.fetchResponseMaxBytes()).getOrElse(brokerConfig.replicaFetchResponseMaxBytes)
   private val fetchSize: Int = mirrorConfig.map(_.fetchMaxBytes()).getOrElse(brokerConfig.replicaFetchMaxBytes)
   private val lastSeenEndpointList = new util.HashMap[Integer, Node]()
+  @volatile private var supportedVersion = metadataVersionSupplier().fetchRequestVersion
 
-  override def isTruncationOnFetchSupported: Boolean = true
+  // The "supportedVersion > 11" check should not impact normal replication because the supported version should
+  // always be > 11 when cluster mirror is supported, but only adopt the logic in Mirror in case of some exception
+  override def isTruncationOnFetchSupported: Boolean = if (isClusterMirror) supportedVersion > 11 else true
 
   override def initiateClose(): Unit = blockingSender.initiateClose()
 
@@ -99,6 +102,10 @@ class RemoteLeaderEndPoint(logPrefix: String,
       blockingSender.sendRequest(fetchRequest)
     } catch {
       case t: Throwable =>
+        if (isClusterMirror && t.isInstanceOf[UnsupportedVersionException]) {
+          // setting highest supported version when UnsupportedVersionException is thrown
+          supportedVersion = fetchRequest.version()
+        }
         fetchSessionHandler.handleError(t)
         throw t
     }
