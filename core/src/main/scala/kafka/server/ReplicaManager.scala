@@ -23,7 +23,7 @@ import kafka.log.LogManager
 import kafka.server.HostedPartition.Online
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.ReplicaManager.{AtMinIsrPartitionCountMetricName, FailedIsrUpdatesPerSecMetricName, IsrExpandsPerSecMetricName, IsrShrinksPerSecMetricName, LeaderCountMetricName, OfflineReplicaCountMetricName, PartitionCountMetricName, PartitionsWithLateTransactionsCountMetricName, ProducerIdCountMetricName, ReassigningPartitionsMetricName, UnderMinIsrPartitionCountMetricName, UnderReplicatedPartitionsMetricName, createLogReadResult, isListOffsetsTimestampUnsupported}
-import kafka.server.mirror.{LagInfo, MirrorFetcherManager, MirrorMetadataManager}
+import kafka.server.mirror.{MirrorOffsetInfo, MirrorFetcherManager, MirrorMetadataManager}
 import kafka.server.share.DelayedShareFetch
 import kafka.utils._
 import org.apache.kafka.common.config.{ConfigResource, TopicConfig}
@@ -52,7 +52,8 @@ import org.apache.kafka.coordinator.transaction.{AddPartitionsToTxnConfig, Trans
 import org.apache.kafka.image.{LocalReplicaChanges, MetadataImage, TopicsDelta}
 import org.apache.kafka.metadata.LeaderConstants.NO_LEADER
 import org.apache.kafka.metadata.MetadataCache
-import org.apache.kafka.server.common.{MirrorPartitionState, DirectoryEventHandler, RequestLocal, StopPartition}
+import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState
+import org.apache.kafka.server.common.{DirectoryEventHandler, RequestLocal, StopPartition}
 import org.apache.kafka.server.log.remote.TopicPartitionLog
 import org.apache.kafka.server.config.ReplicationConfigs
 import org.apache.kafka.server.log.remote.storage.RemoteLogManager
@@ -2663,9 +2664,9 @@ class ReplicaManager(val config: KafkaConfig,
                 override def onHighWatermarkUpdated(partition: TopicPartition, offset: Long): Unit = {
                   // Update mirror lag with the new HW
                   // Keep the existing source offset, it will be updated by the next mirror fetch
-                  val lagInfo = mirrorFetcherManager.getMirrorLagInfo(mirrorName).get(tp)
-                  lagInfo.foreach { info =>
-                    updateMirrorLag(mirrorName, tp, info.sourceOffset, offset)
+                  val mirrorOffsetInfo = mirrorFetcherManager.getMirrorOffsetInfo(mirrorName).get(tp)
+                  mirrorOffsetInfo.foreach { info =>
+                    updateMirrorOffsetInfo(mirrorName, tp, info.sourceOffset, offset)
                   }
                 }
               }
@@ -2729,16 +2730,16 @@ class ReplicaManager(val config: KafkaConfig,
    * @param sourceOffset source HW
    * @param destinationOffset destination HW
    */
-  def updateMirrorLag(mirrorName: String, topicPartition: TopicPartition, sourceOffset: Long, destinationOffset: Long): Unit =
-    mirrorFetcherManager.updatePartitionLag(mirrorName, topicPartition, sourceOffset, destinationOffset)
+  def updateMirrorOffsetInfo(mirrorName: String, topicPartition: TopicPartition, sourceOffset: Long, destinationOffset: Long): Unit =
+    mirrorFetcherManager.updateMirrorOffsetInfo(mirrorName, topicPartition, sourceOffset, destinationOffset)
 
   /**
-   * Get mirror partition lag info.
-   * This only consider mirror leader partitions hosted by this broker.
+   * Get mirror partition offset info.
+   * This only considers mirror leader partitions hosted by this broker.
    *
    * @param mirrorName mirror name
-   * @return lag info
+   * @return offset info
    */
-  def getMirrorLagInfo(mirrorName: String): Map[TopicPartition, LagInfo] =
-    mirrorFetcherManager.getMirrorLagInfo(mirrorName)
+  def getMirrorOffsetInfo(mirrorName: String): Map[TopicPartition, MirrorOffsetInfo] =
+    mirrorFetcherManager.getMirrorOffsetInfo(mirrorName)
 }

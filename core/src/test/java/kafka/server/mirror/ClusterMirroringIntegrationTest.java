@@ -62,7 +62,7 @@ import org.apache.kafka.coordinator.mirror.MirrorPartitionKey;
 import org.apache.kafka.coordinator.mirror.MirrorRecordSerde;
 import org.apache.kafka.coordinator.mirror.generated.LastMirrorEpochsKey;
 import org.apache.kafka.coordinator.mirror.generated.MirrorPartitionStateKey;
-import org.apache.kafka.server.common.MirrorPartitionState;
+import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState;
 import org.apache.kafka.server.config.ServerConfigs;
 import org.apache.kafka.server.config.ServerLogConfigs;
 
@@ -1105,7 +1105,6 @@ public class ClusterMirroringIntegrationTest {
     private void waitForMirrorState(Admin admin, String mirrorName, String topicPattern, String state, Optional<String> errorMsg) throws Exception {
         long deadline = System.currentTimeMillis() + 30_000;
         while (System.currentTimeMillis() < deadline) {
-            // make sure the mirror is in the desired state and the error message is as expected if provided
             if (allPartitionsSatisfy(admin, mirrorName, topicPattern,
                     s -> state.equals(s.state())
                             && (errorMsg.isEmpty()
@@ -1143,7 +1142,7 @@ public class ClusterMirroringIntegrationTest {
         ClusterMirrorDescription desc = descriptions.get(mirrorName);
         if (desc == null) return false;
         var pattern = java.util.regex.Pattern.compile(topicPattern);
-        var matched = desc.topics().entrySet().stream()
+        var matched = desc.leaderStates().entrySet().stream()
                 .filter(e -> pattern.matcher(e.getKey()).matches())
                 .toList();
         return !matched.isEmpty()

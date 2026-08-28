@@ -17,9 +17,9 @@
 
 package org.apache.kafka.clients.admin;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * A listing of a cluster mirror.
@@ -29,7 +29,7 @@ public class ClusterMirrorListing {
     private final String sourceBootstrap;
     private final String sourceClusterId;
     private final int topicCount;
-    private final List<String> topics;
+    private final Optional<List<String>> topicNames;
 
     /**
      * Create an instance with the specified parameters.
@@ -38,14 +38,14 @@ public class ClusterMirrorListing {
      * @param sourceBootstrap Source cluster bootstrap servers
      * @param sourceClusterId Source cluster ID
      * @param topicCount Number of topics configured for this mirror
-     * @param topics List of topic names configured for this mirror
+     * @param topicNames List of topic names configured for this mirror
      */
-    public ClusterMirrorListing(String mirrorName, String sourceBootstrap, String sourceClusterId, int topicCount, List<String> topics) {
+    public ClusterMirrorListing(String mirrorName, String sourceBootstrap, String sourceClusterId, int topicCount, Optional<List<String>> topicNames) {
         this.mirrorName = mirrorName;
         this.sourceBootstrap = sourceBootstrap;
         this.sourceClusterId = sourceClusterId;
         this.topicCount = topicCount;
-        this.topics = topics;
+        this.topicNames = topicNames;
     }
 
     /**
@@ -57,7 +57,7 @@ public class ClusterMirrorListing {
      * @param topicCount Number of topics configured for this mirror
      */
     public ClusterMirrorListing(String mirrorName, String sourceBootstrap, String sourceClusterId, int topicCount) {
-        this(mirrorName, sourceBootstrap, sourceClusterId, topicCount, Collections.emptyList());
+        this(mirrorName, sourceBootstrap, sourceClusterId, topicCount, Optional.empty());
     }
 
     /**
@@ -68,7 +68,7 @@ public class ClusterMirrorListing {
      * @param topicCount Number of topics configured for this mirror
      */
     public ClusterMirrorListing(String mirrorName, String sourceBootstrap, int topicCount) {
-        this(mirrorName, sourceBootstrap, "", topicCount, Collections.emptyList());
+        this(mirrorName, sourceBootstrap, "", topicCount, Optional.empty());
     }
 
     /**
@@ -78,7 +78,7 @@ public class ClusterMirrorListing {
      * @param sourceBootstrap Source cluster bootstrap servers
      */
     public ClusterMirrorListing(String mirrorName, String sourceBootstrap) {
-        this(mirrorName, sourceBootstrap, "", 0, Collections.emptyList());
+        this(mirrorName, sourceBootstrap, "", 0, Optional.empty());
     }
 
     /**
@@ -120,22 +120,22 @@ public class ClusterMirrorListing {
     /**
      * The topic names configured for this mirror.
      *
-     * @return List of topic names, or empty list if not requested or not available
+     * @return List of topic names, or empty if not requested or not available
      */
-    public List<String> topics() {
-        return topics;
+    public Optional<List<String>> topicNames() {
+        return topicNames;
     }
 
     @Override
     public String toString() {
         return "ClusterMirrorListing(mirrorName='" + mirrorName + "', sourceBootstrap='" + sourceBootstrap
                 + "', sourceClusterId='" + sourceClusterId + "', topicCount=" + topicCount
-                + ", topics=" + topics + ")";
+                + ", topicNames=" + topicNames + ")";
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(mirrorName, sourceBootstrap, sourceClusterId, topicCount, topics);
+        return Objects.hash(mirrorName, sourceBootstrap, sourceClusterId, topicCount, topicNames);
     }
 
     @Override
@@ -147,6 +147,6 @@ public class ClusterMirrorListing {
                Objects.equals(mirrorName, that.mirrorName) &&
                Objects.equals(sourceBootstrap, that.sourceBootstrap) &&
                Objects.equals(sourceClusterId, that.sourceClusterId) &&
-               Objects.equals(topics, that.topics);
+               Objects.equals(topicNames, that.topicNames);
     }
 }

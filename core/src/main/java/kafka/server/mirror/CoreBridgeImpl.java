@@ -18,10 +18,10 @@ package kafka.server.mirror;
 
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.coordinator.mirror.CoreBridge;
-import org.apache.kafka.coordinator.mirror.MirrorPartition;
 import org.apache.kafka.coordinator.mirror.MirrorPartitionKey;
 import org.apache.kafka.metadata.MetadataCache;
-import org.apache.kafka.server.common.MirrorPartitionState;
+import org.apache.kafka.server.common.MirrorPartition;
+import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState;
 
 import java.util.Optional;
 import java.util.function.Function;

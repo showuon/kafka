@@ -41,7 +41,8 @@ import org.apache.kafka.coordinator.mirror.generated.LastMirrorEpochsValue;
 import org.apache.kafka.coordinator.mirror.generated.MirrorPartitionStateKey;
 import org.apache.kafka.coordinator.mirror.generated.MirrorPartitionStateValue;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
-import org.apache.kafka.server.common.MirrorPartitionState;
+import org.apache.kafka.server.common.MirrorPartition;
+import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
 
@@ -305,7 +306,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
             throw Errors.FENCED_STATE_EPOCH.exception();
         }
         MirrorPartitionState currentState = MirrorPartition.orEmpty(coreBridge.getPartition(pk)).state();
-        if (!MirrorPartitionState.isValidTransition(currentState, state)) {
+        if (!MirrorPartition.isValidStateTransition(currentState, state)) {
             log.warn("Skipping invalid transition from {} to {} for {}.", currentState, state, tp);
             return new CoordinatorResult<>(List.of(), null);
         }

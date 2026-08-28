@@ -1409,6 +1409,8 @@ public class MockAdminClient extends AdminClient {
             // Return empty description for mock
             ClusterMirrorDescription description = new ClusterMirrorDescription(
                 mirrorName,
+                null,
+                null,
                 Collections.emptyMap(),
                 null
             );

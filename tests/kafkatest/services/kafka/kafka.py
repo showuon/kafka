@@ -2198,10 +2198,13 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                 mirrors[mirror][topic] = {}
             
             partition = item["partition"]
+            src = item["sourceOffset"]
+            dst = item["destinationOffset"]
+            lag = -1 if src < 0 or dst < 0 else max(0, src - dst)
             mirrors[mirror][topic][partition] = {
-                "src_offset": item["sourceOffset"],
-                "dst_offset": item["destinationOffset"],
-                "lag": item["lag"],
+                "src_offset": src,
+                "dst_offset": dst,
+                "lag": lag,
                 "state": item["state"]
             }
 

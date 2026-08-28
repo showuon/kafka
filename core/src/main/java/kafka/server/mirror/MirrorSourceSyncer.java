@@ -75,7 +75,7 @@ import org.apache.kafka.image.TopicImage;
 import org.apache.kafka.metadata.MetadataCache;
 import org.apache.kafka.metadata.authorizer.StandardAcl;
 import org.apache.kafka.server.common.ControllerRequestCompletionHandler;
-import org.apache.kafka.server.common.MirrorPartitionState;
+import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState;
 import org.apache.kafka.server.common.NodeToControllerChannelManager;
 import org.apache.kafka.server.metrics.KafkaMetricsGroup;
 import org.apache.kafka.server.util.KafkaScheduler;
@@ -354,7 +354,7 @@ class MirrorSourceSyncer {
             if (!metadataManager.clusterId().equals(sourceMirror.sourceClusterId())) {
                 continue;
             }
-            if (sourceMirror.topics().contains(topicName)) {
+            if (sourceMirror.topicNames().map(names -> names.contains(topicName)).orElse(false)) {
                 log.error("Mirror loop detected for mirror {}: source mirror {} is already mirroring topic {}",
                         mirrorName, sourceMirror.mirrorName(), topicName);
                 return true;
@@ -1237,13 +1237,13 @@ class MirrorSourceSyncer {
             if (desc == null) {
                 continue;
             }
-            Set<ClusterMirrorDescription.LeaderStateDescription> leaderStates = desc.topics().get(tp.topic());
+            Set<ClusterMirrorDescription.LeaderStateDescription> leaderStates = desc.leaderStates().get(tp.topic());
             if (leaderStates == null) {
                 continue;
             }
             boolean notStopped = leaderStates.stream()
                     .anyMatch(lsd -> lsd.topicPartition().equals(tp)
-                            && (!MirrorPartitionState.STOPPED.name().equals(lsd.state())));
+                            && !MirrorPartitionState.STOPPED.name().equals(lsd.state()));
             if (notStopped) {
                 log.error("Source mirror(s) {} mirroring from this cluster ({}) have not stopped for partition {}",
                         localClusterSourceMirrors, metadataManager.clusterId(), tp);

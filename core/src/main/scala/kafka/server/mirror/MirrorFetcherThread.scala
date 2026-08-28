@@ -25,7 +25,8 @@ import org.apache.kafka.common.message.FetchResponseData
 import org.apache.kafka.common.record.Records
 import org.apache.kafka.common.requests.FetchResponse
 import org.apache.kafka.common.{Node, TopicPartition}
-import org.apache.kafka.server.common.{MirrorPartitionState, OffsetAndEpoch}
+import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState
+import org.apache.kafka.server.common.OffsetAndEpoch
 import org.apache.kafka.server.{LeaderEndPoint, PartitionFetchState}
 import org.apache.kafka.storage.internals.log.{LogAppendInfo, LogStartOffsetIncrementReason}
 
@@ -175,7 +176,7 @@ class MirrorFetcherThread(name: String,
     log.maybeIncrementLogStartOffset(leaderLogStartOffset, LogStartOffsetIncrementReason.LeaderOffsetIncremented)
 
     // Update mirroring lag
-    replicaMgr.updateMirrorLag(mirrorName, topicPartition, partitionData.highWatermark, log.highWatermark)
+    replicaMgr.updateMirrorOffsetInfo(mirrorName, topicPartition, partitionData.highWatermark, log.highWatermark)
 
     // Account for replication quota
     if (quota.isThrottled(topicPartition))
@@ -196,7 +197,9 @@ class MirrorFetcherThread(name: String,
   // Returns the mirror partition lag
   // TODO: Since we already record the lag in stats, maybe we don't cache the logInfo in mirrorFetcherManager anymore.
   override def getPartitionLag(topicPartition: TopicPartition, leaderHW: Long, nextOffset: Long, mirrorName: String): Long = {
-    replicaMgr.mirrorFetcherManager.getMirrorLagInfo(mirrorName).get(topicPartition).map(_.lag).getOrElse(0L)
+    replicaMgr.mirrorFetcherManager.getMirrorOffsetInfo(mirrorName).get(topicPartition).map { info =>
+      Math.max(0, info.sourceOffset - info.destinationOffset)
+    }.getOrElse(0L)
   }
 
   override def initiateShutdown(): Boolean = {

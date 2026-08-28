@@ -35,7 +35,7 @@ import org.apache.kafka.coordinator.common.runtime.CoordinatorRuntimeMetrics;
 import org.apache.kafka.coordinator.common.runtime.MultiThreadedEventProcessor;
 import org.apache.kafka.coordinator.common.runtime.PartitionWriter;
 import org.apache.kafka.coordinator.mirror.metrics.ClusterMirrorCoordinatorMetrics;
-import org.apache.kafka.server.common.MirrorPartitionState;
+import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState;
 import org.apache.kafka.server.util.Scheduler;
 import org.apache.kafka.server.util.timer.Timer;
 

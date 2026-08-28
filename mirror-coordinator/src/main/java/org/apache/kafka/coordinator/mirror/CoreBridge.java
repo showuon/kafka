@@ -19,7 +19,8 @@ package org.apache.kafka.coordinator.mirror;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.message.ReadMirrorStatesResponseData;
-import org.apache.kafka.server.common.MirrorPartitionState;
+import org.apache.kafka.server.common.MirrorPartition;
+import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState;
 
 import java.util.Optional;
 import java.util.Set;

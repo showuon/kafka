@@ -30,7 +30,7 @@ import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.metadata.MetadataCache;
 import org.apache.kafka.metadata.MockConfigRepository;
-import org.apache.kafka.server.common.MirrorPartitionState;
+import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState;
 import org.apache.kafka.server.replica.Replica;
 import org.apache.kafka.server.util.KafkaScheduler;
 import org.apache.kafka.storage.internals.checkpoint.OffsetCheckpoints;
