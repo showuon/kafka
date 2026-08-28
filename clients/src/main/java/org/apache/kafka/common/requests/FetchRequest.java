@@ -179,6 +179,9 @@ public class FetchRequest extends AbstractRequest {
         private List<TopicIdPartition> removed = Collections.emptyList();
         private List<TopicIdPartition> replaced = Collections.emptyList();
         private String rackId = "";
+        // the highest supported version between this node and the leader node. This is used for cluster mirroring
+        // because the source cluster could be in an older version of kafka
+        private short version = -1;
 
         public static Builder forConsumer(short maxVersion, int maxWait, int minBytes, Map<TopicPartition, PartitionData> fetchData) {
             return new Builder(ApiKeys.FETCH.oldestVersion(), maxVersion,
@@ -265,8 +268,13 @@ public class FetchRequest extends AbstractRequest {
             });
         }
 
+        public short version() {
+            return version;
+        }
+
         @Override
         public FetchRequest build(short version) {
+            this.version = version;
             if (version < 3) {
                 maxBytes = DEFAULT_RESPONSE_MAX_BYTES;
             }
@@ -316,13 +324,10 @@ public class FetchRequest extends AbstractRequest {
                 FetchRequestData.FetchPartition fetchPartition = new FetchRequestData.FetchPartition()
                     .setPartition(topicPartition.partition())
                     .setCurrentLeaderEpoch(partitionData.currentLeaderEpoch.orElse(RecordBatch.NO_PARTITION_LEADER_EPOCH))
+                    .setLastFetchedEpoch(partitionData.lastFetchedEpoch.orElse(RecordBatch.NO_PARTITION_LEADER_EPOCH))
                     .setFetchOffset(partitionData.fetchOffset)
                     .setLogStartOffset(partitionData.logStartOffset)
                     .setPartitionMaxBytes(partitionData.maxBytes);
-
-                if (version >= 12) {
-                    fetchPartition.setLastFetchedEpoch(partitionData.lastFetchedEpoch.orElse(RecordBatch.NO_PARTITION_LEADER_EPOCH));
-                }
 
                 if (version >= 19) {
                     fetchPartition.setMirrorLeaderEpoch(partitionData.mirrorLeaderEpoch.orElse(RecordBatch.NO_PARTITION_LEADER_EPOCH));
