@@ -32,7 +32,9 @@ import org.apache.kafka.clients.admin.GroupListing;
 import org.apache.kafka.clients.admin.ListClusterMirrorsOptions;
 import org.apache.kafka.clients.admin.ListConsumerGroupOffsetsSpec;
 import org.apache.kafka.clients.admin.ListGroupsOptions;
+import org.apache.kafka.clients.admin.ListOffsetsResult;
 import org.apache.kafka.clients.admin.ListShareGroupOffsetsSpec;
+import org.apache.kafka.clients.admin.OffsetSpec;
 import org.apache.kafka.clients.admin.StartMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.StopMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.TopicDescription;
@@ -748,6 +750,13 @@ class MirrorSourceSyncer {
             Map<String, Map<TopicPartition, OffsetAndMetadata>> allOffsets = srcAdmin
                     .listConsumerGroupOffsets(groupSpecs).all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
 
+            // Resolve log offsets once for all mirror topic partitions across all groups
+            Set<TopicPartition> allMirrorPartitions = allOffsets.values().stream()
+                    .flatMap(m -> m.keySet().stream())
+                    .filter(tp -> mirrorTopics.contains(tp.topic()))
+                    .collect(Collectors.toSet());
+            Map<TopicPartition, PartitionLogInfo> logInfoMap = resolvePartitionLogInfo(allMirrorPartitions);
+
             for (var entry : allOffsets.entrySet()) {
                 String groupId = entry.getKey();
 
@@ -756,35 +765,29 @@ class MirrorSourceSyncer {
                         .filter(e -> mirrorTopics.contains(e.getKey().topic()))
                         .forEach(ent -> {
                             TopicPartition topicPartition = ent.getKey();
-                            Option<Long> logStartOffset = metadataManager.replicaManagerSupplier().get().getLog(topicPartition).map(UnifiedLog::logStartOffset);
-                            Option<Long> logEndOffset = metadataManager.replicaManagerSupplier().get().getLog(topicPartition).map(UnifiedLog::logEndOffset);
-                            if (logStartOffset.isEmpty() ||  logEndOffset.isEmpty()) {
-                                log.debug("Cannot get the log start offset or log end offset for partition {}, skip consumer group sync for it.", topicPartition);
+                            PartitionLogInfo plog = logInfoMap.get(topicPartition);
+                            if (plog == null) {
+                                log.debug("Cannot resolve log offsets for partition {}, skip consumer group sync for it.", topicPartition);
                                 return;
                             }
                             OffsetAndMetadata sourceGroupOffsetAndMetadata = ent.getValue();
 
-                            // Committing to the range [local logStartOffset ~ local logEndOffset]
-                            long finalOffset = Math.max(logStartOffset.get(), Math.min(sourceGroupOffsetAndMetadata.offset(), logEndOffset.get()));
+                            // Clamp to the range [logStartOffset, logEndOffset]
+                            long finalOffset = Math.max(plog.logStartOffset(), Math.min(sourceGroupOffsetAndMetadata.offset(), plog.logEndOffset()));
 
                             if (finalOffset == sourceGroupOffsetAndMetadata.offset()) {
                                 filtered.put(topicPartition, sourceGroupOffsetAndMetadata);
-                            } else if (finalOffset == logEndOffset.get()) {
-                                int logEndEpoch = metadataManager.replicaManagerSupplier().get().getLog(topicPartition)
-                                    .map(l -> l.leaderEpochCache().epochForOffset(logEndOffset.get()).orElse(-1)).getOrElse(() -> -1);
-                                if (logEndEpoch < 0) {
+                            } else if (finalOffset == plog.logEndOffset()) {
+                                if (plog.logEndEpoch() < 0) {
                                     log.debug("Cannot get the log end epoch for partition {}, skip consumer group sync for it.", topicPartition);
                                 } else {
-                                    filtered.put(topicPartition, new OffsetAndMetadata(logEndOffset.get(), Optional.of(logEndEpoch), ""));
+                                    filtered.put(topicPartition, new OffsetAndMetadata(plog.logEndOffset(), Optional.of(plog.logEndEpoch()), ""));
                                 }
                             } else {
-                                // finalOffset == logStartOffset
-                                int logStartEpoch = metadataManager.replicaManagerSupplier().get().getLog(topicPartition)
-                                    .map(l -> l.leaderEpochCache().epochForOffset(logStartOffset.get()).orElse(-1)).getOrElse(() -> -1);
-                                if (logStartEpoch < 0) {
+                                if (plog.logStartEpoch() < 0) {
                                     log.debug("Cannot get the log start epoch for partition {}, skip consumer group sync for it.", topicPartition);
                                 } else {
-                                    filtered.put(topicPartition, new OffsetAndMetadata(logStartOffset.get(), Optional.of(logStartEpoch), ""));
+                                    filtered.put(topicPartition, new OffsetAndMetadata(plog.logStartOffset(), Optional.of(plog.logStartEpoch()), ""));
                                 }
                             }
                         });
@@ -840,23 +843,29 @@ class MirrorSourceSyncer {
             Map<String, Map<TopicPartition, OffsetAndMetadata>> allOffsets = srcAdmin
                     .listShareGroupOffsets(groupSpecs).all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
 
+            // Resolve log offsets once for all mirror topic partitions across all groups
+            Set<TopicPartition> allMirrorPartitions = allOffsets.values().stream()
+                    .flatMap(m -> m.keySet().stream())
+                    .filter(tp -> mirrorTopics.contains(tp.topic()))
+                    .collect(Collectors.toSet());
+            Map<TopicPartition, PartitionLogInfo> logInfoMap = resolvePartitionLogInfo(allMirrorPartitions);
+
             for (var entry : allOffsets.entrySet()) {
                 String groupId = entry.getKey();
 
-                Map<TopicPartition, Long> filtered = new  HashMap<>();
+                Map<TopicPartition, Long> filtered = new HashMap<>();
                 entry.getValue().entrySet().stream()
                         .filter(e -> mirrorTopics.contains(e.getKey().topic()))
                         .forEach(ent -> {
                             TopicPartition topicPartition = ent.getKey();
-                            Option<Long> logStartOffset = metadataManager.replicaManagerSupplier().get().getLog(topicPartition).map(UnifiedLog::logStartOffset);
-                            Option<Long> logEndOffset = metadataManager.replicaManagerSupplier().get().getLog(topicPartition).map(UnifiedLog::logEndOffset);
-                            if (logStartOffset.isEmpty() ||  logEndOffset.isEmpty()) {
-                                log.debug("Cannot get the log start offset or log end offset for partition {}, skip share group offset sync for it.", topicPartition);
+                            PartitionLogInfo plog = logInfoMap.get(topicPartition);
+                            if (plog == null) {
+                                log.debug("Cannot resolve log offsets for partition {}, skip share group sync for it.", topicPartition);
                                 return;
                             }
                             OffsetAndMetadata sourceGroupOffsetAndMetadata = ent.getValue();
-                            // Committing to the range [local logStartOffset ~ local logEndOffset]
-                            long finalOffset = Math.max(logStartOffset.get(), Math.min(sourceGroupOffsetAndMetadata.offset(), logEndOffset.get()));
+                            // Clamp to the range [logStartOffset, logEndOffset]
+                            long finalOffset = Math.max(plog.logStartOffset(), Math.min(sourceGroupOffsetAndMetadata.offset(), plog.logEndOffset()));
                             filtered.put(topicPartition, finalOffset);
                         });
                 if (filtered.isEmpty()) {
@@ -892,6 +901,54 @@ class MirrorSourceSyncer {
                 .toList();
     }
 
+    /**
+     * Resolves log start offset, log end offset, and their leader epochs for each partition.
+     * Tries the local ReplicaManager first (in-memory). For partitions without a local replica,
+     * falls back to dstAdmin.listOffsets() so offset sync works from any coordinator broker.
+     */
+    private Map<TopicPartition, PartitionLogInfo> resolvePartitionLogInfo(Set<TopicPartition> partitions)
+            throws Exception {
+        Map<TopicPartition, PartitionLogInfo> result = new HashMap<>();
+        Map<TopicPartition, OffsetSpec> earliestSpecs = new HashMap<>();
+        Map<TopicPartition, OffsetSpec> latestSpecs = new HashMap<>();
+
+        for (TopicPartition tp : partitions) {
+            Option<UnifiedLog> localLog = metadataManager.replicaManagerSupplier().get().getLog(tp);
+            if (localLog.isDefined()) {
+                UnifiedLog ulog = localLog.get();
+                long startOffset = ulog.logStartOffset();
+                long endOffset = ulog.logEndOffset();
+                int startEpoch = ulog.leaderEpochCache().epochForOffset(startOffset).orElse(-1);
+                int endEpoch = ulog.leaderEpochCache().epochForOffset(endOffset).orElse(-1);
+                result.put(tp, new PartitionLogInfo(startOffset, startEpoch, endOffset, endEpoch));
+            } else {
+                earliestSpecs.put(tp, OffsetSpec.earliest());
+                latestSpecs.put(tp, OffsetSpec.latest());
+            }
+        }
+
+        if (!earliestSpecs.isEmpty()) {
+            Admin dstAdmin = metadataManager.getOrCreateDestAdmin();
+            ListOffsetsResult earliestResult = dstAdmin.listOffsets(earliestSpecs);
+            ListOffsetsResult latestResult = dstAdmin.listOffsets(latestSpecs);
+
+            for (TopicPartition tp : earliestSpecs.keySet()) {
+                try {
+                    var earliest = earliestResult.partitionResult(tp)
+                        .get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
+                    var latest = latestResult.partitionResult(tp)
+                        .get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
+                    result.put(tp, new PartitionLogInfo(
+                        earliest.offset(), earliest.leaderEpoch().orElse(-1),
+                        latest.offset(), latest.leaderEpoch().orElse(-1)));
+                } catch (ExecutionException e) {
+                    log.debug("Failed to fetch offsets for partition {} via Admin: {}", tp, e.getMessage());
+                }
+            }
+        }
+
+        return result;
+    }
 
     private void syncAcls(String mirrorName, ClusterMirrorConfig mirrorConfig) {
         // TODO: We currently mirror all ACLs from the source to the target.
@@ -1302,4 +1359,5 @@ class MirrorSourceSyncer {
     record SourceTopicState(String topic, Uuid topicId, boolean exists, List<SourcePartitionState> partitions) { }
     record SourcePartitionState(TopicPartition topicPartition, Node leader, Optional<Integer> leaderEpoch) { }
     record SourceAclChanges(List<AclBinding> aclsToAdd, List<AclBinding> aclsToDelete) { }
+    record PartitionLogInfo(long logStartOffset, int logStartEpoch, long logEndOffset, int logEndEpoch) { }
 }
