@@ -75,12 +75,16 @@ public class FetchParams {
         return replicaId == FUTURE_LOCAL_REPLICA_ID;
     }
 
-    public boolean isFromConsumer() {
-        return FetchRequest.isConsumer(replicaId);
+    public boolean isFromConsumerOrMirror() {
+        return FetchRequest.isConsumerOrMirror(replicaId);
+    }
+
+    public boolean isFromMirror() {
+        return FetchRequest.isMirror(replicaId);
     }
 
     public boolean fetchOnlyLeader() {
-        return isFromFollower() || (isFromConsumer() && clientMetadata.isEmpty()) || shareFetchRequest;
+        return isFromFollower() || (isFromConsumerOrMirror() && clientMetadata.isEmpty()) || shareFetchRequest;
     }
 
     @Override
