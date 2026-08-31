@@ -29,7 +29,7 @@ from kafkatest.version import (
 
 
 class ClusterMirroringTest(MirrorUtils, Test):
-    """Tests for KIP-1279 Cluster Mirroring using a source and destination cluster."""
+    """Tests for KIP-1279 Cluster Mirroring on latest version."""
 
     def __init__(self, test_context):
         """:type test_context: ducktape.tests.test.TestContext"""
