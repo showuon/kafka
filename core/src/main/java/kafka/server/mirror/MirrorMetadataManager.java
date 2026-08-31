@@ -685,25 +685,23 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      *   3. else, keep the same state as is. This could happen like leadership change, and the new leader should
      *      continue to complete the process in previous leader
      * <p>
-     * stopRequested is checked before FAILED so operators can escape non-retryable failures
-     * via stop + start (FAILED -> STOPPING -> STOPPED -> LOG_ALIGNMENT).
-     * <p>
-     * Otherwise, FAILED re-enters FAILED to preserve prevState for retry scheduling.
-     * Without this, the "desired state" could move a partition that failed during LOG_ALIGNMENT
-     * into PAUSING or STOPPING, breaking the state machine (LOG_ALIGNMENT cannot transition
-     * to PAUSING or STOPPING directly).
+     * If the current state is FAILED, we only allow it to enter FAILED state because if we move the FAILED state based on
+     * the "desired state", that means we ignore its previous state stored in MirrorPartition.
+     * Ex: one partition failed when LOG_ALIGNMENT. We should retry LOG_ALIGNMENT until exhausted. But if we honor the
+     * desired state, we might move this failed state into PAUSING or STOPPING state due to user's update.
+     * This breaks the state machine diagram that a LOG_ALIGNMENT state cannot move to PAUSING or STOPPING state.
      */
     private void applyStateTransition(String mirrorName, TopicPartition tp,
                                       MirrorPartitionState curState, MirrorPartitionState fetchedState,
                                       boolean stopRequested, boolean pauseRequested) {
-        if (stopRequested) {
+        if (curState == MirrorPartitionState.FAILED) {
+            transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED);
+        } else if (stopRequested) {
             if (curState != MirrorPartitionState.STOPPED) {
                 transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.STOPPING);
             } else {
                 transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.STOPPED);
             }
-        } else if (curState == MirrorPartitionState.FAILED) {
-            transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED);
         } else if (pauseRequested) {
             if (curState != MirrorPartitionState.PAUSED) {
                 transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.PAUSING);

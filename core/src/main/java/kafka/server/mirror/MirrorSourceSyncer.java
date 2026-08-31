@@ -75,6 +75,7 @@ import org.apache.kafka.image.TopicImage;
 import org.apache.kafka.metadata.MetadataCache;
 import org.apache.kafka.metadata.authorizer.StandardAcl;
 import org.apache.kafka.server.common.ControllerRequestCompletionHandler;
+import org.apache.kafka.server.common.MetadataVersion;
 import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState;
 import org.apache.kafka.server.common.NodeToControllerChannelManager;
 import org.apache.kafka.server.metrics.KafkaMetricsGroup;
@@ -117,7 +118,6 @@ import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
 class MirrorSourceSyncer {
     static final int LEADER_EPOCH_BUMP_THRESHOLD = 3;
     static final int LEADER_EPOCH_BUMP_INCREMENT = 10;
-    static final int MIN_DELETION_OBSERVATIONS = 10;
 
     private final Logger log;
     private final KafkaConfig brokerConfig;
@@ -258,6 +258,18 @@ class MirrorSourceSyncer {
             log.info("Found stale partition states for deleted mirror '{}'. Writing tombstones.", mirrorName);
             metadataManager.tombstoneMirror(mirrorName);
             metricsGroup.removeMetric("MirrorTopicCount", Map.of("mirrorName", mirrorName));
+        }
+    }
+
+    private boolean isSourceKRaft(String mirrorName) {
+        Admin srcAdmin = metadataManager.getOrCreateSourceAdmin(mirrorName);
+        try {
+            return srcAdmin.describeFeatures().featureMetadata()
+                    .get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS)
+                    .finalizedFeatures().containsKey(MetadataVersion.FEATURE_NAME);
+        } catch (Exception e) {
+            log.debug("Failed to describe features for mirror {}, assuming ZK source: {}", mirrorName, e.getMessage());
+            return false;
         }
     }
 
@@ -541,14 +553,8 @@ class MirrorSourceSyncer {
 
         metadataManager.getConfiguredTopics(mirrorName, true).forEach(name -> {
             if (deletedSourceTopicNames.contains(name)) {
-                // The Admin API cannot distinguish between "metadata still loading" and "no topics"
-                // (e.g. after an unclean leader election on a ZK-based source cluster). We require
-                // MIN_DELETION_OBSERVATIONS consecutive observations before confirming a deletion
-                // to avoid false positives during transient outages.
-                int count = mirrorCache.addSourceDeletion(mirrorName, name);
-                if (mirrorCache.isDeletionConfirmed(mirrorName, name, MIN_DELETION_OBSERVATIONS)) {
-                    log.error("Detected topic {} deleted in source cluster {} after {} observations, marking as non-retryable",
-                            name, mirrorName, count);
+                if (mirrorCache.isSourceDeletion(mirrorName, name)) {
+                    log.info("Detected topic {} deleted in source cluster {}, marking mirror partitions as non-retryable", name, mirrorName);
                     mirrorCache.removeSourceDeletion(mirrorName, name);
                     TopicImage topicImage = metadataManager.metadataImage().topics().getTopic(name);
                     if (topicImage != null) {
@@ -556,8 +562,14 @@ class MirrorSourceSyncer {
                                 metadataManager.transitionTo(mirrorName, Set.of(new TopicPartition(name, partitionId)),
                                         MirrorPartitionState.FAILED, "The source topic is deleted.", true));
                     }
+                } else if (isSourceKRaft(mirrorName)) {
+                    // KRaft sources have reliable metadata, so one confirmation is enough.
+                    mirrorCache.addSourceDeletion(mirrorName, name);
                 } else {
-                    log.debug("Topic {} not found in source cluster {}, observation {}/{}", name, mirrorName, count, MIN_DELETION_OBSERVATIONS);
+                    // ZK sources can return stale metadata during transient events like
+                    // unclean leader elections, producing false "topic deleted" signals.
+                    // Skip permanent failure and let the normal retry loop handle it.
+                    log.info("Topic {} not found in ZK source cluster {}, skipping deletion detection", name, mirrorName);
                 }
             } else {
                 mirrorCache.removeSourceDeletion(mirrorName, name);

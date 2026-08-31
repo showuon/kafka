@@ -5156,7 +5156,7 @@ public class KafkaAdminClient extends AdminClient {
                     List<Object> listings = new ArrayList<>();
                     for (ListClusterMirrorsResponseData.ListedMirror mirror : response.data().mirrors()) {
                         List<String> names = mirror.topicNames();
-                        Optional<List<String>> topicNames = (names == null || names.isEmpty())
+                        Optional<List<String>> topicNames = names == null
                                 ? Optional.empty()
                                 : Optional.of(names);
                         listings.add(new ClusterMirrorListing(
