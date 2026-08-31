@@ -27,7 +27,7 @@
     { "name": "MirrorName", "type": "string", "versions": "0+", "entityType": "mirrorName",
       "about": "The cluster mirror name."},
     { "name": "TopicId", "type": "uuid", "versions": "0+",
-      "about": "The topic id."},
+      "about": "The topic ID."},
     { "name": "Partition", "type": "int32", "versions": "0+",
       "about": "The partition index."}
   ]

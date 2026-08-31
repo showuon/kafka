@@ -1253,7 +1253,7 @@ public class RequestResponseTest {
 
     private StopMirrorTopicsResponse createStopMirrorTopicsResponse() {
         StopMirrorTopicsResponseData data = new StopMirrorTopicsResponseData()
-                .setTopics(List.of(new StopMirrorTopicsResponseData.TopicResult().setName("topic")));
+                .setTopics(List.of(new StopMirrorTopicsResponseData.TopicResult().setTopicName("topic")));
         return new StopMirrorTopicsResponse(data);
     }
 
@@ -1283,7 +1283,7 @@ public class RequestResponseTest {
         DescribeClusterMirrorsResponseData data = new DescribeClusterMirrorsResponseData()
                 .setMirrors(List.of(new DescribeClusterMirrorsResponseData.DescribedMirror()
                         .setMirrorName("mirror")
-                        .setTopics(List.of(new DescribeClusterMirrorsResponseData.TopicPartitions()
+                        .setTopics(List.of(new DescribeClusterMirrorsResponseData.TopicResult()
                                 .setTopicName("topic")
                                 .setPartitions(List.of(new DescribeClusterMirrorsResponseData.PartitionDetail()
                                         .setPartitionIndex(0)
@@ -1299,7 +1299,7 @@ public class RequestResponseTest {
         ReadMirrorStatesRequestData data = new ReadMirrorStatesRequestData()
                 .setMirrorName("mirror")
                 .setTopics(List.of(new ReadMirrorStatesRequestData.TopicMetadata()
-                        .setName("topic")
+                        .setTopicName("topic")
                         .setPartitions(List.of(new ReadMirrorStatesRequestData.PartitionData().setPartitionIndex(0)))
                 ));
         return new ReadMirrorStatesRequest.Builder(data).build(version);
@@ -1308,7 +1308,7 @@ public class RequestResponseTest {
     public ReadMirrorStatesResponse createReadMirrorStatesResponse() {
         ReadMirrorStatesResponseData data = new ReadMirrorStatesResponseData()
                 .setTopics(List.of(new ReadMirrorStatesResponseData.TopicResult()
-                        .setName("topic")
+                        .setTopicName("topic")
                         .setPartitions(List.of(new ReadMirrorStatesResponseData.PartitionResult()
                                 .setState((byte) 0)
                                 .setPartitionIndex(0)
@@ -1321,7 +1321,7 @@ public class RequestResponseTest {
         WriteMirrorStatesRequestData data = new WriteMirrorStatesRequestData()
                 .setMirrorName("mirror")
                 .setTopics(List.of(new WriteMirrorStatesRequestData.TopicMetadata()
-                        .setName("topic")
+                        .setTopicName("topic")
                         .setPartitions(List.of(new WriteMirrorStatesRequestData.PartitionData()
                                 .setPartitionIndex(0)
                                 .setLastMirrorEpoch(0)
@@ -1334,7 +1334,7 @@ public class RequestResponseTest {
     public WriteMirrorStatesResponse createWriteMirrorStatesResponse() {
         WriteMirrorStatesResponseData data = new WriteMirrorStatesResponseData()
                 .setTopics(List.of(new WriteMirrorStatesResponseData.TopicResult()
-                        .setName("topic")
+                        .setTopicName("topic")
                         .setPartitions(List.of(new WriteMirrorStatesResponseData.PartitionResult().setPartitionIndex(0)))
                 ));
         return new WriteMirrorStatesResponse(data);
@@ -1354,7 +1354,7 @@ public class RequestResponseTest {
     public PauseMirrorTopicsResponse createPauseMirrorTopicsResponse() {
         PauseMirrorTopicsResponseData data = new PauseMirrorTopicsResponseData()
                 .setTopics(List.of(new PauseMirrorTopicsResponseData.TopicResult()
-                        .setName("topic")));
+                        .setTopicName("topic")));
         return new PauseMirrorTopicsResponse(data);
     }
 
@@ -1372,7 +1372,7 @@ public class RequestResponseTest {
     public ResumeMirrorTopicsResponse createResumeMirrorTopicsResponse() {
         ResumeMirrorTopicsResponseData data = new ResumeMirrorTopicsResponseData()
                 .setTopics(List.of(new ResumeMirrorTopicsResponseData.TopicResult()
-                        .setName("topic")
+                        .setTopicName("topic")
                 ));
         return new ResumeMirrorTopicsResponse(data);
     }

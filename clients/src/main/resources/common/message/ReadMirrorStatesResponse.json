@@ -28,8 +28,8 @@
     { "name": "ErrorMessage", "type": "string", "versions": "0+", "nullableVersions": "0+", "default": "null",
       "about": "The top-level error message, or null if there was no error." },
     { "name": "Topics", "type": "[]TopicResult", "versions": "0+",
-      "about": "The per-topic mirror state results.", "fields": [
-      { "name": "Name", "type": "string", "versions": "0+", "entityType": "topicName",
+      "about": "The topic results.", "fields": [
+      { "name": "TopicName", "type": "string", "versions": "0+", "entityType": "topicName",
         "about": "The topic name." },
       { "name": "Partitions", "type": "[]PartitionResult", "versions": "0+",
         "about": "The per-partition mirror state results.", "fields": [
@@ -42,7 +42,7 @@
         { "name": "StateEpoch", "type": "int32", "versions": "0+", "default": "0",
           "about": "The current state epoch for the partition." },
         { "name": "LastMirrorEpoch", "type": "int32", "versions": "0+", "default": "-1",
-          "about": "The last mirrored leader epoch, or -1 if not yet recorded." },
+          "about": "The last mirror leader epoch, or -1 if not yet recorded." },
         { "name": "ErrorCode", "type": "int16", "versions": "0+",
           "about": "The per-partition error code (e.g. NOT_COORDINATOR), or 0 if there was no error." },
         { "name": "ErrorMessage", "type": "string", "versions": "0+", "nullableVersions": "0+", "default": "null",

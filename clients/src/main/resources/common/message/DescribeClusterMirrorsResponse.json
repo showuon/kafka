@@ -41,24 +41,24 @@
         "about": "The source cluster ID, or null if not yet resolved." },
       { "name": "AuthorizedOperations", "type": "int32", "versions": "0+", "default": "-2147483648",
         "about": "32-bit bitfield representing authorized operations for this mirror." },
-      { "name": "Topics", "type": "[]TopicPartitions", "versions": "0+",
-        "about": "The mirror topics and their partition details.", "fields": [
-        { "name": "TopicName", "type": "string", "versions": "0+",
+      { "name": "Topics", "type": "[]TopicResult", "versions": "0+",
+        "about": "The topic results.", "fields": [
+        { "name": "TopicName", "type": "string", "versions": "0+", "entityType": "topicName",
           "about": "The topic name." },
         { "name": "Partitions", "type": "[]PartitionDetail", "versions": "0+",
           "about": "The partition details.", "fields": [
           { "name": "PartitionIndex", "type": "int32", "versions": "0+",
             "about": "The partition index." },
-          { "name": "SourceOffset", "type": "int64", "versions": "0+", "default": "-1",
-            "about": "The source cluster high watermark, or -1 if not actively mirroring." },
-          { "name": "DestinationOffset", "type": "int64", "versions": "0+", "default": "-1",
-            "about": "The destination cluster log end offset, or -1 if not actively mirroring." },
           { "name": "StateValue", "type": "string", "versions": "0+",
-            "about": "The mirror partition state (e.g. MIRRORING, PAUSED, STOPPED, FAILED)." },
+            "about": "The mirror partition state (e.g. MIRRORING, PAUSED, STOPPED, FAILED), or UNKNOWN if not actively mirroring or IncludeMirrorState is disabled." },
           { "name": "ErrorMessage", "type": "string", "versions": "0+", "nullableVersions": "0+", "default": "null",
             "about": "The failure reason when the partition is in FAILED state, or null otherwise." },
           { "name": "RetryAttempt", "type": "int16", "versions": "0+", "default": "0",
-            "about": "The retry attempt count in FAILED state, 0 if not failed, or -1 if non-retryable." }
+            "about": "The retry attempt count in FAILED state, 0 if not failed, or -1 if non-retryable." },
+          { "name": "SourceOffset", "type": "int64", "versions": "0+", "default": "-1",
+            "about": "The source cluster high watermark, or -1 if not actively mirroring or IncludeMirrorOffset is disabled." },
+          { "name": "DestinationOffset", "type": "int64", "versions": "0+", "default": "-1",
+            "about": "The destination cluster log end offset, or -1 if not actively mirroring or IncludeMirrorOffset is disabled." }
         ]}
       ]}
     ]},

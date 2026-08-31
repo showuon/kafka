@@ -30,6 +30,8 @@
         "about": "The configuration key name." },
       { "name": "Value", "type": "string", "versions": "0+", "nullableVersions": "0+",
         "about": "The value to set for the configuration key."}
-    ]}
+    ]},
+    { "name": "TimeoutMs", "type": "int32", "versions": "0+",
+      "about": "How long to wait in milliseconds before timing out the request." }
   ]
 }

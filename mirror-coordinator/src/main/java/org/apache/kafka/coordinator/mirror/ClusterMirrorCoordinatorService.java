@@ -329,11 +329,11 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                     // A topic's partitions can span multiple coordinator partitions, so merge results by topic name here
                     Map<String, List<ReadMirrorStatesResponseData.PartitionResult>> merged = new HashMap<>();
                     futures.forEach(f -> f.join().topics().forEach(topicResult ->
-                        merged.computeIfAbsent(topicResult.name(), k -> new ArrayList<>())
+                        merged.computeIfAbsent(topicResult.topicName(), k -> new ArrayList<>())
                             .addAll(topicResult.partitions())));
                     List<ReadMirrorStatesResponseData.TopicResult> topicResults = merged.entrySet().stream()
                         .map(topicEntry -> new ReadMirrorStatesResponseData.TopicResult()
-                            .setName(topicEntry.getKey())
+                            .setTopicName(topicEntry.getKey())
                             .setPartitions(topicEntry.getValue()))
                         .toList();
                     data.setTopics(topicResults);
@@ -404,7 +404,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                             partitionResults.add(pr);
                         });
                         topicResults.add(new WriteMirrorStatesResponseData.TopicResult()
-                            .setName(topic).setPartitions(partitionResults));
+                            .setTopicName(topic).setPartitions(partitionResults));
                     });
                     data.setTopics(topicResults);
                 }

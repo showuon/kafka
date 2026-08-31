@@ -4449,12 +4449,12 @@ class KafkaApis(val requestChannel: RequestChannel,
 
         if (partitionsToReport.nonEmpty) {
           // Group partitions by topic
-          val topicsMap = scala.collection.mutable.Map[String, DescribeClusterMirrorsResponseData.TopicPartitions]()
+          val topicsMap = scala.collection.mutable.Map[String, DescribeClusterMirrorsResponseData.TopicResult]()
 
           partitionsToReport.foreach { topicPartition =>
             val topicName = topicPartition.topic()
             val topicPartitions = topicsMap.getOrElseUpdate(topicName, {
-              val tp = new DescribeClusterMirrorsResponseData.TopicPartitions().setTopicName(topicName)
+              val tp = new DescribeClusterMirrorsResponseData.TopicResult().setTopicName(topicName)
               tp.setPartitions(new util.ArrayList[DescribeClusterMirrorsResponseData.PartitionDetail]())
               tp
             })
@@ -4474,7 +4474,7 @@ class KafkaApis(val requestChannel: RequestChannel,
             topicPartitions.partitions().add(partitionDetail)
           }
 
-          val topicsList = new util.ArrayList[DescribeClusterMirrorsResponseData.TopicPartitions]()
+          val topicsList = new util.ArrayList[DescribeClusterMirrorsResponseData.TopicResult]()
           topicsMap.values.foreach(tp => topicsList.add(tp))
           describedMirror.setTopics(topicsList)
         }
@@ -4579,7 +4579,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       topic.partitions().forEach(part => {
         parts.add(part.partitionIndex())
       })
-      mirrorPartitions.put(topic.name(), parts)
+      mirrorPartitions.put(topic.topicName(), parts)
     })
     clusterMirrorCoordinator.readState(mirrorName, mirrorPartitions,
       res => requestHelper.sendMaybeThrottle(request, res))
@@ -4606,7 +4606,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         topicState.add(new MirrorStateWrite(part.partitionIndex(),
           MirrorPartitionState.fromValue(part.state()), part.leaderEpoch(), part.stateEpoch(), part.lastMirrorEpoch()))
       })
-      mirrorState.put(topic.name(), topicState)
+      mirrorState.put(topic.topicName(), topicState)
     })
     clusterMirrorCoordinator.writeState(mirrorName, mirrorState, res => requestHelper.sendMaybeThrottle(request, res))
   }

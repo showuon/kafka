@@ -26,7 +26,7 @@
       "about": "The cluster mirror name." },
     { "name": "Topics", "type": "[]TopicMetadata", "versions": "0+",
       "about": "The data for the topics.", "fields": [
-      { "name": "Name", "type": "string", "versions": "0+", "entityType": "topicName",
+      { "name": "TopicName", "type": "string", "versions": "0+", "entityType": "topicName",
         "about": "The topic name." },
       { "name": "Partitions", "type": "[]PartitionData", "versions": "0+",
         "about": "The data for the partitions.", "fields": [
