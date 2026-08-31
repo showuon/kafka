@@ -5155,12 +5155,16 @@ public class KafkaAdminClient extends AdminClient {
                 } else {
                     List<Object> listings = new ArrayList<>();
                     for (ListClusterMirrorsResponseData.ListedMirror mirror : response.data().mirrors()) {
+                        List<String> names = mirror.topicNames();
+                        Optional<List<String>> topicNames = names == null
+                                ? Optional.empty()
+                                : Optional.of(names);
                         listings.add(new ClusterMirrorListing(
                                 mirror.mirrorName(),
                                 mirror.sourceBootstrap(),
                                 mirror.sourceClusterId(),
                                 mirror.topicCount(),
-                                mirror.topicNames()
+                                topicNames
                         ));
                     }
                     all.complete(listings);
@@ -5349,14 +5353,16 @@ public class KafkaAdminClient extends AdminClient {
         // Accumulated ClusterMirrorDesc data from all brokers
         private static class PartialMirrorDescription {
             final String mirrorName;
-            final Map<String, Set<ClusterMirrorDescription.LeaderStateDescription>> topicPartitions;
+            String sourceBootstrap;
+            String sourceClusterId;
+            final Map<String, Set<ClusterMirrorDescription.LeaderStateDescription>> leaderStates;
             int authorizedOperations;
             boolean hasSuccess;
             Throwable error;
 
             PartialMirrorDescription(String mirrorName) {
                 this.mirrorName = mirrorName;
-                this.topicPartitions = new HashMap<>();
+                this.leaderStates = new HashMap<>();
                 this.authorizedOperations = MetadataResponse.AUTHORIZED_OPERATIONS_OMITTED;
                 this.hasSuccess = false;
                 this.error = null;
@@ -5377,13 +5383,20 @@ public class KafkaAdminClient extends AdminClient {
                 this.hasSuccess = true;
                 this.error = null;
 
+                if (mirror.sourceBootstrap() != null) {
+                    this.sourceBootstrap = mirror.sourceBootstrap();
+                }
+                if (mirror.sourceClusterId() != null) {
+                    this.sourceClusterId = mirror.sourceClusterId();
+                }
+
                 if (mirror.authorizedOperations() != MetadataResponse.AUTHORIZED_OPERATIONS_OMITTED) {
                     this.authorizedOperations = mirror.authorizedOperations();
                 }
 
                 for (DescribeClusterMirrorsResponseData.TopicPartitions topic : mirror.topics()) {
-                    Set<ClusterMirrorDescription.LeaderStateDescription> partitions =
-                            topicPartitions.computeIfAbsent(topic.topicName(), k -> new HashSet<>());
+                    Set<ClusterMirrorDescription.LeaderStateDescription> mirrorStates =
+                            leaderStates.computeIfAbsent(topic.topicName(), k -> new HashSet<>());
 
                     for (DescribeClusterMirrorsResponseData.PartitionDetail partition : topic.partitions()) {
                         TopicPartition tp = new TopicPartition(topic.topicName(), partition.partitionIndex());
@@ -5392,12 +5405,11 @@ public class KafkaAdminClient extends AdminClient {
                                         tp,
                                         partition.sourceOffset(),
                                         partition.destinationOffset(),
-                                        partition.lag(),
                                         partition.stateValue(),
                                         partition.retryAttempt(),
                                         partition.errorMessage()
                                 );
-                        partitions.add(leaderState);
+                        mirrorStates.add(leaderState);
                     }
                 }
 
@@ -5406,7 +5418,9 @@ public class KafkaAdminClient extends AdminClient {
             ClusterMirrorDescription toMirrorDescription() {
                 return new ClusterMirrorDescription(
                         mirrorName,
-                        topicPartitions,
+                        sourceBootstrap,
+                        sourceClusterId,
+                        leaderStates,
                         validAclOperations(authorizedOperations)
                 );
             }

@@ -44,6 +44,7 @@ class ClusterMirroringCompTest(MirrorUtils, Test):
         ["mirror.state.topic.replication.factor", "2"],
         ["mirror.metadata.refresh.interval.ms", "5000"],
         ["mirror.num.replica.fetchers", "2"],
+        ["mirror.failed.retry.initial.backoff.ms", "1000"],
         ["mirror.failed.retry.max.backoff.ms", "5000"],
     ]
 
@@ -285,3 +286,38 @@ class ClusterMirroringCompTest(MirrorUtils, Test):
         self.logger.info("Failover: stop mirror so destination topic becomes writable")
         self.dest_kafka.stop_cluster_mirror_topics(self.dest_client_node, "my-mirror", "my-topic")
         MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.dest_client_node, "my-mirror", ["my-topic"], "STOPPED")
+
+    @cluster(num_nodes=8)
+    @parametrize(source_version=str(LATEST_2_1), metadata_quorum=quorum.zk)
+    @parametrize(source_version=str(LATEST_3_9), metadata_quorum=quorum.zk)
+    @parametrize(source_version=str(LATEST_4_0), metadata_quorum=quorum.isolated_kraft)
+    def test_topic_deletion(self, source_version, metadata_quorum):
+        """Verify that deleting a source topic transitions mirror partitions to FAILED."""
+        self.setup_source(KafkaVersion(source_version), metadata_quorum)
+        self.setup_dest()
+
+        self.source_kafka.create_topic({"topic": "my-topic", "partitions": 1, "replication-factor": 2})
+
+        self.logger.info("Start cluster mirror on destination")
+        mirror_cfg = MirrorConfig(self.source_kafka.bootstrap_servers())
+
+        wait_until(
+            lambda: self.dest_kafka.create_cluster_mirror(
+                self.dest_client_node, "my-mirror", mirror_cfg),
+            timeout_sec=120, backoff_sec=2,
+            err_msg="Failed to create cluster mirror",
+        )
+        wait_until(
+            lambda: "Started" in self.dest_kafka.start_cluster_mirror_topics(
+                self.dest_client_node, "my-mirror", "my-topic"),
+            timeout_sec=120, backoff_sec=2,
+            err_msg="Failed to start mirror topics",
+        )
+        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.dest_client_node, "my-mirror", ["my-topic"], "MIRRORING")
+
+        self.logger.info("Delete topic on source and wait for metadata sync")
+        self.source_kafka.delete_topic("my-topic")
+        MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.dest_client_node, "my-mirror")
+
+        self.logger.info("Verify mirror partitions transitioned to FAILED")
+        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.dest_client_node, "my-mirror", ["my-topic"], "FAILED")

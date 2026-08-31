@@ -30,14 +30,20 @@ import java.util.Set;
  */
 public class ClusterMirrorDescription {
     private final String mirrorName;
-    private final Map<String, Set<LeaderStateDescription>> topics;
+    private final String sourceBootstrap;
+    private final String sourceClusterId;
+    private final Map<String, Set<LeaderStateDescription>> leaderStates;
     private final Set<AclOperation> authorizedOperations;
 
     public ClusterMirrorDescription(String mirrorName,
-                                    Map<String, Set<LeaderStateDescription>> topics,
+                                    String sourceBootstrap,
+                                    String sourceClusterId,
+                                    Map<String, Set<LeaderStateDescription>> leaderStates,
                                     Set<AclOperation> authorizedOperations) {
         this.mirrorName = mirrorName;
-        this.topics = Collections.unmodifiableMap(topics);
+        this.sourceBootstrap = sourceBootstrap;
+        this.sourceClusterId = sourceClusterId;
+        this.leaderStates = Collections.unmodifiableMap(leaderStates);
         this.authorizedOperations = authorizedOperations;
     }
 
@@ -45,8 +51,16 @@ public class ClusterMirrorDescription {
         return mirrorName;
     }
 
-    public Map<String, Set<LeaderStateDescription>> topics() {
-        return topics;
+    public String sourceBootstrap() {
+        return sourceBootstrap;
+    }
+
+    public String sourceClusterId() {
+        return sourceClusterId;
+    }
+
+    public Map<String, Set<LeaderStateDescription>> leaderStates() {
+        return leaderStates;
     }
 
     public Set<AclOperation> authorizedOperations() {
@@ -59,20 +73,24 @@ public class ClusterMirrorDescription {
         if (o == null || getClass() != o.getClass()) return false;
         ClusterMirrorDescription that = (ClusterMirrorDescription) o;
         return Objects.equals(mirrorName, that.mirrorName) &&
-               Objects.equals(topics, that.topics) &&
+               Objects.equals(sourceBootstrap, that.sourceBootstrap) &&
+               Objects.equals(sourceClusterId, that.sourceClusterId) &&
+               Objects.equals(leaderStates, that.leaderStates) &&
                Objects.equals(authorizedOperations, that.authorizedOperations);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(mirrorName, topics, authorizedOperations);
+        return Objects.hash(mirrorName, sourceBootstrap, sourceClusterId, leaderStates, authorizedOperations);
     }
 
     @Override
     public String toString() {
         return "ClusterMirrorDescription{" +
                "mirrorName='" + mirrorName + '\'' +
-               ", topics=" + topics +
+               ", sourceBootstrap='" + sourceBootstrap + '\'' +
+               ", sourceClusterId='" + sourceClusterId + '\'' +
+               ", leaderStates=" + leaderStates +
                ", authorizedOperations=" + authorizedOperations +
                '}';
     }
@@ -82,17 +100,15 @@ public class ClusterMirrorDescription {
         private final TopicPartition topicPartition;
         private final long sourceOffset;
         private final long destinationOffset;
-        private final long lag;
         private final String state;
         private final int retryAttempt;
         private final String errorMessage;
 
         public LeaderStateDescription(TopicPartition topicPartition, long sourceOffset, long destinationOffset,
-                                      long lag, String state, int retryAttempt, String errorMessage) {
+                                      String state, int retryAttempt, String errorMessage) {
             this.topicPartition = topicPartition;
             this.sourceOffset = sourceOffset;
             this.destinationOffset = destinationOffset;
-            this.lag = lag;
             this.state = state;
             this.retryAttempt = retryAttempt;
             this.errorMessage = errorMessage;
@@ -110,10 +126,18 @@ public class ClusterMirrorDescription {
             return destinationOffset;
         }
 
+        /** Replication lag: max(0, sourceOffset - destinationOffset), or -1 if offsets are unavailable. */
         public long lag() {
-            return lag;
+            if (sourceOffset < 0 || destinationOffset < 0) {
+                return -1;
+            }
+            return Math.max(0, sourceOffset - destinationOffset);
         }
 
+        /**
+         * The mirror partition state: LOG_ALIGNMENT, EPOCH_FENCING, ULE_RECOVERY,
+         * MIRRORING, PAUSING, PAUSED, STOPPING, STOPPED, FAILED, or UNKNOWN.
+         */
         public String state() {
             return state;
         }
@@ -133,7 +157,6 @@ public class ClusterMirrorDescription {
             LeaderStateDescription that = (LeaderStateDescription) o;
             return sourceOffset == that.sourceOffset &&
                    destinationOffset == that.destinationOffset &&
-                   lag == that.lag &&
                    retryAttempt == that.retryAttempt &&
                    Objects.equals(topicPartition, that.topicPartition) &&
                    Objects.equals(state, that.state) &&
@@ -142,7 +165,7 @@ public class ClusterMirrorDescription {
 
         @Override
         public int hashCode() {
-            return Objects.hash(topicPartition, sourceOffset, destinationOffset, lag, state, retryAttempt, errorMessage);
+            return Objects.hash(topicPartition, sourceOffset, destinationOffset, state, retryAttempt, errorMessage);
         }
 
         @Override
@@ -151,7 +174,6 @@ public class ClusterMirrorDescription {
                    "topicPartition=" + topicPartition +
                    ", sourceOffset=" + sourceOffset +
                    ", destinationOffset=" + destinationOffset +
-                   ", lag=" + lag +
                    ", state='" + state + '\'' +
                    ", retryAttempt=" + retryAttempt +
                    ", errorMessage='" + errorMessage + '\'' +

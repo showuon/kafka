@@ -63,7 +63,6 @@ import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService.MirrorStateWrite;
 import org.apache.kafka.coordinator.mirror.CoreBridge;
-import org.apache.kafka.coordinator.mirror.MirrorPartition;
 import org.apache.kafka.coordinator.mirror.MirrorPartitionKey;
 import org.apache.kafka.image.LocalReplicaChanges;
 import org.apache.kafka.image.MetadataDelta;
@@ -72,7 +71,8 @@ import org.apache.kafka.image.TopicImage;
 import org.apache.kafka.image.loader.LoaderManifest;
 import org.apache.kafka.image.publisher.MetadataPublisher;
 import org.apache.kafka.metadata.MetadataCache;
-import org.apache.kafka.server.common.MirrorPartitionState;
+import org.apache.kafka.server.common.MirrorPartition;
+import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState;
 import org.apache.kafka.server.common.NodeToControllerChannelManager;
 import org.apache.kafka.server.common.RequestLocal;
 import org.apache.kafka.server.metrics.KafkaMetricsGroup;
@@ -743,7 +743,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         coordinatorWriter.ifPresent(writer -> {
             for (TopicPartition tp : topicPartitions) {
                 MirrorPartitionState currentState = getPartitionState(mirrorName, tp);
-                if (!MirrorPartitionState.isValidTransition(currentState, state)) {
+                if (!MirrorPartition.isValidStateTransition(currentState, state)) {
                     log.warn("Skipping invalid transition from {} to {} for {}.", currentState, state, tp);
                     continue;
                 }

@@ -1288,7 +1288,6 @@ public class RequestResponseTest {
                                 .setPartitions(List.of(new DescribeClusterMirrorsResponseData.PartitionDetail()
                                         .setPartitionIndex(0)
                                         .setStateValue("MIRRORING")
-                                        .setLag(100L)
                                         .setDestinationOffset(0)
                                         .setSourceOffset(100)
                                 ))

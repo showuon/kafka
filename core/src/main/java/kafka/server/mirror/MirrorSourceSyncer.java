@@ -75,7 +75,7 @@ import org.apache.kafka.image.TopicImage;
 import org.apache.kafka.metadata.MetadataCache;
 import org.apache.kafka.metadata.authorizer.StandardAcl;
 import org.apache.kafka.server.common.ControllerRequestCompletionHandler;
-import org.apache.kafka.server.common.MirrorPartitionState;
+import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState;
 import org.apache.kafka.server.common.NodeToControllerChannelManager;
 import org.apache.kafka.server.metrics.KafkaMetricsGroup;
 import org.apache.kafka.server.util.KafkaScheduler;
@@ -354,7 +354,7 @@ class MirrorSourceSyncer {
             if (!metadataManager.clusterId().equals(sourceMirror.sourceClusterId())) {
                 continue;
             }
-            if (sourceMirror.topics().contains(topicName)) {
+            if (sourceMirror.topicNames().map(names -> names.contains(topicName)).orElse(false)) {
                 log.error("Mirror loop detected for mirror {}: source mirror {} is already mirroring topic {}",
                         mirrorName, sourceMirror.mirrorName(), topicName);
                 return true;
@@ -519,6 +519,11 @@ class MirrorSourceSyncer {
         }
     }
 
+    /*
+     * Cross-checks describeTopics (per topic) with listTopics (cluster-wide) to detect
+     * deleted source topics. Requires two consecutive observations to avoid false positives
+     * during transient metadata unavailability (e.g. unclean leader election on ZK sources).
+     */
     private void maybeFailDeletedTopics(String mirrorName, List<SourceTopicState> sourceTopicStates) {
         List<String> deletedSourceTopicNames = new ArrayList<>(sourceTopicStates.stream()
                 .filter(ti -> !ti.exists())
@@ -550,10 +555,6 @@ class MirrorSourceSyncer {
                                         MirrorPartitionState.FAILED, "The source topic is deleted.", true));
                     }
                 } else {
-                    // The Admin API cannot distinguish between "metadata still loading" and "no topics"
-                    // (e.g. after an unclean leader election on a ZK-based source cluster), so marking a
-                    // mirror topic as permanently failed on the first observation can be wrong. We require
-                    // two consecutive observations before confirming the deletion.
                     log.debug("Topic {} not found in source cluster {}, pending deletion confirmation on next sync", name, mirrorName);
                     mirrorCache.addSourceDeletion(mirrorName, name);
                 }
@@ -563,22 +564,10 @@ class MirrorSourceSyncer {
         });
     }
 
-    /**
-     * Transitions partitions stuck in UNKNOWN because their source leader was not yet known
-     * when onMetadataUpdate first ran.
-     * <p>
-     * The race: processSourceTopicState creates a mirror topic on the destination, which
-     * triggers onMetadataUpdate. That callback needs the source leader in sourceLeaders to
-     * transition the partition to log truncation. If the source has not elected a leader yet
-     * (or the Admin describeTopics response arrived without one), the partition stays in
-     * UNKNOWN. Since onMetadataUpdate only fires on destination metadata changes, it will
-     * not retry on its own.
-     * <p>
-     * This is more likely against older source clusters (e.g. Kafka 2.1 with ZK) where
-     * Admin.describeTopics goes through three round trips before returning topic metadata:
-     * describeCluster (node discovery), DescribeTopicPartitions (rejected with
-     * UnsupportedVersionException), then MetadataRequest (fallback). The extra latency
-     * widens the window in which the source leader is not yet known.
+    /*
+     * Retries partitions stuck in UNKNOWN because their source leader was not yet resolved when
+     * onMetadataUpdate ran (metadata still loading on ZK sources). Since that callback only fires
+     * on destination metadata changes, it will not retry on its own.
      */
     private void maybeStartMissedPartitions(String mirrorName) {
         var partitionLeaders = mirrorCache.getSourceLeaders(mirrorName);
@@ -1237,13 +1226,13 @@ class MirrorSourceSyncer {
             if (desc == null) {
                 continue;
             }
-            Set<ClusterMirrorDescription.LeaderStateDescription> leaderStates = desc.topics().get(tp.topic());
+            Set<ClusterMirrorDescription.LeaderStateDescription> leaderStates = desc.leaderStates().get(tp.topic());
             if (leaderStates == null) {
                 continue;
             }
             boolean notStopped = leaderStates.stream()
                     .anyMatch(lsd -> lsd.topicPartition().equals(tp)
-                            && (!MirrorPartitionState.STOPPED.name().equals(lsd.state())));
+                            && !MirrorPartitionState.STOPPED.name().equals(lsd.state()));
             if (notStopped) {
                 log.error("Source mirror(s) {} mirroring from this cluster ({}) have not stopped for partition {}",
                         localClusterSourceMirrors, metadataManager.clusterId(), tp);

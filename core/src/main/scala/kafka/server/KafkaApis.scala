@@ -24,7 +24,8 @@ import kafka.server.handlers.DescribeTopicPartitionsRequestHandler
 import kafka.server.mirror.MirrorMetadataManager
 import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService.MirrorStateWrite
 import org.apache.kafka.coordinator.mirror.{ClusterMirrorCoordinatorService, MirrorPartitionKey}
-import org.apache.kafka.server.common.{ClusterMirrorVersion, MirrorPartitionState}
+import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState
+import org.apache.kafka.server.common.ClusterMirrorVersion
 import kafka.server.share.{ShareFetchUtils, SharePartitionManager}
 import kafka.utils.Logging
 import org.apache.kafka.clients.CommonClientConfigs
@@ -4429,6 +4430,8 @@ class KafkaApis(val requestChannel: RequestChannel,
       } else {
         val describedMirror = new DescribeClusterMirrorsResponseData.DescribedMirror()
           .setMirrorName(mirrorName)
+          .setSourceBootstrap(mirrorMetadataManager.getSourceBootstrap(mirrorName))
+          .setSourceClusterId(mirrorMetadataManager.getSourceClusterId(mirrorName))
           .setErrorCode(Errors.NONE.code)
 
         if (describeMirrorsRequest.data.includeAuthorizedOperations) {
@@ -4437,11 +4440,11 @@ class KafkaApis(val requestChannel: RequestChannel,
         }
 
         // Each broker reports partitions it's responsible for to avoid duplicates
-        val lagInfoMap = replicaManager.getMirrorLagInfo(mirrorName)
+        val offsetInfoMap = replicaManager.getMirrorOffsetInfo(mirrorName)
         val partitionStates = mirrorMetadataManager.getMirrorStates(mirrorName).asScala
         // Report partition if: (1) we have lag info, OR (2) we're the partition leader and have no lag info
-        val partitionsToReport = (lagInfoMap.keySet ++ partitionStates.keySet.filter { tp =>
-          !lagInfoMap.contains(tp) && replicaManager.onlinePartition(tp).exists(_.isLeader)
+        val partitionsToReport = (offsetInfoMap.keySet ++ partitionStates.keySet.filter { tp =>
+          !offsetInfoMap.contains(tp) && replicaManager.onlinePartition(tp).exists(_.isLeader)
         }).toSeq
 
         if (partitionsToReport.nonEmpty) {
@@ -4462,9 +4465,8 @@ class KafkaApis(val requestChannel: RequestChannel,
               MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(topicPartition.topic()), topicPartition.partition()))
             val partitionDetail = new DescribeClusterMirrorsResponseData.PartitionDetail()
               .setPartitionIndex(topicPartition.partition())
-              .setSourceOffset(if (isMirroring) lagInfoMap.get(topicPartition).map(_.sourceOffset).getOrElse(-1L) else -1L)
-              .setDestinationOffset(if (isMirroring) lagInfoMap.get(topicPartition).map(_.destinationOffset).getOrElse(-1L) else -1L)
-              .setLag(if (isMirroring) lagInfoMap.get(topicPartition).map(_.lag).getOrElse(-1L) else -1L)
+              .setSourceOffset(if (isMirroring) offsetInfoMap.get(topicPartition).map(_.sourceOffset).getOrElse(-1L) else -1L)
+              .setDestinationOffset(if (isMirroring) offsetInfoMap.get(topicPartition).map(_.destinationOffset).getOrElse(-1L) else -1L)
               .setStateValue(state.name())
               .setRetryAttempt(if (mp != null) mp.retryAttempt().toShort else 0.toShort)
               .setErrorMessage(if (mp != null) mp.errorMessage() else null)

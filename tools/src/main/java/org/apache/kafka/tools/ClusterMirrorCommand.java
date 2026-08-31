@@ -217,7 +217,7 @@ public abstract class ClusterMirrorCommand {
                     List.of(mirrorName), new DescribeClusterMirrorsOptions()).allDescriptions().get();
             ClusterMirrorDescription description = descriptions.get(mirrorName);
             if (description == null) return Set.of();
-            Set<String> mirrorTopics = description.topics().keySet();
+            Set<String> mirrorTopics = description.leaderStates().keySet();
             Pattern compiled = MirrorUtils.compilePatternList(patterns);
             if (compiled == null) return Set.of();
             return mirrorTopics.stream()
@@ -227,30 +227,30 @@ public abstract class ClusterMirrorCommand {
 
         private void listClusterMirrors() throws ExecutionException, InterruptedException {
             ListClusterMirrorsResult result = adminClient.listClusterMirrors();
-            List<ClusterMirrorListing> listings = new ArrayList<>(result.all().get());
+            List<ClusterMirrorListing> listing = new ArrayList<>(result.all().get());
 
-            if (listings.isEmpty()) {
+            if (listing.isEmpty()) {
                 System.out.println("No mirrors found");
                 return;
             }
 
             // Sort by mirror name
-            listings.sort(Comparator.comparing(ClusterMirrorListing::mirrorName));
+            listing.sort(Comparator.comparing(ClusterMirrorListing::mirrorName));
 
             // Print header
             System.out.printf("%-30s %-10s %-26s %-50s%n", "MIRROR", "TOPICS", "SOURCE-CLUSTER-ID", "SOURCE-BOOTSTRAP-SERVER");
 
             // Print each mirror
-            for (ClusterMirrorListing listing : listings) {
-                String sourceBootstrap = listing.sourceBootstrap() != null && !listing.sourceBootstrap().isEmpty()
-                    ? listing.sourceBootstrap()
+            for (ClusterMirrorListing mirror : listing) {
+                String sourceBootstrap = mirror.sourceBootstrap() != null && !mirror.sourceBootstrap().isEmpty()
+                    ? mirror.sourceBootstrap()
                     : "-";
-                String sourceClusterId = listing.sourceClusterId() != null && !listing.sourceClusterId().isEmpty()
-                    ? listing.sourceClusterId()
+                String sourceClusterId = mirror.sourceClusterId() != null && !mirror.sourceClusterId().isEmpty()
+                    ? mirror.sourceClusterId()
                     : "-";
                 System.out.printf("%-30s %-10d %-26s %-50s%n",
-                    truncateLeft(listing.mirrorName(), 30),
-                    listing.topicCount(),
+                    truncateLeft(mirror.mirrorName(), 30),
+                    mirror.topicCount(),
                     sourceClusterId,
                     truncateLeft(sourceBootstrap, 50));
             }
@@ -310,14 +310,14 @@ public abstract class ClusterMirrorCommand {
             List<PartitionInfo> partitionInfos = new ArrayList<>();
             for (Map.Entry<String, ClusterMirrorDescription> mirrorEntry : descriptions.entrySet()) {
                 String mirrorName = mirrorEntry.getKey();
-                for (Map.Entry<String, Set<ClusterMirrorDescription.LeaderStateDescription>> topicEntry : mirrorEntry.getValue().topics().entrySet()) {
+                for (Map.Entry<String, Set<ClusterMirrorDescription.LeaderStateDescription>> topicEntry : mirrorEntry.getValue().leaderStates().entrySet()) {
                     String topic = topicEntry.getKey();
-                    for (ClusterMirrorDescription.LeaderStateDescription state : topicEntry.getValue()) {
+                    for (ClusterMirrorDescription.LeaderStateDescription lsd : topicEntry.getValue()) {
                         partitionInfos.add(new PartitionInfo(
                             mirrorName, topic,
-                            state.topicPartition().partition(),
-                            state.sourceOffset(), state.destinationOffset(), state.lag(),
-                            state.state(), state.retryAttempt(), state.errorMessage()));
+                            lsd.topicPartition().partition(),
+                            lsd.sourceOffset(), lsd.destinationOffset(), lsd.lag(),
+                            lsd.state(), lsd.retryAttempt(), lsd.errorMessage()));
                     }
                 }
             }

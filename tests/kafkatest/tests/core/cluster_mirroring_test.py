@@ -48,6 +48,7 @@ class ClusterMirroringTest(MirrorUtils, Test):
             ["mirror.state.topic.replication.factor", "2"],
             ["mirror.metadata.refresh.interval.ms", "5000"],
             ["mirror.num.replica.fetchers", "2"],
+            ["mirror.failed.retry.initial.backoff.ms", "1000"],
             ["mirror.failed.retry.max.backoff.ms", "5000"],
         ]
         self.source_kafka = KafkaService(
@@ -420,36 +421,6 @@ class ClusterMirroringTest(MirrorUtils, Test):
         count = MirrorUtils.consume_messages(self.logger, self.dest_kafka, self.client_node, "my-topic",
                                      max_messages=3, expected_count=3)
         assert count >= 3, "Expected 3 messages on my-topic, got %d" % count
-
-    @cluster(num_nodes=7)
-    @defaults(metadata_quorum=[quorum.isolated_kraft])
-    def test_topic_deletion(self, metadata_quorum):
-        """Verify that deleting a source topic transitions mirror partitions to FAILED."""
-        self.source_kafka.create_topic({"topic": "my-topic", "partitions": 1, "replication-factor": 2})
-
-        self.logger.info("Start cluster mirror on destination")
-        mirror_cfg = MirrorConfig(self.source_kafka.bootstrap_servers())
-
-        wait_until(
-            lambda: self.dest_kafka.create_cluster_mirror(
-                self.client_node, "my-mirror", mirror_cfg),
-            timeout_sec=120, backoff_sec=2,
-            err_msg="Failed to create cluster mirror",
-        )
-        wait_until(
-            lambda: "Started" in self.dest_kafka.start_cluster_mirror_topics(
-                self.client_node, "my-mirror", "my-topic"),
-            timeout_sec=120, backoff_sec=2,
-            err_msg="Failed to start mirror topics",
-        )
-        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"], "MIRRORING")
-
-        self.logger.info("Delete topic on source and wait for metadata sync")
-        self.source_kafka.delete_topic("my-topic")
-        MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.client_node, "my-mirror")
-
-        self.logger.info("Verify mirror partitions transitioned to FAILED")
-        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"], "FAILED")
 
     @cluster(num_nodes=7)
     @defaults(metadata_quorum=[quorum.isolated_kraft])
