@@ -276,21 +276,21 @@ class MirrorSourceSyncer {
                             + "Moving all partitions to non-retryable failed state.";
                     log.error(errMsg);
 
-                    Set<String> mirroredTopics = metadataManager.getConfiguredTopics(mirrorName, true);
-                    if (!mirroredTopics.isEmpty()) {
-                        Set<TopicPartition> mirroredLeaderPartitions = new HashSet<>();
-                        for (String topic : mirroredTopics) {
+                    Set<String> mirrorTopics = metadataManager.getConfiguredTopics(mirrorName, true);
+                    if (!mirrorTopics.isEmpty()) {
+                        Set<TopicPartition> mirrorLeaderPartitions = new HashSet<>();
+                        for (String topic : mirrorTopics) {
                             TopicImage topicImage = metadataManager.metadataImage().topics().getTopic(topic);
                             if (topicImage != null) {
                                 topicImage.partitions().forEach((partitionId, partition) -> {
                                     if (partition.leader == nodeId) {
-                                        mirroredLeaderPartitions.add(new TopicPartition(topic, partitionId));
+                                        mirrorLeaderPartitions.add(new TopicPartition(topic, partitionId));
                                     }
                                 });
                             }
                         }
-                        if (!mirroredLeaderPartitions.isEmpty()) {
-                            metadataManager.transitionTo(mirrorName, mirroredLeaderPartitions, MirrorPartitionState.FAILED, errMsg, true);
+                        if (!mirrorLeaderPartitions.isEmpty()) {
+                            metadataManager.transitionTo(mirrorName, mirrorLeaderPartitions, MirrorPartitionState.FAILED, errMsg, true);
                         }
                     }
                 }
