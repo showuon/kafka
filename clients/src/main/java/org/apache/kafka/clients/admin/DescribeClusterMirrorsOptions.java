@@ -26,7 +26,6 @@ import java.util.List;
  * Options for {@link Admin#describeClusterMirrors(java.util.Collection, DescribeClusterMirrorsOptions)}.
  */
 public class DescribeClusterMirrorsOptions extends AbstractOptions<DescribeClusterMirrorsOptions> {
-
     private boolean includeAuthorizedOperations = false;
     private String clusterId;
     private List<DescribeClusterMirrorsRequestData.LastMirrorEpochLookup> lastMirrorEpochLookups = Collections.emptyList();
@@ -42,9 +41,6 @@ public class DescribeClusterMirrorsOptions extends AbstractOptions<DescribeClust
         return this;
     }
 
-    /**
-     * Return true if authorized operations should be included in the response.
-     */
     public boolean includeAuthorizedOperations() {
         return includeAuthorizedOperations;
     }

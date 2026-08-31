@@ -31,15 +31,6 @@ public class ClusterMirrorListing {
     private final int topicCount;
     private final Optional<List<String>> topicNames;
 
-    /**
-     * Create an instance with the specified parameters.
-     *
-     * @param mirrorName Mirror name
-     * @param sourceBootstrap Source cluster bootstrap servers
-     * @param sourceClusterId Source cluster ID
-     * @param topicCount Number of topics configured for this mirror
-     * @param topicNames List of topic names configured for this mirror
-     */
     public ClusterMirrorListing(String mirrorName, String sourceBootstrap, String sourceClusterId, int topicCount, Optional<List<String>> topicNames) {
         this.mirrorName = mirrorName;
         this.sourceBootstrap = sourceBootstrap;
@@ -48,62 +39,26 @@ public class ClusterMirrorListing {
         this.topicNames = topicNames;
     }
 
-    /**
-     * Create an instance with the specified parameters.
-     *
-     * @param mirrorName Mirror name
-     * @param sourceBootstrap Source cluster bootstrap servers
-     * @param sourceClusterId Source cluster ID
-     * @param topicCount Number of topics configured for this mirror
-     */
     public ClusterMirrorListing(String mirrorName, String sourceBootstrap, String sourceClusterId, int topicCount) {
         this(mirrorName, sourceBootstrap, sourceClusterId, topicCount, Optional.empty());
     }
 
-    /**
-     * Create an instance with the specified parameters (backwards compatibility).
-     *
-     * @param mirrorName Mirror name
-     * @param sourceBootstrap Source cluster bootstrap servers
-     * @param topicCount Number of topics configured for this mirror
-     */
     public ClusterMirrorListing(String mirrorName, String sourceBootstrap, int topicCount) {
         this(mirrorName, sourceBootstrap, "", topicCount, Optional.empty());
     }
 
-    /**
-     * Create an instance with the specified parameters (backwards compatibility).
-     *
-     * @param mirrorName Mirror name
-     * @param sourceBootstrap Source cluster bootstrap servers
-     */
     public ClusterMirrorListing(String mirrorName, String sourceBootstrap) {
         this(mirrorName, sourceBootstrap, "", 0, Optional.empty());
     }
 
-    /**
-     * The mirror name.
-     *
-     * @return Mirror name
-     */
     public String mirrorName() {
         return mirrorName;
     }
 
-    /**
-     * The source cluster bootstrap servers.
-     *
-     * @return Source bootstrap servers, or null if not available
-     */
     public String sourceBootstrap() {
         return sourceBootstrap;
     }
 
-    /**
-     * The source cluster ID.
-     *
-     * @return Source cluster ID, or empty string if not yet resolved
-     */
     public String sourceClusterId() {
         return sourceClusterId;
     }
