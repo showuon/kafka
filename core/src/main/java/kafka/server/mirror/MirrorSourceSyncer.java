@@ -75,7 +75,6 @@ import org.apache.kafka.image.TopicImage;
 import org.apache.kafka.metadata.MetadataCache;
 import org.apache.kafka.metadata.authorizer.StandardAcl;
 import org.apache.kafka.server.common.ControllerRequestCompletionHandler;
-import org.apache.kafka.server.common.MetadataVersion;
 import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState;
 import org.apache.kafka.server.common.NodeToControllerChannelManager;
 import org.apache.kafka.server.metrics.KafkaMetricsGroup;
@@ -258,18 +257,6 @@ class MirrorSourceSyncer {
             log.info("Found stale partition states for deleted mirror '{}'. Writing tombstones.", mirrorName);
             metadataManager.tombstoneMirror(mirrorName);
             metricsGroup.removeMetric("MirrorTopicCount", Map.of("mirrorName", mirrorName));
-        }
-    }
-
-    private boolean isSourceKRaft(String mirrorName) {
-        Admin srcAdmin = metadataManager.getOrCreateSourceAdmin(mirrorName);
-        try {
-            return srcAdmin.describeFeatures().featureMetadata()
-                    .get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS)
-                    .finalizedFeatures().containsKey(MetadataVersion.FEATURE_NAME);
-        } catch (Exception e) {
-            log.debug("Failed to describe features for mirror {}, assuming ZK source: {}", mirrorName, e.getMessage());
-            return false;
         }
     }
 
@@ -532,6 +519,11 @@ class MirrorSourceSyncer {
         }
     }
 
+    /*
+     * Cross-checks describeTopics (per topic) with listTopics (cluster-wide) to detect
+     * deleted source topics. Requires two consecutive observations to avoid false positives
+     * during transient metadata unavailability (e.g. unclean leader election on ZK sources).
+     */
     private void maybeFailDeletedTopics(String mirrorName, List<SourceTopicState> sourceTopicStates) {
         List<String> deletedSourceTopicNames = new ArrayList<>(sourceTopicStates.stream()
                 .filter(ti -> !ti.exists())
@@ -562,14 +554,9 @@ class MirrorSourceSyncer {
                                 metadataManager.transitionTo(mirrorName, Set.of(new TopicPartition(name, partitionId)),
                                         MirrorPartitionState.FAILED, "The source topic is deleted.", true));
                     }
-                } else if (isSourceKRaft(mirrorName)) {
-                    // KRaft sources have reliable metadata, so one confirmation is enough.
-                    mirrorCache.addSourceDeletion(mirrorName, name);
                 } else {
-                    // ZK sources can return stale metadata during transient events like
-                    // unclean leader elections, producing false "topic deleted" signals.
-                    // Skip permanent failure and let the normal retry loop handle it.
-                    log.info("Topic {} not found in ZK source cluster {}, skipping deletion detection", name, mirrorName);
+                    log.debug("Topic {} not found in source cluster {}, pending deletion confirmation on next sync", name, mirrorName);
+                    mirrorCache.addSourceDeletion(mirrorName, name);
                 }
             } else {
                 mirrorCache.removeSourceDeletion(mirrorName, name);
@@ -577,22 +564,10 @@ class MirrorSourceSyncer {
         });
     }
 
-    /**
-     * Transitions partitions stuck in UNKNOWN because their source leader was not yet known
-     * when onMetadataUpdate first ran.
-     * <p>
-     * The race: processSourceTopicState creates a mirror topic on the destination, which
-     * triggers onMetadataUpdate. That callback needs the source leader in sourceLeaders to
-     * transition the partition to log truncation. If the source has not elected a leader yet
-     * (or the Admin describeTopics response arrived without one), the partition stays in
-     * UNKNOWN. Since onMetadataUpdate only fires on destination metadata changes, it will
-     * not retry on its own.
-     * <p>
-     * This is more likely against older source clusters (e.g. Kafka 2.1 with ZK) where
-     * Admin.describeTopics goes through three round trips before returning topic metadata:
-     * describeCluster (node discovery), DescribeTopicPartitions (rejected with
-     * UnsupportedVersionException), then MetadataRequest (fallback). The extra latency
-     * widens the window in which the source leader is not yet known.
+    /*
+     * Retries partitions stuck in UNKNOWN because their source leader was not yet resolved when
+     * onMetadataUpdate ran (metadata still loading on ZK sources). Since that callback only fires
+     * on destination metadata changes, it will not retry on its own.
      */
     private void maybeStartMissedPartitions(String mirrorName) {
         var partitionLeaders = mirrorCache.getSourceLeaders(mirrorName);
