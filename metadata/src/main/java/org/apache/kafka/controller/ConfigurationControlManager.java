@@ -437,7 +437,7 @@ public class ConfigurationControlManager {
             Uuid topicId = replicationControl.getTopicId(topic);
             ReplicationControlManager.TopicControlInfo topicInfo = replicationControl.getTopic(topicId);
             if (topicInfo == null) {
-                topicRes.setErrorCode(Errors.UNKNOWN_TOPIC_OR_PARTITION.code()).setName(topic);
+                topicRes.setErrorCode(Errors.UNKNOWN_TOPIC_OR_PARTITION.code()).setTopicName(topic);
                 topicResList.add(topicRes);
                 continue;
             }
@@ -445,25 +445,25 @@ public class ConfigurationControlManager {
             String currMirrorName = topicInfo.mirrorName();
             byte currMirrorStateChange = topicInfo.mirrorState();
             if (currMirrorName == null || currMirrorName.isBlank()) {
-                topicRes.setErrorCode(Errors.UNKNOWN_CLUSTER_MIRROR.code()).setName(topic);
+                topicRes.setErrorCode(Errors.UNKNOWN_CLUSTER_MIRROR.code()).setTopicName(topic);
                 topicResList.add(topicRes);
                 continue;
             }
 
             if (!currMirrorName.equals(mirrorName)) {
-                topicRes.setErrorCode(Errors.TOPIC_NOT_IN_CLUSTER_MIRROR.code()).setName(topic);
+                topicRes.setErrorCode(Errors.TOPIC_NOT_IN_CLUSTER_MIRROR.code()).setTopicName(topic);
                 topicResList.add(topicRes);
                 continue;
             }
 
             if (currMirrorStateChange == MirrorPartitionState.STOPPED.value()) {
-                topicRes.setName(topic);
+                topicRes.setTopicName(topic);
                 topicResList.add(topicRes);
                 continue;
             }
 
             if (currMirrorStateChange == MirrorPartitionState.PAUSED.value()) {
-                topicRes.setName(topic).setErrorCode(Errors.MIRROR_TOPIC_ALREADY_PAUSED.code());
+                topicRes.setTopicName(topic).setErrorCode(Errors.MIRROR_TOPIC_ALREADY_PAUSED.code());
                 topicResList.add(topicRes);
                 continue;
             }
@@ -475,7 +475,7 @@ public class ConfigurationControlManager {
                             .setDesiredState(MirrorPartitionState.STOPPED.value()),
                     (short) 0));
 
-            topicRes.setName(topic);
+            topicRes.setTopicName(topic);
             topicResList.add(topicRes);
         }
         data.setTopics(topicResList);
@@ -503,7 +503,7 @@ public class ConfigurationControlManager {
             Uuid topicId = replicationControl.getTopicId(topic);
             ReplicationControlManager.TopicControlInfo topicInfo = replicationControl.getTopic(topicId);
             if (topicInfo == null) {
-                topicRes.setErrorCode(Errors.UNKNOWN_TOPIC_OR_PARTITION.code()).setName(topic);
+                topicRes.setErrorCode(Errors.UNKNOWN_TOPIC_OR_PARTITION.code()).setTopicName(topic);
                 topicResList.add(topicRes);
                 continue;
             }
@@ -511,19 +511,19 @@ public class ConfigurationControlManager {
             String currMirrorName = topicInfo.mirrorName();
             byte currMirrorStateChange = topicInfo.mirrorState();
             if (currMirrorName == null || currMirrorName.isBlank()) {
-                topicRes.setErrorCode(Errors.UNKNOWN_CLUSTER_MIRROR.code()).setName(topic);
+                topicRes.setErrorCode(Errors.UNKNOWN_CLUSTER_MIRROR.code()).setTopicName(topic);
                 topicResList.add(topicRes);
                 continue;
             }
 
             if (!currMirrorName.equals(mirrorName)) {
-                topicRes.setErrorCode(Errors.TOPIC_NOT_IN_CLUSTER_MIRROR.code()).setName(topic);
+                topicRes.setErrorCode(Errors.TOPIC_NOT_IN_CLUSTER_MIRROR.code()).setTopicName(topic);
                 topicResList.add(topicRes);
                 continue;
             }
 
             if (currMirrorStateChange == MirrorPartitionState.STOPPED.value()) {
-                topicRes.setErrorCode(Errors.MIRROR_TOPIC_ALREADY_STOPPED.code()).setName(topic)
+                topicRes.setErrorCode(Errors.MIRROR_TOPIC_ALREADY_STOPPED.code()).setTopicName(topic)
                         .setErrorMessage("Topic '" + topic + "' is in "
                                 + MirrorPartitionState.fromValue(currMirrorStateChange) + " state");
                 topicResList.add(topicRes);
@@ -531,7 +531,7 @@ public class ConfigurationControlManager {
             }
 
             if (currMirrorStateChange == MirrorPartitionState.PAUSED.value()) {
-                topicRes.setErrorCode(Errors.NONE.code()).setName(topic);
+                topicRes.setErrorCode(Errors.NONE.code()).setTopicName(topic);
                 topicResList.add(topicRes);
                 continue;
             }
@@ -568,7 +568,7 @@ public class ConfigurationControlManager {
             Uuid topicId = replicationControl.getTopicId(topic);
             ReplicationControlManager.TopicControlInfo topicInfo = replicationControl.getTopic(topicId);
             if (topicInfo == null) {
-                topicRes.setErrorCode(Errors.UNKNOWN_TOPIC_OR_PARTITION.code()).setName(topic);
+                topicRes.setErrorCode(Errors.UNKNOWN_TOPIC_OR_PARTITION.code()).setTopicName(topic);
                 topicResList.add(topicRes);
                 continue;
             }
@@ -576,13 +576,13 @@ public class ConfigurationControlManager {
             String currMirrorName = topicInfo.mirrorName();
             byte currMirrorStateChange = topicInfo.mirrorState();
             if (currMirrorName == null || currMirrorName.isBlank()) {
-                topicRes.setErrorCode(Errors.UNKNOWN_CLUSTER_MIRROR.code()).setName(topic);
+                topicRes.setErrorCode(Errors.UNKNOWN_CLUSTER_MIRROR.code()).setTopicName(topic);
                 topicResList.add(topicRes);
                 continue;
             }
 
             if (!currMirrorName.equals(mirrorName)) {
-                topicRes.setErrorCode(Errors.TOPIC_NOT_IN_CLUSTER_MIRROR.code()).setName(topic);
+                topicRes.setErrorCode(Errors.TOPIC_NOT_IN_CLUSTER_MIRROR.code()).setTopicName(topic);
                 topicResList.add(topicRes);
                 continue;
             }
@@ -592,7 +592,7 @@ public class ConfigurationControlManager {
                 topicResList.add(topicRes);
                 continue;
             } else if (currMirrorStateChange != MirrorPartitionState.PAUSED.value()) {
-                topicRes.setErrorCode(Errors.MIRROR_TOPIC_NOT_PAUSED.code()).setName(topic)
+                topicRes.setErrorCode(Errors.MIRROR_TOPIC_NOT_PAUSED.code()).setTopicName(topic)
                         .setErrorMessage("Topic '" + topic + "' is in "
                                 + MirrorPartitionState.fromValue(currMirrorStateChange) + " state");
                 topicResList.add(topicRes);

@@ -29,7 +29,7 @@
       "about": "The top-level error message, or null if there was no error." },
     { "name": "Topics", "type": "[]TopicResult", "versions": "0+",
       "about": "The write results for the topics.", "fields": [
-      { "name": "Name", "type": "string", "versions": "0+", "entityType": "topicName",
+      { "name": "TopicName", "type": "string", "versions": "0+", "entityType": "topicName",
         "about": "The topic name." },
       { "name": "Partitions", "type": "[]PartitionResult", "versions": "0+",
         "about": "The results for the partitions.", "fields": [

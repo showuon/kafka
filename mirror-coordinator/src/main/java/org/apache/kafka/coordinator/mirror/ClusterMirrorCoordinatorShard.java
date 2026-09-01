@@ -253,7 +253,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                 partitionResults.add(pr);
             });
             topicResults.add(new ReadMirrorStatesResponseData.TopicResult()
-                    .setName(topic).setPartitions(partitionResults));
+                    .setTopicName(topic).setPartitions(partitionResults));
         });
         data.setTopics(topicResults);
         return data;

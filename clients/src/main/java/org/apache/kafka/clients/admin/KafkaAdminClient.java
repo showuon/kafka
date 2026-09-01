@@ -5394,7 +5394,7 @@ public class KafkaAdminClient extends AdminClient {
                     this.authorizedOperations = mirror.authorizedOperations();
                 }
 
-                for (DescribeClusterMirrorsResponseData.TopicPartitions topic : mirror.topics()) {
+                for (DescribeClusterMirrorsResponseData.TopicResult topic : mirror.topics()) {
                     Set<ClusterMirrorDescription.LeaderStateDescription> mirrorStates =
                             leaderStates.computeIfAbsent(topic.topicName(), k -> new HashSet<>());
 

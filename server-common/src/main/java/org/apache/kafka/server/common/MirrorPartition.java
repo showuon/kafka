@@ -32,7 +32,10 @@ public record MirrorPartition(MirrorPartitionState state, int stateEpoch, int la
     public static final MirrorPartition EMPTY = new MirrorPartition(MirrorPartitionState.UNKNOWN, 0, -1, null, 0, null);
     public static final int NON_RETRYABLE_ATTEMPT = -1;
 
-    /** Represents the lifecycle states of a mirror partition. */
+    /**
+     * Represents the lifecycle states of a mirror partition.
+     * Values changes require an update to the JavaDoc of LeaderStateDescription.state().
+     */
     public enum MirrorPartitionState {
         LOG_ALIGNMENT((byte) 0),
         EPOCH_FENCING((byte) 1),

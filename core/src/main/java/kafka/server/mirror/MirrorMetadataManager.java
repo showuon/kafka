@@ -565,10 +565,10 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                             topic.partitions().forEach(partition -> {
                                 if (partition.errorCode() != Errors.NONE.code()) {
                                     log.warn("Error reading mirror state for {}-{}: {}",
-                                            topic.name(), partition.partitionIndex(), Errors.forCode(partition.errorCode()));
+                                            topic.topicName(), partition.partitionIndex(), Errors.forCode(partition.errorCode()));
                                     return;
                                 }
-                                TopicPartition resTp = new TopicPartition(topic.name(), partition.partitionIndex());
+                                TopicPartition resTp = new TopicPartition(topic.topicName(), partition.partitionIndex());
                                 MirrorPartitionState state = MirrorPartitionState.fromValue(partition.state());
                                 byte desired = desiredStates.getOrDefault(resTp, MirrorPartitionState.UNKNOWN.value());
                                 boolean stopRequested = desired == MirrorPartitionState.STOPPED.value();
@@ -604,7 +604,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                     data.topics().forEach(topic -> topic.partitions().forEach(partition -> {
                         if (partition.errorCode() != Errors.NONE.code()) {
                             log.warn("Error reading local coordinator state for {}-{}: {}",
-                                    topic.name(), partition.partitionIndex(), Errors.forCode(partition.errorCode()));
+                                    topic.topicName(), partition.partitionIndex(), Errors.forCode(partition.errorCode()));
                             return;
                         }
                         MirrorPartitionState curState = MirrorPartitionState.fromValue(partition.state());
@@ -1142,7 +1142,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
             topicPartitionsMap.forEach((topic, partitionDataList) ->
                     topicDataList.add(new ReadMirrorStatesRequestData.TopicMetadata()
-                            .setName(topic)
+                            .setTopicName(topic)
                             .setPartitions(partitionDataList)));
 
             data.setTopics(topicDataList);
@@ -1158,7 +1158,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                             readMirrorStatesResponse.data().topics().forEach(topic ->
                                 topic.partitions().forEach(partition -> {
                                     MirrorPartitionKey mpk = MirrorPartitionKey.of(
-                                            mirrorName, metadataCache.getTopicId(topic.name()), partition.partitionIndex());
+                                            mirrorName, metadataCache.getTopicId(topic.topicName()), partition.partitionIndex());
                                     mirrorCache.mergePartition(mpk, partition.state(), partition.stateEpoch(),
                                             partition.lastMirrorEpoch(), partition.errorMessage(),
                                             partition.retryAttempt(), partition.previousState());
@@ -1211,7 +1211,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
             topicPartitionsMap.forEach((topic, partitionDataList) ->
                 topicDataList.add(new WriteMirrorStatesRequestData.TopicMetadata()
-                    .setName(topic)
+                    .setTopicName(topic)
                     .setPartitions(partitionDataList)));
 
             data.setTopics(topicDataList);
@@ -1563,13 +1563,13 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             for (var partitionResult : topicResult.partitions()) {
                 if (partitionResult.errorCode() != Errors.NONE.code()) {
                     log.error("Error reading state from remote coordinator for partition {}-{}. Error code: {}",
-                            topicResult.name(), partitionResult.partitionIndex(), partitionResult.errorCode());
+                            topicResult.topicName(), partitionResult.partitionIndex(), partitionResult.errorCode());
                     return Optional.of(Errors.forCode(partitionResult.errorCode()));
                 }
                 MirrorPartitionState remoteState = MirrorPartitionState.fromValue(partitionResult.state());
                 if (!validStates.contains(remoteState)) {
                     log.error("Remote partition {}-{} is in {} state, expected one of {}.",
-                            topicResult.name(), partitionResult.partitionIndex(), remoteState, validStates);
+                            topicResult.topicName(), partitionResult.partitionIndex(), remoteState, validStates);
                     return Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATES);
                 }
             }
