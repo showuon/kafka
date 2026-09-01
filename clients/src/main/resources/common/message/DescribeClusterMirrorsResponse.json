@@ -42,7 +42,7 @@
       { "name": "AuthorizedOperations", "type": "int32", "versions": "0+", "default": "-2147483648",
         "about": "32-bit bitfield representing authorized operations for this mirror." },
       { "name": "Topics", "type": "[]TopicPartitions", "versions": "0+",
-        "about": "The mirrored topics and their partition details.", "fields": [
+        "about": "The mirror topics and their partition details.", "fields": [
         { "name": "TopicName", "type": "string", "versions": "0+",
           "about": "The topic name." },
         { "name": "Partitions", "type": "[]PartitionDetail", "versions": "0+",

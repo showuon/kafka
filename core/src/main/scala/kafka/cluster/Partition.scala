@@ -799,8 +799,8 @@ class Partition(val topicPartition: TopicPartition,
         // leader epoch and the start offset since it should be larger than any epoch that a follower
         // would try to query.
 
-        // don't update the leader epoch if the partition is a mirrored leader, we'll update it when receiving batches
-        // from source cluster leader
+        // Don't update the leader epoch if the partition is a mirror leader,
+        // we'll update it when receiving batches from source cluster leader
         if (getMirrorName().isEmpty || getDesiredMirrorState() == MirrorPartitionState.STOPPED.value()) {
           leaderLog.assignEpochStartOffset(partitionState.leaderEpoch, leaderEpochStartOffset)
         }
@@ -1233,7 +1233,7 @@ class Partition(val topicPartition: TopicPartition,
   }
 
   /**
-   * Attempts to complete log truncation for a mirrored partition by
+   * Attempts to complete log truncation for a mirror partition by
    * verifying that all replicas have converged with the leader.
    *
    * Because the log truncation always truncates as a batch( no partially truncated

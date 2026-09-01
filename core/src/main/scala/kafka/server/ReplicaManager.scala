@@ -1666,13 +1666,13 @@ class ReplicaManager(val config: KafkaConfig,
                                    remoteFetchPartitionStatus: Seq[(TopicIdPartition, FetchPartitionStatus)]): Unit = {
     val remoteFetchTasks = new util.HashMap[TopicIdPartition, Future[Void]]
     val remoteFetchResults = new util.HashMap[TopicIdPartition, CompletableFuture[RemoteLogReadResult]]
-    
+
     remoteFetchInfos.forEach { (topicIdPartition, remoteFetchInfo) =>
       val (task, result) = processRemoteFetch(remoteFetchInfo)
       remoteFetchTasks.put(topicIdPartition, task)
       remoteFetchResults.put(topicIdPartition, result)
     }
-    
+
     val remoteFetchMaxWaitMs = config.remoteLogManagerConfig.remoteFetchMaxWaitMs().toLong
     val remoteFetch = new DelayedRemoteFetch(remoteFetchTasks, remoteFetchResults, remoteFetchInfos, remoteFetchMaxWaitMs,
       remoteFetchPartitionStatus, params, logReadResults, this, responseCallback)
@@ -2485,7 +2485,7 @@ class ReplicaManager(val config: KafkaConfig,
       "local leaders.")
     replicaFetcherManager.removeFetcherForPartitions(localLeaders.keySet)
     // Stopping the fetchers must be done first in order to initialize the fetch position correctly
-    // We should remove mirrorFetcher thread here because the replica might be the mirrored leader before,
+    // We should remove mirrorFetcher thread here because the replica might be the mirror leader before,
     // but now it becomes writable (classic topic).
     mirrorFetcherManager.removeFetcherForPartitions(localLeaders.keySet)
     localLeaders.foreachEntry { (tp, info) =>

@@ -35,7 +35,7 @@
   //
   // Version 7 returns the topic ID of the newly created topic if creation is successful.
   //
-  // Version 8 adds support for creating mirrored partitions.
+  // Version 8 adds support for creating mirror partitions.
   "validVersions": "2-8",
   "flexibleVersions": "5+",
   "fields": [

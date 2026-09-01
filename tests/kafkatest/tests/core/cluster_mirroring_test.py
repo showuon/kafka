@@ -29,7 +29,7 @@ from kafkatest.version import (
 
 
 class ClusterMirroringTest(MirrorUtils, Test):
-    """Tests for KIP-1279 Cluster Mirroring using a source and destination cluster."""
+    """Tests for KIP-1279 Cluster Mirroring on latest version."""
 
     def __init__(self, test_context):
         """:type test_context: ducktape.tests.test.TestContext"""
@@ -646,7 +646,7 @@ class ClusterMirroringTest(MirrorUtils, Test):
     @cluster(num_nodes=7)
     @defaults(metadata_quorum=[quorum.isolated_kraft])
     def test_log_convergence(self, metadata_quorum):
-        """Verify that mirrored log segments are byte identical to source after bouncing both clusters."""
+        """Verify that mirror log segments are byte identical to source after bouncing both clusters."""
         self.logger.info("Create source topics and produce initial data")
         topics = {
             "my-topic-a": {"partitions": 3, "replication-factor": 2},

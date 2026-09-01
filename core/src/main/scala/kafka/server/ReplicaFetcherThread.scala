@@ -137,7 +137,7 @@ class ReplicaFetcherThread(name: String,
     // Append the leader's messages to the log.
     //
     // The fetch leader epoch from metadata is used for append validation.
-    // For mirrored partitions, this epoch is updated after each append to match the highest batch
+    // For mirror partitions, this epoch is updated after each append to match the highest batch
     // epoch seen, allowing source cluster epochs to be accepted while maintaining epoch validations.
     val logAppendInfo = partition.appendRecordsToFollowerOrFutureReplica(records, isFuture = false, partitionLeaderEpoch)
 
