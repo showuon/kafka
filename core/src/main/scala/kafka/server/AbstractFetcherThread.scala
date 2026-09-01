@@ -168,8 +168,8 @@ abstract class AbstractFetcherThread(name: String,
                                          fetchException: Option[Throwable] = None): Unit = {
     if (partitions.nonEmpty) {
       debug(s"Handling errors in $methodName for partitions $partitions")
-      // if the fetchException is not empty, it means the fetch request failed. If it's mirroring, it doesn't help
-      // to delay the fetch because the source metadata might be stale.
+      // If the fetchException is not empty, it means the fetch request failed.
+      // If it's mirroring, it doesn't help to delay the fetch because the source metadata might be stale.
       if (mirrorName.nonEmpty && isRunning && fetchException.nonEmpty) {
         try {
           partitions.foreach(markPartitionRemoved)
@@ -733,8 +733,8 @@ abstract class AbstractFetcherThread(name: String,
       new PartitionFetchState(initialFetchState.topicId.toJava, initialFetchState.initOffset, Optional.empty(), initialFetchState.currentLeaderEpoch,
         state, lastFetchedEpoch, initialFetchState.mirrorName, initialFetchState.mirrorLeaderEpoch)
     } else {
-      // Mirror threads always skip truncation-on-fetch and use the explicit OffsetsForLeaderEpochRequest
-      // path because older source brokers does not include diverging epoch info in fetch responses.
+      // Source cluster supports Fetch v11 or lower, so diverging epoch info is not
+      // included in fetch responses. Fall back to explicit OffsetsForLeaderEpochRequest.
       new PartitionFetchState(initialFetchState.topicId.toJava, initialFetchState.initOffset, Optional.empty(), initialFetchState.currentLeaderEpoch,
         ReplicaState.TRUNCATING, Optional.empty(), initialFetchState.mirrorName, initialFetchState.mirrorLeaderEpoch)
     }

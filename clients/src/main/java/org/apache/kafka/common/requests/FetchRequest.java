@@ -179,8 +179,8 @@ public class FetchRequest extends AbstractRequest {
         private List<TopicIdPartition> removed = Collections.emptyList();
         private List<TopicIdPartition> replaced = Collections.emptyList();
         private String rackId = "";
-        // the highest supported version between this node and the leader node. This is used for cluster mirroring
-        // because the source cluster could be in an older version of kafka
+        // The highest supported version between this node and the leader node.
+        // This is used for cluster mirroring because the source cluster could be older.
         private short version = -1;
 
         public static Builder forConsumer(short maxVersion, int maxWait, int minBytes, Map<TopicPartition, PartitionData> fetchData) {
