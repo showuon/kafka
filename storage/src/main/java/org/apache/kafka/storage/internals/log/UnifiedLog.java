@@ -1408,7 +1408,7 @@ public class UnifiedLog implements AutoCloseable {
         for (MutableRecordBatch batch : records.batches()) {
             if ((origin == AppendOrigin.COORDINATOR || origin == AppendOrigin.REPLICATION)
                     && ControlRecordType.isMirrorPidResetBatch(batch)) {
-                producerStateManager.expireMirroredProducers();
+                producerStateManager.expireMirrorProducers();
             }
 
             if (batch.hasProducerId()) {
@@ -2602,7 +2602,7 @@ public class UnifiedLog implements AutoCloseable {
         final List<CompletedTxn> completedTxns = new ArrayList<>();
         records.batches().forEach(batch -> {
             if (ControlRecordType.isMirrorPidResetBatch(batch)) {
-                producerStateManager.expireMirroredProducers();
+                producerStateManager.expireMirrorProducers();
             }
 
             if (batch.hasProducerId()) {

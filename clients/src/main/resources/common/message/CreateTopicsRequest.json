@@ -32,7 +32,7 @@
   //
   // Version 7 is the same as version 6.
   //
-  // Version 8 adds support for creating mirrored partitions.
+  // Version 8 adds support for creating mirror partitions.
   "validVersions": "2-8",
   "flexibleVersions": "5+",
   "fields": [

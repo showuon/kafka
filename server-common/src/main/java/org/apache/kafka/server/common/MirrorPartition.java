@@ -21,7 +21,7 @@ package org.apache.kafka.server.common;
  *
  * @param state            the current lifecycle state, or null if unknown
  * @param stateEpoch       monotonically increasing epoch incremented on every state transition
- * @param lastMirrorEpoch  the last mirrored leader epoch, or -1 if not yet recorded
+ * @param lastMirrorEpoch  the last mirror leader epoch, or -1 if not yet recorded
  * @param errorMessage     the failure reason when in FAILED state, or null otherwise
  * @param retryAttempt     the retry count in FAILED state, 0 if not failed,
  *                         or {@link #NON_RETRYABLE_ATTEMPT} if non-retryable

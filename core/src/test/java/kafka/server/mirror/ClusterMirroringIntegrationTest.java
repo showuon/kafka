@@ -408,7 +408,7 @@ public class ClusterMirroringIntegrationTest {
 
         // Verify orders-internal was NOT mirrored
         assertStableRecordCount(dstCluster, excludedTopic, 0,
-                "Excluded topic should have no mirrored records");
+                "Excluded topic should have no mirror records");
     }
 
     /**
@@ -539,7 +539,7 @@ public class ClusterMirroringIntegrationTest {
 
         // Verify orders-eu did NOT receive new data (still at 20, not 40)
         assertStableRecordCount(dstCluster, topicB, 20,
-                "Stopped topic should not have received new mirrored records");
+                "Stopped topic should not have received new mirror records");
     }
 
     /**
@@ -685,9 +685,9 @@ public class ClusterMirroringIntegrationTest {
                 new ListConfigResourcesOptions()).all().get(30, TimeUnit.SECONDS);
         assertTrue(listConfigResult.isEmpty());
 
-        // Verify that the __mirror_state topic contains the tombstone records
-        // for both `MirrorPartitionStateKey` and `LastMirrorEpochsKey` types
-        // 1. Get the partition index hosting the metadata for the mirrored topic partition
+        // Verify that the __mirror_state topic contains the tombstone records for both
+        // MirrorPartitionStateKey and LastMirrorEpochsKey types
+        // 1. Get the partition index hosting the metadata for the mirror topic partition
         int partId = dstCluster.brokers().get(0).clusterMirrorCoordinator()
                 .partitionFor(new MirrorPartitionKey(MIRROR_NAME, topicId, 0));
         // 2. Get the partition leader
@@ -802,73 +802,74 @@ public class ClusterMirroringIntegrationTest {
     }
 
     @Test
-    void testCreatePartitionsAllowedOnNonMirroredTopic() throws Exception {
-        String mirroredTopic = "mirrored-topic";
-        String nonMirroredTopic = "non-mirrored-topic";
+    void testCreatePartitionsAllowedOnNonMirrorTopic() throws Exception {
+        String mirrorTopic = "mirror-topic";
+        String nonMirrorTopic = "non-mirror-topic";
 
         // Source topic that will be actively mirrored to the destination
         srcAdmin.createTopics(List.of(
-                new NewTopic(mirroredTopic, 1, (short) 1)
+                new NewTopic(mirrorTopic, 1, (short) 1)
         )).all().get(30, TimeUnit.SECONDS);
 
         // A regular destination topic that is not part of any mirror
         dstAdmin.createTopics(List.of(
-                new NewTopic(nonMirroredTopic, 1, (short) 1)
+                new NewTopic(nonMirrorTopic, 1, (short) 1)
         )).all().get(30, TimeUnit.SECONDS);
 
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleSourceBootstrapServer
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(mirroredTopic), new StartMirrorTopicsOptions())
+        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(mirrorTopic), new StartMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, mirroredTopic, "MIRRORING");
+        waitForMirrorState(dstAdmin, MIRROR_NAME, mirrorTopic, "MIRRORING");
 
         // With the cluster mirror feature enabled the broker intercepts CreatePartitions, but a
         // topic that belongs to no mirror must be forwarded and created without any mirror check.
-        dstAdmin.createPartitions(Map.of(nonMirroredTopic, NewPartitions.increaseTo(2)))
+        dstAdmin.createPartitions(Map.of(nonMirrorTopic, NewPartitions.increaseTo(2)))
                 .all().get(30, TimeUnit.SECONDS);
-        waitForCondition(() -> describeTopics(dstAdmin, List.of(nonMirroredTopic)).get(nonMirroredTopic).partitions().size() == 2, "Non mirrored topic count not increased");
+        waitForCondition(() -> describeTopics(dstAdmin, List.of(nonMirrorTopic)).get(nonMirrorTopic).partitions().size() == 2,
+                "Non mirror topic count not increased");
     }
 
     @Test
-    void testCreatePartitionsMixedMirroredAndNonMirroredTopics() throws Exception {
-        String mirroredTopic = "mirrored-topic";
-        String nonMirroredTopic = "non-mirrored-topic";
+    void testCreatePartitionsMixedMirrorAndNonMirrorTopics() throws Exception {
+        String mirrorTopic = "mirror-topic";
+        String nonMirrorTopic = "non-mirror-topic";
 
         srcAdmin.createTopics(List.of(
-                new NewTopic(mirroredTopic, 1, (short) 1)
+                new NewTopic(mirrorTopic, 1, (short) 1)
         )).all().get(30, TimeUnit.SECONDS);
         dstAdmin.createTopics(List.of(
-                new NewTopic(nonMirroredTopic, 1, (short) 1)
+                new NewTopic(nonMirrorTopic, 1, (short) 1)
         )).all().get(30, TimeUnit.SECONDS);
 
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleSourceBootstrapServer
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(mirroredTopic), new StartMirrorTopicsOptions())
+        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(mirrorTopic), new StartMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, mirroredTopic, "MIRRORING");
+        waitForMirrorState(dstAdmin, MIRROR_NAME, mirrorTopic, "MIRRORING");
 
         CreatePartitionsResult result = dstAdmin.createPartitions(Map.of(
-                mirroredTopic, NewPartitions.increaseTo(2),
-                nonMirroredTopic, NewPartitions.increaseTo(2)
+                mirrorTopic, NewPartitions.increaseTo(2),
+                nonMirrorTopic, NewPartitions.increaseTo(2)
         ));
 
-        result.values().get(nonMirroredTopic).get(30, TimeUnit.SECONDS);
+        result.values().get(nonMirrorTopic).get(30, TimeUnit.SECONDS);
         ExecutionException e = assertThrows(ExecutionException.class,
-                () -> result.values().get(mirroredTopic).get(30, TimeUnit.SECONDS));
+                () -> result.values().get(mirrorTopic).get(30, TimeUnit.SECONDS));
         assertEquals(MirrorTopicNotStoppedException.class, e.getCause().getClass());
 
         waitForCondition(() -> {
-            Map<String, TopicDescription> descriptionMap = describeTopics(dstAdmin, List.of(mirroredTopic, nonMirroredTopic));
-            return descriptionMap.get(nonMirroredTopic).partitions().size() == 2 && descriptionMap.get(mirroredTopic).partitions().size() == 1;
-        }, "Non mirrored topic count not increased");
+            Map<String, TopicDescription> descriptionMap = describeTopics(dstAdmin, List.of(mirrorTopic, nonMirrorTopic));
+            return descriptionMap.get(nonMirrorTopic).partitions().size() == 2 && descriptionMap.get(mirrorTopic).partitions().size() == 1;
+        }, "Non mirror topic count not increased");
     }
 
     @Test
-    void testCreatePartitionsMultipleMirroredTopics() throws Exception {
-        String topicA = "mirror-a";
-        String topicB = "mirror-b";
+    void testCreatePartitionsMultipleMirrorTopics() throws Exception {
+        String topicA = "topic-a";
+        String topicB = "topic-b";
 
         srcAdmin.createTopics(List.of(
                 new NewTopic(topicA, 1, (short) 1),
@@ -883,7 +884,7 @@ public class ClusterMirroringIntegrationTest {
         waitForMirrorState(dstAdmin, MIRROR_NAME, topicA, "MIRRORING");
         waitForMirrorState(dstAdmin, MIRROR_NAME, topicB, "MIRRORING");
 
-        // Both mirrored topics in a single request are rejected while mirroring
+        // Both mirror topics in a single request are rejected while mirroring
         CreatePartitionsResult result = dstAdmin.createPartitions(Map.of(
                 topicA, NewPartitions.increaseTo(2),
                 topicB, NewPartitions.increaseTo(2)
@@ -937,29 +938,29 @@ public class ClusterMirroringIntegrationTest {
     }
 
     @Test
-    void testDeleteTopicsMixedMirroredAndNonMirroredTopics() throws Exception {
-        String mirroredTopic = "mirrored-topic";
-        String nonMirroredTopic = "non-mirrored-topic";
+    void testDeleteTopicsMixedMirrorAndNonMirrorTopics() throws Exception {
+        String mirrorTopic = "mirror-topic";
+        String nonMirrorTopic = "non-mirror-topic";
 
         srcAdmin.createTopics(List.of(
-                new NewTopic(mirroredTopic, 1, (short) 1)
+                new NewTopic(mirrorTopic, 1, (short) 1)
         )).all().get(30, TimeUnit.SECONDS);
         dstAdmin.createTopics(List.of(
-                new NewTopic(nonMirroredTopic, 1, (short) 1)
+                new NewTopic(nonMirrorTopic, 1, (short) 1)
         )).all().get(30, TimeUnit.SECONDS);
 
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleSourceBootstrapServer
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(mirroredTopic), new StartMirrorTopicsOptions())
+        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(mirrorTopic), new StartMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, mirroredTopic, "MIRRORING");
+        waitForMirrorState(dstAdmin, MIRROR_NAME, mirrorTopic, "MIRRORING");
 
-        DeleteTopicsResult result = dstAdmin.deleteTopics(Set.of(nonMirroredTopic, mirroredTopic));
+        DeleteTopicsResult result = dstAdmin.deleteTopics(Set.of(nonMirrorTopic, mirrorTopic));
 
-        result.topicNameValues().get(nonMirroredTopic).get(30, TimeUnit.SECONDS);
+        result.topicNameValues().get(nonMirrorTopic).get(30, TimeUnit.SECONDS);
         ExecutionException e = assertThrows(ExecutionException.class,
-                () -> result.topicNameValues().get(mirroredTopic).get(30, TimeUnit.SECONDS));
+                () -> result.topicNameValues().get(mirrorTopic).get(30, TimeUnit.SECONDS));
         assertEquals(MirrorTopicNotStoppedException.class, e.getCause().getClass());
     }
 
@@ -996,31 +997,31 @@ public class ClusterMirroringIntegrationTest {
     }
 
     @Test
-    void testDeleteRecordsAllowedOnNonMirroredTopic() throws Exception {
-        String mirroredTopic = "mirrored-topic";
-        String nonMirroredTopic = "non-mirrored-topic";
+    void testDeleteRecordsAllowedOnNonMirrorTopic() throws Exception {
+        String mirrorTopic = "mirror-topic";
+        String nonMirrorTopic = "non-mirror-topic";
 
         // Source topic that will be actively mirrored to the destination
         srcAdmin.createTopics(List.of(
-                new NewTopic(mirroredTopic, 1, (short) 1)
+                new NewTopic(mirrorTopic, 1, (short) 1)
         )).all().get(30, TimeUnit.SECONDS);
 
         // A regular destination topic that is not part of any mirror
         dstAdmin.createTopics(List.of(
-                new NewTopic(nonMirroredTopic, 1, (short) 1)
+                new NewTopic(nonMirrorTopic, 1, (short) 1)
         )).all().get(30, TimeUnit.SECONDS);
-        produceRecords(dstCluster, nonMirroredTopic, 0, 10);
+        produceRecords(dstCluster, nonMirrorTopic, 0, 10);
 
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleSourceBootstrapServer
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(mirroredTopic), new StartMirrorTopicsOptions())
+        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(mirrorTopic), new StartMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, mirroredTopic, "MIRRORING");
+        waitForMirrorState(dstAdmin, MIRROR_NAME, mirrorTopic, "MIRRORING");
 
         // With the cluster mirror feature enabled the broker intercepts DeleteRecords, but a
         // topic that belongs to no mirror must be handled without any mirror check.
-        TopicPartition tp = new TopicPartition(nonMirroredTopic, 0);
+        TopicPartition tp = new TopicPartition(nonMirrorTopic, 0);
         DeleteRecordsResult result = dstAdmin.deleteRecords(Map.of(tp, RecordsToDelete.beforeOffset(5)));
         assertEquals(5, result.lowWatermarks().get(tp).get(30, TimeUnit.SECONDS).lowWatermark());
     }

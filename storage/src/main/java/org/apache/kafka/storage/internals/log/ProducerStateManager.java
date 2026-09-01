@@ -419,7 +419,7 @@ public class ProducerStateManager {
         }
     }
 
-    public void expireMirroredProducers() {
+    public void expireMirrorProducers() {
         int count = producers.size();
         if (count > 0) {
             producers.clear();

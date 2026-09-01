@@ -332,7 +332,7 @@ abstract class AbstractFetcherThread(name: String,
     }
   }
 
-  /** Reassigns mirrored partitions to new fetcher threads after source leader change. */
+  /** Reassigns mirror partitions to new fetcher threads after source leader change. */
   private def maybeCreateMirrorFetchers(partitionToData: Map[TopicPartition, PartitionData]): Unit = {
     var newStates: Map[TopicPartition, InitialFetchState] = scala.collection.mutable.Map.empty[TopicPartition, InitialFetchState]
       // snapshot under lock to avoid ConcurrentModificationException from concurrent addFetcherForPartitions
