@@ -828,7 +828,7 @@ public class ClusterMirroringIntegrationTest {
         dstAdmin.createPartitions(Map.of(nonMirrorTopic, NewPartitions.increaseTo(2)))
                 .all().get(30, TimeUnit.SECONDS);
         waitForCondition(() -> describeTopics(dstAdmin, List.of(nonMirrorTopic)).get(nonMirrorTopic).partitions().size() == 2,
-        	"Non mirror topic count not increased");
+                "Non mirror topic count not increased");
     }
 
     @Test
