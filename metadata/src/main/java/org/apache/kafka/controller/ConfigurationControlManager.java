@@ -462,14 +462,6 @@ public class ConfigurationControlManager {
                 continue;
             }
 
-            if (currMirrorStateChange == MirrorPartitionState.PAUSED.value()) {
-                topicRes.setTopicName(topic)
-                        .setErrorCode(Errors.INVALID_CLUSTER_MIRROR_STATE.code())
-                        .setErrorMessage("Topic '" + topic + "' is already paused");
-                topicResList.add(topicRes);
-                continue;
-            }
-
             records.add(new ApiMessageAndVersion(
                     new MirrorTopicStateChangeRecord()
                             .setTopicName(topic)
