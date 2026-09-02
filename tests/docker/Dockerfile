@@ -56,6 +56,8 @@ ENV TZ="/usr/share/zoneinfo/America/Los_Angeles"
 ARG ducker_creator=default
 LABEL ducker.creator=$ducker_creator
 
+USER root
+
 # Update Linux and install necessary utilities.
 RUN mkdir -p /var/cache/yum && microdnf install -y \
     sudo git nmap-ncat iptables rsync unzip wget curl jq coreutils \
