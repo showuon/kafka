@@ -4574,6 +4574,13 @@ class KafkaApis(val requestChannel: RequestChannel,
     }
     val readMirrorStatesRequest = request.body[ReadMirrorStatesRequest]
     val mirrorName = readMirrorStatesRequest.data().mirrorName()
+
+    if (!mirrorMetadataManager.getConfiguredMirrors().contains(mirrorName)) {
+      requestHelper.sendMaybeThrottle(request, new ReadMirrorStatesResponse(new ReadMirrorStatesResponseData()
+        .setErrorCode(Errors.UNKNOWN_CLUSTER_MIRROR.code).setErrorMessage(Errors.UNKNOWN_CLUSTER_MIRROR.message)))
+      return
+    }
+
     val mirrorPartitions = new util.HashMap[String, util.Set[Integer]]()
     readMirrorStatesRequest.data().topics().forEach(topic => {
       val parts = new util.HashSet[Integer]()
@@ -4601,6 +4608,13 @@ class KafkaApis(val requestChannel: RequestChannel,
 
     val readOffsetsRequest = request.body[ReadMirrorOffsetsRequest]
     val mirrorName = readOffsetsRequest.data().mirrorName()
+
+    if (!mirrorMetadataManager.getConfiguredMirrors().contains(mirrorName)) {
+      requestHelper.sendMaybeThrottle(request, new ReadMirrorOffsetsResponse(new ReadMirrorOffsetsResponseData()
+        .setErrorCode(Errors.UNKNOWN_CLUSTER_MIRROR.code).setErrorMessage(Errors.UNKNOWN_CLUSTER_MIRROR.message)))
+      return
+    }
+
     val offsetInfoMap = replicaManager.getMirrorOffsetInfo(mirrorName)
 
     val responseData = new ReadMirrorOffsetsResponseData()
@@ -4643,6 +4657,13 @@ class KafkaApis(val requestChannel: RequestChannel,
     }
     val writeMirrorStatesRequest = request.body[WriteMirrorStatesRequest]
     val mirrorName = writeMirrorStatesRequest.data().mirrorName()
+
+    if (!mirrorMetadataManager.getConfiguredMirrors().contains(mirrorName)) {
+      requestHelper.sendMaybeThrottle(request, new WriteMirrorStatesResponse(new WriteMirrorStatesResponseData()
+        .setErrorCode(Errors.UNKNOWN_CLUSTER_MIRROR.code).setErrorMessage(Errors.UNKNOWN_CLUSTER_MIRROR.message)))
+      return
+    }
+
     val mirrorState = new util.HashMap[String, util.Set[MirrorStateWrite]]()
     writeMirrorStatesRequest.data().topics().forEach(topic => {
       val topicState = new util.HashSet[MirrorStateWrite]()
