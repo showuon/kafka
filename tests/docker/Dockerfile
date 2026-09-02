@@ -32,7 +32,7 @@ ENV TARGET_PATH="$KAFKA_BIN_DIR/kafka.Kafka"
 RUN mkdir $KAFKA_BIN_DIR
 
 RUN if [ "$KAFKA_MODE" = "native" ]; then \
-      dnf install -y sudo gcc gcc-c++ make zlib-devel curl jq coreutils libffi-devel cmake pkgconfig fuse3-devel && dnf clean all ; \
+      microdnf install -y sudo gcc gcc-c++ make zlib-devel curl jq coreutils libffi-devel cmake pkgconfig fuse3-devel && microdnf clean all ; \
       mkdir graalvm ; \
       curl -L "$GRAALVM_URL" -o graalvm.tar.gz ; \
       tar -xzf graalvm.tar.gz -C graalvm --strip-components=1 ; \
@@ -57,13 +57,13 @@ ARG ducker_creator=default
 LABEL ducker.creator=$ducker_creator
 
 # Update Linux and install necessary utilities.
-RUN dnf install -y \
+RUN microdnf install -y \
     sudo git nmap-ncat iptables rsync unzip wget curl jq coreutils \
     openssh-server openssh-clients net-tools vim python3 python3-pip python3-devel \
     libffi-devel openssl-devel cmake pkgconfig fuse3-devel \
     iperf3 traceroute iproute iputils \
     crypto-policies-scripts gcc gcc-c++ make \
-    && dnf clean all
+    && microdnf clean all
 # Enable FIPS crypto policy
 RUN update-crypto-policies --set FIPS
 # Generate SSH host keys (required for sshd on RHEL-based images)
@@ -153,7 +153,7 @@ ARG KIBOSH_VERSION="8841dd392e6fbf02986e2fb1f1ebf04df344b65a"
 ARG UID="1000"
 
 # Install Kibosh
-RUN dnf install -y fuse3 && dnf clean all
+RUN microdnf install -y fuse3 && microdnf clean all
 RUN cd /opt && git clone -q  https://github.com/confluentinc/kibosh.git && cd "/opt/kibosh" && git reset --hard $KIBOSH_VERSION && mkdir "/opt/kibosh/build" && cd "/opt/kibosh/build" && ../configure && make -j 2
 
 # Set up the ducker user.
