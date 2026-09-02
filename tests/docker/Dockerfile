@@ -61,7 +61,7 @@ USER root
 # Update Linux and install necessary utilities.
 RUN mkdir -p /var/cache/yum && microdnf install -y \
     sudo git nmap-ncat nftables rsync unzip wget curl jq \
-    openssh-server openssh-clients net-tools vim-minimal python3 python3-pip python3-devel \
+    openssh-server openssh-clients net-tools vim-minimal python3 python3-pip python3-devel python3-setuptools \
     libffi-devel openssl-devel cmake pkgconfig fuse3-devel fuse fuse-libs \
     iperf3 iproute iputils \
     crypto-policies-scripts gcc gcc-c++ make \

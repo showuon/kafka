@@ -354,10 +354,7 @@ docker_run() {
     # run iptables inside the container.
     local memory_swappiness_option=""
     local podman_userns_option=""
-    if [[ "${container_runtime}" == "docker" ]]; then
-        # Only add memory-swappiness for Docker (not supported in podman/cgroups v2)
-        memory_swappiness_option="--memory-swappiness=1"
-    elif [[ "${container_runtime}" == "podman" ]]; then
+    if [[ "${container_runtime}" == "podman" ]]; then
         # For Podman, preserve the user ID mapping between host and
         # container to fix permission issues with mounted volumes
         podman_userns_option="--userns=keep-id"
