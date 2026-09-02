@@ -781,6 +781,9 @@ class RequestQuotaTest extends BaseRequestTest {
         case ApiKeys.READ_MIRROR_STATES =>
           new ReadMirrorStatesRequest.Builder(new ReadMirrorStatesRequestData())
 
+        case ApiKeys.READ_MIRROR_OFFSETS =>
+          new ReadMirrorOffsetsRequest.Builder(new ReadMirrorOffsetsRequestData())
+
         case ApiKeys.WRITE_MIRROR_STATES =>
           new WriteMirrorStatesRequest.Builder(new WriteMirrorStatesRequestData())
 

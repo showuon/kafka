@@ -370,6 +370,8 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
                 return WriteMirrorStatesRequest.parse(readable, apiVersion);
             case READ_MIRROR_STATES:
                 return ReadMirrorStatesRequest.parse(readable, apiVersion);
+            case READ_MIRROR_OFFSETS:
+                return ReadMirrorOffsetsRequest.parse(readable, apiVersion);
             case BUMP_LEADER_EPOCHS:
                 return BumpLeaderEpochsRequest.parse(readable, apiVersion);
             case PAUSE_MIRROR_TOPICS:

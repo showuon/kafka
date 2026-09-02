@@ -263,6 +263,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.LIST_CLUSTER_MIRRORS => handleListClusterMirrorsRequest(request)
         case ApiKeys.DESCRIBE_CLUSTER_MIRRORS => handleDescribeClusterMirrorsRequest(request)
         case ApiKeys.READ_MIRROR_STATES => handleReadMirrorStates(request)
+        case ApiKeys.READ_MIRROR_OFFSETS => handleReadMirrorOffsets(request)
         case ApiKeys.WRITE_MIRROR_STATES => handleWriteMirrorStates(request)
         case ApiKeys.BUMP_LEADER_EPOCHS => forwardToController(request)
         case _ => throw new IllegalStateException(s"No handler for request api key ${request.header.apiKey}")
@@ -4583,6 +4584,49 @@ class KafkaApis(val requestChannel: RequestChannel,
     })
     clusterMirrorCoordinator.readState(mirrorName, mirrorPartitions,
       res => requestHelper.sendMaybeThrottle(request, res))
+  }
+
+  def handleReadMirrorOffsets(request: RequestChannel.Request): Unit = {
+    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
+      logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring read mirror offsets request")
+      requestHelper.sendMaybeThrottle(request, new ReadMirrorOffsetsResponse(new ReadMirrorOffsetsResponseData()
+        .setErrorCode(Errors.UNSUPPORTED_VERSION.code).setErrorMessage(Errors.UNSUPPORTED_VERSION.message)))
+      return
+    }
+    if (!authorizeClusterOperation(request, CLUSTER_ACTION)) {
+      requestHelper.sendMaybeThrottle(request, new ReadMirrorOffsetsResponse(new ReadMirrorOffsetsResponseData()
+        .setErrorCode(Errors.CLUSTER_AUTHORIZATION_FAILED.code).setErrorMessage(Errors.CLUSTER_AUTHORIZATION_FAILED.message)))
+      return
+    }
+
+    val readOffsetsRequest = request.body[ReadMirrorOffsetsRequest]
+    val mirrorName = readOffsetsRequest.data().mirrorName()
+    val offsetInfoMap = replicaManager.getMirrorOffsetInfo(mirrorName)
+
+    val responseData = new ReadMirrorOffsetsResponseData()
+    val topicResults = new util.ArrayList[ReadMirrorOffsetsResponseData.TopicResult]()
+
+    readOffsetsRequest.data().topics().forEach { topicData =>
+      val topicResult = new ReadMirrorOffsetsResponseData.TopicResult()
+        .setTopicName(topicData.topicName())
+      val partitionResults = new util.ArrayList[ReadMirrorOffsetsResponseData.PartitionResult]()
+
+      topicData.partitions().forEach { partitionIndex =>
+        val tp = new TopicPartition(topicData.topicName(), partitionIndex)
+        val info = offsetInfoMap.get(tp)
+        val partitionResult = new ReadMirrorOffsetsResponseData.PartitionResult()
+          .setPartitionIndex(partitionIndex)
+          .setSourceOffset(info.map(_.sourceOffset).getOrElse(-1L))
+          .setDestinationOffset(info.map(_.destinationOffset).getOrElse(-1L))
+        partitionResults.add(partitionResult)
+      }
+
+      topicResult.setPartitions(partitionResults)
+      topicResults.add(topicResult)
+    }
+
+    responseData.setTopics(topicResults)
+    requestHelper.sendMaybeThrottle(request, new ReadMirrorOffsetsResponse(responseData))
   }
 
   def handleWriteMirrorStates(request: RequestChannel.Request): Unit = {
