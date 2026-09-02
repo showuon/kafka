@@ -4380,22 +4380,38 @@ class KafkaApis(val requestChannel: RequestChannel,
       return
     }
 
+    val mirrorNameFilter = listMirrorsRequest.data.mirrorNameFilter()
+    val sourceClusterIdFilter = listMirrorsRequest.data.sourceClusterIdFilter()
+    val desiredStateFilter = listMirrorsRequest.data.desiredStateFilter()
+
     val mirrors = new util.ArrayList[ListClusterMirrorsResponseData.ListedMirror]()
-    val authorizedMirrors = mirrorMetadataManager.getConfiguredMirrors().asScala
+    mirrorMetadataManager.getConfiguredMirrors().asScala
       .filter(mirrorName => authHelper.authorize(request.context, DESCRIBE, CLUSTER_MIRROR, mirrorName, logIfDenied = false))
-    authorizedMirrors.foreach(mirrorName => {
-      val sourceClusterId = mirrorMetadataManager.getSourceClusterId(mirrorName)
-      val listedMirror = new ListClusterMirrorsResponseData.ListedMirror()
-        .setMirrorName(mirrorName)
-        .setSourceBootstrap(if (mirrorMetadataManager.getSourceBootstrap(mirrorName) != null)
-          mirrorMetadataManager.getSourceBootstrap(mirrorName) else "")
-        .setSourceClusterId(if (sourceClusterId != null) sourceClusterId else "")
-        .setTopicCount(mirrorMetadataManager.getActiveTopicCount(mirrorName))
-      if (shouldIncludeTopicNames) {
-        listedMirror.setTopicNames(new util.ArrayList[String](mirrorMetadataManager.getConfiguredTopics(mirrorName, true, false)))
-      }
-      mirrors.add(listedMirror)
-    })
+      .filter(mirrorName => mirrorNameFilter == null || mirrorNameFilter.contains(mirrorName))
+      .filter(mirrorName => {
+        if (sourceClusterIdFilter == null) true
+        else {
+          val sid = mirrorMetadataManager.getSourceClusterId(mirrorName)
+          sourceClusterIdFilter.contains(if (sid != null) sid else "")
+        }
+      })
+      .filter(mirrorName => {
+        if (desiredStateFilter == null) true
+        else !java.util.Collections.disjoint(desiredStateFilter, mirrorMetadataManager.getDesiredStates(mirrorName))
+      })
+      .foreach(mirrorName => {
+        val sourceClusterId = mirrorMetadataManager.getSourceClusterId(mirrorName)
+        val listedMirror = new ListClusterMirrorsResponseData.ListedMirror()
+          .setMirrorName(mirrorName)
+          .setSourceBootstrap(if (mirrorMetadataManager.getSourceBootstrap(mirrorName) != null)
+            mirrorMetadataManager.getSourceBootstrap(mirrorName) else "")
+          .setSourceClusterId(if (sourceClusterId != null) sourceClusterId else "")
+          .setTopicCount(mirrorMetadataManager.getActiveTopicCount(mirrorName))
+        if (shouldIncludeTopicNames) {
+          listedMirror.setTopicNames(new util.ArrayList[String](mirrorMetadataManager.getConfiguredTopics(mirrorName, true, false)))
+        }
+        mirrors.add(listedMirror)
+      })
     responseData.setMirrors(mirrors)
     responseData.setErrorCode(Errors.NONE.code)
     requestHelper.sendMaybeThrottle(request, new ListClusterMirrorsResponse(responseData))

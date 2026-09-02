@@ -1392,6 +1392,13 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         return getConfiguredTopics(mirrorName, false, false).size();
     }
 
+    public Set<String> getDesiredStates(String mirrorName) {
+        return metadataImage.topics().topicsById().values().stream()
+                .filter(t -> mirrorName.equals(t.mirrorName()))
+                .map(t -> MirrorPartitionState.fromValue(t.desiredMirrorState()).name())
+                .collect(Collectors.toSet());
+    }
+
     public void validateDeleteMirrorStates(DeleteClusterMirrorRequestData data, Consumer<Optional<Errors>> callback) {
         Set<String> topics = getConfiguredTopics(data.mirrorName(), true, true);
         validateMirrorStates(data.mirrorName(), topics,
