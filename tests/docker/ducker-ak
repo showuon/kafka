@@ -47,7 +47,7 @@ default_num_nodes=14
 
 # The default JDK base image with apt-get support.
 # The openjdk image has been officially deprecated. For more information, see: https://hub.docker.com/_/openjdk
-default_jdk="registry.access.redhat.com/ubi10/openjdk-17:latest"
+default_jdk="registry.access.redhat.com/ubi10/openjdk-21:latest"
 
 # The default ducker-ak image name.
 default_image_name="ducker-ak"
