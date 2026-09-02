@@ -329,9 +329,9 @@ public class ConfigurationControlManager {
                     && existingByName.mirrorState() != MirrorPartitionState.STOPPED.value();
 
             if (topicIdMismatch) {
-                topicRes.setErrorCode(Errors.INCONSISTENT_TOPIC_ID.code())
-                        .setErrorMessage("Topic id " + topic.id() + " in the request doesn't match " +
-                                "the existing topic id " + existingByName.topicId() + " for topic " + topicName);
+                topicRes.setErrorCode(Errors.TOPIC_ALREADY_EXISTS.code())
+                        .setErrorMessage("Topic '" + topicName + "' already exists with id " +
+                                existingByName.topicId() + ", but request provided id " + topic.id());
             }
 
             if (topicNameMismatch) {
