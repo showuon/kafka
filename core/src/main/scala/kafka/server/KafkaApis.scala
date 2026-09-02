@@ -4264,16 +4264,16 @@ class KafkaApis(val requestChannel: RequestChannel,
       return
     }
     val data = request.body[StartMirrorTopicsRequest].data()
-    mirrorMetadataManager.validateStartMirrorStates(data, errOpt => {
-      if (errOpt.isPresent) {
-        requestHelper.sendMaybeThrottle(request, new StartMirrorTopicsResponse(
-          new StartMirrorTopicsResponseData().setErrorCode(errOpt.get().code()).setErrorMessage(errOpt.get().message())))
-      } else {
-        forwardingManager.forwardRequest(request, new StartMirrorTopicsRequest(data, request.header.apiVersion()), {
-          case Some(response) => requestHelper.sendForwardedResponse(request, response)
-          case None => handleInvalidVersionsDuringForwarding(request)
-        })
-      }
+    val validationError = mirrorMetadataManager.validateStartMirrorRequest(
+      data.mirrorName(), data.includePatterns(), data.excludePatterns())
+    if (validationError.isPresent) {
+      requestHelper.sendMaybeThrottle(request, new StartMirrorTopicsResponse(
+        new StartMirrorTopicsResponseData().setErrorCode(validationError.get().code())))
+      return
+    }
+    forwardingManager.forwardRequest(request, new StartMirrorTopicsRequest(data, request.header.apiVersion()), {
+      case Some(response) => requestHelper.sendForwardedResponse(request, response)
+      case None => handleInvalidVersionsDuringForwarding(request)
     })
   }
 

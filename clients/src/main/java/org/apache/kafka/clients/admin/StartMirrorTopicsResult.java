@@ -19,10 +19,10 @@ package org.apache.kafka.clients.admin;
 
 import org.apache.kafka.common.KafkaFuture;
 
-import java.util.Set;
+import java.util.List;
 
 /**
- * The result of the {@link Admin#startMirrorTopics(String, Set, StartMirrorTopicsOptions)} call.
+ * The result of the {@link Admin#startMirrorTopics(String, List, StartMirrorTopicsOptions)} call.
  */
 public class StartMirrorTopicsResult {
     private final KafkaFuture<Void> future;

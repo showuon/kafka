@@ -133,34 +133,18 @@ public abstract class ClusterMirrorCommand {
 
         private void startMirrorTopics(MirrorCommandOptions opts) throws Exception {
             String mirrorName = opts.mirror().get();
-            List<String> topicPatterns = opts.topics();
+            List<String> includePatterns = opts.topics();
             List<String> excludePatterns = opts.exclude();
 
-            var mirrorConfigEntries = describeMirrorConfig(mirrorName);
-            Properties sourceConfig = toProperties(mirrorConfigEntries);
-
-            Set<String> matchingTopicNames;
-            try (Admin sourceAdmin = Admin.create(sourceConfig)) {
-                Set<String> allSourceTopics = sourceAdmin.listTopics().names().get();
-                Pattern includePattern = MirrorUtils.compilePatternList(topicPatterns);
-                Pattern excludePattern = MirrorUtils.compilePatternList(excludePatterns);
-                matchingTopicNames = allSourceTopics.stream()
-                        .filter(t -> includePattern != null && includePattern.matcher(t).matches())
-                        .filter(t -> excludePattern == null || !excludePattern.matcher(t).matches())
-                        .collect(Collectors.toSet());
-            }
-
-            adminClient.startMirrorTopics(mirrorName, matchingTopicNames,
+            adminClient.startMirrorTopics(mirrorName, includePatterns,
                     new StartMirrorTopicsOptions()
-                            .includePatterns(topicPatterns)
                             .excludePatterns(excludePatterns))
                     .all().get();
-            if (!matchingTopicNames.isEmpty()) {
-                System.out.printf("Started %d topic(s) in mirror %s: %s%n",
-                        matchingTopicNames.size(), mirrorName, matchingTopicNames);
-            } else {
-                System.out.printf("No matching topics found yet. Patterns saved to mirror %s for auto-discovery.%n", mirrorName);
+            String msg = String.format("Started topics in mirror %s matching %s", mirrorName, includePatterns);
+            if (!excludePatterns.isEmpty()) {
+                msg += String.format(", excluding %s", excludePatterns);
             }
+            System.out.println(msg);
         }
 
         private void stopMirrorTopics(MirrorCommandOptions opts) throws Exception {

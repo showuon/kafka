@@ -23,24 +23,12 @@ import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.Readable;
 
-import java.util.Set;
-
 public class StartMirrorTopicsRequest extends AbstractRequest {
     public static class Builder extends AbstractRequest.Builder<StartMirrorTopicsRequest> {
-
         private final StartMirrorTopicsRequestData data;
 
         public Builder(StartMirrorTopicsRequestData data) {
             super(ApiKeys.START_MIRROR_TOPICS);
-            this.data = data;
-        }
-
-        public Builder(String mirrorName, Set<String> topics) {
-            super(ApiKeys.START_MIRROR_TOPICS, ApiKeys.START_MIRROR_TOPICS.oldestVersion(),
-                    ApiKeys.START_MIRROR_TOPICS.latestVersion());
-            StartMirrorTopicsRequestData data = new StartMirrorTopicsRequestData();
-            data.setMirrorName(mirrorName);
-            topics.forEach(topic -> data.topics().add(new StartMirrorTopicsRequestData.TopicMetadata().setTopicName(topic)));
             this.data = data;
         }
 
@@ -72,7 +60,6 @@ public class StartMirrorTopicsRequest extends AbstractRequest {
         Errors error = Errors.forException(e);
         StartMirrorTopicsResponseData responseData = new StartMirrorTopicsResponseData();
         responseData.setErrorCode(error.code());
-
         return new StartMirrorTopicsResponse(responseData);
     }
 

@@ -1792,14 +1792,12 @@ public final class QuorumController implements Controller {
     public CompletableFuture<StartMirrorTopicsResponseData> startMirrorTopics(
             ControllerRequestContext context,
             String mirrorName,
-            List<Controller.MirrorTopicMetadata> topics,
             List<String> includePatterns,
-            List<String> excludePatterns,
-            long stateOffset
+            List<String> excludePatterns
     ) {
         return appendWriteEvent("startMirrorTopics", context.deadlineNs(),
-                () -> configurationControl.startMirrorTopics(mirrorName, topics,
-                        includePatterns, excludePatterns, replicationControl, stateOffset));
+                () -> configurationControl.startMirrorTopics(mirrorName,
+                        includePatterns, excludePatterns, replicationControl));
     }
 
     @Override

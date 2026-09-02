@@ -1223,20 +1223,14 @@ public class RequestResponseTest {
     }
 
     private StartMirrorTopicsRequest createStartMirrorTopicsRequest(short version) {
-        StartMirrorTopicsRequestData.TopicMetadataCollection topics = new StartMirrorTopicsRequestData.TopicMetadataCollection();
-        topics.add(new StartMirrorTopicsRequestData.TopicMetadata()
-                .setTopicId(Uuid.randomUuid())
-                .setTopicName("topic")
-        );
         StartMirrorTopicsRequestData data = new StartMirrorTopicsRequestData()
                 .setMirrorName("mirror")
-                .setTopics(topics);
+                .setIncludePatterns(List.of("topic"));
         return new StartMirrorTopicsRequest.Builder(data).build(version);
     }
 
     private StartMirrorTopicsResponse createStartMirrorTopicsResponse() {
-        StartMirrorTopicsResponseData data = new StartMirrorTopicsResponseData()
-                .setTopics(List.of(new StartMirrorTopicsResponseData.TopicResult().setName("topic")));
+        StartMirrorTopicsResponseData data = new StartMirrorTopicsResponseData();
         return new StartMirrorTopicsResponse(data);
     }
 

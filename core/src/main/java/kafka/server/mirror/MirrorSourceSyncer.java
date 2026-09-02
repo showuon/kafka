@@ -35,7 +35,6 @@ import org.apache.kafka.clients.admin.ListGroupsOptions;
 import org.apache.kafka.clients.admin.ListOffsetsResult;
 import org.apache.kafka.clients.admin.ListShareGroupOffsetsSpec;
 import org.apache.kafka.clients.admin.OffsetSpec;
-import org.apache.kafka.clients.admin.StartMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.StopMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
@@ -58,7 +57,6 @@ import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.DeleteAclsRequestData;
 import org.apache.kafka.common.message.DescribeClusterMirrorsRequestData;
 import org.apache.kafka.common.message.IncrementalAlterConfigsRequestData;
-import org.apache.kafka.common.message.StartMirrorTopicsRequestData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.BumpLeaderEpochsRequest;
 import org.apache.kafka.common.requests.CreateAclsRequest;
@@ -125,8 +123,8 @@ class MirrorSourceSyncer {
     private final KafkaConfig brokerConfig;
     private final int nodeId;
 
-    private final MirrorMetadataManager metadataManager;
-    private final NodeToControllerChannelManager channelManager;
+    private final MirrorMetadataManager metadataManager; // access to srcAdmins/dstAdmin
+    private final NodeToControllerChannelManager channelManager; // controller RPCs
     private final MirrorStateCache mirrorCache;
     private final MetadataCache metadataCache;
     private final KafkaScheduler syncScheduler;
@@ -372,6 +370,15 @@ class MirrorSourceSyncer {
         syncScheduler.scheduleOnce("source-topic-state-sync", () -> syncSourceTopicState(mirrorName));
     }
 
+    /** Schedules an immediate topic discovery for the given mirror. */
+    void scheduleDiscovery(String mirrorName) {
+        syncScheduler.scheduleOnce("discover-topics-" + mirrorName, () -> {
+            ClusterMirrorConfig mirrorConfig = ClusterMirrorConfig.fromProperties(
+                    metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName)));
+            discoverTopicsByPattern(mirrorName, mirrorConfig);
+        });
+    }
+
     /**
      * Fetches topics metadata from the source cluster via Admin.describeTopics.
      * Runs on every broker to keep partition leaders, topic creation, topic deletion, and partition counts in sync.
@@ -452,8 +459,9 @@ class MirrorSourceSyncer {
                             .setName(ti.topic())
                             .setNumPartitions(sourcePartitionCount)
                             .setReplicationFactor(CreateTopicsRequest.NO_REPLICATION_FACTOR)
-                            .setMirrorInfo(new CreateTopicsRequestData.MirrorInfo().setTopicId(
-                                    ti.topicId().equals(Uuid.ZERO_UUID) ? Uuid.randomUuid() : ti.topicId())));
+                            .setMirrorInfo(new CreateTopicsRequestData.MirrorInfo()
+                                    .setMirrorName(mirrorName)
+                                    .setTopicId(ti.topicId().equals(Uuid.ZERO_UUID) ? Uuid.randomUuid() : ti.topicId())));
                 }
             } else if (destTopic == null &&
                     metadataManager.metadataImage().topics().getTopic(ti.topic()) != null &&
@@ -476,8 +484,8 @@ class MirrorSourceSyncer {
     }
 
     /**
-     * Creates mirror topics on the destination with the source's TopicId,
-     * preserving topic identity across clusters. Called during periodic metadata
+     * Creates mirror topics on the destination with the source's TopicId, preserving topic
+     * identity across clusters. Called on topic creation and during periodic metadata
      * sync when topics have mirror.name config but don't exist on the destination yet.
      * Once created, onMetadataUpdate will detect them and start the mirror state machine.
      */
@@ -1061,31 +1069,15 @@ class MirrorSourceSyncer {
                 EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED, MirrorPartitionState.STOPPED));
         final Pattern topicsExcludePattern = mirrorConfig.topicsExcludePattern();
 
-        List<StartMirrorTopicsRequestData.TopicMetadata> newTopics;
+        List<String> newTopics;
         try {
             Set<String> allSourceTopics = srcAdmin.listTopics()
                     .names().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
 
-            List<String> candidates = allSourceTopics.stream()
+            newTopics = allSourceTopics.stream()
                     .filter(name -> topicsIncludePattern.matcher(name).matches())
                     .filter(name -> topicsExcludePattern == null || !topicsExcludePattern.matcher(name).matches())
                     .filter(name -> !configuredTopics.contains(name))
-                    .toList();
-
-            if (candidates.isEmpty()) {
-                return;
-            }
-
-            Map<String, TopicDescription> descriptions = srcAdmin.describeTopics(candidates)
-                    .allTopicNames().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
-
-            cacheSourceLeaders(mirrorName, descriptions.values());
-
-            newTopics = descriptions.values().stream()
-                    .map(td -> new StartMirrorTopicsRequestData.TopicMetadata()
-                            .setTopicName(td.name())
-                            .setTopicId(td.topicId())
-                            .setNumPartitions(td.partitions().size()))
                     .toList();
         } catch (Exception e) {
             log.warn("Failed to discover topics by pattern for mirror {}", mirrorName, e);
@@ -1097,17 +1089,34 @@ class MirrorSourceSyncer {
         }
 
         log.info("Discovered {} new topic(s) matching mirror.topics.include pattern for mirror {}: {}",
-                newTopics.size(), mirrorName, newTopics.stream().map(StartMirrorTopicsRequestData.TopicMetadata::topicName).toList());
+                newTopics.size(), mirrorName, newTopics);
 
-        // TODO: creation failures from auto-discovery are silently lost here (fire-and-forget).
-        //  Add per-topic status tracking so describeMirror can surface failed topics to users.
+        // Describe discovered topics on source, then create them on destination.
+        // CreateTopicsRequest carries mirrorName in MirrorInfo so the controller
+        // atomically creates the topic and sets desired state to MIRRORING.
         try {
-            metadataManager.getOrCreateDestAdmin().startMirrorTopics(
-                    mirrorName,
-                    newTopics.stream().map(StartMirrorTopicsRequestData.TopicMetadata::topicName).collect(Collectors.toSet()),
-                    new StartMirrorTopicsOptions()).all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
+            Map<String, TopicDescription> descriptions = srcAdmin.describeTopics(newTopics)
+                    .allTopicNames().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
+
+            List<CreateTopicsRequestData.CreatableTopic> creatableTopics = new ArrayList<>();
+            for (TopicDescription td : descriptions.values()) {
+                Uuid topicId = td.topicId().equals(Uuid.ZERO_UUID) ? Uuid.randomUuid() : td.topicId();
+                if (mirrorCache.addPendingTopicCreation(td.name())) {
+                    creatableTopics.add(new CreateTopicsRequestData.CreatableTopic()
+                            .setName(td.name())
+                            .setNumPartitions(td.partitions().size())
+                            .setReplicationFactor(CreateTopicsRequest.NO_REPLICATION_FACTOR)
+                            .setMirrorInfo(new CreateTopicsRequestData.MirrorInfo()
+                                    .setMirrorName(mirrorName)
+                                    .setTopicId(topicId)));
+                }
+            }
+
+            if (!creatableTopics.isEmpty()) {
+                createMirrorTopics(creatableTopics);
+            }
         } catch (Exception e) {
-            log.warn("Failed to start discovered topics for mirror {}: {}", mirrorName, e.getMessage());
+            log.warn("Failed to create discovered topics for mirror {}", mirrorName, e);
         }
     }
 

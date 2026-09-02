@@ -309,7 +309,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
-import java.util.Properties;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
@@ -4904,14 +4903,11 @@ public class KafkaAdminClient extends AdminClient {
     }
 
     @Override
-    public StartMirrorTopicsResult startMirrorTopics(String mirrorName, Set<String> topics, StartMirrorTopicsOptions options) {
+    public StartMirrorTopicsResult startMirrorTopics(String mirrorName, List<String> includePatterns, StartMirrorTopicsOptions options) {
         final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
 
-        validateRegexPatterns(options.includePatterns());
+        validateRegexPatterns(includePatterns);
         validateRegexPatterns(options.excludePatterns());
-
-        final Map<String, StartMirrorTopicsRequestData.TopicMetadata> topicMetadata =
-                fetchSourceTopicMetadata(mirrorName, topics);
 
         final long now = time.milliseconds();
         final Call call = new Call("startMirrorTopics", calcDeadlineMs(now, options.timeoutMs()),
@@ -4921,16 +4917,9 @@ public class KafkaAdminClient extends AdminClient {
             StartMirrorTopicsRequest.Builder createRequest(int timeoutMs) {
                 StartMirrorTopicsRequestData data = new StartMirrorTopicsRequestData();
                 data.setMirrorName(mirrorName);
-                data.setTimeoutMs(timeoutMs);
-                topics.forEach(t -> {
-                    StartMirrorTopicsRequestData.TopicMetadata existing = topicMetadata.get(t);
-                    // Add operation mutates the value of prev and next and if we do not duplicate
-                    // the add operation will be ignored on a retry as prev and next != INVALID_INDEX
-                    data.topics().add(existing != null ? existing.duplicate()
-                            : new StartMirrorTopicsRequestData.TopicMetadata().setTopicName(t));
-                });
-                data.setIncludePatterns(options.includePatterns());
+                data.setIncludePatterns(includePatterns);
                 data.setExcludePatterns(options.excludePatterns());
+                data.setTimeoutMs(timeoutMs);
                 return new StartMirrorTopicsRequest.Builder(data);
             }
 
@@ -4948,7 +4937,7 @@ public class KafkaAdminClient extends AdminClient {
                             log.warn("Failed to start mirror topics, retrying", error.exception());
                             throw error.exception();
                         }
-                        log.error("Mirror topics addition failed: {}", topics, error.exception());
+                        log.error("Mirror topics start failed: {}", includePatterns, error.exception());
                         future.completeExceptionally(error.exception());
                         break;
                 }
@@ -4961,41 +4950,6 @@ public class KafkaAdminClient extends AdminClient {
         };
         runnable.call(call, now);
         return new StartMirrorTopicsResult(future);
-    }
-
-    private Map<String, StartMirrorTopicsRequestData.TopicMetadata> fetchSourceTopicMetadata(
-            String mirrorName, Set<String> topics) {
-        if (topics.isEmpty()) {
-            return Map.of();
-        }
-        try {
-            ConfigResource mirrorResource = new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName);
-            var configResult = describeConfigs(List.of(mirrorResource)).all().get();
-            var mirrorConfig = configResult.get(mirrorResource);
-            if (mirrorConfig == null || mirrorConfig.entries().isEmpty()) {
-                throw new IllegalStateException("Mirror '" + mirrorName + "' not found or has no configuration");
-            }
-
-            Properties sourceProps = new Properties();
-            for (var entry : mirrorConfig.entries()) {
-                sourceProps.put(entry.name(), entry.value());
-            }
-
-            try (Admin sourceAdmin = Admin.create(sourceProps)) {
-                var descriptions = sourceAdmin.describeTopics(topics).allTopicNames().get();
-                Map<String, StartMirrorTopicsRequestData.TopicMetadata> topicMetadata = new HashMap<>();
-                descriptions.forEach((name, desc) ->
-                        topicMetadata.put(name, new StartMirrorTopicsRequestData.TopicMetadata()
-                                .setTopicName(name)
-                                .setTopicId(desc.topicId())
-                                .setNumPartitions(desc.partitions().size())));
-                return topicMetadata;
-            }
-        } catch (Exception e) {
-            log.warn("Failed to fetch source topic metadata for mirror '{}', " +
-                    "topics will be created at the next metadata refresh", mirrorName, e);
-            return Map.of();
-        }
     }
 
     @Override

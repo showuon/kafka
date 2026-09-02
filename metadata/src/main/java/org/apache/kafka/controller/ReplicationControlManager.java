@@ -687,10 +687,14 @@ public class ReplicationControlManager {
         // Check the topic names.
         validateNewTopicNames(topicErrors, request.topics(), topicsWithCollisionChars);
 
-        // Identify topics that already exist and mark them with the appropriate error
+        // Identify topics that already exist and mark them with the appropriate error.
+        // For mirror topics with mirrorName, set the desired state instead of failing.
         request.topics().stream().filter(creatableTopic -> topicsByName.containsKey(creatableTopic.name()))
-                .forEach(t -> topicErrors.put(t.name(), new ApiError(Errors.TOPIC_ALREADY_EXISTS,
-                    "Topic '" + t.name() + "' already exists.")));
+                .forEach(t -> {
+                    maybeEmitMirrorStateRecord(t, records);
+                    topicErrors.put(t.name(), new ApiError(Errors.TOPIC_ALREADY_EXISTS,
+                        "Topic '" + t.name() + "' already exists."));
+                });
 
         // Verify that the configurations for the new topics are OK, and figure out what
         // configurations should be created.
@@ -928,7 +932,21 @@ public class ReplicationControlManager {
                 setEligibleLeaderReplicasEnabled(featureControl.isElrFeatureEnabled()).
                 build()));
         }
+
+        maybeEmitMirrorStateRecord(topic, records);
+
         return ApiError.NONE;
+    }
+
+    private void maybeEmitMirrorStateRecord(CreatableTopic topic, List<ApiMessageAndVersion> records) {
+        if (topic.mirrorInfo() != null && topic.mirrorInfo().mirrorName() != null) {
+            records.add(new ApiMessageAndVersion(
+                    new MirrorTopicStateChangeRecord()
+                            .setTopicName(topic.name())
+                            .setMirrorName(topic.mirrorInfo().mirrorName())
+                            .setDesiredState(MirrorPartitionState.MIRRORING.value()),
+                    (short) 0));
+        }
     }
 
     /**
@@ -1251,6 +1269,10 @@ public class ReplicationControlManager {
     TopicControlInfo getTopicByName(String topicName) {
         Uuid id = topicsByName.get(topicName);
         return id != null ? topics.get(id) : null;
+    }
+
+    Set<String> getTopicNames() {
+        return Set.copyOf(topicsByName.keySet());
     }
 
     Set<TopicControlInfo> getMirrorTopics() {

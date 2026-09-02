@@ -1678,15 +1678,15 @@ public interface Admin extends AutoCloseable {
      * Start mirroring for the specified topics.
      *
      * When topics are started in a mirror, they become read-only on the destination cluster and start
-     * replicating data from the source cluster. This operation marks the specified topics with the
-     * mirror name, preventing local writes and enabling the MirrorFetcherThread to begin replication.
+     * replicating data from the source cluster. Include patterns are added to topics.include config,
+     * and matching topics are discovered and mirrored at the next metadata refresh.
      *
      * @param mirrorName The cluster mirror name
-     * @param topics Set of topic names to start mirroring
+     * @param includePatterns Regex patterns to add to topics.include
      * @param options Options for the start mirror topics operation
-     * @return The StartMirrorTopicsResult containing futures for each topic
+     * @return The StartMirrorTopicsResult
      */
-    StartMirrorTopicsResult startMirrorTopics(String mirrorName, Set<String> topics, StartMirrorTopicsOptions options);
+    StartMirrorTopicsResult startMirrorTopics(String mirrorName, List<String> includePatterns, StartMirrorTopicsOptions options);
 
     /**
      * Stop mirroring for the specified topics.

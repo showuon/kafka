@@ -41,7 +41,6 @@ import org.apache.kafka.common.message.MirrorPidResetRecord;
 import org.apache.kafka.common.message.PauseMirrorTopicsRequestData;
 import org.apache.kafka.common.message.ReadMirrorStatesRequestData;
 import org.apache.kafka.common.message.ResumeMirrorTopicsRequestData;
-import org.apache.kafka.common.message.StartMirrorTopicsRequestData;
 import org.apache.kafka.common.message.StopMirrorTopicsRequestData;
 import org.apache.kafka.common.message.WriteMirrorStatesRequestData;
 import org.apache.kafka.common.metrics.Metrics;
@@ -65,7 +64,6 @@ import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService.MirrorStateWrite;
 import org.apache.kafka.coordinator.mirror.CoreBridge;
 import org.apache.kafka.coordinator.mirror.MirrorPartitionKey;
-import org.apache.kafka.image.ConfigurationDelta;
 import org.apache.kafka.image.LocalReplicaChanges;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
@@ -79,10 +77,12 @@ import org.apache.kafka.server.common.NodeToControllerChannelManager;
 import org.apache.kafka.server.common.RequestLocal;
 import org.apache.kafka.server.metrics.KafkaMetricsGroup;
 import org.apache.kafka.server.util.KafkaScheduler;
+import org.apache.kafka.server.util.MirrorUtils;
 import org.apache.kafka.server.util.RequestAndCompletionHandler;
 import org.apache.kafka.storage.internals.log.AppendOrigin;
 import org.apache.kafka.storage.internals.log.UnifiedLog;
 
+import com.google.re2j.PatternSyntaxException;
 import com.yammer.metrics.core.Meter;
 
 import org.slf4j.Logger;
@@ -124,7 +124,7 @@ import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
 @SuppressWarnings({"ClassDataAbstractionCoupling", "ClassFanOutComplexity"})
 public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     // Mirror config keys that do not affect source connections (no reconnect needed)
-    private static final Set<String> SKIP_RECONNECT_MIRROR_CONFIGS = Set.of(
+    private static final Set<String> NON_CONNECTION_CONFIGS = Set.of(
             ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG, ClusterMirrorConfig.TOPICS_EXCLUDE_CONFIG,
             ClusterMirrorConfig.GROUPS_INCLUDE_CONFIG, ClusterMirrorConfig.GROUPS_EXCLUDE_CONFIG,
             ClusterMirrorConfig.ACLS_INCLUDE_CONFIG);
@@ -140,22 +140,22 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     private final String name;
     private final int nodeId;
 
-    private final NodeToControllerChannelManager channelManager;
+    private final NodeToControllerChannelManager channelManager; // controller RPCs
+    private volatile MirrorStateSender mirrorStateSender; // r/w states to remote coord
+    private volatile Map<String, Admin> srcAdmins; // per-mirror admin clients for source RPCs
+    private volatile Admin dstAdmin; // admin client for destination RPCs
+
     private final Supplier<ReplicaManager> replicaManagerSupplier;
     private volatile MetadataImage metadataImage = MetadataImage.EMPTY;
     private final MetadataCache metadataCache;
+    private volatile MirrorSourceSyncer sourceSyncer;
     private final MirrorStateCache mirrorCache;
     private final KafkaScheduler sharedScheduler;
     private final Metrics metrics;
     private final Time time;
 
-    private volatile MirrorSourceSyncer sourceSyncer;
-    private volatile MirrorStateSender mirrorStateSender;
-    private volatile Map<String, Admin> srcAdmins;
-    private volatile Admin dstAdmin;
-
-    private Optional<CoreBridge.CoordinatorWriter> coordinatorWriter = Optional.empty();
-    private Optional<CoreBridge.CoordinatorReader> coordinatorReader = Optional.empty();
+    private Optional<CoreBridge.CoordinatorWriter> coordinatorWriter = Optional.empty(); // local coord writes
+    private Optional<CoreBridge.CoordinatorReader> coordinatorReader = Optional.empty(); // local coord reads
     private Optional<Function<MirrorPartitionKey, Integer>> coordPartFinder = Optional.empty();
 
     private final KafkaMetricsGroup metricsGroup;
@@ -368,8 +368,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
         this.metadataImage = newImage;
 
+        Set<String> mirrorsToReconnect = handleMirrorConfigDeltas(delta, newImage);
         Set<TopicPartition> partitionsToTransition =
-                collectPartitionsForStateTransition(delta, newImage);
+                collectPartitionsToTransition(delta, newImage, mirrorsToReconnect);
 
         if (partitionsToTransition.isEmpty()) {
             return;
@@ -392,14 +393,64 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      *   3. mirror connection config changes (teardown + reconnect)
      *   4. watched topic config changes (e.g. remote.storage.enable)
      */
-    private Set<TopicPartition> collectPartitionsForStateTransition(MetadataDelta delta, MetadataImage image) {
-        Set<TopicPartition> result = new HashSet<>();
+    private Set<String> handleMirrorConfigDeltas(MetadataDelta delta, MetadataImage newImage) {
+        Set<String> mirrorsToReconnect = new HashSet<>();
+        if (delta.configsDelta() != null) {
+            delta.configsDelta().changes().entrySet().stream()
+                    .filter(e -> e.getKey().type() == ConfigResource.Type.CLUSTER_MIRROR)
+                    .forEach(e -> {
+                        String mirrorName = e.getKey().name();
+                        boolean mirrorDeleted = newImage.configs().configProperties(e.getKey()).isEmpty();
+                        if (mirrorDeleted) {
+                            log.info("Mirror '{}' has been deleted. Writing tombstone records.", mirrorName);
+                            tombstoneMirror(mirrorName);
+                            metricsGroup.removeMetric("MirrorTopicCount", Map.of("mirrorName", mirrorName));
+                        }
+
+                        boolean connectionConfigChanged = e.getValue().changes().keySet().stream()
+                                .anyMatch(key -> !NON_CONNECTION_CONFIGS.contains(key));
+                        if (connectionConfigChanged) {
+                            log.info("Mirror '{}' has connection config changed. Recreating connections.", mirrorName);
+                        }
+                        if (connectionConfigChanged || mirrorDeleted) {
+                            mirrorCache.removeSourceLeaders(mirrorName);
+                            closeAndRemoveSourceAdmin(mirrorName);
+                            var mirrorFetcherManager = replicaManagerSupplier.get().mirrorFetcherManager();
+                            mirrorFetcherManager.removeFetchersForMirror(mirrorName);
+                            mirrorFetcherManager.shutdownIdleFetcherThreads();
+                            if (!mirrorDeleted) {
+                                mirrorsToReconnect.add(mirrorName);
+                            }
+                        }
+
+                        // Trigger immediate topic discovery when include patterns change
+                        boolean includePatternsChanged = e.getValue().changes().containsKey(
+                                ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG);
+                        if (includePatternsChanged && !mirrorDeleted && sourceSyncer != null) {
+                            sourceSyncer.scheduleDiscovery(mirrorName);
+                        }
+                    });
+        }
+        return mirrorsToReconnect;
+    }
+
+    /**
+     * Collects mirror partitions that need a state transition from three sources:
+     * partitions where this broker gained leadership, partitions whose desired
+     * mirror state changed in the metadata delta, and MIRRORING partitions of
+     * mirrors whose source connection was recreated. As a side effect, clears
+     * cached state for partitions where this broker lost leadership.
+     */
+    private Set<TopicPartition> collectPartitionsToTransition(MetadataDelta delta, MetadataImage image,
+                                                              Set<String> mirrorsToReconnect) {
+        Set<TopicPartition> partitionsToTransition = new HashSet<>();
         Set<String> configuredMirrors = getConfiguredMirrors();
 
-        collectFromTopicsDelta(delta, image, configuredMirrors, result);
-        collectFromConfigsDelta(delta, image, configuredMirrors, result);
+        collectFromTopicsDelta(delta, image, configuredMirrors, partitionsToTransition);
+        collectFromWatchedTopicConfigs(delta, image, configuredMirrors, partitionsToTransition);
+        collectReconnectPartitions(mirrorsToReconnect, partitionsToTransition);
 
-        return result;
+        return partitionsToTransition;
     }
 
     private void collectFromTopicsDelta(MetadataDelta delta, MetadataImage image,
@@ -446,69 +497,33 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         });
     }
 
-    private void collectFromConfigsDelta(MetadataDelta delta, MetadataImage image,
-                                         Set<String> configuredMirrors, Set<TopicPartition> result) {
+    private void collectFromWatchedTopicConfigs(MetadataDelta delta, MetadataImage image,
+                                                Set<String> configuredMirrors, Set<TopicPartition> result) {
         if (delta.configsDelta() == null) {
             return;
         }
 
-        Set<String> mirrorsToReconnect = new HashSet<>();
-
-        for (var entry : delta.configsDelta().changes().entrySet()) {
-            ConfigResource resource = entry.getKey();
-
-            // [3] Mirror config changed or deleted: tear down connections
-            if (resource.type() == ConfigResource.Type.CLUSTER_MIRROR) {
-                handleMirrorConfigChange(resource, entry.getValue(), image)
-                        .ifPresent(mirrorsToReconnect::add);
-
-            // [4] Topic config in WATCHED_TOPIC_CONFIGS changed
-            } else if (resource.type() == ConfigResource.Type.TOPIC
-                    && entry.getValue().changes().keySet().stream().anyMatch(WATCHED_TOPIC_CONFIGS::contains)) {
+        delta.configsDelta().changes().forEach((resource, configDelta) -> {
+            if (resource.type() == ConfigResource.Type.TOPIC
+                    && configDelta.changes().keySet().stream().anyMatch(WATCHED_TOPIC_CONFIGS::contains)) {
                 addMirrorLeaderPartitions(image.topics().getTopic(resource.name()), configuredMirrors, result);
             }
-        }
-
-        // Re-evaluate all MIRRORING partitions of mirrors whose connection was recreated
-        if (!mirrorsToReconnect.isEmpty()) {
-            log.info("Re-evaluating MIRRORING partitions for reconnected mirrors: {}", mirrorsToReconnect);
-            mirrorCache.partitionKeys().forEach(key -> {
-                MirrorPartition cacheEntry = mirrorCache.getPartition(key);
-                if (cacheEntry != null && mirrorsToReconnect.contains(key.mirrorName())
-                        && cacheEntry.state() == MirrorPartitionState.MIRRORING) {
-                    metadataCache.getTopicName(key.topicId()).ifPresent(topicName ->
-                            result.add(new TopicPartition(topicName, key.partition())));
-                }
-            });
-        }
+        });
     }
 
-    // returns the mirror name if it needs reconnection, empty if deleted or unchanged
-    private Optional<String> handleMirrorConfigChange(ConfigResource resource,
-                                                      ConfigurationDelta configDelta,
-                                                      MetadataImage image) {
-        String mirrorName = resource.name();
-        boolean mirrorDeleted = image.configs().configProperties(resource).isEmpty();
-        if (mirrorDeleted) {
-            log.info("Mirror '{}' has been deleted. Writing tombstone records.", mirrorName);
-            tombstoneMirror(mirrorName);
-            metricsGroup.removeMetric("MirrorTopicCount", Map.of("mirrorName", mirrorName));
+    private void collectReconnectPartitions(Set<String> reconnectedMirrors, Set<TopicPartition> result) {
+        if (reconnectedMirrors.isEmpty()) {
+            return;
         }
-
-        boolean connectionConfigChanged = configDelta.changes().keySet().stream()
-                .anyMatch(key -> !SKIP_RECONNECT_MIRROR_CONFIGS.contains(key));
-        if (connectionConfigChanged) {
-            log.info("Mirror '{}' has connection config changed. Recreating connections.", mirrorName);
-        }
-        if (connectionConfigChanged || mirrorDeleted) {
-            mirrorCache.removeSourceLeaders(mirrorName);
-            closeAndRemoveSourceAdmin(mirrorName);
-            var mirrorFetcherManager = replicaManagerSupplier.get().mirrorFetcherManager();
-            mirrorFetcherManager.removeFetchersForMirror(mirrorName);
-            mirrorFetcherManager.shutdownIdleFetcherThreads();
-        }
-
-        return (connectionConfigChanged && !mirrorDeleted) ? Optional.of(mirrorName) : Optional.empty();
+        log.info("Re-evaluating MIRRORING partitions for reconnected mirrors: {}", reconnectedMirrors);
+        mirrorCache.partitionKeys().forEach(key -> {
+            MirrorPartition entry = mirrorCache.getPartition(key);
+            if (entry != null && reconnectedMirrors.contains(key.mirrorName())
+                    && entry.state() == MirrorPartitionState.MIRRORING) {
+                metadataCache.getTopicName(key.topicId()).ifPresent(topicName ->
+                        result.add(new TopicPartition(topicName, key.partition())));
+            }
+        });
     }
 
     private void addMirrorLeaderPartitions(TopicImage topicImage,
@@ -1427,19 +1442,24 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 .collect(Collectors.toSet());
     }
 
+    public Optional<Errors> validateStartMirrorRequest(String mirrorName, List<String> includePatterns, List<String> excludePatterns) {
+        if (!getConfiguredMirrors().contains(mirrorName)) {
+            return Optional.of(Errors.UNKNOWN_CLUSTER_MIRROR);
+        }
+        try {
+            MirrorUtils.validatePatterns(includePatterns);
+            MirrorUtils.validatePatterns(excludePatterns);
+        } catch (PatternSyntaxException e) {
+            return Optional.of(Errors.INVALID_REGULAR_EXPRESSION);
+        }
+        return Optional.empty();
+    }
+
     public void validateDeleteMirrorStates(DeleteClusterMirrorRequestData data, Consumer<Optional<Errors>> callback) {
         Set<String> topics = getConfiguredTopics(data.mirrorName(),
                 EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED, MirrorPartitionState.STOPPED));
         validateMirrorStates(data.mirrorName(), topics,
                 Set.of(MirrorPartitionState.STOPPED), false,
-                data::setStateOffset, callback);
-    }
-
-    public void validateStartMirrorStates(StartMirrorTopicsRequestData data, Consumer<Optional<Errors>> callback) {
-        Set<String> topics = data.topics().stream()
-                .map(StartMirrorTopicsRequestData.TopicMetadata::topicName).collect(Collectors.toSet());
-        validateMirrorStates(data.mirrorName(), topics,
-                Set.of(MirrorPartitionState.STOPPED, MirrorPartitionState.UNKNOWN), true,
                 data::setStateOffset, callback);
     }
 

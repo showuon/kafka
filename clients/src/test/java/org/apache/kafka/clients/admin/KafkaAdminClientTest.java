@@ -11732,7 +11732,7 @@ public class KafkaAdminClientTest {
                 Map.of(CommonClientConfigs.SOURCE_CLUSTER_ID_CONFIG, "source-cluster-id"),
                 new CreateClusterMirrorOptions()).all().get();
             env.adminClient().deleteClusterMirror("mirror", new DeleteClusterMirrorOptions()).all().get();
-            env.adminClient().startMirrorTopics("mirror", emptySet(),
+            env.adminClient().startMirrorTopics("mirror", emptyList(),
                     new StartMirrorTopicsOptions()).all().get();
             env.adminClient().stopMirrorTopics("mirror", singleton("topic1"),
                     new StopMirrorTopicsOptions()).all().get();
@@ -11764,7 +11764,7 @@ public class KafkaAdminClientTest {
                 new CreateClusterMirrorOptions()).all();
             KafkaFuture<Void> delete = env.adminClient().deleteClusterMirror("mirror",
                     new DeleteClusterMirrorOptions()).all();
-            KafkaFuture<Void> start = env.adminClient().startMirrorTopics("mirror", emptySet(),
+            KafkaFuture<Void> start = env.adminClient().startMirrorTopics("mirror", emptyList(),
                     new StartMirrorTopicsOptions()).all();
             KafkaFuture<Void> stop = env.adminClient().stopMirrorTopics("mirror", singleton("topic1"),
                     new StopMirrorTopicsOptions()).all();

@@ -1229,20 +1229,11 @@ class ControllerApis(
     if (!request.isForwarded)
       throw new InvalidRequestException("This request must be sent to a broker, not directly to the controller")
 
-    val wireTopics = startRequest.data().topics()
-    val unauthorizedTopics = wireTopics.asScala.map(_.topicName()).filterNot(topic =>
-      authHelper.authorize(request.context, ALTER_CONFIGS, TOPIC, topic, logIfDenied = false)).toSet
-    if (unauthorizedTopics.nonEmpty)
-      throw new TopicAuthorizationException(unauthorizedTopics.asJava)
-    val topics = wireTopics.asScala.map(t =>
-      new Controller.MirrorTopicMetadata(t.topicName(), t.topicId(), t.numPartitions())).toList.asJava
     val includePatterns = startRequest.data().includePatterns()
     val excludePatterns = startRequest.data().excludePatterns()
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       requestTimeoutMsToDeadlineNs(time, startRequest.data().timeoutMs()))
-    val stateOffset = startRequest.data().stateOffset()
-    controller.startMirrorTopics(context, mirrorName, topics,
-        includePatterns, excludePatterns, stateOffset)
+    controller.startMirrorTopics(context, mirrorName, includePatterns, excludePatterns)
       .handle[Unit] { (response, exception) =>
         if (exception != null) {
           requestHelper.handleError(request, exception)

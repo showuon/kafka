@@ -174,10 +174,8 @@ public interface Controller extends AclMutator, AutoCloseable {
     CompletableFuture<StartMirrorTopicsResponseData> startMirrorTopics(
             ControllerRequestContext context,
             String mirrorName,
-            List<MirrorTopicMetadata> topics,
             List<String> includePatterns,
-            List<String> excludePatterns,
-            long stateOffset
+            List<String> excludePatterns
     );
 
     CompletableFuture<StopMirrorTopicsResponseData> stopMirrorTopics(
@@ -496,6 +494,4 @@ public interface Controller extends AclMutator, AutoCloseable {
      * Blocks until we have shut down and freed all resources.
      */
     void close() throws InterruptedException;
-
-    record MirrorTopicMetadata(String name, Uuid id, int numPartitions) { }
 }

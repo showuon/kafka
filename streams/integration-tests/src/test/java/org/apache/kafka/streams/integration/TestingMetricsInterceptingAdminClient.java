@@ -434,8 +434,8 @@ public class TestingMetricsInterceptingAdminClient extends AdminClient {
     }
 
     @Override
-    public StartMirrorTopicsResult startMirrorTopics(final String mirrorName, final Set<String> topics, final StartMirrorTopicsOptions options) {
-        return adminDelegate.startMirrorTopics(mirrorName, topics, options);
+    public StartMirrorTopicsResult startMirrorTopics(final String mirrorName, final List<String> includePatterns, final StartMirrorTopicsOptions options) {
+        return adminDelegate.startMirrorTopics(mirrorName, includePatterns, options);
     }
 
     @Override

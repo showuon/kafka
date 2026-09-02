@@ -1378,7 +1378,7 @@ public class MockAdminClient extends AdminClient {
     }
 
     @Override
-    public StartMirrorTopicsResult startMirrorTopics(String mirrorName, Set<String> topics, StartMirrorTopicsOptions options) {
+    public StartMirrorTopicsResult startMirrorTopics(String mirrorName, List<String> includePatterns, StartMirrorTopicsOptions options) {
         throw new UnsupportedOperationException("Not implemented yet");
     }
 

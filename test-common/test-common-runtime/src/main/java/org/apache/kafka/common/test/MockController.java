@@ -134,10 +134,8 @@ public class MockController implements Controller {
     public CompletableFuture<StartMirrorTopicsResponseData> startMirrorTopics(
             ControllerRequestContext context,
             String mirrorName,
-            List<Controller.MirrorTopicMetadata> topics,
             List<String> includePatterns,
-            List<String> excludePatterns,
-            long stateOffset
+            List<String> excludePatterns
     ) {
         throw new UnsupportedOperationException();
     }
