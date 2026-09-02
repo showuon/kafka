@@ -23,7 +23,6 @@ import org.apache.kafka.common.errors.BrokerNotAvailableException;
 import org.apache.kafka.common.errors.ClusterAuthorizationException;
 import org.apache.kafka.common.errors.ClusterMirrorAlreadyExistsException;
 import org.apache.kafka.common.errors.ClusterMirrorAuthorizationException;
-import org.apache.kafka.common.errors.ClusterMirrorNotEmptyException;
 import org.apache.kafka.common.errors.ConcurrentTransactionsException;
 import org.apache.kafka.common.errors.ControllerMovedException;
 import org.apache.kafka.common.errors.CoordinatorLoadInProgressException;
@@ -89,10 +88,6 @@ import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.errors.ListenerNotFoundException;
 import org.apache.kafka.common.errors.LogDirNotFoundException;
 import org.apache.kafka.common.errors.MemberIdRequiredException;
-import org.apache.kafka.common.errors.MirrorTopicAlreadyPausedException;
-import org.apache.kafka.common.errors.MirrorTopicAlreadyStoppedException;
-import org.apache.kafka.common.errors.MirrorTopicNotPausedException;
-import org.apache.kafka.common.errors.MirrorTopicNotStoppedException;
 import org.apache.kafka.common.errors.MismatchedEndpointTypeException;
 import org.apache.kafka.common.errors.NetworkException;
 import org.apache.kafka.common.errors.NewLeaderElectedException;
@@ -436,13 +431,8 @@ public enum Errors {
     UNKNOWN_CLUSTER_MIRROR(137, "The cluster mirror does not exist.", UnknownClusterMirrorException::new),
     TOPIC_ALREADY_IN_CLUSTER_MIRROR(138, "The topic is already assigned to a cluster mirror.", TopicAlreadyInClusterMirrorException::new),
     TOPIC_NOT_IN_CLUSTER_MIRROR(139, "The topic does not belong to the specified cluster mirror.", TopicNotInClusterMirrorException::new),
-    MIRROR_TOPIC_ALREADY_PAUSED(140, "The mirror topic is already paused.", MirrorTopicAlreadyPausedException::new),
-    MIRROR_TOPIC_NOT_PAUSED(141, "The mirror topic is not paused.", MirrorTopicNotPausedException::new),
-    MIRROR_TOPIC_ALREADY_STOPPED(142, "The mirror topic is alredy stopped.", MirrorTopicAlreadyStoppedException::new),
-    CLUSTER_MIRROR_NOT_EMPTY(143, "The cluster mirror still has active or non-stopped topics.", ClusterMirrorNotEmptyException::new),
     CLUSTER_MIRROR_AUTHORIZATION_FAILED(144, "Cluster mirror authorization failed.", ClusterMirrorAuthorizationException::new),
-    INVALID_CLUSTER_MIRROR_STATES(145, "Cluster mirror partition states are not in the expected states.", InvalidMirrorStateException::new),
-    MIRROR_TOPIC_NOT_STOPPED(146, "The mirror topic is not in stopped state.", MirrorTopicNotStoppedException::new);
+    INVALID_CLUSTER_MIRROR_STATE(145, "Invalid cluster mirror state.", InvalidMirrorStateException::new);
 
     private static final Logger log = LoggerFactory.getLogger(Errors.class);
 

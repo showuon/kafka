@@ -277,7 +277,7 @@ public class ConfigurationControlManager {
 
         var errorTopicInfo = checkForConcurrentStateChange(stateOffset, replicationControl, mirrorName, topicNames);
         if (errorTopicInfo.isPresent()) {
-            data.setErrorCode(Errors.INVALID_CLUSTER_MIRROR_STATES.code());
+            data.setErrorCode(Errors.INVALID_CLUSTER_MIRROR_STATE.code());
             data.setErrorMessage("Mirror state for topic '" + errorTopicInfo.get().name()
                     + "' changed after broker validated partition states (broker offset: "
                     + stateOffset + ", last change offset: "
@@ -374,8 +374,8 @@ public class ConfigurationControlManager {
                 topicResList.add(topicRes);
                 continue;
             } else if (nonStoppedState) {
-                topicRes.setErrorCode(Errors.MIRROR_TOPIC_NOT_STOPPED.code())
-                        .setErrorMessage("Topic '" + topicName + "' is in "
+                topicRes.setErrorCode(Errors.INVALID_CLUSTER_MIRROR_STATE.code())
+                        .setErrorMessage("Topic '" + topicName + "' must be stopped before starting, but is in "
                                 + MirrorPartitionState.fromValue(existingByName.mirrorState()) + " state");
                 topicResList.add(topicRes);
                 continue;
@@ -409,7 +409,7 @@ public class ConfigurationControlManager {
 
         var errorTopicInfo = checkForConcurrentStateChange(stateOffset, replicationControl, mirrorName, topics);
         if (errorTopicInfo.isPresent()) {
-            data.setErrorCode(Errors.INVALID_CLUSTER_MIRROR_STATES.code());
+            data.setErrorCode(Errors.INVALID_CLUSTER_MIRROR_STATE.code());
             data.setErrorMessage("Mirror state for topic '" + errorTopicInfo.get().name()
                     + "' changed after broker validated partition states (broker offset: "
                     + stateOffset + ", last change offset: "
@@ -463,7 +463,9 @@ public class ConfigurationControlManager {
             }
 
             if (currMirrorStateChange == MirrorPartitionState.PAUSED.value()) {
-                topicRes.setTopicName(topic).setErrorCode(Errors.MIRROR_TOPIC_ALREADY_PAUSED.code());
+                topicRes.setTopicName(topic)
+                        .setErrorCode(Errors.INVALID_CLUSTER_MIRROR_STATE.code())
+                        .setErrorMessage("Topic '" + topic + "' is already paused");
                 topicResList.add(topicRes);
                 continue;
             }
@@ -489,7 +491,7 @@ public class ConfigurationControlManager {
 
         var errorTopicInfo = checkForConcurrentStateChange(stateOffset, replicationControl, mirrorName, topics);
         if (errorTopicInfo.isPresent()) {
-            data.setErrorCode(Errors.INVALID_CLUSTER_MIRROR_STATES.code());
+            data.setErrorCode(Errors.INVALID_CLUSTER_MIRROR_STATE.code());
             data.setErrorMessage("Mirror state for topic '" + errorTopicInfo.get().name()
                     + "' changed after broker validated partition states (broker offset: "
                     + stateOffset + ", last change offset: "
@@ -523,9 +525,8 @@ public class ConfigurationControlManager {
             }
 
             if (currMirrorStateChange == MirrorPartitionState.STOPPED.value()) {
-                topicRes.setErrorCode(Errors.MIRROR_TOPIC_ALREADY_STOPPED.code()).setTopicName(topic)
-                        .setErrorMessage("Topic '" + topic + "' is in "
-                                + MirrorPartitionState.fromValue(currMirrorStateChange) + " state");
+                topicRes.setErrorCode(Errors.INVALID_CLUSTER_MIRROR_STATE.code()).setTopicName(topic)
+                        .setErrorMessage("Topic '" + topic + "' is already stopped");
                 topicResList.add(topicRes);
                 continue;
             }
@@ -554,7 +555,7 @@ public class ConfigurationControlManager {
 
         var errorTopicInfo = checkForConcurrentStateChange(stateOffset, replicationControl, mirrorName, topics);
         if (errorTopicInfo.isPresent()) {
-            data.setErrorCode(Errors.INVALID_CLUSTER_MIRROR_STATES.code());
+            data.setErrorCode(Errors.INVALID_CLUSTER_MIRROR_STATE.code());
             data.setErrorMessage("Mirror state for topic '" + errorTopicInfo.get().name()
                     + "' changed after broker validated partition states (broker offset: "
                     + stateOffset + ", last change offset: "
@@ -592,8 +593,8 @@ public class ConfigurationControlManager {
                 topicResList.add(topicRes);
                 continue;
             } else if (currMirrorStateChange != MirrorPartitionState.PAUSED.value()) {
-                topicRes.setErrorCode(Errors.MIRROR_TOPIC_NOT_PAUSED.code()).setTopicName(topic)
-                        .setErrorMessage("Topic '" + topic + "' is in "
+                topicRes.setErrorCode(Errors.INVALID_CLUSTER_MIRROR_STATE.code()).setTopicName(topic)
+                        .setErrorMessage("Topic '" + topic + "' must be paused before resuming, but is in "
                                 + MirrorPartitionState.fromValue(currMirrorStateChange) + " state");
                 topicResList.add(topicRes);
                 continue;
@@ -635,7 +636,7 @@ public class ConfigurationControlManager {
                 if (curMirrorName == null || curMirrorName.isBlank()) continue;
                 if (curMirrorName.equals(mirrorName)
                         && topicInfo.lastStateOffset() > stateOffset) {
-                    data.setErrorCode(Errors.INVALID_CLUSTER_MIRROR_STATES.code());
+                    data.setErrorCode(Errors.INVALID_CLUSTER_MIRROR_STATE.code());
                     data.setErrorMessage("Mirror state for topic '" + topicInfo.name()
                             + "' changed after broker validated partition states (broker offset: "
                             + stateOffset + ", last change offset: "
@@ -651,9 +652,9 @@ public class ConfigurationControlManager {
             if (curMirrorName == null || curMirrorName.isBlank()) continue;
             byte desiredMirrorState = topicInfo.mirrorState();
             if (curMirrorName.equals(mirrorName) && (desiredMirrorState == MirrorPartitionState.PAUSED.value() || desiredMirrorState == MirrorPartitionState.MIRRORING.value())) {
-                data.setErrorCode(Errors.CLUSTER_MIRROR_NOT_EMPTY.code());
-                data.setErrorMessage("Mirror '" + mirrorName + "' still has active or paused topic '"
-                        + topicInfo.name() + "'");
+                data.setErrorCode(Errors.INVALID_CLUSTER_MIRROR_STATE.code());
+                data.setErrorMessage("Mirror '" + mirrorName + "' cannot be deleted while topic '"
+                        + topicInfo.name() + "' is still active or paused");
                 return ControllerResult.of(records, data);
             }
         }

@@ -1521,14 +1521,14 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             if (topicImage == null) {
                 if (!skipMissingTopics) {
                     log.error("Topic {} not found in metadata image.", topic);
-                    return Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATES);
+                    return Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATE);
                 }
                 continue;
             }
             if (!validDesiredStateValues.contains(topicImage.desiredMirrorState())) {
                 log.error("Topic {} desired mirror state is {}, expected one of {}.",
                         topic, MirrorPartitionState.fromValue(topicImage.desiredMirrorState()), validStates);
-                return Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATES);
+                return Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATE);
             }
             for (int i = 0; i < topicImage.partitions().size(); i++) {
                 if (isLocalCoordinator(mirrorName, topic, i)) {
@@ -1538,7 +1538,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                             ? cachedEntry.state() : MirrorPartitionState.UNKNOWN;
                     if (!validStates.contains(state)) {
                         log.error("Partition {}-{} is in {} state, expected one of {}.", topic, i, state, validStates);
-                        return Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATES);
+                        return Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATE);
                     }
                 } else if (metadataImage.topics().getTopic(MIRROR_STATE_TOPIC_NAME) != null) {
                     remotePartitions.computeIfAbsent(topic, k -> new HashSet<>()).add(i);
@@ -1570,7 +1570,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 if (!validStates.contains(remoteState)) {
                     log.error("Remote partition {}-{} is in {} state, expected one of {}.",
                             topicResult.topicName(), partitionResult.partitionIndex(), remoteState, validStates);
-                    return Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATES);
+                    return Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATE);
                 }
             }
         }
