@@ -32,7 +32,7 @@ ENV TARGET_PATH="$KAFKA_BIN_DIR/kafka.Kafka"
 RUN mkdir $KAFKA_BIN_DIR
 
 RUN if [ "$KAFKA_MODE" = "native" ]; then \
-      apt update && apt install -y sudo build-essential libz-dev zlib1g-dev curl jq coreutils libffi-dev cmake pkg-config libfuse-dev && apt-get -y clean ; \
+      dnf install -y sudo gcc gcc-c++ make zlib-devel curl jq coreutils libffi-devel cmake pkgconfig fuse3-devel && dnf clean all ; \
       mkdir graalvm ; \
       curl -L "$GRAALVM_URL" -o graalvm.tar.gz ; \
       tar -xzf graalvm.tar.gz -C graalvm --strip-components=1 ; \
@@ -50,9 +50,6 @@ VOLUME ["/opt/kafka-dev"]
 # Set the timezone.
 ENV TZ="/usr/share/zoneinfo/America/Los_Angeles"
 
-# Do not ask for confirmations when running apt-get, etc.
-ENV DEBIAN_FRONTEND=noninteractive
-
 # Set the ducker.creator label so that we know that this is a ducker image.  This will make it
 # visible to 'ducker purge'.  The ducker.creator label also lets us know what UNIX user built this
 # image.
@@ -60,8 +57,19 @@ ARG ducker_creator=default
 LABEL ducker.creator=$ducker_creator
 
 # Update Linux and install necessary utilities.
-RUN apt update && apt install -y sudo git netcat iptables rsync unzip wget curl jq coreutils openssh-server net-tools vim python3-pip python3-dev libffi-dev libssl-dev cmake pkg-config libfuse-dev iperf traceroute iproute2 iputils-ping && apt-get -y clean
-RUN python3 -m pip install -U pip==21.1.1;
+RUN dnf install -y \
+    sudo git nmap-ncat iptables rsync unzip wget curl jq coreutils \
+    openssh-server openssh-clients net-tools vim python3 python3-pip python3-devel \
+    libffi-devel openssl-devel cmake pkgconfig fuse3-devel \
+    iperf3 traceroute iproute iputils \
+    crypto-policies-scripts gcc gcc-c++ make \
+    && dnf clean all
+# Enable FIPS crypto policy
+RUN update-crypto-policies --set FIPS
+# Generate SSH host keys (required for sshd on RHEL-based images)
+RUN ssh-keygen -A
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
+RUN python3 -m pip install -U pip;
 # NOTE: ducktape 0.14.0 supports py 3.9, 3.10, 3.11, 3.12 and 3.13
 COPY requirements.txt requirements.txt
 RUN pip3 install --upgrade -r requirements.txt
@@ -70,7 +78,7 @@ COPY --from=build-native-image /build/kafka-binary/ /opt/kafka-binary/
 # Set up ssh
 COPY ./ssh-config /root/.ssh/config
 # NOTE: The paramiko library supports the PEM-format private key, but does not support the RFC4716 format.
-RUN ssh-keygen -m PEM -q -t rsa -N '' -f /root/.ssh/id_rsa && cp -f /root/.ssh/id_rsa.pub /root/.ssh/authorized_keys
+RUN ssh-keygen -m PEM -q -t rsa -b 3072 -N '' -f /root/.ssh/id_rsa && cp -f /root/.ssh/id_rsa.pub /root/.ssh/authorized_keys
 RUN echo 'PermitUserEnvironment yes' >> /etc/ssh/sshd_config
 
 # Install binary test dependencies.
@@ -145,11 +153,11 @@ ARG KIBOSH_VERSION="8841dd392e6fbf02986e2fb1f1ebf04df344b65a"
 ARG UID="1000"
 
 # Install Kibosh
-RUN apt-get install fuse -y
+RUN dnf install -y fuse3 && dnf clean all
 RUN cd /opt && git clone -q  https://github.com/confluentinc/kibosh.git && cd "/opt/kibosh" && git reset --hard $KIBOSH_VERSION && mkdir "/opt/kibosh/build" && cd "/opt/kibosh/build" && ../configure && make -j 2
 
 # Set up the ducker user.
-RUN useradd -u $UID -ms /bin/bash ducker \
+RUN useradd -o -u $UID -ms /bin/bash ducker \
   && mkdir -p /home/ducker/ \
   && rsync -aiq /root/.ssh/ /home/ducker/.ssh \
   && chown -R ducker /home/ducker/ /mnt/ /var/log/ \
@@ -162,4 +170,4 @@ RUN cp -sn $JAVA_HOME/bin/* /usr/bin/
 
 USER ducker
 
-CMD ["sudo", "service", "ssh", "start", "-D"]
+CMD ["sudo", "/usr/sbin/sshd", "-D"]
