@@ -63,7 +63,7 @@ RUN mkdir -p /var/cache/yum && microdnf install -y \
     sudo git nmap-ncat nftables rsync unzip wget curl jq coreutils \
     openssh-server openssh-clients net-tools vim-minimal python3 python3-pip python3-devel \
     libffi-devel openssl-devel cmake pkgconfig fuse3-devel \
-    iperf3 traceroute iproute iputils \
+    iperf3 iproute iputils \
     crypto-policies-scripts gcc gcc-c++ make \
     && microdnf clean all
 # Enable FIPS crypto policy
