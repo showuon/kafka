@@ -62,7 +62,7 @@ USER root
 RUN mkdir -p /var/cache/yum && microdnf install -y \
     sudo git nmap-ncat nftables rsync unzip wget curl jq \
     openssh-server openssh-clients net-tools vim-minimal python3 python3-pip python3-devel \
-    libffi-devel openssl-devel cmake pkgconfig fuse3-devel \
+    libffi-devel openssl-devel cmake pkgconfig fuse3-devel fuse fuse-libs \
     iperf3 iproute iputils \
     crypto-policies-scripts gcc gcc-c++ make \
     && microdnf clean all
@@ -155,6 +155,17 @@ ARG KIBOSH_VERSION="8841dd392e6fbf02986e2fb1f1ebf04df344b65a"
 ARG UID="1000"
 
 # Install Kibosh
+# fuse-devel is not in UBI minimal repos, so create FUSE2 dev artifacts from fuse-libs + upstream headers
+RUN ln -s /usr/lib64/libfuse.so.2 /usr/lib64/libfuse.so && \
+    mkdir -p /usr/include/fuse && \
+    curl -sL https://raw.githubusercontent.com/libfuse/libfuse/fuse-2.9.9/include/fuse.h -o /usr/include/fuse.h && \
+    curl -sL https://raw.githubusercontent.com/libfuse/libfuse/fuse-2.9.9/include/fuse_common.h -o /usr/include/fuse/fuse_common.h && \
+    curl -sL https://raw.githubusercontent.com/libfuse/libfuse/fuse-2.9.9/include/fuse_opt.h -o /usr/include/fuse/fuse_opt.h && \
+    curl -sL https://raw.githubusercontent.com/libfuse/libfuse/fuse-2.9.9/include/fuse_common_compat.h -o /usr/include/fuse/fuse_common_compat.h && \
+    curl -sL https://raw.githubusercontent.com/libfuse/libfuse/fuse-2.9.9/include/fuse_compat.h -o /usr/include/fuse/fuse_compat.h && \
+    curl -sL https://raw.githubusercontent.com/libfuse/libfuse/fuse-2.9.9/include/fuse_lowlevel.h -o /usr/include/fuse/fuse_lowlevel.h && \
+    curl -sL https://raw.githubusercontent.com/libfuse/libfuse/fuse-2.9.9/include/fuse_lowlevel_compat.h -o /usr/include/fuse/fuse_lowlevel_compat.h && \
+    printf 'prefix=/usr\nexec_prefix=${prefix}\nlibdir=/usr/lib64\nincludedir=${prefix}/include\n\nName: fuse\nDescription: Filesystem in Userspace\nVersion: 2.9.9\nLibs: -L${libdir} -lfuse -lpthread\nLibs.private: -ldl\nCflags: -D_FILE_OFFSET_BITS=64 -I${includedir}/fuse\n' > /usr/lib64/pkgconfig/fuse.pc
 RUN microdnf install -y fuse3 && microdnf clean all
 RUN cd /opt && git clone -q  https://github.com/confluentinc/kibosh.git && cd "/opt/kibosh" && git reset --hard $KIBOSH_VERSION && mkdir "/opt/kibosh/build" && cd "/opt/kibosh/build" && ../configure && make -j 2
 
