@@ -35,11 +35,12 @@ public class CreateClusterMirrorRequest extends AbstractRequest {
             this.data = data;
         }
 
-        public Builder(String name, Map<String, String> configs) {
+        public Builder(String name, Map<String, String> configs, int timeoutMs) {
             super(ApiKeys.CREATE_CLUSTER_MIRROR, ApiKeys.CREATE_CLUSTER_MIRROR.oldestVersion(),
                   ApiKeys.CREATE_CLUSTER_MIRROR.latestVersion());
             CreateClusterMirrorRequestData data = new CreateClusterMirrorRequestData();
             data.setMirrorName(name);
+            data.setTimeoutMs(timeoutMs);
             CreateClusterMirrorRequestData.ClusterMirrorConfigCollection configsCollection = new CreateClusterMirrorRequestData.ClusterMirrorConfigCollection();
             configs.forEach((key, value) -> {
                 configsCollection.add(new CreateClusterMirrorRequestData.ClusterMirrorConfig().setName(key).setValue(value));

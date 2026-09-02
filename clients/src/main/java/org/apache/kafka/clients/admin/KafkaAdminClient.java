@@ -141,6 +141,7 @@ import org.apache.kafka.common.message.DeleteAclsResponseData.DeleteAclsMatching
 import org.apache.kafka.common.message.DeleteTopicsRequestData;
 import org.apache.kafka.common.message.DeleteTopicsRequestData.DeleteTopicState;
 import org.apache.kafka.common.message.DeleteTopicsResponseData.DeletableTopicResult;
+import org.apache.kafka.common.message.DeleteClusterMirrorRequestData;
 import org.apache.kafka.common.message.DescribeClusterMirrorsRequestData;
 import org.apache.kafka.common.message.DescribeClusterMirrorsResponseData;
 import org.apache.kafka.common.message.DescribeClusterRequestData;
@@ -170,6 +171,8 @@ import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.MetadataRequestData;
 import org.apache.kafka.common.message.RemoveRaftVoterRequestData;
 import org.apache.kafka.common.message.RenewDelegationTokenRequestData;
+import org.apache.kafka.common.message.PauseMirrorTopicsRequestData;
+import org.apache.kafka.common.message.ResumeMirrorTopicsRequestData;
 import org.apache.kafka.common.message.StartMirrorTopicsRequestData;
 import org.apache.kafka.common.message.StopMirrorTopicsRequestData;
 import org.apache.kafka.common.message.UnregisterBrokerRequestData;
@@ -4813,18 +4816,18 @@ public class KafkaAdminClient extends AdminClient {
             @SuppressWarnings("unchecked")
             @Override
             CreateClusterMirrorRequest.Builder createRequest(int timeoutMs) {
+                Map<String, String> resolvedConfigs = configs;
                 if (!configs.containsKey(CommonClientConfigs.SOURCE_CLUSTER_ID_CONFIG)) {
-                    Map<String, String> mutableConfigs = new HashMap<>(configs);
-                    try (Admin sourceAdmin = Admin.create((Map) mutableConfigs)) {
+                    resolvedConfigs = new HashMap<>(configs);
+                    try (Admin sourceAdmin = Admin.create((Map) resolvedConfigs)) {
                         var sourceClusterId = sourceAdmin.describeCluster().clusterId().get();
-                        mutableConfigs.put(CommonClientConfigs.SOURCE_CLUSTER_ID_CONFIG, sourceClusterId);
-                        return new CreateClusterMirrorRequest.Builder(mirrorName, mutableConfigs);
+                        resolvedConfigs.put(CommonClientConfigs.SOURCE_CLUSTER_ID_CONFIG, sourceClusterId);
                     } catch (Exception e) {
                         log.error("Failed to get cluster id from source cluster", e);
                         throw new RuntimeException(e);
                     }
                 }
-                return new CreateClusterMirrorRequest.Builder(mirrorName, configs);
+                return new CreateClusterMirrorRequest.Builder(mirrorName, resolvedConfigs, timeoutMs);
             }
 
             @Override
@@ -4865,7 +4868,10 @@ public class KafkaAdminClient extends AdminClient {
 
             @Override
             DeleteClusterMirrorRequest.Builder createRequest(int timeoutMs) {
-                return new DeleteClusterMirrorRequest.Builder(mirrorName);
+                return new DeleteClusterMirrorRequest.Builder(
+                        new DeleteClusterMirrorRequestData()
+                                .setMirrorName(mirrorName)
+                                .setTimeoutMs(timeoutMs));
             }
 
             @Override
@@ -4915,6 +4921,7 @@ public class KafkaAdminClient extends AdminClient {
             StartMirrorTopicsRequest.Builder createRequest(int timeoutMs) {
                 StartMirrorTopicsRequestData data = new StartMirrorTopicsRequestData();
                 data.setMirrorName(mirrorName);
+                data.setTimeoutMs(timeoutMs);
                 topics.forEach(t -> {
                     StartMirrorTopicsRequestData.TopicMetadata existing = topicMetadata.get(t);
                     // Add operation mutates the value of prev and next and if we do not duplicate
@@ -5005,6 +5012,7 @@ public class KafkaAdminClient extends AdminClient {
             StopMirrorTopicsRequest.Builder createRequest(int timeoutMs) {
                 StopMirrorTopicsRequestData data = new StopMirrorTopicsRequestData();
                 data.setMirrorName(mirrorName);
+                data.setTimeoutMs(timeoutMs);
                 topics.forEach(t -> data.topics().add(new StopMirrorTopicsRequestData.TopicMetadata().setTopicName(t)));
                 data.setPatterns(options.patterns());
                 return new StopMirrorTopicsRequest.Builder(data);
@@ -5058,7 +5066,11 @@ public class KafkaAdminClient extends AdminClient {
 
             @Override
             PauseMirrorTopicsRequest.Builder createRequest(int timeoutMs) {
-                return new PauseMirrorTopicsRequest.Builder(mirrorName, topics);
+                PauseMirrorTopicsRequestData data = new PauseMirrorTopicsRequestData();
+                data.setMirrorName(mirrorName);
+                data.setTimeoutMs(timeoutMs);
+                topics.forEach(t -> data.topics().add(new PauseMirrorTopicsRequestData.TopicMetadata().setTopicName(t)));
+                return new PauseMirrorTopicsRequest.Builder(data);
             }
 
             @Override
@@ -5099,7 +5111,11 @@ public class KafkaAdminClient extends AdminClient {
 
             @Override
             ResumeMirrorTopicsRequest.Builder createRequest(int timeoutMs) {
-                return new ResumeMirrorTopicsRequest.Builder(mirrorName, topics);
+                ResumeMirrorTopicsRequestData data = new ResumeMirrorTopicsRequestData();
+                data.setMirrorName(mirrorName);
+                data.setTimeoutMs(timeoutMs);
+                topics.forEach(t -> data.topics().add(new ResumeMirrorTopicsRequestData.TopicMetadata().setTopicName(t)));
+                return new ResumeMirrorTopicsRequest.Builder(data);
             }
 
             @Override
