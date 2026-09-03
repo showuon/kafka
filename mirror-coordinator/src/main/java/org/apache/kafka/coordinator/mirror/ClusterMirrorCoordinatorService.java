@@ -467,5 +467,6 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
     }
 
     /** A single partition state or LME write entry for inter-broker WriteMirrorStates RPCs. */
-    public record MirrorStateWrite(int partition, MirrorPartitionState state, int leaderEpoch, int stateEpoch, Integer lastMirrorEpoch) { }
+    public record MirrorStateWrite(int partition, MirrorPartitionState state, int leaderEpoch, int stateEpoch,
+                                   Integer lastMirrorEpoch, String errorMessage, boolean nonRetryable) { }
 }

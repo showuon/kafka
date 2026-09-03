@@ -101,11 +101,11 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongConsumer;
@@ -801,7 +801,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                             .whenComplete((v, ex) -> onLocalWriteComplete(mirrorName, tp, key, state, ex));
                 } else {
                     Map<String, Set<MirrorStateWrite>> topicMetadata =
-                            Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), state, leaderEpoch, stateEpoch, null)));
+                            Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), state, leaderEpoch, stateEpoch,
+                                    null, errorMessage, nonRetryable)));
                     writeStateToRemoteCoordinator(mirrorName, topicMetadata, Set.of(),
                             res -> onRemoteWriteComplete(mirrorName, tp, key, state, errorMessage, nonRetryable, res, isRemoteRetry));
                 }
@@ -960,7 +961,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             return coordinatorWriter.get().writeLastMirrorEpoch(mirrorName, tp, epoch);
         } else {
             writeStateToRemoteCoordinator(mirrorName,
-                Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), null, -1, -1, epoch))),
+                Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), null, -1, -1, epoch, null, false))),
                 Set.of(), res -> { });
             return CompletableFuture.completedFuture(null);
         }
@@ -1250,6 +1251,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 partitionData.setStateEpoch(m.stateEpoch());
                 partitionData.setLastMirrorEpoch(m.lastMirrorEpoch() != null ? m.lastMirrorEpoch() : -1);
                 partitionData.setPartitionIndex(m.partition());
+                partitionData.setErrorMessage(m.errorMessage());
+                partitionData.setNonRetryable(m.nonRetryable());
 
                 nodeToTopicPartitions
                     .computeIfAbsent(coordinatorNode, k -> new HashMap<>())

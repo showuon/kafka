@@ -271,7 +271,8 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                 try {
                     CoordinatorResult<Void, CoordinatorRecord> result =
                             writePartitionState(mirrorName, tp, partition.state(),
-                                    partition.leaderEpoch(), partition.stateEpoch(), null, false);
+                                    partition.leaderEpoch(), partition.stateEpoch(),
+                                    partition.errorMessage(), partition.nonRetryable());
                     records.addAll(result.records());
                     int newEpoch = stateEpochMap.getOrDefault(
                             MirrorPartitionKey.of(mirrorName, coreBridge.getTopicId(topic), tp.partition()), 0);
@@ -310,7 +311,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
             log.warn("Skipping invalid transition from {} to {} for {}.", currentState, state, tp);
             return new CoordinatorResult<>(List.of(), null);
         }
-        log.debug("Transitioning partition {} from {} to {}.", tp, currentState, state);
+        log.debug("Updating partition {} state from {} to {}.", tp, currentState, state);
         coreBridge.updateFailedInfo(pk, currentState, state, errorMessage, nonRetryable);
 
         maybeUpdateLeaderEpochMap(pk, leaderEpoch);
