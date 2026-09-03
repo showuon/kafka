@@ -91,6 +91,7 @@ import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -276,7 +277,8 @@ class MirrorSourceSyncer {
                             + "Moving all partitions to non-retryable failed state.";
                     log.error(errMsg);
 
-                    Set<String> mirrorTopics = metadataManager.getConfiguredTopics(mirrorName, true);
+                    Set<String> mirrorTopics = metadataManager.getConfiguredTopics(mirrorName,
+                            EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED, MirrorPartitionState.STOPPED));
                     if (!mirrorTopics.isEmpty()) {
                         Set<TopicPartition> mirrorLeaderPartitions = new HashSet<>();
                         for (String topic : mirrorTopics) {
@@ -316,7 +318,7 @@ class MirrorSourceSyncer {
         Admin srcAdmin = metadataManager.getOrCreateSourceAdmin(mirrorName);
         try {
             return srcAdmin
-                    .listClusterMirrors(new ListClusterMirrorsOptions().shouldIncludeTopicNames(true))
+                    .listClusterMirrors(new ListClusterMirrorsOptions())
                     .all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
         } catch (ExecutionException e) {
             if (e.getCause() instanceof UnsupportedVersionException) {
@@ -356,7 +358,7 @@ class MirrorSourceSyncer {
             if (!metadataManager.clusterId().equals(sourceMirror.sourceClusterId())) {
                 continue;
             }
-            if (sourceMirror.topicNames().map(names -> names.contains(topicName)).orElse(false)) {
+            if (sourceMirror.topicNames().contains(topicName)) {
                 log.error("Mirror loop detected for mirror {}: source mirror {} is already mirroring topic {}",
                         mirrorName, sourceMirror.mirrorName(), topicName);
                 return true;
@@ -376,7 +378,8 @@ class MirrorSourceSyncer {
      */
     Optional<List<SourceTopicState>> syncSourceTopicState(String mirrorName) {
         log.info("Syncing source topic state for mirror {}", mirrorName);
-        Set<String> topics = metadataManager.getConfiguredTopics(mirrorName, false);
+        Set<String> topics = metadataManager.getConfiguredTopics(mirrorName,
+                EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.STOPPED));
         if (topics.isEmpty()) {
             return Optional.empty();
         }
@@ -545,7 +548,9 @@ class MirrorSourceSyncer {
             return;
         }
 
-        metadataManager.getConfiguredTopics(mirrorName, true).forEach(name -> {
+        Set<String> allTopics = metadataManager.getConfiguredTopics(mirrorName,
+                EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED, MirrorPartitionState.STOPPED));
+        allTopics.forEach(name -> {
             if (deletedSourceTopicNames.contains(name)) {
                 if (mirrorCache.isSourceDeletion(mirrorName, name)) {
                     log.info("Detected topic {} deleted in source cluster {}, marking mirror partitions as non-retryable", name, mirrorName);
@@ -616,7 +621,7 @@ class MirrorSourceSyncer {
             syncTopicConfigs(mirrorName, mirrorConfig);
             syncGroupOffsets(mirrorName, mirrorConfig);
             syncAcls(mirrorName, mirrorConfig);
-            if (!metadataManager.getConfiguredTopics(mirrorName, false, false).isEmpty()) {
+            if (!metadataManager.getConfiguredTopics(mirrorName, EnumSet.of(MirrorPartitionState.MIRRORING)).isEmpty()) {
                 maybeBumpLeaderEpochs(mirrorName, sourceTopicStates, Set.of());
             }
             discoverTopicsByPattern(mirrorName, mirrorConfig);
@@ -629,7 +634,8 @@ class MirrorSourceSyncer {
     private void syncTopicConfigs(String mirrorName, ClusterMirrorConfig mirrorConfig) {
         Admin srcAdmin = metadataManager.getOrCreateSourceAdmin(mirrorName);
 
-        Set<String> topics = metadataManager.getConfiguredTopics(mirrorName, false);
+        Set<String> topics = metadataManager.getConfiguredTopics(mirrorName,
+                EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.STOPPED));
         log.debug("Describing topic configs for topics: {}", topics);
         // TODO: This is incremented on every metadata refresh for testing purpose, as we don't have error handling at this stage
         topicConfigSyncError.mark();
@@ -721,7 +727,7 @@ class MirrorSourceSyncer {
     private void syncGroupOffsets(String mirrorName, ClusterMirrorConfig mirrorConfig) {
         Admin srcAdmin = metadataManager.getOrCreateSourceAdmin(mirrorName);
 
-        Set<String> mirrorTopics = metadataManager.getConfiguredTopics(mirrorName, false, false);
+        Set<String> mirrorTopics = metadataManager.getConfiguredTopics(mirrorName, EnumSet.of(MirrorPartitionState.MIRRORING));
         if (mirrorTopics.isEmpty()) {
             return;
         }
@@ -1052,7 +1058,8 @@ class MirrorSourceSyncer {
 
         Admin srcAdmin = metadataManager.getOrCreateSourceAdmin(mirrorName);
 
-        Set<String> configuredTopics = metadataManager.getConfiguredTopics(mirrorName, true);
+        Set<String> configuredTopics = metadataManager.getConfiguredTopics(mirrorName,
+                EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED, MirrorPartitionState.STOPPED));
         final Pattern topicsExcludePattern = mirrorConfig.topicsExcludePattern();
 
         List<StartMirrorTopicsRequestData.TopicMetadata> newTopics;
@@ -1114,7 +1121,7 @@ class MirrorSourceSyncer {
         Pattern excludePattern = mirrorConfig.topicsExcludePattern();
         if (excludePattern == null) return;
 
-        Set<String> activeTopics = metadataManager.getConfiguredTopics(mirrorName, false, false);
+        Set<String> activeTopics = metadataManager.getConfiguredTopics(mirrorName, EnumSet.of(MirrorPartitionState.MIRRORING));
         Set<String> excludedTopics = activeTopics.stream()
                 .filter(topic -> excludePattern.matcher(topic).matches())
                 .collect(Collectors.toSet());
@@ -1202,7 +1209,9 @@ class MirrorSourceSyncer {
     }
 
     private Map<TopicPartition, Integer> buildSourceEpochBumpTargets(String mirrorName, List<SourceTopicState> sourceTopicStates, Set<TopicPartition> topicPartitions) {
-        Set<String> mirrorTopics = topicPartitions.isEmpty() ? metadataManager.getConfiguredTopics(mirrorName, false) : Set.of();
+        Set<String> mirrorTopics = topicPartitions.isEmpty()
+                ? metadataManager.getConfiguredTopics(mirrorName, EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.STOPPED))
+                : Set.of();
         Map<TopicPartition, Integer> leaderEpochFromMetadata = new HashMap<>();
         for (SourceTopicState ts : sourceTopicStates) {
             if (!ts.exists()) {

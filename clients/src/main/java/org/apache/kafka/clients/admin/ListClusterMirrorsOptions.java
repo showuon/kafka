@@ -26,22 +26,9 @@ import java.util.List;
  */
 @InterfaceStability.Evolving
 public class ListClusterMirrorsOptions extends AbstractOptions<ListClusterMirrorsOptions> {
-    private boolean shouldIncludeTopicNames = false;
     private List<String> sourceClusterIdFilter;
     private List<String> mirrorNameFilter;
     private List<String> desiredStateFilter;
-
-    /**
-     * Set whether the response should include mirror topic names for each mirror.
-     */
-    public ListClusterMirrorsOptions shouldIncludeTopicNames(boolean shouldIncludeTopicNames) {
-        this.shouldIncludeTopicNames = shouldIncludeTopicNames;
-        return this;
-    }
-
-    public boolean shouldIncludeTopicNames() {
-        return shouldIncludeTopicNames;
-    }
 
     /**
      * Filter mirrors by source cluster ID.
@@ -68,7 +55,7 @@ public class ListClusterMirrorsOptions extends AbstractOptions<ListClusterMirror
     }
 
     /**
-     * Filter mirrors that have at least one topic with a desired state in this list.
+     * Only include topics whose desired state is in this list.
      * Valid values: MIRRORING, PAUSED, STOPPED.
      */
     public ListClusterMirrorsOptions desiredStateFilter(List<String> desiredStates) {

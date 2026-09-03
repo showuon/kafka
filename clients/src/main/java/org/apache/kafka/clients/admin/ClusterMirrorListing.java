@@ -17,9 +17,9 @@
 
 package org.apache.kafka.clients.admin;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 
 /**
  * A listing of a cluster mirror.
@@ -28,27 +28,21 @@ public class ClusterMirrorListing {
     private final String mirrorName;
     private final String sourceBootstrap;
     private final String sourceClusterId;
-    private final int topicCount;
-    private final Optional<List<String>> topicNames;
+    private final List<String> topicNames;
 
-    public ClusterMirrorListing(String mirrorName, String sourceBootstrap, String sourceClusterId, int topicCount, Optional<List<String>> topicNames) {
+    public ClusterMirrorListing(String mirrorName, String sourceBootstrap, String sourceClusterId, List<String> topicNames) {
         this.mirrorName = mirrorName;
         this.sourceBootstrap = sourceBootstrap;
         this.sourceClusterId = sourceClusterId;
-        this.topicCount = topicCount;
         this.topicNames = topicNames;
     }
 
-    public ClusterMirrorListing(String mirrorName, String sourceBootstrap, String sourceClusterId, int topicCount) {
-        this(mirrorName, sourceBootstrap, sourceClusterId, topicCount, Optional.empty());
-    }
-
-    public ClusterMirrorListing(String mirrorName, String sourceBootstrap, int topicCount) {
-        this(mirrorName, sourceBootstrap, "", topicCount, Optional.empty());
+    public ClusterMirrorListing(String mirrorName, String sourceBootstrap, String sourceClusterId) {
+        this(mirrorName, sourceBootstrap, sourceClusterId, Collections.emptyList());
     }
 
     public ClusterMirrorListing(String mirrorName, String sourceBootstrap) {
-        this(mirrorName, sourceBootstrap, "", 0, Optional.empty());
+        this(mirrorName, sourceBootstrap, "", Collections.emptyList());
     }
 
     public String mirrorName() {
@@ -64,33 +58,22 @@ public class ClusterMirrorListing {
     }
 
     /**
-     * The number of topics configured for this mirror.
-     *
-     * @return Number of topics, or 0 if mirror has no topics configured
+     * The topic names configured for this mirror,
+     * filtered by desired state if a filter was set in the request.
      */
-    public int topicCount() {
-        return topicCount;
-    }
-
-    /**
-     * The topic names configured for this mirror.
-     *
-     * @return List of topic names, or empty if not requested or not available
-     */
-    public Optional<List<String>> topicNames() {
+    public List<String> topicNames() {
         return topicNames;
     }
 
     @Override
     public String toString() {
         return "ClusterMirrorListing(mirrorName='" + mirrorName + "', sourceBootstrap='" + sourceBootstrap
-                + "', sourceClusterId='" + sourceClusterId + "', topicCount=" + topicCount
-                + ", topicNames=" + topicNames + ")";
+                + "', sourceClusterId='" + sourceClusterId + "', topicNames=" + topicNames + ")";
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(mirrorName, sourceBootstrap, sourceClusterId, topicCount, topicNames);
+        return Objects.hash(mirrorName, sourceBootstrap, sourceClusterId, topicNames);
     }
 
     @Override
@@ -98,8 +81,7 @@ public class ClusterMirrorListing {
         if (this == o) return true;
         if (!(o instanceof ClusterMirrorListing)) return false;
         ClusterMirrorListing that = (ClusterMirrorListing) o;
-        return topicCount == that.topicCount &&
-               Objects.equals(mirrorName, that.mirrorName) &&
+        return Objects.equals(mirrorName, that.mirrorName) &&
                Objects.equals(sourceBootstrap, that.sourceBootstrap) &&
                Objects.equals(sourceClusterId, that.sourceClusterId) &&
                Objects.equals(topicNames, that.topicNames);

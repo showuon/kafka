@@ -36,7 +36,6 @@ import org.apache.kafka.clients.admin.ListClusterMirrorsOptions;
 import org.apache.kafka.clients.admin.ListConfigResourcesOptions;
 import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.clients.admin.NewTopic;
-import org.apache.kafka.clients.admin.PauseMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.RecordsToDelete;
 import org.apache.kafka.clients.admin.StartMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.StopMirrorTopicsOptions;
@@ -1109,66 +1108,75 @@ public class ClusterMirroringIntegrationTest {
 
     @Test
     void testListClusterMirrorsFilters() throws Exception {
-        String topic = "list-filter-topic";
-        srcAdmin.createTopics(List.of(new NewTopic(topic, 1, (short) 1)))
-                .all().get(30, TimeUnit.SECONDS);
+        String topicA = "list-filter-a";
+        String topicB = "list-filter-b";
+        srcAdmin.createTopics(List.of(
+                new NewTopic(topicA, 1, (short) 1),
+                new NewTopic(topicB, 1, (short) 1)
+        )).all().get(30, TimeUnit.SECONDS);
 
-        // Create mirror, start topic, wait for MIRRORING
+        // Mirror 1: topicA in MIRRORING state
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleSourceBootstrapServer
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(topic), new StartMirrorTopicsOptions())
+        dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(topicA), new StartMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
+        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topicA);
 
-        // Get source cluster ID for later filter assertions
-        var listings = dstAdmin.listClusterMirrors().all().get(30, TimeUnit.SECONDS);
-        assertEquals(1, listings.size());
-        String sourceClusterId = listings.iterator().next().sourceClusterId();
+        // Mirror 2: topicB started then stopped
+        dstAdmin.createClusterMirror(OTHER_MIRROR_NAME, Map.of(
+                "bootstrap.servers", singleSourceBootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+        dstAdmin.startMirrorTopics(OTHER_MIRROR_NAME, Set.of(topicB), new StartMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+        waitForMirrorLagZero(dstAdmin, OTHER_MIRROR_NAME, topicB);
+        dstAdmin.stopMirrorTopics(OTHER_MIRROR_NAME, Set.of(topicB), new StopMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, OTHER_MIRROR_NAME, topicB, "STOPPED");
 
-        // Filter by mirror name: matching
+        // No filter: both mirrors returned, default includes MIRRORING + PAUSED
+        var all = listMirrorsFiltered(new ListClusterMirrorsOptions());
+        assertEquals(2, all.size());
+
+        // Get source cluster ID for later assertions
+        String sourceClusterId = all.iterator().next().sourceClusterId();
+
+        // Filter by mirror name
         var byName = listMirrorsFiltered(new ListClusterMirrorsOptions()
                 .mirrorNameFilter(List.of(MIRROR_NAME)));
         assertEquals(1, byName.size());
+        assertEquals(MIRROR_NAME, byName.iterator().next().mirrorName());
 
-        // Filter by mirror name: not matching
         var byNameMiss = listMirrorsFiltered(new ListClusterMirrorsOptions()
                 .mirrorNameFilter(List.of("nonexistent")));
         assertTrue(byNameMiss.isEmpty());
 
-        // Filter by source cluster ID: matching
+        // Filter by source cluster ID
         var bySource = listMirrorsFiltered(new ListClusterMirrorsOptions()
                 .sourceClusterIdFilter(List.of(sourceClusterId)));
-        assertEquals(1, bySource.size());
+        assertEquals(2, bySource.size());
 
-        // Filter by source cluster ID: not matching
         var bySourceMiss = listMirrorsFiltered(new ListClusterMirrorsOptions()
                 .sourceClusterIdFilter(List.of("unknown-cluster-id")));
         assertTrue(bySourceMiss.isEmpty());
 
-        // Filter by desired state MIRRORING: matching
+        // Desired state filter: MIRRORING returns topicA on mirror 1, empty on mirror 2
         var byMirroring = listMirrorsFiltered(new ListClusterMirrorsOptions()
                 .desiredStateFilter(List.of("MIRRORING")));
-        assertEquals(1, byMirroring.size());
+        assertEquals(2, byMirroring.size());
+        var mirroringByName = byMirroring.stream()
+                .collect(java.util.stream.Collectors.toMap(ClusterMirrorListing::mirrorName, l -> l));
+        assertEquals(List.of(topicA), mirroringByName.get(MIRROR_NAME).topicNames());
+        assertTrue(mirroringByName.get(OTHER_MIRROR_NAME).topicNames().isEmpty());
 
-        // Filter by desired state PAUSED: not matching yet
-        var byPaused = listMirrorsFiltered(new ListClusterMirrorsOptions()
-                .desiredStateFilter(List.of("PAUSED")));
-        assertTrue(byPaused.isEmpty());
-
-        // Pause the topic, then filter by PAUSED
-        dstAdmin.pauseMirrorTopics(MIRROR_NAME, Set.of(topic), new PauseMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, topic, "PAUSED");
-
-        var byPausedAfter = listMirrorsFiltered(new ListClusterMirrorsOptions()
-                .desiredStateFilter(List.of("PAUSED")));
-        assertEquals(1, byPausedAfter.size());
-
-        // MIRRORING filter no longer matches after pause
-        var byMirroringAfter = listMirrorsFiltered(new ListClusterMirrorsOptions()
-                .desiredStateFilter(List.of("MIRRORING")));
-        assertTrue(byMirroringAfter.isEmpty());
+        // Desired state filter: STOPPED returns topicB on mirror 2, empty on mirror 1
+        var byStopped = listMirrorsFiltered(new ListClusterMirrorsOptions()
+                .desiredStateFilter(List.of("STOPPED")));
+        assertEquals(2, byStopped.size());
+        var stoppedByName = byStopped.stream()
+                .collect(java.util.stream.Collectors.toMap(ClusterMirrorListing::mirrorName, l -> l));
+        assertTrue(stoppedByName.get(MIRROR_NAME).topicNames().isEmpty());
+        assertEquals(List.of(topicB), stoppedByName.get(OTHER_MIRROR_NAME).topicNames());
     }
 
     private Collection<ClusterMirrorListing> listMirrorsFiltered(ListClusterMirrorsOptions options) throws Exception {

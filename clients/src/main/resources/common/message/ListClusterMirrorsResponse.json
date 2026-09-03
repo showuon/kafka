@@ -35,10 +35,8 @@
         "about": "The source cluster bootstrap servers." },
       { "name": "SourceClusterId", "type": "string", "versions": "0+", "default": "",
         "about": "The source cluster ID, or empty if not yet resolved." },
-      { "name": "TopicCount", "type": "int32", "versions": "0+", "default": "0",
-        "about": "The number of topics configured for this mirror. 0 indicates an empty mirror with no topics." },
-      { "name": "TopicNames", "type": "[]string", "versions": "0+", "nullableVersions": "0+", "default": "null",
-        "about": "The topic names included in this mirror, or null if not requested." }
+      { "name": "TopicNames", "type": "[]string", "versions": "0+",
+        "about": "The topic names matching the request filters." }
     ]}
   ]
 }

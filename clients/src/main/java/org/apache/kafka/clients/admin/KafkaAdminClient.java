@@ -5142,7 +5142,6 @@ public class KafkaAdminClient extends AdminClient {
             @Override
             ListClusterMirrorsRequest.Builder createRequest(int timeoutMs) {
                 ListClusterMirrorsRequestData data = new ListClusterMirrorsRequestData()
-                        .setIncludeTopicNames(options.shouldIncludeTopicNames())
                         .setSourceClusterIdFilter(options.sourceClusterIdFilter())
                         .setMirrorNameFilter(options.mirrorNameFilter())
                         .setDesiredStateFilter(options.desiredStateFilter());
@@ -5160,16 +5159,11 @@ public class KafkaAdminClient extends AdminClient {
                 } else {
                     List<Object> listings = new ArrayList<>();
                     for (ListClusterMirrorsResponseData.ListedMirror mirror : response.data().mirrors()) {
-                        List<String> names = mirror.topicNames();
-                        Optional<List<String>> topicNames = names == null
-                                ? Optional.empty()
-                                : Optional.of(names);
                         listings.add(new ClusterMirrorListing(
                                 mirror.mirrorName(),
                                 mirror.sourceBootstrap(),
                                 mirror.sourceClusterId(),
-                                mirror.topicCount(),
-                                topicNames
+                                mirror.topicNames()
                         ));
                     }
                     all.complete(listings);
