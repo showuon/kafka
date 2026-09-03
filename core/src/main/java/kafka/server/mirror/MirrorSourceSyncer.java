@@ -379,7 +379,7 @@ class MirrorSourceSyncer {
     Optional<List<SourceTopicState>> syncSourceTopicState(String mirrorName) {
         log.info("Syncing source topic state for mirror {}", mirrorName);
         Set<String> topics = metadataManager.getConfiguredTopics(mirrorName,
-                EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.STOPPED));
+                EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED, MirrorPartitionState.STOPPED));
         if (topics.isEmpty()) {
             return Optional.empty();
         }
