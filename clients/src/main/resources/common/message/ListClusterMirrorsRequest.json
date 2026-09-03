@@ -22,7 +22,11 @@
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
-    { "name": "IncludeTopicNames", "type": "bool", "versions": "0+", "default": "false",
-      "about": "If true, the response will include mirror topic names for each mirror." }
+    { "name": "SourceClusterIdFilter", "type": "[]string", "versions": "0+", "nullableVersions": "0+", "default": "null",
+      "about": "If non-null, only list mirrors whose source cluster ID is in this list." },
+    { "name": "MirrorNameFilter", "type": "[]string", "versions": "0+", "nullableVersions": "0+", "default": "null",
+      "about": "If non-null, only list mirrors whose name is in this list." },
+    { "name": "DesiredStateFilter", "type": "[]string", "versions": "0+", "nullableVersions": "0+", "default": "null",
+      "about": "If non-null, only include topics whose desired state is in this list. Valid values: MIRRORING, PAUSED, STOPPED." }
   ]
 }

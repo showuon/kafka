@@ -19,22 +19,51 @@ package org.apache.kafka.clients.admin;
 
 import org.apache.kafka.common.annotation.InterfaceStability;
 
+import java.util.List;
+
 /**
  * Options for {@link Admin#listClusterMirrors()}.
  */
 @InterfaceStability.Evolving
 public class ListClusterMirrorsOptions extends AbstractOptions<ListClusterMirrorsOptions> {
-    private boolean shouldIncludeTopicNames = false;
+    private List<String> sourceClusterIdFilter;
+    private List<String> mirrorNameFilter;
+    private List<String> desiredStateFilter;
 
     /**
-     * Set whether the response should include mirror topic names for each mirror.
+     * Filter mirrors by source cluster ID.
      */
-    public ListClusterMirrorsOptions shouldIncludeTopicNames(boolean shouldIncludeTopicNames) {
-        this.shouldIncludeTopicNames = shouldIncludeTopicNames;
+    public ListClusterMirrorsOptions sourceClusterIdFilter(List<String> sourceClusterIds) {
+        this.sourceClusterIdFilter = sourceClusterIds;
         return this;
     }
 
-    public boolean shouldIncludeTopicNames() {
-        return shouldIncludeTopicNames;
+    public List<String> sourceClusterIdFilter() {
+        return sourceClusterIdFilter;
+    }
+
+    /**
+     * Filter mirrors by name.
+     */
+    public ListClusterMirrorsOptions mirrorNameFilter(List<String> mirrorNames) {
+        this.mirrorNameFilter = mirrorNames;
+        return this;
+    }
+
+    public List<String> mirrorNameFilter() {
+        return mirrorNameFilter;
+    }
+
+    /**
+     * Only include topics whose desired state is in this list.
+     * Valid values: MIRRORING, PAUSED, STOPPED.
+     */
+    public ListClusterMirrorsOptions desiredStateFilter(List<String> desiredStates) {
+        this.desiredStateFilter = desiredStates;
+        return this;
+    }
+
+    public List<String> desiredStateFilter() {
+        return desiredStateFilter;
     }
 }

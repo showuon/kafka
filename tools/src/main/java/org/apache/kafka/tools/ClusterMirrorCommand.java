@@ -250,7 +250,7 @@ public abstract class ClusterMirrorCommand {
                     : "-";
                 System.out.printf("%-30s %-10d %-26s %-50s%n",
                     truncateLeft(mirror.mirrorName(), 30),
-                    mirror.topicCount(),
+                    mirror.topicNames().size(),
                     sourceClusterId,
                     truncateLeft(sourceBootstrap, 50));
             }

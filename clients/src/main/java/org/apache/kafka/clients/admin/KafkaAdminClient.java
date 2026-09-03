@@ -5157,7 +5157,11 @@ public class KafkaAdminClient extends AdminClient {
         runnable.call(new Call("listClusterMirrors", deadline, new LeastLoadedNodeProvider()) {
             @Override
             ListClusterMirrorsRequest.Builder createRequest(int timeoutMs) {
-                return new ListClusterMirrorsRequest.Builder(new ListClusterMirrorsRequestData().setIncludeTopicNames(options.shouldIncludeTopicNames()));
+                ListClusterMirrorsRequestData data = new ListClusterMirrorsRequestData()
+                        .setSourceClusterIdFilter(options.sourceClusterIdFilter())
+                        .setMirrorNameFilter(options.mirrorNameFilter())
+                        .setDesiredStateFilter(options.desiredStateFilter());
+                return new ListClusterMirrorsRequest.Builder(data);
             }
 
             @Override
@@ -5171,16 +5175,11 @@ public class KafkaAdminClient extends AdminClient {
                 } else {
                     List<Object> listings = new ArrayList<>();
                     for (ListClusterMirrorsResponseData.ListedMirror mirror : response.data().mirrors()) {
-                        List<String> names = mirror.topicNames();
-                        Optional<List<String>> topicNames = names == null
-                                ? Optional.empty()
-                                : Optional.of(names);
                         listings.add(new ClusterMirrorListing(
                                 mirror.mirrorName(),
                                 mirror.sourceBootstrap(),
                                 mirror.sourceClusterId(),
-                                mirror.topicCount(),
-                                topicNames
+                                mirror.topicNames()
                         ));
                     }
                     all.complete(listings);

@@ -91,6 +91,7 @@ import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -1398,38 +1399,37 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         return result;
     }
 
-    public Set<String> getConfiguredTopics(String mirrorName, boolean includePaused) {
-        return getConfiguredTopics(mirrorName, includePaused, true);
+
+    public int getActiveTopicCount(String mirrorName) {
+        return getConfiguredTopics(mirrorName, EnumSet.of(MirrorPartitionState.MIRRORING)).size();
     }
 
     /**
-     * Returns the set of topic names configured for the given mirror, filtered by desired state.
-     *
-     * @param mirrorName     the mirror name to look up
-     * @param includePaused  whether to include topics in PAUSED state
-     * @param includeStopped whether to include topics in STOPPED state
-     * @return topic names matching the filter criteria
+     * Returns the set of topic names configured for the given mirror,
+     * including only topics whose desired state is in {@code includeStates}.
      */
-    public Set<String> getConfiguredTopics(String mirrorName, boolean includePaused, boolean includeStopped) {
+    public Set<String> getConfiguredTopics(String mirrorName, Set<MirrorPartitionState> includeStates) {
         return metadataImage.topics().topicsById().values().stream()
                 .filter(topicInfo -> {
                     String topicMirrorName = topicInfo.mirrorName();
                     if (topicMirrorName == null || topicMirrorName.isBlank()) return false;
                     if (!mirrorName.equals(topicMirrorName)) return false;
-                    byte state = topicInfo.desiredMirrorState();
-                    if (!includeStopped && state == MirrorPartitionState.STOPPED.value()) return false;
-                    return includePaused || state != MirrorPartitionState.PAUSED.value();
+                    return includeStates.contains(MirrorPartitionState.fromValue(topicInfo.desiredMirrorState()));
                 })
                 .map(TopicImage::name)
                 .collect(Collectors.toSet());
     }
 
-    public int getActiveTopicCount(String mirrorName) {
-        return getConfiguredTopics(mirrorName, false, false).size();
+    public Set<String> getDesiredStates(String mirrorName) {
+        return metadataImage.topics().topicsById().values().stream()
+                .filter(t -> mirrorName.equals(t.mirrorName()))
+                .map(t -> MirrorPartitionState.fromValue(t.desiredMirrorState()).name())
+                .collect(Collectors.toSet());
     }
 
     public void validateDeleteMirrorStates(DeleteClusterMirrorRequestData data, Consumer<Optional<Errors>> callback) {
-        Set<String> topics = getConfiguredTopics(data.mirrorName(), true, true);
+        Set<String> topics = getConfiguredTopics(data.mirrorName(),
+                EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED, MirrorPartitionState.STOPPED));
         validateMirrorStates(data.mirrorName(), topics,
                 Set.of(MirrorPartitionState.STOPPED), false,
                 data::setStateOffset, callback);
