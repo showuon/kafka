@@ -174,7 +174,9 @@ public final class ClusterMirrorConfig {
                     + "log.message.timestamp.after.max.ms,"
                     + "message.timestamp.type,"
                     + "unclean.leader.election.enable,"
-                    + "min.insync.replicas";
+                    + "min.insync.replicas,"
+                    + "mirror.replication.throttled.replicas,"
+                    + "mirror.support.unclean.leader.election";
     public static final String TOPIC_PROPERTIES_EXCLUDE_DOC = "A comma-separated list of topic config property names to exclude from synchronization. "
             + "Properties in this list will not be replicated from the source cluster. "
             + "The mirror.name property is always excluded regardless of this setting.";
