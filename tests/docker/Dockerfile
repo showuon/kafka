@@ -32,7 +32,7 @@ ENV TARGET_PATH="$KAFKA_BIN_DIR/kafka.Kafka"
 RUN mkdir $KAFKA_BIN_DIR
 
 RUN if [ "$KAFKA_MODE" = "native" ]; then \
-      mkdir -p /var/cache/yum && microdnf install -y sudo gcc gcc-c++ make zlib-devel curl jq coreutils libffi-devel cmake pkgconfig fuse3-devel && microdnf clean all ; \
+      mkdir -p /var/cache/yum && microdnf install -y sudo gcc gcc-c++ make zlib-devel curl jq coreutils libffi-devel cmake pkgconfig && microdnf clean all ; \
       mkdir graalvm ; \
       curl -L "$GRAALVM_URL" -o graalvm.tar.gz ; \
       tar -xzf graalvm.tar.gz -C graalvm --strip-components=1 ; \
@@ -62,7 +62,7 @@ USER root
 RUN mkdir -p /var/cache/yum && microdnf install -y \
     sudo git nmap-ncat nftables rsync unzip wget curl jq \
     openssh-server openssh-clients net-tools vim-minimal python3 python3-pip python3-devel python3-setuptools \
-    libffi-devel openssl-devel cmake pkgconfig fuse3-devel fuse fuse-libs \
+    libffi-devel openssl-devel cmake pkgconfig fuse fuse-libs \
     iperf3 iproute iputils \
     crypto-policies-scripts gcc gcc-c++ make \
     && microdnf clean all
