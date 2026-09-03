@@ -770,12 +770,12 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * through {@link #onStateTransition}.
      */
     public void transitionTo(String mirrorName, Set<TopicPartition> topicPartitions,
-                              MirrorPartitionState state, String errorMessage, boolean isPermFailure) {
-        transitionTo(mirrorName, topicPartitions, state, errorMessage, isPermFailure, false);
+                              MirrorPartitionState state, String errorMessage, boolean nonRetryable) {
+        transitionTo(mirrorName, topicPartitions, state, errorMessage, nonRetryable, false);
     }
 
     private void transitionTo(String mirrorName, Set<TopicPartition> topicPartitions,
-                               MirrorPartitionState state, String errorMessage, boolean isPermFailure,
+                               MirrorPartitionState state, String errorMessage, boolean nonRetryable,
                                boolean isRemoteRetry) {
         coordinatorWriter.ifPresent(writer -> {
             for (TopicPartition tp : topicPartitions) {
@@ -785,7 +785,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                     continue;
                 }
                 if (state == MirrorPartitionState.FAILED) {
-                    log.info("Transitioning partition {} from {} to {} due to {} with isPermFailure: {}.", topicPartitions, currentState, state, errorMessage, isPermFailure);
+                    log.info("Transitioning partition {} from {} to {} due to {} with nonRetryable: {}.", topicPartitions, currentState, state, errorMessage, nonRetryable);
                 } else {
                     log.info("Transitioning partition {} from {} to {}.", tp, currentState, state);
                 }
@@ -794,13 +794,13 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 int leaderEpoch = getLeaderEpoch(tp);
                 int stateEpoch = MirrorPartition.orEmpty(mirrorCache.getPartition(key)).stateEpoch();
                 if (isLocalCoordinator(mirrorName, tp.topic(), tp.partition())) {
-                    writer.writePartitionState(mirrorName, tp, state, leaderEpoch, stateEpoch, errorMessage, isPermFailure)
+                    writer.writePartitionState(mirrorName, tp, state, leaderEpoch, stateEpoch, errorMessage, nonRetryable)
                             .whenComplete((v, ex) -> onLocalWriteComplete(mirrorName, tp, key, state, ex));
                 } else {
                     Map<String, Set<MirrorStateWrite>> topicMetadata =
                             Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), state, leaderEpoch, stateEpoch, null)));
                     writeStateToRemoteCoordinator(mirrorName, topicMetadata, Set.of(),
-                            res -> onRemoteWriteComplete(mirrorName, tp, key, state, errorMessage, isPermFailure, res, isRemoteRetry));
+                            res -> onRemoteWriteComplete(mirrorName, tp, key, state, errorMessage, nonRetryable, res, isRemoteRetry));
                 }
             }
         });
@@ -836,11 +836,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     // retry uses the current epoch.
     private void onRemoteWriteComplete(String mirrorName, TopicPartition tp,
                                         MirrorPartitionKey key, MirrorPartitionState state,
-                                        String errorMessage, boolean isPermFailure,
+                                        String errorMessage, boolean nonRetryable,
                                         WriteMirrorStatesResponse res, boolean isRetry) {
         res.data().topics().forEach(topic -> topic.partitions().forEach(par -> {
             if (par.errorCode() == Errors.NONE.code()) {
-                updateLocalFailedState(key, state, errorMessage, isPermFailure);
+                updateLocalFailedState(key, state, errorMessage, nonRetryable);
                 mirrorCache.setPartition(key,
                         MirrorPartition.orEmpty(mirrorCache.getPartition(key))
                                 .withState(state)
@@ -853,7 +853,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                     return;
                 }
                 log.debug("Transition to {} fenced for {} (stale epoch), retrying.", state, tp);
-                readAndRetryRemoteTransition(mirrorName, tp, state, errorMessage, isPermFailure);
+                readAndRetryRemoteTransition(mirrorName, tp, state, errorMessage, nonRetryable);
             } else {
                 log.error("Failed to write partition state to remote coordinator: {}",
                         par.errorCode());
@@ -863,7 +863,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     private void readAndRetryRemoteTransition(String mirrorName, TopicPartition tp,
                                                MirrorPartitionState state,
-                                               String errorMessage, boolean isPermFailure) {
+                                               String errorMessage, boolean nonRetryable) {
         Map<String, Set<Integer>> partitions = Map.of(tp.topic(), Set.of(tp.partition()));
         readStateFromRemoteCoordinator(mirrorName, partitions, res ->
                 res.data().topics().forEach(topic -> topic.partitions().forEach(partition -> {
@@ -873,7 +873,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                         mirrorCache.mergePartition(key, partition.state(), partition.stateEpoch(),
                                 partition.lastMirrorEpoch(), partition.errorMessage(),
                                 partition.retryAttempt(), partition.previousState());
-                        transitionTo(mirrorName, Set.of(tp), state, errorMessage, isPermFailure, true);
+                        transitionTo(mirrorName, Set.of(tp), state, errorMessage, nonRetryable, true);
                     }
                 })));
     }
@@ -1057,9 +1057,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     private void updateLocalFailedState(MirrorPartitionKey key, MirrorPartitionState newState,
-                                        String errorMessage, boolean isPermFailure) {
+                                        String errorMessage, boolean nonRetryable) {
         MirrorPartitionState curState = MirrorPartition.orEmpty(mirrorCache.getPartition(key)).state();
-        mirrorCache.updateFailedInfo(key, curState, newState, errorMessage, isPermFailure);
+        mirrorCache.updateFailedInfo(key, curState, newState, errorMessage, nonRetryable);
     }
 
     private Map<TopicPartition, Integer> getLatestLocalEpoch(TopicPartition tp) {
@@ -1639,8 +1639,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     public void updateFailedInfo(MirrorPartitionKey key, MirrorPartitionState currentState,
-                                 MirrorPartitionState newState, String errorMessage, boolean isPermFailure) {
-        mirrorCache.updateFailedInfo(key, currentState, newState, errorMessage, isPermFailure);
+                                 MirrorPartitionState newState, String errorMessage, boolean nonRetryable) {
+        mirrorCache.updateFailedInfo(key, currentState, newState, errorMessage, nonRetryable);
     }
 
     public void clearFailedInfo(String mirrorName, TopicPartition tp) {

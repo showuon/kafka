@@ -142,8 +142,8 @@ public record MirrorPartition(MirrorPartitionState state, int stateEpoch, int la
         return new MirrorPartition(state, stateEpoch, lastMirrorEpoch, null, 0, null);
     }
 
-    public int nextAttempt(boolean isPermFailure) {
-        if (isPermFailure || retryAttempt == NON_RETRYABLE_ATTEMPT) {
+    public int nextAttempt(boolean nonRetryable) {
+        if (nonRetryable || retryAttempt == NON_RETRYABLE_ATTEMPT) {
             return NON_RETRYABLE_ATTEMPT;
         }
         return retryAttempt != 0 ? retryAttempt + 1 : 1;
