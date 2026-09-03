@@ -727,7 +727,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         var log = replicaManagerSupplier.get().getLog(tp);
         if (log.isDefined() && log.get().remoteLogEnabled()) {
             transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED,
-                "Mirroring is not supported for partitions with tiered storage enabled");
+                "Mirroring is not supported for partitions with tiered storage enabled", true);
             return;
         }
 
