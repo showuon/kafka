@@ -55,7 +55,7 @@ public interface CoreBridge {
         MirrorPartitionState curState,
         MirrorPartitionState newState,
         String errorMessage,
-        boolean isPermFailure
+        boolean nonRetryable
     );
 
     void setLastMirrorEpoch(String mirrorName, String topic, int partition, int epoch);
@@ -78,7 +78,7 @@ public interface CoreBridge {
             int leaderEpoch,
             int stateEpoch,
             String errorMessage,
-            boolean isPermFailure
+            boolean nonRetryable
         );
 
         CompletableFuture<Void> writeLastMirrorEpoch(

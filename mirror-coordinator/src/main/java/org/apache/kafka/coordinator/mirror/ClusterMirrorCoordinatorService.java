@@ -199,9 +199,9 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                     @Override
                     public CompletableFuture<Void> writePartitionState(String mirrorName, TopicPartition tp,
                             MirrorPartitionState state, int leaderEpoch, int stateEpoch,
-                            String errorMessage, boolean isPermFailure) {
+                            String errorMessage, boolean nonRetryable) {
                         return ClusterMirrorCoordinatorService.this.writePartitionState(
-                            mirrorName, tp, state, leaderEpoch, stateEpoch, errorMessage, isPermFailure);
+                            mirrorName, tp, state, leaderEpoch, stateEpoch, errorMessage, nonRetryable);
                     }
 
                     @Override
@@ -430,14 +430,14 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
     /** Persists a partition state record. Called from {@code MirrorMetadataManager#transitionTo}. */
     private CompletableFuture<Void> writePartitionState(
             String mirrorName, TopicPartition tp, MirrorPartitionState state,
-            int leaderEpoch, int stateEpoch, String errorMessage, boolean isPermFailure
+            int leaderEpoch, int stateEpoch, String errorMessage, boolean nonRetryable
     ) {
         throwIfNotActive();
         TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME,
                 partitionFor(MirrorPartitionKey.of(mirrorName, bridge.getTopicId(tp.topic()), tp.partition())));
         return runtime.scheduleWriteOperation("write-partition-state", mirrorStateTp,
                 Duration.ofMillis(config.coordinatorWriteTimeoutMs()),
-                shard -> shard.writePartitionState(mirrorName, tp, state, leaderEpoch, stateEpoch, errorMessage, isPermFailure));
+                shard -> shard.writePartitionState(mirrorName, tp, state, leaderEpoch, stateEpoch, errorMessage, nonRetryable));
     }
 
     /** Persists a last mirror epoch record. Called from {@code MirrorMetadataManager#updateLastMirrorEpoch}. */

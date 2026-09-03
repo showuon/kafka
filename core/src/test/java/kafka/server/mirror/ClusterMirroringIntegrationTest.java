@@ -49,6 +49,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.errors.InvalidMirrorStateException;
 import org.apache.kafka.common.message.DescribeClusterMirrorsRequestData;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -65,6 +66,9 @@ import org.apache.kafka.coordinator.mirror.generated.MirrorPartitionStateKey;
 import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState;
 import org.apache.kafka.server.config.ServerConfigs;
 import org.apache.kafka.server.config.ServerLogConfigs;
+import org.apache.kafka.server.log.remote.storage.NoOpRemoteLogMetadataManager;
+import org.apache.kafka.server.log.remote.storage.NoOpRemoteStorageManager;
+import org.apache.kafka.server.log.remote.storage.RemoteLogManagerConfig;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -1024,6 +1028,73 @@ public class ClusterMirroringIntegrationTest {
         TopicPartition tp = new TopicPartition(nonMirrorTopic, 0);
         DeleteRecordsResult result = dstAdmin.deleteRecords(Map.of(tp, RecordsToDelete.beforeOffset(5)));
         assertEquals(5, result.lowWatermarks().get(tp).get(30, TimeUnit.SECONDS).lowWatermark());
+    }
+
+    @Test
+    void testTieredStoragePartitionFails() throws Exception {
+        String topic = "tiered-topic";
+
+        srcAdmin.createTopics(List.of(
+                new NewTopic(topic, 1, (short) 1)
+        )).all().get(30, TimeUnit.SECONDS);
+
+        KafkaClusterTestKit tieredDst = new KafkaClusterTestKit.Builder(
+                new TestKitNodes.Builder()
+                        .setNumBrokerNodes(1)
+                        .setNumControllerNodes(1)
+                        .build())
+                .setConfigProp(ClusterMirrorConfig.MIRROR_NUM_REPLICA_FETCHERS_CONFIG, "1")
+                .setConfigProp(ClusterMirrorConfig.MIRROR_METADATA_REFRESH_INTERVAL_MS_CONFIG,
+                        String.valueOf(METADATA_REFRESH_INTERVAL_MS))
+                .setConfigProp(ServerLogConfigs.AUTO_CREATE_TOPICS_ENABLE_CONFIG, "false")
+                .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_NUM_PARTITIONS_CONFIG, "3")
+                .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_REPLICATION_FACTOR_CONFIG, "1")
+                .setConfigProp(GroupCoordinatorConfig.OFFSETS_TOPIC_REPLICATION_FACTOR_CONFIG, "1")
+                .setConfigProp(DEFAULT_REPLICATION_FACTOR_CONFIG, "1")
+                .setConfigProp(ServerConfigs.REQUEST_TIMEOUT_MS_CONFIG, "5000")
+                .setConfigProp(ClusterMirrorConfig.SOCKET_TIMEOUT_MS_CONFIG, "5000")
+                .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_ATTEMPTS_CONFIG, "3")
+                .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_CONFIG, "1000")
+                .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_BACKOFF_MS_CONFIG, "5000")
+                .setConfigProp(ServerConfigs.UNSTABLE_API_VERSIONS_ENABLE_CONFIG, "true")
+                .setConfigProp(ServerConfigs.UNSTABLE_FEATURE_VERSIONS_ENABLE_CONFIG, "true")
+                .setConfigProp(RemoteLogManagerConfig.REMOTE_LOG_STORAGE_SYSTEM_ENABLE_PROP, "true")
+                .setConfigProp(RemoteLogManagerConfig.REMOTE_STORAGE_MANAGER_CLASS_NAME_PROP,
+                        NoOpRemoteStorageManager.class.getName())
+                .setConfigProp(RemoteLogManagerConfig.REMOTE_LOG_METADATA_MANAGER_CLASS_NAME_PROP,
+                        NoOpRemoteLogMetadataManager.class.getName())
+                .build();
+
+        try {
+            tieredDst.format();
+            tieredDst.startup();
+            tieredDst.waitForReadyBrokers();
+
+            try (Admin tieredAdmin = Admin.create(Map.of(
+                    AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, tieredDst.bootstrapServers()))) {
+
+                tieredAdmin.createClusterMirror(MIRROR_NAME, Map.of(
+                        "bootstrap.servers", singleSourceBootstrapServer
+                ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+                tieredAdmin.startMirrorTopics(MIRROR_NAME,
+                        Set.of(topic), new StartMirrorTopicsOptions())
+                        .all().get(30, TimeUnit.SECONDS);
+                waitForMirrorState(tieredAdmin, MIRROR_NAME, topic, "MIRRORING");
+
+                // Enable tiered storage while mirroring is active
+                ConfigResource topicResource = new ConfigResource(ConfigResource.Type.TOPIC, topic);
+                tieredAdmin.incrementalAlterConfigs(Map.of(topicResource, List.of(
+                        new AlterConfigOp(
+                                new ConfigEntry(TopicConfig.REMOTE_LOG_STORAGE_ENABLE_CONFIG, "true"),
+                                AlterConfigOp.OpType.SET)
+                ))).all().get(30, TimeUnit.SECONDS);
+
+                waitForMirrorState(tieredAdmin, MIRROR_NAME, topic, "FAILED",
+                        Optional.of("tiered storage"));
+            }
+        } finally {
+            closeQuietly(tieredDst);
+        }
     }
 
     private void produceRecords(KafkaClusterTestKit cluster, String topic,

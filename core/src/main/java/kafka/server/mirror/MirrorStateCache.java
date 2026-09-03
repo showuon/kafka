@@ -108,10 +108,10 @@ public class MirrorStateCache {
     }
 
     public void updateFailedInfo(MirrorPartitionKey key, MirrorPartitionState currentState,
-                                 MirrorPartitionState newState, String errorMessage, boolean isPermFailure) {
+                                 MirrorPartitionState newState, String errorMessage, boolean nonRetryable) {
         if (newState == MirrorPartitionState.FAILED) {
             MirrorPartition existing = MirrorPartition.orEmpty(getPartition(key));
-            int attempt = existing.nextAttempt(isPermFailure);
+            int attempt = existing.nextAttempt(nonRetryable);
             MirrorPartitionState previousState = existing.resolvePrevState(currentState);
             partitions.compute(key, (k, e) -> MirrorPartition.orEmpty(e).withError(errorMessage, attempt, previousState));
         } else if (newState == MirrorPartitionState.LOG_ALIGNMENT
