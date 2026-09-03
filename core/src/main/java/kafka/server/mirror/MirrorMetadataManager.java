@@ -40,6 +40,7 @@ import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.message.MirrorPidResetRecord;
 import org.apache.kafka.common.message.PauseMirrorTopicsRequestData;
 import org.apache.kafka.common.message.ReadMirrorStatesRequestData;
+import org.apache.kafka.common.message.ReadMirrorStatesResponseData;
 import org.apache.kafka.common.message.ResumeMirrorTopicsRequestData;
 import org.apache.kafka.common.message.StartMirrorTopicsRequestData;
 import org.apache.kafka.common.message.StopMirrorTopicsRequestData;
@@ -100,6 +101,7 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
@@ -1143,7 +1145,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     /**
      * Reads partition states from remote coordinators, batching requests per coordinator node.
-     * Updates the local {@link MirrorStateCache} with each response.
+     * Updates the local {@link MirrorStateCache} with each response, then invokes the
+     * callback once with a merged response after all nodes have replied.
      */
     void readStateFromRemoteCoordinator(String mirrorName,
                                         Map<String, Set<Integer>> partitions,
@@ -1171,6 +1174,14 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                         .add(partitionData);
             });
         });
+
+        if (nodeToTopicPartitions.isEmpty()) {
+            return;
+        }
+
+        // Collect all node responses, invoke callback once with merged result
+        ReadMirrorStatesResponseData merged = new ReadMirrorStatesResponseData();
+        AtomicInteger remaining = new AtomicInteger(nodeToTopicPartitions.size());
 
         // Send one batched request per coordinator node
         nodeToTopicPartitions.forEach((node, topicPartitionsMap) -> {
@@ -1201,7 +1212,13 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                                             partition.retryAttempt(), partition.previousState());
                                 }));
 
-                            callback.accept(readMirrorStatesResponse);
+                            synchronized (merged) {
+                                merged.topics().addAll(readMirrorStatesResponse.data().topics());
+                            }
+
+                            if (remaining.decrementAndGet() == 0) {
+                                callback.accept(new ReadMirrorStatesResponse(merged));
+                            }
                         }
                     }
             ));
