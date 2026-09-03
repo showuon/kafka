@@ -37,6 +37,8 @@
     { "name": "ExcludePatterns", "type": "[]string", "versions": "0+", "taggedVersions": "0+", "tag": 0,
       "about": "Regex patterns to add to topics.exclude (this takes precendence over topics.include)." },
     { "name": "StateOffset", "type": "int64", "versions": "0+", "default": "-1",
-      "about": "Cluster metadata log offset used for validating partition state preconditions. -1 to skip validation."}
+      "about": "Cluster metadata log offset used for validating partition state preconditions. -1 to skip validation."},
+    { "name": "TimeoutMs", "type": "int32", "versions": "0+",
+      "about": "How long to wait in milliseconds before timing out the request." }
   ]
 }

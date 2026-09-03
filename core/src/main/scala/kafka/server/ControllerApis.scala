@@ -1128,7 +1128,8 @@ class ControllerApis(
     if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures))
       throw new UnsupportedVersionException("Cluster mirroring requires mirror.version >= 1.")
 
-    val context = new ControllerRequestContext(request.context.header.data, request.context.principal, OptionalLong.empty())
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      requestTimeoutMsToDeadlineNs(time, createRequest.data().timeoutMs()))
     val altersByName = new util.HashMap[String, Entry[AlterConfigOp.OpType, String]]()
     createRequest.data().config.forEach { config =>
       altersByName.put(config.name, new util.AbstractMap.SimpleEntry[AlterConfigOp.OpType, String](
@@ -1238,7 +1239,7 @@ class ControllerApis(
     val includePatterns = startRequest.data().includePatterns()
     val excludePatterns = startRequest.data().excludePatterns()
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
-      OptionalLong.empty())
+      requestTimeoutMsToDeadlineNs(time, startRequest.data().timeoutMs()))
     val stateOffset = startRequest.data().stateOffset()
     controller.startMirrorTopics(context, mirrorName, topics,
         includePatterns, excludePatterns, stateOffset)
@@ -1275,7 +1276,7 @@ class ControllerApis(
     val patterns = stopRequest.data().patterns()
     val stateOffset = stopRequest.data().stateOffset()
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
-      OptionalLong.empty())
+      requestTimeoutMsToDeadlineNs(time, stopRequest.data().timeoutMs()))
     controller.stopMirrorTopics(context, mirrorName, topics, patterns, stateOffset)
       .handle[Unit] { (response, exception) =>
         if (exception != null) {
@@ -1307,7 +1308,7 @@ class ControllerApis(
       throw new TopicAuthorizationException(unauthorizedTopics.asJava)
     val stateOffset = pauseRequest.data().stateOffset()
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
-      OptionalLong.empty())
+      requestTimeoutMsToDeadlineNs(time, pauseRequest.data().timeoutMs()))
     controller.pauseMirrorTopics(context, mirrorName, topics, stateOffset)
       .handle[Unit] { (response, exception) =>
         if (exception != null) {
@@ -1338,7 +1339,7 @@ class ControllerApis(
       throw new TopicAuthorizationException(unauthorizedTopics.asJava)
     val stateOffset = resumeRequest.data().stateOffset()
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
-      OptionalLong.empty())
+      requestTimeoutMsToDeadlineNs(time, resumeRequest.data().timeoutMs()))
     controller.resumeMirrorTopics(context, mirrorName, topics, stateOffset)
       .handle[Unit] { (response, exception) =>
         if (exception != null) {
@@ -1362,7 +1363,7 @@ class ControllerApis(
       throw new InvalidRequestException("This request must be sent to a broker, not directly to the controller")
 
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
-      OptionalLong.empty())
+      requestTimeoutMsToDeadlineNs(time, deleteMirrorRequest.data().timeoutMs()))
     val brokerMetadataOffset = deleteMirrorRequest.data().stateOffset()
     controller.deleteClusterMirror(context, mirrorName, brokerMetadataOffset)
       .handle[Unit] { (response, exception) =>
