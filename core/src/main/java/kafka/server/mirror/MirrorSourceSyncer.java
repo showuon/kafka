@@ -634,8 +634,7 @@ class MirrorSourceSyncer {
     private void syncTopicConfigs(String mirrorName, ClusterMirrorConfig mirrorConfig) {
         Admin srcAdmin = metadataManager.getOrCreateSourceAdmin(mirrorName);
 
-        Set<String> topics = metadataManager.getConfiguredTopics(mirrorName,
-                EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.STOPPED));
+        Set<String> topics = metadataManager.getConfiguredTopics(mirrorName, EnumSet.of(MirrorPartitionState.MIRRORING,));
         log.debug("Describing topic configs for topics: {}", topics);
         // TODO: This is incremented on every metadata refresh for testing purpose, as we don't have error handling at this stage
         topicConfigSyncError.mark();
@@ -1210,7 +1209,7 @@ class MirrorSourceSyncer {
 
     private Map<TopicPartition, Integer> buildSourceEpochBumpTargets(String mirrorName, List<SourceTopicState> sourceTopicStates, Set<TopicPartition> topicPartitions) {
         Set<String> mirrorTopics = topicPartitions.isEmpty()
-                ? metadataManager.getConfiguredTopics(mirrorName, EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.STOPPED))
+                ? metadataManager.getConfiguredTopics(mirrorName, EnumSet.of(MirrorPartitionState.MIRRORING))
                 : Set.of();
         Map<TopicPartition, Integer> leaderEpochFromMetadata = new HashMap<>();
         for (SourceTopicState ts : sourceTopicStates) {
