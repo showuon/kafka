@@ -49,7 +49,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigResource;
-import org.apache.kafka.common.errors.MirrorTopicNotStoppedException;
+import org.apache.kafka.common.errors.InvalidMirrorStateException;
 import org.apache.kafka.common.message.DescribeClusterMirrorsRequestData;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -858,7 +858,7 @@ public class ClusterMirroringIntegrationTest {
         result.values().get(nonMirrorTopic).get(30, TimeUnit.SECONDS);
         ExecutionException e = assertThrows(ExecutionException.class,
                 () -> result.values().get(mirrorTopic).get(30, TimeUnit.SECONDS));
-        assertEquals(MirrorTopicNotStoppedException.class, e.getCause().getClass());
+        assertEquals(InvalidMirrorStateException.class, e.getCause().getClass());
 
         waitForCondition(() -> {
             Map<String, TopicDescription> descriptionMap = describeTopics(dstAdmin, List.of(mirrorTopic, nonMirrorTopic));
@@ -892,7 +892,7 @@ public class ClusterMirroringIntegrationTest {
         for (String topic : List.of(topicA, topicB)) {
             ExecutionException e = assertThrows(ExecutionException.class,
                     () -> result.values().get(topic).get(30, TimeUnit.SECONDS));
-            assertEquals(MirrorTopicNotStoppedException.class, e.getCause().getClass(), "for topic " + topic);
+            assertEquals(InvalidMirrorStateException.class, e.getCause().getClass(), "for topic " + topic);
         }
 
         // After stopping both, the same request succeeds
@@ -928,7 +928,7 @@ public class ClusterMirroringIntegrationTest {
 
         // Attempt to delete topic
         ExecutionException e = assertThrows(ExecutionException.class, () -> dstAdmin.deleteTopics(Set.of(TOPIC_NAME)).all().get());
-        assertEquals(MirrorTopicNotStoppedException.class, e.getCause().getClass());
+        assertEquals(InvalidMirrorStateException.class, e.getCause().getClass());
 
         // Stop mirroring and retry
         dstAdmin.stopMirrorTopics(MIRROR_NAME, Set.of(TOPIC_NAME), new StopMirrorTopicsOptions()).all().get(30, TimeUnit.SECONDS);
@@ -961,7 +961,7 @@ public class ClusterMirroringIntegrationTest {
         result.topicNameValues().get(nonMirrorTopic).get(30, TimeUnit.SECONDS);
         ExecutionException e = assertThrows(ExecutionException.class,
                 () -> result.topicNameValues().get(mirrorTopic).get(30, TimeUnit.SECONDS));
-        assertEquals(MirrorTopicNotStoppedException.class, e.getCause().getClass());
+        assertEquals(InvalidMirrorStateException.class, e.getCause().getClass());
     }
 
     @Test
@@ -984,7 +984,7 @@ public class ClusterMirroringIntegrationTest {
         TopicPartition tp = new TopicPartition(TOPIC_NAME, 0);
         ExecutionException e = assertThrows(ExecutionException.class,
                 () -> dstAdmin.deleteRecords(Map.of(tp, RecordsToDelete.beforeOffset(5))).all().get());
-        assertEquals(MirrorTopicNotStoppedException.class, e.getCause().getClass());
+        assertEquals(InvalidMirrorStateException.class, e.getCause().getClass());
 
         // Stop mirroring and retry
         dstAdmin.stopMirrorTopics(MIRROR_NAME, Set.of(TOPIC_NAME), new StopMirrorTopicsOptions()).all().get(30, TimeUnit.SECONDS);

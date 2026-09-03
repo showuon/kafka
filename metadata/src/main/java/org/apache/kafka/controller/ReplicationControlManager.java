@@ -25,12 +25,12 @@ import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.BrokerIdNotRegisteredException;
+import org.apache.kafka.common.errors.InvalidMirrorStateException;
 import org.apache.kafka.common.errors.InvalidPartitionsException;
 import org.apache.kafka.common.errors.InvalidReplicaAssignmentException;
 import org.apache.kafka.common.errors.InvalidReplicationFactorException;
 import org.apache.kafka.common.errors.InvalidRequestException;
 import org.apache.kafka.common.errors.InvalidTopicException;
-import org.apache.kafka.common.errors.MirrorTopicNotStoppedException;
 import org.apache.kafka.common.errors.NoReassignmentInProgressException;
 import org.apache.kafka.common.errors.PolicyViolationException;
 import org.apache.kafka.common.errors.ThrottlingQuotaExceededException;
@@ -2141,7 +2141,7 @@ public class ReplicationControlManager {
     private static void maybeVerifyMirrorStopped(TopicControlInfo topicInfo) {
         if (topicInfo.mirrorName() != null && !topicInfo.mirrorName().isBlank() &&
                 topicInfo.mirrorState() != MirrorPartitionState.STOPPED.value()) {
-            throw new MirrorTopicNotStoppedException("The topic " + topicInfo.name() + " has a mirror " + topicInfo.mirrorName() + " which is not in stopped state");
+            throw new InvalidMirrorStateException("Topic '" + topicInfo.name() + "' has mirror '" + topicInfo.mirrorName() + "' which is not in stopped state");
         }
     }
 

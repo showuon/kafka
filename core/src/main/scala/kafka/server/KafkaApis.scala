@@ -1660,7 +1660,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         if (!mirrorMetadataManager.validateDeleteRecords(topicPartition))
           nonStoppedMirroredTopicPartitionResponses += topicPartition -> new DeleteRecordsPartitionResult()
             .setLowWatermark(DeleteRecordsResponse.INVALID_LOW_WATERMARK)
-            .setErrorCode(Errors.MIRROR_TOPIC_NOT_STOPPED.code)
+            .setErrorCode(Errors.INVALID_CLUSTER_MIRROR_STATE.code)
         else
           authorizedForDeleteTopicOffsets += (topicPartition -> offset)
       }
