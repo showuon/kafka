@@ -39,8 +39,6 @@ import java.util.Optional;
  * @param lastFetchedEpoch The last fetched epoch from the log
  * @param dueMs The time when this partition is due for fetch (if delayed)
  * @param mirrorName non-empty if this is a mirroring fetch
- * @param mirrorLeaderEpoch The current mirror leader epoch known for this partition in the cluster.
- *                          Used for validation for the batch leader epoch from the fetch response.
  */
 public record PartitionFetchState(
         Optional<Uuid> topicId,
@@ -51,8 +49,7 @@ public record PartitionFetchState(
         ReplicaState state,
         Optional<Integer> lastFetchedEpoch,
         Optional<Long> dueMs,
-        String mirrorName,
-        Optional<Integer> mirrorLeaderEpoch
+        String mirrorName
 ) {
     public PartitionFetchState(
             Optional<Uuid> topicId,
@@ -72,10 +69,9 @@ public record PartitionFetchState(
             int currentLeaderEpoch,
             ReplicaState state,
             Optional<Integer> lastFetchedEpoch,
-            String mirrorName,
-            Optional<Integer> mirrorLeaderEpoch) {
+            String mirrorName) {
         this(topicId, fetchOffset, lag, currentLeaderEpoch,
-                Optional.empty(), state, lastFetchedEpoch, Optional.empty(), mirrorName, mirrorLeaderEpoch);
+                Optional.empty(), state, lastFetchedEpoch, Optional.empty(), mirrorName);
     }
 
     public PartitionFetchState(
@@ -88,7 +84,7 @@ public record PartitionFetchState(
             Optional<Integer> lastFetchedEpoch) {
         this(topicId, fetchOffset, lag, currentLeaderEpoch,
                 delay, state, lastFetchedEpoch,
-                delay.map(aLong -> aLong + Time.SYSTEM.milliseconds()), "", Optional.empty());
+                delay.map(aLong -> aLong + Time.SYSTEM.milliseconds()), "");
     }
 
     public boolean isReadyForFetch() {
@@ -126,6 +122,6 @@ public record PartitionFetchState(
     public PartitionFetchState updateTopicId(Optional<Uuid> newTopicId) {
         return new PartitionFetchState(newTopicId, this.fetchOffset, this.lag,
                 this.currentLeaderEpoch, this.delay,
-                this.state, this.lastFetchedEpoch, this.dueMs, this.mirrorName, this.mirrorLeaderEpoch);
+                this.state, this.lastFetchedEpoch, this.dueMs, this.mirrorName);
     }
 }

@@ -39,7 +39,6 @@ import java.util.OptionalLong;
  * @param lastStableOffset Current LSO or None if the result has an exception
  * @param preferredReadReplica the preferred read replica to be used for future fetches
  * @param exception Exception if error encountered while reading from the log
- * @param currentMirrorLeaderEpoch current leader epoch in the leader node
  */
 public record LogReadResult(
     FetchDataInfo info,
@@ -51,8 +50,7 @@ public record LogReadResult(
     long fetchTimeMs,
     OptionalLong lastStableOffset,
     OptionalInt preferredReadReplica,
-    Optional<Throwable> exception,
-    Optional<Integer> currentMirrorLeaderEpoch
+    Optional<Throwable> exception
 ) {
     public LogReadResult(
             FetchDataInfo info,
@@ -64,7 +62,7 @@ public record LogReadResult(
             long fetchTimeMs,
             OptionalLong lastStableOffset) {
         this(info, divergingEpoch, highWatermark, leaderLogStartOffset, leaderLogEndOffset, followerLogStartOffset,
-            fetchTimeMs, lastStableOffset, OptionalInt.empty(), Optional.empty(), Optional.empty());
+            fetchTimeMs, lastStableOffset, OptionalInt.empty(), Optional.empty());
     }
 
     public LogReadResult(
@@ -78,7 +76,7 @@ public record LogReadResult(
         OptionalLong lastStableOffset,
         Optional<Throwable> exception) {
         this(info, divergingEpoch, highWatermark, leaderLogStartOffset, leaderLogEndOffset, followerLogStartOffset,
-            fetchTimeMs, lastStableOffset, OptionalInt.empty(), exception, Optional.empty());
+            fetchTimeMs, lastStableOffset, OptionalInt.empty(), exception);
     }
 
     public LogReadResult(
@@ -92,7 +90,7 @@ public record LogReadResult(
             OptionalLong lastStableOffset,
             OptionalInt preferredReadReplica) {
         this(info, divergingEpoch, highWatermark, leaderLogStartOffset, leaderLogEndOffset, followerLogStartOffset,
-            fetchTimeMs, lastStableOffset, preferredReadReplica, Optional.empty(), Optional.empty());
+            fetchTimeMs, lastStableOffset, preferredReadReplica, Optional.empty());
     }
 
     public Errors error() {
@@ -113,8 +111,7 @@ public record LogReadResult(
                ", fetchTimeMs=" + fetchTimeMs +
                ", preferredReadReplica=" + preferredReadReplica +
                ", lastStableOffset=" + lastStableOffset +
-               ", error=" + error() +
-               ", currentMirrorLeaderEpoch=" + currentMirrorLeaderEpoch + ")";
+               ", error=" + error() + ")";
     }
 
     public FetchPartitionData toFetchPartitionData(boolean isReassignmentFetch) {
@@ -127,7 +124,6 @@ public record LogReadResult(
             this.lastStableOffset,
             this.info.abortedTransactions,
             this.preferredReadReplica,
-            isReassignmentFetch,
-            this.currentMirrorLeaderEpoch);
+            isReassignmentFetch);
     }
 }

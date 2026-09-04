@@ -231,8 +231,7 @@ class RemoteLeaderEndPoint(logPrefix: String,
             logStartOffset,
             fetchSize,
             Optional.of(fetchState.currentLeaderEpoch()),
-            lastFetchedEpoch,
-            fetchState.mirrorLeaderEpoch()))
+            lastFetchedEpoch))
           if (fetchState.isMirrorFetch() && fetchState.topicId().isPresent) {
             readOnlyTopics += fetchState.topicId().get()
           }

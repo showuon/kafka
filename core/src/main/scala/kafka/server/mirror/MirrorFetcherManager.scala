@@ -210,8 +210,7 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
             thread.leader.brokerEndPoint(),
             currentLeaderEpoch = state.currentLeaderEpoch,
             initOffset = state.fetchOffset,
-            mirrorName = state.mirrorName(),
-            mirrorLeaderEpoch = state.mirrorLeaderEpoch())
+            mirrorName = state.mirrorName())
         }
       }
       mirrorFetcherThreadMap.filterInPlace((key, _) => key.fetcherId < newSize)

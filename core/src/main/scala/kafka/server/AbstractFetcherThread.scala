@@ -116,12 +116,6 @@ abstract class AbstractFetcherThread(name: String,
 
   protected def maybeWaitForFollowersCaughtUp(mirrorPartitions: Set[TopicPartition]): Unit = {}
 
-  protected def shouldUpdateMirrorLeaderEpoch(topicPartition: TopicPartition): Boolean = {
-    false
-  }
-
-  protected def handleMirrorLeaderEpochExceeded(mirrorName: String, topicPartition: TopicPartition): Unit = {}
-
   protected def leaderEpochFromSource(tp: TopicPartition): Option[Int] = {
     Option.empty
   }
@@ -317,7 +311,7 @@ abstract class AbstractFetcherThread(name: String,
                 s"currentLeaderEpoch: ${currentFetchState.currentLeaderEpoch} -> $newCurrentLeaderEpoch")
               newStates.put(topicPartition, new PartitionFetchState(currentFetchState.topicId, currentFetchState.fetchOffset(), currentFetchState.lag,
                 newCurrentLeaderEpoch, currentFetchState.delay, currentFetchState.state(), currentFetchState.lastFetchedEpoch(),
-                currentFetchState.dueMs(), currentFetchState.mirrorName(), currentFetchState.mirrorLeaderEpoch()))
+                currentFetchState.dueMs(), currentFetchState.mirrorName()))
             } else {
               // the returned leaderEpoch is < 0, which means the source cluster doesn't support fetch API v9
               // need to refresh source cluster metadata and retry
@@ -350,7 +344,7 @@ abstract class AbstractFetcherThread(name: String,
                   leaderNode.get().port != leader.brokerEndPoint().port)) {
                   val brokerEndpoint = new BrokerEndPoint(leaderNode.get.id(), leaderNode.get.host, leaderNode.get.port)
                   newStates += topicPartition -> InitialFetchState(currentFetchState.topicId().toScala, brokerEndpoint,
-                    partitionData.currentLeader().leaderEpoch(), currentFetchState.fetchOffset(), currentFetchState.mirrorName(), currentFetchState.mirrorLeaderEpoch())
+                    partitionData.currentLeader().leaderEpoch(), currentFetchState.fetchOffset(), currentFetchState.mirrorName())
                 }
               case _ =>
             }
@@ -529,12 +523,9 @@ abstract class AbstractFetcherThread(name: String,
                        * cluster's leader epoch (maintained by updateMirrorFetchEpoch when errors occur), ensuring proper
                        * validation of fetched batches from the source cluster.
                        *
-                       * Use mirrorLeaderEpoch to validate batches fetched from the leader.
+                       * Use the current leader epoch to validate batches fetched from the leader.
                        */
-                      val epochForValidation: Int = if (currentFetchState.mirrorLeaderEpoch.isPresent)
-                        currentFetchState.mirrorLeaderEpoch.get()
-                      else
-                        currentFetchState.currentLeaderEpoch
+                      val epochForValidation: Int = currentFetchState.currentLeaderEpoch
 
                       val logAppendInfoOpt = processPartitionData(
                         topicPartition,
@@ -550,30 +541,14 @@ abstract class AbstractFetcherThread(name: String,
                         val lag = getPartitionLag(topicPartition, partitionData.highWatermark(), nextOffset, currentFetchState.mirrorName())
                         fetcherLagStats.getAndMaybePut(topicPartition).lag = lag
 
-                        val newMirrorLeaderEpoch: Optional[Integer] = if (shouldUpdateMirrorLeaderEpoch(topicPartition)) {
-                          if (currentFetchState.mirrorLeaderEpoch.isPresent) {
-                            if (partitionData.mirrorLeaderEpoch > currentFetchState.mirrorLeaderEpoch.get())
-                              Optional.of(partitionData.mirrorLeaderEpoch());
-                            else {
-                              currentFetchState.mirrorLeaderEpoch()
-                            }
-                          } else {
-                            // set 0 if the mirrorLeaderEpoch is not set yet. This is the case for the topic that just started mirroring.
-                            Optional.of(0)
-                          }
-                        } else {
-                          Optional.empty()
-                        }
-
                         // ReplicaDirAlterThread may have removed topicPartition from the partitionStates after processing the partition data
-                        // We should update the mirrorLeaderEpoch if it has changed.
-                        if ((validBytes > 0 || currentFetchState.lag.isEmpty || newMirrorLeaderEpoch.orElse(-1) != currentFetchState.mirrorLeaderEpoch().orElse(-1)) &&
+                        if ((validBytes > 0 || currentFetchState.lag.isEmpty) &&
                           partitionStates.contains(topicPartition)) {
                           val lastFetchedEpoch =
                             if (logAppendInfo.lastLeaderEpoch.isPresent)
                               logAppendInfo.lastLeaderEpoch else currentFetchState.lastFetchedEpoch
                           val newFetchState = new PartitionFetchState(currentFetchState.topicId, nextOffset, Optional.of(lag),
-                            currentFetchState.currentLeaderEpoch, ReplicaState.FETCHING, lastFetchedEpoch, currentFetchState.mirrorName(), newMirrorLeaderEpoch)
+                            currentFetchState.currentLeaderEpoch, ReplicaState.FETCHING, lastFetchedEpoch, currentFetchState.mirrorName())
                           partitionStates.updateAndMoveToEnd(topicPartition, newFetchState)
                           if (validBytes > 0) fetcherStats.byteRate.mark(validBytes)
                         }
@@ -593,11 +568,6 @@ abstract class AbstractFetcherThread(name: String,
                       error(s"Error while processing data for partition $topicPartition " +
                         s"at offset ${currentFetchState.fetchOffset}", e)
                       markPartitionFailed(topicPartition, s"Storage error: ${e.getMessage}")
-                    case e: MirrorLeaderEpochExceededException =>
-                      error(s"Error while processing data for mirror partition $topicPartition " +
-                        s"at offset ${currentFetchState.fetchOffset}, triggering leader epoch bump.", e)
-                      markPartitionRemoved(topicPartition)
-                      handleMirrorLeaderEpochExceeded(currentFetchState.mirrorName(), topicPartition)
                     case e: MirrorPartitionStaleMetadataException =>
                       error(s"Error while processing data for mirror partition $topicPartition " +
                         s"at offset ${currentFetchState.fetchOffset}, triggering metadata update.", e)
@@ -692,7 +662,7 @@ abstract class AbstractFetcherThread(name: String,
       Option(partitionStates.stateValue(topicPartition)).foreach { state =>
         val newState = new PartitionFetchState(state.topicId, math.min(truncationOffset, state.fetchOffset),
           state.lag, state.currentLeaderEpoch, state.delay, ReplicaState.TRUNCATING,
-          Optional.empty(), state.delay.map(t => Long.box(t + Time.SYSTEM.milliseconds())), state.mirrorName(), state.mirrorLeaderEpoch)
+          Optional.empty(), state.delay.map(t => Long.box(t + Time.SYSTEM.milliseconds())), state.mirrorName())
         partitionStates.updateAndMoveToEnd(topicPartition, newState)
         partitionMapCond.signalAll()
       }
@@ -725,18 +695,18 @@ abstract class AbstractFetcherThread(name: String,
       // Skip stale epoch downgrades for mirror partitions to avoid an infinite truncation loop.
       currentState
     } else if (initialFetchState.initOffset < 0) {
-      fetchOffsetAndTruncate(tp, initialFetchState.topicId, initialFetchState.currentLeaderEpoch, initialFetchState.mirrorLeaderEpoch)._1
+      fetchOffsetAndTruncate(tp, initialFetchState.topicId, initialFetchState.currentLeaderEpoch)._1
     } else if (leader.isTruncationOnFetchSupported) {
       // With old message format, latestEpoch will be empty and we use Truncating state to truncate to high watermark
       val lastFetchedEpoch: Optional[Integer] = latestEpoch(tp)
       val state = if (lastFetchedEpoch.isPresent) ReplicaState.FETCHING else ReplicaState.TRUNCATING
       new PartitionFetchState(initialFetchState.topicId.toJava, initialFetchState.initOffset, Optional.empty(), initialFetchState.currentLeaderEpoch,
-        state, lastFetchedEpoch, initialFetchState.mirrorName, initialFetchState.mirrorLeaderEpoch)
+        Optional.empty(), state, lastFetchedEpoch, Optional.empty(), initialFetchState.mirrorName)
     } else {
       // Source cluster supports Fetch v11 or lower, so diverging epoch info is not
       // included in fetch responses. Fall back to explicit OffsetsForLeaderEpochRequest.
       new PartitionFetchState(initialFetchState.topicId.toJava, initialFetchState.initOffset, Optional.empty(), initialFetchState.currentLeaderEpoch,
-        ReplicaState.TRUNCATING, Optional.empty(), initialFetchState.mirrorName, initialFetchState.mirrorLeaderEpoch)
+        Optional.empty(), ReplicaState.TRUNCATING, Optional.empty(), Optional.empty(), initialFetchState.mirrorName)
     }
   }
 
@@ -789,7 +759,7 @@ abstract class AbstractFetcherThread(name: String,
 
             val delayMs = currentFetchState.delay.map(t => Long.box(t + Time.SYSTEM.milliseconds()))
             new PartitionFetchState(currentFetchState.topicId, offsetTruncationState.offset, currentFetchState.lag,
-              currentFetchState.currentLeaderEpoch, currentFetchState.delay, state, lastFetchedEpoch, delayMs, currentFetchState.mirrorName(), currentFetchState.mirrorLeaderEpoch)
+              currentFetchState.currentLeaderEpoch, currentFetchState.delay, state, lastFetchedEpoch, delayMs, currentFetchState.mirrorName())
           case None => currentFetchState
         }
         (topicPartition, maybeTruncationComplete)
@@ -877,7 +847,7 @@ abstract class AbstractFetcherThread(name: String,
    * Handle a partition whose offset is out of range and return a new fetch offset along with
    * whether log truncation occurred while handling it.
    */
-  private def fetchOffsetAndTruncate(topicPartition: TopicPartition, topicId: Option[Uuid], currentLeaderEpoch: Int, mirrorLeaderEpoch: Optional[Integer]): (PartitionFetchState, Boolean) = {
+  private def fetchOffsetAndTruncate(topicPartition: TopicPartition, topicId: Option[Uuid], currentLeaderEpoch: Int): (PartitionFetchState, Boolean) = {
     val replicaEndOffset = logEndOffset(topicPartition)
 
     /**
@@ -899,7 +869,7 @@ abstract class AbstractFetcherThread(name: String,
 
       fetcherLagStats.getAndMaybePut(topicPartition).lag = 0
       val newFetchState = new PartitionFetchState(topicId.toJava, leaderEndOffset, Optional.of(0L), currentLeaderEpoch,
-        ReplicaState.FETCHING, latestEpoch(topicPartition), mirrorName, mirrorLeaderEpoch)
+        ReplicaState.FETCHING, latestEpoch(topicPartition), mirrorName)
       (newFetchState, true)
     } else {
       /**
@@ -941,7 +911,7 @@ abstract class AbstractFetcherThread(name: String,
       val initialLag = leaderEndOffset - offsetToFetch
       fetcherLagStats.getAndMaybePut(topicPartition).lag = initialLag
       val newFetchState = new PartitionFetchState(topicId.toJava, offsetToFetch, Optional.of(initialLag), currentLeaderEpoch,
-        ReplicaState.FETCHING, latestEpoch(topicPartition), mirrorName, mirrorLeaderEpoch)
+        ReplicaState.FETCHING, latestEpoch(topicPartition), mirrorName)
       (newFetchState, truncated)
     }
   }
@@ -964,7 +934,7 @@ abstract class AbstractFetcherThread(name: String,
                                     fetchState: PartitionFetchState,
                                     leaderEpochInRequest: Optional[Integer]): Boolean = {
     try {
-      val (newFetchState, truncated) = fetchOffsetAndTruncate(topicPartition, fetchState.topicId().toScala, fetchState.currentLeaderEpoch, fetchState.mirrorLeaderEpoch)
+      val (newFetchState, truncated) = fetchOffsetAndTruncate(topicPartition, fetchState.topicId().toScala, fetchState.currentLeaderEpoch)
       partitionStates.updateAndMoveToEnd(topicPartition, newFetchState)
       info(s"Current offset ${fetchState.fetchOffset} for partition $topicPartition is " +
         s"out of range, which typically implies a leader change. Reset fetch offset to ${newFetchState.fetchOffset}")
@@ -1048,8 +1018,7 @@ abstract class AbstractFetcherThread(name: String,
                 currentFetchState.state,
                 currentFetchState.lastFetchedEpoch,
                 Optional.of(Long.box(delay + Time.SYSTEM.milliseconds())),
-                currentFetchState.mirrorName(),
-                currentFetchState.mirrorLeaderEpoch))
+                currentFetchState.mirrorName()))
           }
         }
       }
