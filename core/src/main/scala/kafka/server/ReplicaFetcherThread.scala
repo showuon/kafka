@@ -76,10 +76,6 @@ class ReplicaFetcherThread(name: String,
     replicaMgr.replicaFetcherManager.addFetcherForPartitions(partitionAndOffsets)
   }
 
-  override protected def shouldUpdateMirrorLeaderEpoch(topicPartition: TopicPartition): Boolean = {
-    replicaMgr.getPartitionOrException(topicPartition).getMirrorName().isPresent
-  }
-
   override def initiateShutdown(): Boolean = {
     val justShutdown = super.initiateShutdown()
     if (justShutdown) {

@@ -737,12 +737,6 @@ class KafkaApis(val requestChannel: RequestChannel,
           .setRecords(data.records)
           .setPreferredReadReplica(data.preferredReadReplica.orElse(FetchResponse.INVALID_PREFERRED_REPLICA_ID))
 
-        // For mirror follower partitions, set mirrorLeaderEpoch to the log's latest epoch
-        // The currentMirrorLeaderEpoch is set in [[Partition.readFromLog]]
-        if (versionId >= 19 && data.currentMirrorLeaderEpoch.isPresent) {
-          partitionData.setMirrorLeaderEpoch(data.currentMirrorLeaderEpoch.get())
-        }
-
         if (versionId >= 16) {
           data.error match {
             case Errors.NOT_LEADER_OR_FOLLOWER | Errors.FENCED_LEADER_EPOCH =>
