@@ -65,6 +65,7 @@ import org.apache.kafka.coordinator.mirror.MirrorPartitionKey;
 import org.apache.kafka.coordinator.mirror.MirrorRecordSerde;
 import org.apache.kafka.coordinator.mirror.generated.LastMirrorEpochsKey;
 import org.apache.kafka.coordinator.mirror.generated.MirrorPartitionStateKey;
+import org.apache.kafka.coordinator.mirror.generated.MirrorPartitionStateValue;
 import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState;
 import org.apache.kafka.server.config.ServerConfigs;
 import org.apache.kafka.server.config.ServerLogConfigs;
@@ -95,6 +96,7 @@ import static org.apache.kafka.server.config.ReplicationConfigs.DEFAULT_REPLICAT
 import static org.apache.kafka.test.TestUtils.DEFAULT_MAX_WAIT_MS;
 import static org.apache.kafka.test.TestUtils.waitForCondition;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -718,10 +720,13 @@ public class ClusterMirroringIntegrationTest {
     @Test
     void testFailedRetryExhaustion() throws Exception {
         String topic = "failed-retry-topic";
+        int partitionNum = 3;
 
-        srcAdmin.createTopics(List.of(
-                new NewTopic(topic, 2, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        var result = srcAdmin.createTopics(List.of(
+                new NewTopic(topic, partitionNum, (short) 1)));
+        result.all().get(30, TimeUnit.SECONDS);
+
+        Uuid topicId = result.topicId(topic).get();
 
         produceRecords(srcCluster, topic, 0, 50);
 
@@ -736,7 +741,39 @@ public class ClusterMirroringIntegrationTest {
         srcCluster.brokers().values().forEach(b -> b.shutdown());
 
         waitForFailedWithRetriesExhausted(topic, 2);
+
+        MirrorRecordSerde serde = new MirrorRecordSerde();
+        // verify the errorMessage, retryAttempt, state, previousState are correct persisted
+        for (int i = 0; i < partitionNum; i++) {
+            validateMirrorPartitionState(topicId, i, serde);
+        }
     }
+
+    private void validateMirrorPartitionState(Uuid topicId, int partition, MirrorRecordSerde serde) {
+        // Get the partition index hosting the metadata for the mirror topic partition
+        int partId = dstCluster.brokers().get(0).clusterMirrorCoordinator()
+                .partitionFor(new MirrorPartitionKey(MIRROR_NAME, topicId, partition));
+        TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME, partId);
+        // check the last batch only because it must be the MirrorStateParition record
+        var batch = dstCluster.brokers().get(0).replicaManager()
+                .getLog(mirrorStateTp).get().activeSegment().log().lastBatch().get();
+        batch.forEach(r -> {
+            // check the MirrorStateParition key/value is expected
+            CoordinatorRecord record = serde.deserialize(r.key(), r.value());
+            assertEquals(new MirrorPartitionStateKey().apiKey(), record.key().apiKey(),
+                    "The record key should be MirrorPartitionStateKey");
+            MirrorPartitionStateValue stateValue = (MirrorPartitionStateValue) record.value().message();
+            assertTrue(stateValue.retryAttempt() >= 2,
+                    "retryAttempt should be at least 2 after retry exhaustion");
+            assertEquals(MirrorPartitionState.FAILED.value(), stateValue.state(),
+                    "state should be FAILED after retry exhaustion");
+            assertEquals(MirrorPartitionState.MIRRORING.value(), stateValue.previousState(),
+                    "previous state should be MIRRORING after retry exhaustion");
+            assertNotNull(stateValue.errorMessage(),
+                    "error message should be non-null after retry exhaustion");
+        });
+    }
+
 
     /**
      * Mirror loop detection test.
