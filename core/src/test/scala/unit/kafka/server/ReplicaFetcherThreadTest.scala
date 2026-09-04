@@ -624,9 +624,9 @@ class ReplicaFetcherThreadTest {
     val leaderEpoch = 1
 
     val partitionMap = Map(
-        t1p0 -> new PartitionFetchState(Optional.of(topicId1), 150, Optional.empty, leaderEpoch, Optional.empty, ReplicaState.FETCHING, Optional.empty),
-        t1p1 -> new PartitionFetchState(Optional.of(topicId1), 155, Optional.empty, leaderEpoch, Optional.empty, ReplicaState.FETCHING, Optional.empty),
-        t2p1 -> new PartitionFetchState(Optional.of(topicId2), 160, Optional.empty, leaderEpoch, Optional.empty, ReplicaState.FETCHING, Optional.empty))
+        t1p0 -> new PartitionFetchState(Optional.of(topicId1), 150, Optional.empty, leaderEpoch, ReplicaState.FETCHING, Optional.empty),
+        t1p1 -> new PartitionFetchState(Optional.of(topicId1), 155, Optional.empty, leaderEpoch, ReplicaState.FETCHING, Optional.empty),
+        t2p1 -> new PartitionFetchState(Optional.of(topicId2), 160, Optional.empty, leaderEpoch, ReplicaState.FETCHING, Optional.empty))
 
     val result = thread.leader.buildFetch(partitionMap.asJava)
     val fetchRequestOpt = result.result
@@ -654,8 +654,8 @@ class ReplicaFetcherThreadTest {
     // Remove t1p0, change the ID for t2p1, and keep t1p1 the same
     val newTopicId = Uuid.randomUuid()
     val partitionMap2 = Map(
-      t1p1 -> new PartitionFetchState(Optional.of(topicId1), 155, Optional.empty, leaderEpoch, Optional.empty, ReplicaState.FETCHING, Optional.empty),
-      t2p1 -> new PartitionFetchState(Optional.of(newTopicId), 160, Optional.empty, leaderEpoch, Optional.empty, ReplicaState.FETCHING, Optional.empty))
+      t1p1 -> new PartitionFetchState(Optional.of(topicId1), 155, Optional.empty, leaderEpoch, ReplicaState.FETCHING, Optional.empty),
+      t2p1 -> new PartitionFetchState(Optional.of(newTopicId), 160, Optional.empty, leaderEpoch, ReplicaState.FETCHING, Optional.empty))
     val result2 = thread.leader.buildFetch(partitionMap2.asJava)
     val fetchRequestOpt2 = result2.result
 

@@ -133,7 +133,7 @@ class RemoteLeaderEndPointTest {
         val topicId1 = Uuid.randomUuid()
         val log = mock(classOf[UnifiedLog])
         val partitionMap = java.util.Map.of(
-            tp, new PartitionFetchState(Optional.of(topicId1), 150, Optional.empty(), 0, Optional.empty(), ReplicaState.FETCHING, Optional.empty))
+            tp, new PartitionFetchState(Optional.of(topicId1), 150, Optional.empty(), 0, ReplicaState.FETCHING, Optional.empty))
         when(replicaManager.localLogOrException(tp)).thenReturn(log)
         when(log.logStartOffset).thenReturn(1)
 

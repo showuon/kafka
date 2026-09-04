@@ -136,8 +136,7 @@ class ReplicaAlterLogDirsThreadTest {
       OptionalLong.empty(),
       Optional.empty(),
       OptionalInt.empty(),
-      false,
-      Optional.empty())
+      false)
     mockFetchFromCurrentLog(tid1p0, fencedRequestData, config, replicaManager, fencedResponseData)
 
     val endPoint = new BrokerEndPoint(0, "localhost", 1000)
@@ -178,8 +177,7 @@ class ReplicaAlterLogDirsThreadTest {
       OptionalLong.empty(),
       Optional.empty(),
       OptionalInt.empty(),
-      false,
-      Optional.empty())
+      false)
     mockFetchFromCurrentLog(tid1p0, requestData, config, replicaManager, responseData)
 
     thread.doWork()
@@ -238,8 +236,7 @@ class ReplicaAlterLogDirsThreadTest {
       OptionalLong.empty(),
       Optional.empty(),
       OptionalInt.empty(),
-      false,
-      Optional.empty())
+      false)
     mockFetchFromCurrentLog(tid1p0, requestData, config, replicaManager, responseData)
 
     val endPoint = new BrokerEndPoint(0, "localhost", 1000)
@@ -325,8 +322,7 @@ class ReplicaAlterLogDirsThreadTest {
       OptionalLong.empty(),
       Optional.empty(),
       OptionalInt.empty(),
-      false,
-      Optional.empty())
+      false)
     mockFetchFromCurrentLog(tid1p0, requestData, config, replicaManager, responseData)
 
     val endPoint = new BrokerEndPoint(0, "localhost", 1000)
@@ -421,8 +417,7 @@ class ReplicaAlterLogDirsThreadTest {
       OptionalLong.empty(),
       Optional.empty(),
       OptionalInt.empty(),
-      false,
-      Optional.empty())
+      false)
     mockFetchFromCurrentLog(tid1p0, requestData, config, replicaManager, responseData)
 
     val endPoint = new BrokerEndPoint(0, "localhost", 1000)
@@ -1088,8 +1083,8 @@ class ReplicaAlterLogDirsThreadTest {
       t1p1 -> initialFetchState(0L, leaderEpoch)))
 
     val result = thread.leader.buildFetch(java.util.Map.of(
-      t1p0, new PartitionFetchState(Optional.of(topicId), 150, Optional.empty, leaderEpoch, Optional.empty, ReplicaState.FETCHING, Optional.empty),
-      t1p1, new PartitionFetchState(Optional.of(topicId), 160, Optional.empty, leaderEpoch, Optional.empty, ReplicaState.FETCHING, Optional.empty)))
+      t1p0, new PartitionFetchState(Optional.of(topicId), 150, Optional.empty, leaderEpoch, ReplicaState.FETCHING, Optional.empty),
+      t1p1, new PartitionFetchState(Optional.of(topicId), 160, Optional.empty, leaderEpoch, ReplicaState.FETCHING, Optional.empty)))
     val fetchRequestOpt = result.result
     val partitionsWithError = result.partitionsWithError
     assertTrue(fetchRequestOpt.isPresent)
@@ -1144,10 +1139,8 @@ class ReplicaAlterLogDirsThreadTest {
 
     // one partition is ready and one is truncating
     val result1 = thread.leader.buildFetch(java.util.Map.of(
-      t1p0, new PartitionFetchState(Optional.of(topicId), 150, Optional.empty(), leaderEpoch, Optional.empty(),
-        ReplicaState.FETCHING, Optional.empty()),
-      t1p1, new PartitionFetchState(Optional.of(topicId), 160, Optional.empty(), leaderEpoch, Optional.empty(),
-        ReplicaState.TRUNCATING, Optional.empty())
+      t1p0, new PartitionFetchState(Optional.of(topicId), 150, Optional.empty(), leaderEpoch, ReplicaState.FETCHING, Optional.empty()),
+      t1p1, new PartitionFetchState(Optional.of(topicId), 160, Optional.empty(), leaderEpoch, ReplicaState.TRUNCATING, Optional.empty())
     ))
     val fetchRequestOpt1 = result1.result
     val partitionsWithError1 = result1.partitionsWithError
@@ -1163,10 +1156,9 @@ class ReplicaAlterLogDirsThreadTest {
 
     // one partition is ready and one is delayed
     val result2 = thread.leader.buildFetch(java.util.Map.of(
-      t1p0, new PartitionFetchState(Optional.of(topicId), 140, Optional.empty(), leaderEpoch, Optional.empty(),
-        ReplicaState.FETCHING, Optional.empty()),
-      t1p1, new PartitionFetchState(Optional.of(topicId), 160, Optional.empty(), leaderEpoch, Optional.of(5000L),
-        ReplicaState.FETCHING, Optional.empty())
+      t1p0, new PartitionFetchState(Optional.of(topicId), 140, Optional.empty(), leaderEpoch, ReplicaState.FETCHING, Optional.empty()),
+      t1p1, new PartitionFetchState(Optional.of(topicId), 160, Optional.empty(), leaderEpoch, Optional.of[java.lang.Long](5000L),
+        ReplicaState.FETCHING, Optional.empty[Integer]())
     ))
     val fetchRequest2Opt = result2.result
     val partitionsWithError2 = result2.partitionsWithError
@@ -1182,10 +1174,10 @@ class ReplicaAlterLogDirsThreadTest {
 
     // both partitions are delayed
     val result3 = thread.leader.buildFetch(java.util.Map.of(
-      t1p0, new PartitionFetchState(Optional.of(topicId), 140, Optional.empty(), leaderEpoch, Optional.of(5000L),
-        ReplicaState.FETCHING, Optional.empty()),
-      t1p1, new PartitionFetchState(Optional.of(topicId), 160, Optional.empty(), leaderEpoch, Optional.of(5000L),
-        ReplicaState.FETCHING, Optional.empty())
+      t1p0, new PartitionFetchState(Optional.of(topicId), 140, Optional.empty(), leaderEpoch, Optional.of[java.lang.Long](5000L),
+        ReplicaState.FETCHING, Optional.empty[Integer]()),
+      t1p1, new PartitionFetchState(Optional.of(topicId), 160, Optional.empty(), leaderEpoch, Optional.of[java.lang.Long](5000L),
+        ReplicaState.FETCHING, Optional.empty[Integer]())
     ))
     val fetchRequest3Opt = result3.result
     val partitionsWithError3 = result3.partitionsWithError
