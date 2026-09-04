@@ -4686,7 +4686,8 @@ class KafkaApis(val requestChannel: RequestChannel,
       val topicState = new util.HashSet[MirrorStateWrite]()
       topic.partitions().forEach(part => {
         topicState.add(new MirrorStateWrite(part.partitionIndex(),
-          MirrorPartitionState.fromValue(part.state()), part.leaderEpoch(), part.stateEpoch(), part.lastMirrorEpoch()))
+          MirrorPartitionState.fromValue(part.state()), part.leaderEpoch(), part.stateEpoch(),
+            part.lastMirrorEpoch(), part.errorMessage(), part.nonRetryable()))
       })
       mirrorState.put(topic.topicName(), topicState)
     })

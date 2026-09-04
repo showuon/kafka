@@ -107,12 +107,12 @@ public class MirrorStateCache {
         sourceDeletions.remove(mirrorName);
     }
 
-    public void updateFailedInfo(MirrorPartitionKey key, MirrorPartitionState currentState,
+    public void updateFailedInfo(MirrorPartitionKey key, MirrorPartitionState curState,
                                  MirrorPartitionState newState, String errorMessage, boolean nonRetryable) {
         if (newState == MirrorPartitionState.FAILED) {
             MirrorPartition existing = MirrorPartition.orEmpty(getPartition(key));
             int attempt = existing.nextAttempt(nonRetryable);
-            MirrorPartitionState previousState = existing.resolvePrevState(currentState);
+            MirrorPartitionState previousState = existing.resolvePrevState(curState);
             partitions.compute(key, (k, e) -> MirrorPartition.orEmpty(e).withError(errorMessage, attempt, previousState));
         } else if (newState == MirrorPartitionState.LOG_ALIGNMENT
                 || newState == MirrorPartitionState.STOPPED

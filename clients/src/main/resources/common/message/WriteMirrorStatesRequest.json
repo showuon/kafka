@@ -39,7 +39,11 @@
         { "name": "StateEpoch", "type": "int32", "versions": "0+", "default": "-1",
           "about": "The expected state epoch for fencing, or -1 to skip the check." },
         { "name": "LastMirrorEpoch", "type": "int32", "versions": "0+", "default": "-1",
-          "about": "The last mirror leader epoch, or -1 if not available." }
+          "about": "The last mirror leader epoch, or -1 if not available." },
+        { "name": "ErrorMessage", "type": "string", "versions": "0+", "nullableVersions": "0+", "default": "null",
+          "about": "The error message when transitioning to FAILED, or null otherwise." },
+        { "name": "NonRetryable", "type": "bool", "versions": "0+", "default": "false",
+          "about": "Whether the failure is non-retryable." }
       ]}
     ]}
   ]
