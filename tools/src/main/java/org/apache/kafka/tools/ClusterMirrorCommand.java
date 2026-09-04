@@ -27,9 +27,7 @@ import org.apache.kafka.clients.admin.DeleteClusterMirrorResult;
 import org.apache.kafka.clients.admin.DescribeClusterMirrorsOptions;
 import org.apache.kafka.clients.admin.ListClusterMirrorsResult;
 import org.apache.kafka.clients.admin.PauseMirrorTopicsOptions;
-import org.apache.kafka.clients.admin.PauseMirrorTopicsResult;
 import org.apache.kafka.clients.admin.ResumeMirrorTopicsOptions;
-import org.apache.kafka.clients.admin.ResumeMirrorTopicsResult;
 import org.apache.kafka.clients.admin.StartMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.StopMirrorTopicsOptions;
 import org.apache.kafka.common.config.ConfigResource;
@@ -170,7 +168,7 @@ public abstract class ClusterMirrorCommand {
             Set<String> topics = resolveTopicsForMirror(mirrorName, patterns);
 
             adminClient.stopMirrorTopics(mirrorName, topics,
-                    new StopMirrorTopicsOptions().patterns(patterns))
+                    new StopMirrorTopicsOptions().selectPatterns(patterns))
                     .all().get();
             System.out.printf("Stopped %s topic(s) in mirror %s%n", topics, mirrorName);
         }
@@ -196,19 +194,23 @@ public abstract class ClusterMirrorCommand {
 
         private void pauseMirrorTopics(MirrorCommandOptions opts) throws Exception {
             String mirrorName = opts.mirror().get();
-            Set<String> topics = resolveTopicsForMirror(mirrorName, opts.topics());
+            List<String> patterns = opts.topics();
+            Set<String> topics = resolveTopicsForMirror(mirrorName, patterns);
 
-            PauseMirrorTopicsResult result = adminClient.pauseMirrorTopics(mirrorName, topics, new PauseMirrorTopicsOptions());
-            result.all().get();
+            adminClient.pauseMirrorTopics(mirrorName, topics,
+                    new PauseMirrorTopicsOptions().selectPatterns(patterns))
+                    .all().get();
             System.out.printf("Paused %d topic(s) in mirror %s: %s%n", topics.size(), mirrorName, topics);
         }
 
         private void resumeMirrorTopics(MirrorCommandOptions opts) throws Exception {
             String mirrorName = opts.mirror().get();
-            Set<String> topics = resolveTopicsForMirror(mirrorName, opts.topics());
+            List<String> patterns = opts.topics();
+            Set<String> topics = resolveTopicsForMirror(mirrorName, patterns);
 
-            ResumeMirrorTopicsResult result = adminClient.resumeMirrorTopics(mirrorName, topics, new ResumeMirrorTopicsOptions());
-            result.all().get();
+            adminClient.resumeMirrorTopics(mirrorName, topics,
+                    new ResumeMirrorTopicsOptions().selectPatterns(patterns))
+                    .all().get();
             System.out.printf("Resumed %d topic(s) in mirror %s: %s%n", topics.size(), mirrorName, topics);
         }
 
