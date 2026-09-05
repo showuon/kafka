@@ -17,18 +17,14 @@
 
 package org.apache.kafka.clients.admin;
 
-import org.apache.kafka.common.message.DescribeClusterMirrorsRequestData;
-
-import java.util.Collections;
-import java.util.List;
-
 /**
- * Options for {@link Admin#describeClusterMirrors(java.util.Collection, DescribeClusterMirrorsOptions)}.
+ * Options for {@link Admin#describeClusterMirrors(java.util.Collection, java.util.Map, DescribeClusterMirrorsOptions)}.
  */
 public class DescribeClusterMirrorsOptions extends AbstractOptions<DescribeClusterMirrorsOptions> {
     private boolean includeAuthorizedOperations = false;
     private String clusterId;
-    private List<DescribeClusterMirrorsRequestData.LastMirrorEpochLookup> lastMirrorEpochLookups = Collections.emptyList();
+    private boolean includeMirrorState = false;
+    private boolean includeMirrorOffset = false;
 
     /**
      * Set whether authorized operations should be included in the response.
@@ -54,12 +50,27 @@ public class DescribeClusterMirrorsOptions extends AbstractOptions<DescribeClust
         return clusterId;
     }
 
-    public DescribeClusterMirrorsOptions lastMirrorEpochLookups(List<DescribeClusterMirrorsRequestData.LastMirrorEpochLookup> lastMirrorEpochLookups) {
-        this.lastMirrorEpochLookups = lastMirrorEpochLookups;
+    /**
+     * Set whether to query the mirror coordinator node for mirror state info.
+     */
+    public DescribeClusterMirrorsOptions includeMirrorState(boolean includeMirrorState) {
+        this.includeMirrorState = includeMirrorState;
         return this;
     }
 
-    public List<DescribeClusterMirrorsRequestData.LastMirrorEpochLookup> lastMirrorEpochLookups() {
-        return lastMirrorEpochLookups;
+    public boolean includeMirrorState() {
+        return includeMirrorState;
+    }
+
+    /**
+     * Set whether to query the mirror partition leader node for offset info.
+     */
+    public DescribeClusterMirrorsOptions includeMirrorOffset(boolean includeMirrorOffset) {
+        this.includeMirrorOffset = includeMirrorOffset;
+        return this;
+    }
+
+    public boolean includeMirrorOffset() {
+        return includeMirrorOffset;
     }
 }

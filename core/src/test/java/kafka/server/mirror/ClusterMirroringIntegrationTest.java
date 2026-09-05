@@ -53,7 +53,6 @@ import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.errors.InvalidMirrorStateException;
-import org.apache.kafka.common.message.DescribeClusterMirrorsRequestData;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.test.KafkaClusterTestKit;
@@ -228,8 +227,8 @@ public class ClusterMirroringIntegrationTest {
 
     /**
      * Failover then failback with a different mirror name.
-     * Uses LastMirrorEpochLookups so the destination finds the LME
-     * from the old mirror and avoids re-replicating from scratch.
+     * Uses LME lookup via Topics filter and clusterId so the destination
+     * finds the LME from the old mirror and avoids re-replicating from scratch.
      */
     @Test
     void testFailoverFailback() throws Exception {
@@ -255,13 +254,12 @@ public class ClusterMirroringIntegrationTest {
         waitForMirrorState(dstAdmin, forwardMirror, topic, "STOPPED");
         produceRecords(dstCluster, topic, 10, 5);
 
-        // Sending a describeClusterMirror request with LME lookup info
-        DescribeClusterMirrorsRequestData.LastMirrorEpochLookup lastMirrorEpochLookup =
-                new DescribeClusterMirrorsRequestData.LastMirrorEpochLookup();
-        lastMirrorEpochLookup.setTopicName(topic).setPartitions(List.of(0));
+        // LME lookup via Topics filter and clusterId
         String srcClusterId = srcCluster.controllers().values().stream().findFirst().get().clusterId();
-        DescribeClusterMirrorsResult describeClusterMirrors = dstAdmin.describeClusterMirrors(List.of(reverseMirror),
-                new DescribeClusterMirrorsOptions().clusterId(srcClusterId).lastMirrorEpochLookups(List.of(lastMirrorEpochLookup)));
+        Map<String, List<Integer>> topicPartitions = Map.of(topic, List.of(0));
+        DescribeClusterMirrorsResult describeClusterMirrors = dstAdmin.describeClusterMirrors(
+                List.of(reverseMirror), topicPartitions,
+                new DescribeClusterMirrorsOptions().clusterId(srcClusterId).includeMirrorState(true));
         Map<String, Map<Integer, Integer>> lookupEpochs = describeClusterMirrors.lookupEpochs().get(30, TimeUnit.SECONDS);
         assertEquals(1, lookupEpochs.size(), "Should have one lookup result");
         assertEquals(1, lookupEpochs.get(topic).size(), "Should have one partition");
@@ -1326,7 +1324,8 @@ public class ClusterMirroringIntegrationTest {
     private boolean allPartitionsSatisfy(Admin admin, String mirrorName,
                                          String topicPattern, Predicate<ClusterMirrorDescription.LeaderStateDescription> condition) throws Exception {
         var result = admin.describeClusterMirrors(
-                List.of(mirrorName), new DescribeClusterMirrorsOptions());
+                List.of(mirrorName), null,
+                new DescribeClusterMirrorsOptions().includeMirrorState(true).includeMirrorOffset(true));
         var descriptions = result.allDescriptions().get(5, TimeUnit.SECONDS);
         ClusterMirrorDescription desc = descriptions.get(mirrorName);
         if (desc == null) return false;

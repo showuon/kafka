@@ -39,6 +39,8 @@ import org.apache.kafka.common.message.DeleteClusterMirrorRequestData;
 import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.message.MirrorPidResetRecord;
 import org.apache.kafka.common.message.PauseMirrorTopicsRequestData;
+import org.apache.kafka.common.message.ReadMirrorOffsetsRequestData;
+import org.apache.kafka.common.message.ReadMirrorOffsetsResponseData;
 import org.apache.kafka.common.message.ReadMirrorStatesRequestData;
 import org.apache.kafka.common.message.ReadMirrorStatesResponseData;
 import org.apache.kafka.common.message.ResumeMirrorTopicsRequestData;
@@ -54,6 +56,8 @@ import org.apache.kafka.common.record.DefaultRecordBatch;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.ProduceResponse;
+import org.apache.kafka.common.requests.ReadMirrorOffsetsRequest;
+import org.apache.kafka.common.requests.ReadMirrorOffsetsResponse;
 import org.apache.kafka.common.requests.ReadMirrorStatesRequest;
 import org.apache.kafka.common.requests.ReadMirrorStatesResponse;
 import org.apache.kafka.common.requests.WriteMirrorStatesRequest;
@@ -984,7 +988,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                             if (rawError != null) {
                                 Throwable error = rawError instanceof CompletionException && rawError.getCause() != null
                                     ? rawError.getCause() : rawError;
-                                if (error instanceof UnsupportedVersionException) {
+                                Throwable root = error.getCause() != null ? error.getCause() : error;
+                                if (error instanceof UnsupportedVersionException
+                                        || root instanceof UnsupportedVersionException) {
                                     log.warn("Source cluster doesn't support DescribeClusterMirror API. " +
                                         "Replication will be one-way without failback");
                                     replicaManagerSupplier.get().maybeTruncateForLeaderEpoch(
@@ -1149,7 +1155,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * Updates the local {@link MirrorStateCache} with each response, then invokes the
      * callback once with a merged response after all nodes have replied.
      */
-    void readStateFromRemoteCoordinator(String mirrorName,
+    public void readStateFromRemoteCoordinator(String mirrorName,
                                         Map<String, Set<Integer>> partitions,
                                         Consumer<ReadMirrorStatesResponse> callback) {
         log.debug("Reading states from remote coordinator: {} {}", mirrorName, partitions);
@@ -1177,6 +1183,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         });
 
         if (nodeToTopicPartitions.isEmpty()) {
+            callback.accept(new ReadMirrorStatesResponse(new ReadMirrorStatesResponseData()));
             return;
         }
 
@@ -1216,10 +1223,84 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                             synchronized (merged) {
                                 merged.topics().addAll(readMirrorStatesResponse.data().topics());
                             }
+                        } else {
+                            log.warn("Unexpected response type from coordinator {}: {}", node, response.responseBody());
+                        }
 
-                            if (remaining.decrementAndGet() == 0) {
-                                callback.accept(new ReadMirrorStatesResponse(merged));
+                        if (remaining.decrementAndGet() == 0) {
+                            callback.accept(new ReadMirrorStatesResponse(merged));
+                        }
+                    }
+            ));
+        });
+    }
+
+    /**
+     * Reads partition offsets from remote leaders, batching requests per leader node.
+     * Invokes the callback once with a merged response after all nodes have replied.
+     */
+    public void readOffsetsFromRemoteLeaders(String mirrorName,
+                                      Map<String, Set<Integer>> partitions,
+                                      Consumer<ReadMirrorOffsetsResponse> callback) {
+        log.debug("Reading offsets from remote leaders: {} {}", mirrorName, partitions);
+
+        // Group partitions by leader node for batching
+        ListenerName listenerName = brokerConfig.interBrokerListenerName();
+        Map<Node, Map<String, List<Integer>>> nodeToTopicPartitions = new HashMap<>();
+
+        partitions.forEach((topic, parts) -> {
+            parts.forEach(part -> {
+                Optional<Node> leaderOpt = metadataCache.getPartitionLeaderEndpoint(topic, part, listenerName);
+                if (leaderOpt.isEmpty() || leaderOpt.get().equals(Node.noNode())) {
+                    log.warn("Leader is not available for mirror {} partition {}-{}", mirrorName, topic, part);
+                    return;
+                }
+
+                nodeToTopicPartitions
+                        .computeIfAbsent(leaderOpt.get(), k -> new HashMap<>())
+                        .computeIfAbsent(topic, k -> new ArrayList<>())
+                        .add(part);
+            });
+        });
+
+        if (nodeToTopicPartitions.isEmpty()) {
+            callback.accept(new ReadMirrorOffsetsResponse(new ReadMirrorOffsetsResponseData()));
+            return;
+        }
+
+        // Collect all node responses, invoke callback once with merged result
+        ReadMirrorOffsetsResponseData merged = new ReadMirrorOffsetsResponseData();
+        AtomicInteger remaining = new AtomicInteger(nodeToTopicPartitions.size());
+
+        // Send one batched request per leader node
+        nodeToTopicPartitions.forEach((node, topicPartitionsMap) -> {
+            ReadMirrorOffsetsRequestData data = new ReadMirrorOffsetsRequestData().setMirrorName(mirrorName);
+            List<ReadMirrorOffsetsRequestData.TopicData> topicDataList = new ArrayList<>();
+
+            topicPartitionsMap.forEach((topic, partitionList) ->
+                    topicDataList.add(new ReadMirrorOffsetsRequestData.TopicData()
+                            .setTopicName(topic)
+                            .setPartitions(partitionList)));
+
+            data.setTopics(topicDataList);
+
+            mirrorStateSender.enqueue(new RequestAndCompletionHandler(
+                    time.milliseconds(),
+                    node,
+                    new ReadMirrorOffsetsRequest.Builder(data),
+                    response -> {
+                        if (response.responseBody() instanceof ReadMirrorOffsetsResponse readOffsetsResponse) {
+                            log.debug("Read offsets from remote leader completed: {}", response.responseBody());
+
+                            synchronized (merged) {
+                                merged.topics().addAll(readOffsetsResponse.data().topics());
                             }
+                        } else {
+                            log.warn("Unexpected response type from leader {}: {}", node, response.responseBody());
+                        }
+
+                        if (remaining.decrementAndGet() == 0) {
+                            callback.accept(new ReadMirrorOffsetsResponse(merged));
                         }
                     }
             ));
@@ -1438,6 +1519,21 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 })
                 .map(TopicImage::name)
                 .collect(Collectors.toSet());
+    }
+
+    // Returns topic -> partition indices for all partitions of a mirror from metadata image
+    public Map<String, Set<Integer>> getAllPartitions(String mirrorName) {
+        Map<String, Set<Integer>> result = new HashMap<>();
+        metadataImage.topics().topicsById().values().forEach(topicInfo -> {
+            if (mirrorName.equals(topicInfo.mirrorName())) {
+                Set<Integer> parts = new HashSet<>();
+                for (int i = 0; i < topicInfo.partitions().size(); i++) {
+                    parts.add(i);
+                }
+                result.put(topicInfo.name(), parts);
+            }
+        });
+        return result;
     }
 
     public Set<String> getDesiredStates(String mirrorName) {

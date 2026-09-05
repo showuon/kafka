@@ -56,7 +56,6 @@ import org.apache.kafka.common.message.CreateAclsRequestData;
 import org.apache.kafka.common.message.CreatePartitionsRequestData;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.DeleteAclsRequestData;
-import org.apache.kafka.common.message.DescribeClusterMirrorsRequestData;
 import org.apache.kafka.common.message.IncrementalAlterConfigsRequestData;
 import org.apache.kafka.common.message.StartMirrorTopicsRequestData;
 import org.apache.kafka.common.protocol.Errors;
@@ -1312,12 +1311,15 @@ class MirrorSourceSyncer {
     CompletionStage<Map<TopicPartition, Integer>> sendLastMirrorEpochLookup(
             String mirrorName, TopicPartition tp, Collection<ClusterMirrorListing> sourceMirrors) {
         Admin admin = metadataManager.getOrCreateSourceAdmin(mirrorName);
-        List<DescribeClusterMirrorsRequestData.LastMirrorEpochLookup> lookups = buildLastMirrorEpochLookup(tp);
-        log.info("Last mirror epoch lookup request for mirror {}: {}", mirrorName, lookups);
+        log.info("Last mirror epoch lookup request for mirror {}: topic={} partition={}", mirrorName, tp.topic(), tp.partition());
+
+        // Use Topics filter to specify which partitions to look up.
+        // LME is retrieved from the mirror coordinator along with mirror state.
+        Map<String, List<Integer>> topicPartitions = Map.of(tp.topic(), List.of(tp.partition()));
         DescribeClusterMirrorsOptions options = new DescribeClusterMirrorsOptions()
                 .clusterId(metadataManager.clusterId())
-                .lastMirrorEpochLookups(lookups);
-        DescribeClusterMirrorsResult result = admin.describeClusterMirrors(null, options);
+                .includeMirrorState(true);
+        DescribeClusterMirrorsResult result = admin.describeClusterMirrors(null, topicPartitions, options);
 
         var describeFuture = result.allDescriptions().toCompletionStage().toCompletableFuture();
         var lookupEpochsFuture = result.lookupEpochs().toCompletionStage().toCompletableFuture();
@@ -1338,18 +1340,6 @@ class MirrorSourceSyncer {
                 return epochs;
             })
             .orTimeout(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
-    }
-
-    /**
-     * Builds LME lookup entries with only this cluster's own ID.
-     * The source matches this against its mirror configs to find cases
-     * where it previously mirrored from us (direct failback).
-     */
-    private List<DescribeClusterMirrorsRequestData.LastMirrorEpochLookup> buildLastMirrorEpochLookup(
-            TopicPartition tp) {
-        return List.of(new DescribeClusterMirrorsRequestData.LastMirrorEpochLookup()
-                .setTopicName(tp.topic())
-                .setPartitions(List.of(tp.partition())));
     }
 
     record TimeoutHandler(Logger log) implements ControllerRequestCompletionHandler {
