@@ -4614,23 +4614,24 @@ class KafkaApis(val requestChannel: RequestChannel,
       offsetData: Option[ReadMirrorOffsetsResponseData],
       lmeMap: scala.collection.mutable.Map[String, scala.collection.mutable.Map[Int, Int]]
   ): Unit = {
-    // Per-topic state lookup: topicName -> (partitionIndex -> state partition)
+    // Per-topic state lookup: topicName -> (partitionIndex -> state partition).
+    // Merged response may contain duplicate topic entries from different coordinators,
+    // so we must accumulate partitions with computeIfAbsent rather than overwrite.
     val stateLookup = new util.HashMap[String, util.HashMap[Integer, ReadMirrorStatesResponseData.PartitionResult]]()
     stateData.foreach { data =>
       data.topics().forEach { topic =>
-        val partMap = new util.HashMap[Integer, ReadMirrorStatesResponseData.PartitionResult]()
+        val partMap = stateLookup.computeIfAbsent(topic.topicName(), _ => new util.HashMap())
         topic.partitions().forEach(p => partMap.put(p.partitionIndex(), p))
-        stateLookup.put(topic.topicName(), partMap)
       }
     }
 
-    // Per-topic offset lookup: topicName -> (partitionIndex -> offset partition)
+    // Per-topic offset lookup: topicName -> (partitionIndex -> offset partition).
+    // Same duplicate-topic handling as above.
     val offsetLookup = new util.HashMap[String, util.HashMap[Integer, ReadMirrorOffsetsResponseData.PartitionResult]]()
     offsetData.foreach { data =>
       data.topics().forEach { topic =>
-        val partMap = new util.HashMap[Integer, ReadMirrorOffsetsResponseData.PartitionResult]()
+        val partMap = offsetLookup.computeIfAbsent(topic.topicName(), _ => new util.HashMap())
         topic.partitions().forEach(p => partMap.put(p.partitionIndex(), p))
-        offsetLookup.put(topic.topicName(), partMap)
       }
     }
 
