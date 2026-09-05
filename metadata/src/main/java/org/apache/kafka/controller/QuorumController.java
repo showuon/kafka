@@ -1807,11 +1807,11 @@ public final class QuorumController implements Controller {
             ControllerRequestContext context,
             String mirrorName,
             Set<String> topics,
-            List<String> patterns,
+            List<String> selectPatterns,
             long stateOffset
     ) {
         return appendWriteEvent("stopMirrorTopics", context.deadlineNs(),
-                () -> configurationControl.stopMirrorTopics(mirrorName, topics, patterns, replicationControl, stateOffset));
+                () -> configurationControl.stopMirrorTopics(mirrorName, topics, selectPatterns, replicationControl, stateOffset));
     }
 
     @Override

@@ -24,14 +24,14 @@ import java.util.Set;
  * Options for {@link Admin#stopMirrorTopics(String, Set, StopMirrorTopicsOptions)}.
  */
 public class StopMirrorTopicsOptions extends AbstractOptions<StopMirrorTopicsOptions> {
-    private List<String> patterns = List.of();
+    private List<String> selectPatterns = List.of();
 
-    public StopMirrorTopicsOptions patterns(List<String> patterns) {
-        this.patterns = patterns;
+    public StopMirrorTopicsOptions selectPatterns(List<String> selectPatterns) {
+        this.selectPatterns = selectPatterns;
         return this;
     }
 
-    public List<String> patterns() {
-        return patterns;
+    public List<String> selectPatterns() {
+        return selectPatterns;
     }
 }

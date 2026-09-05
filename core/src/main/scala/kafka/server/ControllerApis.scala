@@ -1273,11 +1273,11 @@ class ControllerApis(
       authHelper.authorize(request.context, ALTER_CONFIGS, TOPIC, topic, logIfDenied = false))
     if (unauthorizedTopics.nonEmpty)
       throw new TopicAuthorizationException(unauthorizedTopics.asJava)
-    val patterns = stopRequest.data().patterns()
+    val selectPatterns = stopRequest.data().selectPatterns()
     val stateOffset = stopRequest.data().stateOffset()
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       requestTimeoutMsToDeadlineNs(time, stopRequest.data().timeoutMs()))
-    controller.stopMirrorTopics(context, mirrorName, topics, patterns, stateOffset)
+    controller.stopMirrorTopics(context, mirrorName, topics, selectPatterns, stateOffset)
       .handle[Unit] { (response, exception) =>
         if (exception != null) {
           requestHelper.handleError(request, exception)

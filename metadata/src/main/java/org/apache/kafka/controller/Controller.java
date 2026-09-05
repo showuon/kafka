@@ -184,7 +184,7 @@ public interface Controller extends AclMutator, AutoCloseable {
             ControllerRequestContext context,
             String mirrorName,
             Set<String> topics,
-            List<String> patterns,
+            List<String> selectPatterns,
             long stateOffset
     );
 

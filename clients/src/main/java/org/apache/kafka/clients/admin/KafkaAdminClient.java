@@ -5002,7 +5002,7 @@ public class KafkaAdminClient extends AdminClient {
     public StopMirrorTopicsResult stopMirrorTopics(String mirrorName, Set<String> topics, StopMirrorTopicsOptions options) {
         final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
 
-        validateRegexPatterns(options.patterns());
+        validateRegexPatterns(options.selectPatterns());
 
         final long now = time.milliseconds();
         final Call call = new Call("stopMirrorTopics", calcDeadlineMs(now, options.timeoutMs()),
@@ -5014,7 +5014,7 @@ public class KafkaAdminClient extends AdminClient {
                 data.setMirrorName(mirrorName);
                 data.setTimeoutMs(timeoutMs);
                 topics.forEach(t -> data.topics().add(new StopMirrorTopicsRequestData.TopicMetadata().setTopicName(t)));
-                data.setPatterns(options.patterns());
+                data.setSelectPatterns(options.selectPatterns());
                 return new StopMirrorTopicsRequest.Builder(data);
             }
 
@@ -5060,6 +5060,9 @@ public class KafkaAdminClient extends AdminClient {
     @Override
     public PauseMirrorTopicsResult pauseMirrorTopics(String mirrorName, Set<String> topics, PauseMirrorTopicsOptions options) {
         final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
+
+        validateRegexPatterns(options.selectPatterns());
+
         final long now = time.milliseconds();
         final Call call = new Call("pauseMirrorTopics", calcDeadlineMs(now, options.timeoutMs()),
                 new LeastLoadedBrokerOrActiveKController()) {
@@ -5070,6 +5073,7 @@ public class KafkaAdminClient extends AdminClient {
                 data.setMirrorName(mirrorName);
                 data.setTimeoutMs(timeoutMs);
                 topics.forEach(t -> data.topics().add(new PauseMirrorTopicsRequestData.TopicMetadata().setTopicName(t)));
+                data.setSelectPatterns(options.selectPatterns());
                 return new PauseMirrorTopicsRequest.Builder(data);
             }
 
@@ -5105,6 +5109,9 @@ public class KafkaAdminClient extends AdminClient {
     @Override
     public ResumeMirrorTopicsResult resumeMirrorTopics(String mirrorName, Set<String> topics, ResumeMirrorTopicsOptions options) {
         final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
+
+        validateRegexPatterns(options.selectPatterns());
+
         final long now = time.milliseconds();
         final Call call = new Call("resumeMirrorTopics", calcDeadlineMs(now, options.timeoutMs()),
                 new LeastLoadedBrokerOrActiveKController()) {
@@ -5115,6 +5122,7 @@ public class KafkaAdminClient extends AdminClient {
                 data.setMirrorName(mirrorName);
                 data.setTimeoutMs(timeoutMs);
                 topics.forEach(t -> data.topics().add(new ResumeMirrorTopicsRequestData.TopicMetadata().setTopicName(t)));
+                data.setSelectPatterns(options.selectPatterns());
                 return new ResumeMirrorTopicsRequest.Builder(data);
             }
 

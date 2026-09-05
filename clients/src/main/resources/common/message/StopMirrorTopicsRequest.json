@@ -29,7 +29,7 @@
         { "name": "TopicName", "type": "string", "versions": "0+", "mapKey": true, "entityType": "topicName",
           "about": "The topic name." }
       ]},
-    { "name": "Patterns", "type": "[]string", "versions": "0+",
+    { "name": "SelectPatterns", "type": "[]string", "versions": "0+",
       "about": "Topic patterns to remove from topics.include and add to topics.exclude." },
     { "name": "StateOffset", "type": "int64", "versions": "0+", "default": "-1",
       "about": "Cluster metadata log offset used for validating partition state preconditions. -1 to skip validation."},
