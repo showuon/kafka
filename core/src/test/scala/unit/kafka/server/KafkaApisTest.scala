@@ -4332,7 +4332,7 @@ class KafkaApisTest extends Logging {
       val records = MemoryRecords.withRecords(Compression.NONE,
         new SimpleRecord(timestamp, "foo".getBytes(StandardCharsets.UTF_8)))
       callback(Seq(tidp -> new FetchPartitionData(Errors.NONE, hw, 0, records,
-        Optional.empty(), OptionalLong.empty(), Optional.empty(), OptionalInt.empty(), false, Optional.empty())))
+        Optional.empty(), OptionalLong.empty(), Optional.empty(), OptionalInt.empty(), false)))
     })
 
     val fetchData = util.Map.of(tidp, new FetchRequest.PartitionData(Uuid.ZERO_UUID, 0, 0, 1000,
@@ -4455,7 +4455,7 @@ class KafkaApisTest extends Logging {
     )).thenAnswer(invocation => {
       val callback = invocation.getArgument(3).asInstanceOf[Seq[(TopicIdPartition, FetchPartitionData)] => Unit]
       callback(Seq(tidp -> new FetchPartitionData(Errors.NOT_LEADER_OR_FOLLOWER, UnifiedLog.UNKNOWN_OFFSET, UnifiedLog.UNKNOWN_OFFSET, MemoryRecords.EMPTY,
-        Optional.empty(), OptionalLong.empty(), Optional.empty(), OptionalInt.empty(), false, Optional.empty())))
+        Optional.empty(), OptionalLong.empty(), Optional.empty(), OptionalInt.empty(), false)))
     })
 
     val fetchData = util.Map.of(tidp, new FetchRequest.PartitionData(topicId, 0, 0, 1000,
@@ -9420,7 +9420,7 @@ class KafkaApisTest extends Logging {
     )).thenAnswer(invocation => {
       val callback = invocation.getArgument(3).asInstanceOf[Seq[(TopicIdPartition, FetchPartitionData)] => Unit]
       callback(Seq(tidp0 -> new FetchPartitionData(Errors.NONE, hw, 0, records,
-        Optional.empty(), OptionalLong.empty(), Optional.empty(), OptionalInt.empty(), isReassigning, Optional.empty())))
+        Optional.empty(), OptionalLong.empty(), Optional.empty(), OptionalInt.empty(), isReassigning)))
     })
 
     val fetchMetadata = new JFetchMetadata(0, 0)

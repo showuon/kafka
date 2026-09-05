@@ -126,8 +126,7 @@ class DelayedRemoteFetch(remoteFetchTasks: util.Map[TopicIdPartition, Future[Voi
             if (result.lastStableOffset.isPresent) OptionalLong.of(result.lastStableOffset.getAsLong) else OptionalLong.empty(),
             info.abortedTransactions,
             if (result.preferredReadReplica.isPresent) OptionalInt.of(result.preferredReadReplica.getAsInt) else OptionalInt.empty(),
-            false,
-            Optional.empty())
+            false)
         }
       } else {
         tp -> result.toFetchPartitionData(false)
