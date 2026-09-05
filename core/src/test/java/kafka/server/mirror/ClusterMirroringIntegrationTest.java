@@ -296,7 +296,6 @@ public class ClusterMirroringIntegrationTest {
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
                 "bootstrap.servers", singleSourceBootstrapServer
         ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        System.out.println("!!! Created mirror");
         dstAdmin.startMirrorTopics(MIRROR_NAME, Set.of(topic), new StartMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
         waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
