@@ -459,8 +459,10 @@ public class TestingMetricsInterceptingAdminClient extends AdminClient {
     }
 
     @Override
-    public DescribeClusterMirrorsResult describeClusterMirrors(final Collection<String> mirrorNames, final DescribeClusterMirrorsOptions options) {
-        return adminDelegate.describeClusterMirrors(mirrorNames, options);
+    public DescribeClusterMirrorsResult describeClusterMirrors(final Collection<String> mirrorNames,
+                                                               final Map<String, List<Integer>> topicPartitions,
+                                                               final DescribeClusterMirrorsOptions options) {
+        return adminDelegate.describeClusterMirrors(mirrorNames, topicPartitions, options);
     }
 
     @Override

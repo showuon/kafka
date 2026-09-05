@@ -1767,28 +1767,32 @@ public interface Admin extends AutoCloseable {
     /**
      * Describe cluster mirrors with the default options.
      *
-     * <p>This is a convenience method for {@link #describeClusterMirrors(Collection, DescribeClusterMirrorsOptions)}
+     * <p>This is a convenience method for
+     * {@link #describeClusterMirrors(Collection, Map, DescribeClusterMirrorsOptions)}
      * with default options. See the overload for more details.
      *
      * @param mirrorNames The names of the mirrors to describe
      * @return The DescribeClusterMirrorsResult
      */
     default DescribeClusterMirrorsResult describeClusterMirrors(Collection<String> mirrorNames) {
-        return describeClusterMirrors(mirrorNames, new DescribeClusterMirrorsOptions());
+        return describeClusterMirrors(mirrorNames, null, new DescribeClusterMirrorsOptions());
     }
 
     /**
      * Describe cluster mirrors on the destination cluster. Returns per-partition state,
-     * replication lag, and last mirror epoch. The request is sent to all brokers because
-     * each broker only reports partitions for which it is the mirror leader. Optionally
-     * performs last mirror epoch lookups for failback truncation when cluster ID and lookup
-     * entries are provided in the options.
+     * replication offsets, and last mirror epoch. The request is sent to one broker
+     * and then query to the responsible coordinator or partition leader node. Optionally
+     * performs last mirror epoch lookups for failback truncation when cluster ID
+     * are provided in the options.
      *
      * @param mirrorNames The names of the mirrors to describe
+     * @param topicPartitions Filter by topic partitions. Null means all.
      * @param options The options to use when describing mirrors
      * @return The DescribeClusterMirrorsResult
      */
-    DescribeClusterMirrorsResult describeClusterMirrors(Collection<String> mirrorNames, DescribeClusterMirrorsOptions options);
+    DescribeClusterMirrorsResult describeClusterMirrors(Collection<String> mirrorNames,
+                                                        Map<String, List<Integer>> topicPartitions,
+                                                        DescribeClusterMirrorsOptions options);
 
     /**
      * Describe producer state on a set of topic partitions. See

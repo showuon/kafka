@@ -225,6 +225,8 @@ import org.apache.kafka.common.message.ProduceRequestData;
 import org.apache.kafka.common.message.ProduceResponseData;
 import org.apache.kafka.common.message.PushTelemetryRequestData;
 import org.apache.kafka.common.message.PushTelemetryResponseData;
+import org.apache.kafka.common.message.ReadMirrorOffsetsRequestData;
+import org.apache.kafka.common.message.ReadMirrorOffsetsResponseData;
 import org.apache.kafka.common.message.ReadMirrorStatesRequestData;
 import org.apache.kafka.common.message.ReadMirrorStatesResponseData;
 import org.apache.kafka.common.message.ReadShareGroupStateRequestData;
@@ -1110,6 +1112,7 @@ public class RequestResponseTest {
             case PAUSE_MIRROR_TOPICS: return createPauseMirrorTopicsRequest(version);
             case RESUME_MIRROR_TOPICS: return createResumeMirrorTopicsRequest(version);
             case DELETE_CLUSTER_MIRROR: return createDeleteClusterMirrorRequest(version);
+            case READ_MIRROR_OFFSETS: return createReadMirrorOffsetsRequest(version);
             case BUMP_LEADER_EPOCHS: return createBumpLeaderEpochsRequest(version);
             default: throw new IllegalArgumentException("Unknown API key " + apikey);
         }
@@ -1217,6 +1220,7 @@ public class RequestResponseTest {
             case PAUSE_MIRROR_TOPICS: return createPauseMirrorTopicsResponse();
             case RESUME_MIRROR_TOPICS: return createResumeMirrorTopicsResponse();
             case DELETE_CLUSTER_MIRROR: return createDeleteClusterMirrorResponse();
+            case READ_MIRROR_OFFSETS: return createReadMirrorOffsetsResponse();
             case BUMP_LEADER_EPOCHS: return createBumpLeaderEpochsResponse();
             default: throw new IllegalArgumentException("Unknown API key " + apikey);
         }
@@ -1275,7 +1279,9 @@ public class RequestResponseTest {
     public DescribeClusterMirrorsRequest createDescribeClusterMirrorsRequest(short version) {
         DescribeClusterMirrorsRequestData data = new DescribeClusterMirrorsRequestData()
                 .setMirrorNames(List.of("mirror"))
-                .setIncludeAuthorizedOperations(true);
+                .setIncludeAuthorizedOperations(true)
+                .setIncludeMirrorState(true)
+                .setIncludeMirrorOffset(true);
         return new DescribeClusterMirrorsRequest.Builder(data).build(version);
     }
 
@@ -1290,6 +1296,7 @@ public class RequestResponseTest {
                                         .setStateValue("MIRRORING")
                                         .setDestinationOffset(0)
                                         .setSourceOffset(100)
+                                        .setLastMirrorEpoch(-1)
                                 ))
                         ))));
         return new DescribeClusterMirrorsResponse(data);
@@ -1386,6 +1393,29 @@ public class RequestResponseTest {
     public DeleteClusterMirrorResponse createDeleteClusterMirrorResponse() {
         DeleteClusterMirrorResponseData data = new DeleteClusterMirrorResponseData();
         return new DeleteClusterMirrorResponse(data);
+    }
+
+    public ReadMirrorOffsetsRequest createReadMirrorOffsetsRequest(short version) {
+        ReadMirrorOffsetsRequestData data = new ReadMirrorOffsetsRequestData()
+                .setMirrorName("mirror")
+                .setTopics(List.of(new ReadMirrorOffsetsRequestData.TopicData()
+                        .setTopicName("topic")
+                        .setPartitions(List.of(0))
+                ));
+        return new ReadMirrorOffsetsRequest.Builder(data).build(version);
+    }
+
+    public ReadMirrorOffsetsResponse createReadMirrorOffsetsResponse() {
+        ReadMirrorOffsetsResponseData data = new ReadMirrorOffsetsResponseData()
+                .setTopics(List.of(new ReadMirrorOffsetsResponseData.TopicResult()
+                        .setTopicName("topic")
+                        .setPartitions(List.of(new ReadMirrorOffsetsResponseData.PartitionResult()
+                                .setPartitionIndex(0)
+                                .setSourceOffset(100)
+                                .setDestinationOffset(50)
+                        ))
+                ));
+        return new ReadMirrorOffsetsResponse(data);
     }
 
     public BumpLeaderEpochsRequest createBumpLeaderEpochsRequest(short version) {

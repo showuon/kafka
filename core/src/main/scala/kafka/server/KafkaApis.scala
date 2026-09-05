@@ -23,7 +23,7 @@ import kafka.server.QuotaFactory.{QuotaManagers, UNBOUNDED_QUOTA}
 import kafka.server.handlers.DescribeTopicPartitionsRequestHandler
 import kafka.server.mirror.MirrorMetadataManager
 import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService.MirrorStateWrite
-import org.apache.kafka.coordinator.mirror.{ClusterMirrorCoordinatorService, MirrorPartitionKey}
+import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService
 import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState
 import org.apache.kafka.server.common.ClusterMirrorVersion
 import kafka.server.share.{ShareFetchUtils, SharePartitionManager}
@@ -4413,8 +4413,10 @@ class KafkaApis(val requestChannel: RequestChannel,
     requestHelper.sendMaybeThrottle(request, new ListClusterMirrorsResponse(responseData))
   }
 
+  // Single-broker handler: this broker fans out ReadMirrorStates to coordinators
+  // and ReadMirrorOffsets to partition leaders, then merges into one response.
   def handleDescribeClusterMirrorsRequest(request: RequestChannel.Request): Unit = {
-    val describeMirrorsRequest = request.body[DescribeClusterMirrorsRequest]
+    val requestData = request.body[DescribeClusterMirrorsRequest].data
     val responseData = new DescribeClusterMirrorsResponseData()
 
     if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
@@ -4424,12 +4426,34 @@ class KafkaApis(val requestChannel: RequestChannel,
       return
     }
 
-    val describeAll = describeMirrorsRequest.data.mirrorNames == null
+    // Phase 1: Resolve mirror names and identify LME matching mirrors
+    val describeAll = requestData.mirrorNames == null
     val requestedMirrors = if (describeAll) {
       mirrorMetadataManager.getConfiguredMirrors().asScala.toSeq
     } else {
-      describeMirrorsRequest.data.mirrorNames.asScala.toSeq
+      requestData.mirrorNames.asScala.toSeq
     }
+
+    val includeMirrorState = requestData.includeMirrorState
+    val includeMirrorOffset = requestData.includeMirrorOffset
+    val requestClusterId = requestData.clusterId
+
+    // Used by MirrorSourceSyncer.sendLastMirrorEpochLookup during failback truncation.
+    // Finds all local mirrors sourcing from the requester's cluster, which may not overlap
+    // with the requested mirror names. Their LME values are attached to the response.
+    val lmeMatchingMirrors: Set[String] = if (requestClusterId != null && includeMirrorState) {
+      mirrorMetadataManager.getConfiguredMirrors().asScala
+        .filter(m => Option(mirrorMetadataManager.getSourceClusterId(m)).contains(requestClusterId))
+        .toSet
+    } else {
+      Set.empty
+    }
+
+    // Phase 2: Authorize each mirror and collect partition maps filtered by the Topics field
+    class MirrorWork(val name: String, val describedMirror: DescribeClusterMirrorsResponseData.DescribedMirror,
+                     val partitions: util.Map[String, util.Set[Integer]])
+
+    val authorizedMirrors = scala.collection.mutable.Buffer[MirrorWork]()
 
     requestedMirrors.foreach { mirrorName =>
       if (!authHelper.authorize(request.context, DESCRIBE, CLUSTER_MIRROR, mirrorName, logIfDenied = !describeAll)) {
@@ -4446,129 +4470,226 @@ class KafkaApis(val requestChannel: RequestChannel,
           .setSourceClusterId(mirrorMetadataManager.getSourceClusterId(mirrorName))
           .setErrorCode(Errors.NONE.code)
 
-        if (describeMirrorsRequest.data.includeAuthorizedOperations) {
+        if (requestData.includeAuthorizedOperations) {
           describedMirror.setAuthorizedOperations(authHelper.authorizedOperations(
             request, new Resource(ResourceType.CLUSTER_MIRROR, mirrorName)))
         }
 
-        // Each broker reports partitions it's responsible for to avoid duplicates
-        val offsetInfoMap = replicaManager.getMirrorOffsetInfo(mirrorName)
-        val partitionStates = mirrorMetadataManager.getMirrorStates(mirrorName).asScala
-        // Report partition if: (1) we have lag info, OR (2) we're the partition leader and have no lag info
-        val partitionsToReport = (offsetInfoMap.keySet ++ partitionStates.keySet.filter { tp =>
-          !offsetInfoMap.contains(tp) && replicaManager.onlinePartition(tp).exists(_.isLeader)
-        }).toSeq
+        val filteredPartitions = filterMirrorPartitions(mirrorName, requestData.topics)
 
-        if (partitionsToReport.nonEmpty) {
-          // Group partitions by topic
-          val topicsMap = scala.collection.mutable.Map[String, DescribeClusterMirrorsResponseData.TopicResult]()
-
-          partitionsToReport.foreach { topicPartition =>
-            val topicName = topicPartition.topic()
-            val topicPartitions = topicsMap.getOrElseUpdate(topicName, {
-              val tp = new DescribeClusterMirrorsResponseData.TopicResult().setTopicName(topicName)
-              tp.setPartitions(new util.ArrayList[DescribeClusterMirrorsResponseData.PartitionDetail]())
-              tp
-            })
-
-            val state = partitionStates.getOrElse(topicPartition, MirrorPartitionState.UNKNOWN)
-            val isMirroring = state == MirrorPartitionState.MIRRORING
-            val mp = mirrorMetadataManager.getPartition(
-              MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(topicPartition.topic()), topicPartition.partition()))
-            val partitionDetail = new DescribeClusterMirrorsResponseData.PartitionDetail()
-              .setPartitionIndex(topicPartition.partition())
-              .setSourceOffset(if (isMirroring) offsetInfoMap.get(topicPartition).map(_.sourceOffset).getOrElse(-1L) else -1L)
-              .setDestinationOffset(if (isMirroring) offsetInfoMap.get(topicPartition).map(_.destinationOffset).getOrElse(-1L) else -1L)
-              .setStateValue(state.name())
-              .setRetryAttempt(if (mp != null) mp.retryAttempt().toShort else 0.toShort)
-              .setErrorMessage(if (mp != null) mp.errorMessage() else null)
-
-            topicPartitions.partitions().add(partitionDetail)
-          }
-
-          val topicsList = new util.ArrayList[DescribeClusterMirrorsResponseData.TopicResult]()
-          topicsMap.values.foreach(tp => topicsList.add(tp))
-          describedMirror.setTopics(topicsList)
-        }
-
+        authorizedMirrors += new MirrorWork(mirrorName, describedMirror, filteredPartitions)
         responseData.mirrors().add(describedMirror)
       }
     }
 
-    maybeProcessLastMirrorEpochLookup(describeMirrorsRequest.data, responseData,
-      () => requestHelper.sendMaybeThrottle(request, new DescribeClusterMirrorsResponse(responseData)))
+    // No fan-out needed: respond synchronously with empty partition details
+    if (authorizedMirrors.isEmpty || (!includeMirrorState && !includeMirrorOffset)) {
+      requestHelper.sendMaybeThrottle(request, new DescribeClusterMirrorsResponse(responseData))
+      return
+    }
+
+    // Phase 3: Fan out async RPCs to coordinator and leader nodes
+    val describedMirrorNames = authorizedMirrors.map(_.name).toSet
+    // Not authorized: looked up internally by sourceClusterId, never exposed in the response.
+    // Only their LME values (opaque integers) are attached to the described mirror's partitions.
+    val extraLmeMirrors = lmeMatchingMirrors -- describedMirrorNames
+
+    // Count total async callbacks expected
+    val stateOps = if (includeMirrorState) authorizedMirrors.size + extraLmeMirrors.size else 0
+    val offsetOps = if (includeMirrorOffset) authorizedMirrors.size else 0
+    val remaining = new AtomicInteger(stateOps + offsetOps)
+
+    val stateResults = new ConcurrentHashMap[String, ReadMirrorStatesResponseData]()
+    val offsetResults = new ConcurrentHashMap[String, ReadMirrorOffsetsResponseData]()
+
+    // Phase 4: Merge results and send response (triggered by last callback)
+    def maybeComplete(): Unit = {
+      if (remaining.decrementAndGet() == 0) {
+        val lmeMap = buildLastMirrorEpochMap(lmeMatchingMirrors, stateResults)
+
+        authorizedMirrors.foreach { info =>
+          populateMirrorDetails(info.describedMirror, info.partitions,
+            Option(stateResults.get(info.name)),
+            Option(offsetResults.get(info.name)),
+            lmeMap)
+        }
+
+        requestHelper.sendMaybeThrottle(request, new DescribeClusterMirrorsResponse(responseData))
+      }
+    }
+
+    // Fan out ReadMirrorStates to coordinator nodes
+    if (includeMirrorState) {
+      authorizedMirrors.foreach { info =>
+        mirrorMetadataManager.readStateFromRemoteCoordinator(info.name, info.partitions, response => {
+          stateResults.put(info.name, response.data())
+          maybeComplete()
+        })
+      }
+
+      extraLmeMirrors.foreach { mirrorName =>
+        val filtered = filterMirrorPartitions(mirrorName, requestData.topics)
+        mirrorMetadataManager.readStateFromRemoteCoordinator(mirrorName, filtered, response => {
+          stateResults.put(mirrorName, response.data())
+          maybeComplete()
+        })
+      }
+    }
+
+    // Fan out ReadMirrorOffsets to partition leader nodes
+    if (includeMirrorOffset) {
+      authorizedMirrors.foreach { info =>
+        mirrorMetadataManager.readOffsetsFromRemoteLeaders(info.name, info.partitions, response => {
+          offsetResults.put(info.name, response.data())
+          maybeComplete()
+        })
+      }
+    }
   }
 
-  /*
-   * Handles LastMirrorEpochLookup entries by finding matching mirrors and looking up
-   * their LME from the local coordinator cache. For each lookup, scans mirror configs
-   * to find mirrors whose source cluster ID matches ClusterId (the requesting
-   * cluster's own ID). This supports direct failback (A->B then B->A).
-   * Returns -1 for partitions not coordinated by this broker. The admin client
-   * broadcasts to all brokers and takes the max LME per partition.
-   */
-  private def maybeProcessLastMirrorEpochLookup(requestData: DescribeClusterMirrorsRequestData,
-                                                responseData: DescribeClusterMirrorsResponseData,
-                                                sendResponse: Runnable): Unit = {
-    val requestClusterId = requestData.clusterId
-    val lastMirrorEpochLookups = requestData.lastMirrorEpochLookups
-    if (requestClusterId == null || lastMirrorEpochLookups == null || lastMirrorEpochLookups.isEmpty) {
-      sendResponse.run()
-      return
-    }
-    val matchingMirrors = mirrorMetadataManager.getConfiguredMirrors().asScala.toSeq
-      .filter(m => Option(mirrorMetadataManager.getSourceClusterId(m)).contains(requestClusterId))
-
-    if (matchingMirrors.isEmpty) {
-      sendResponse.run()
-      return
+  // Get all partitions for a mirror, filtered by the Topics field in the request.
+  // null topics means no filter (all partitions pass).
+  private def filterMirrorPartitions(
+      mirrorName: String,
+      topics: java.lang.Iterable[DescribeClusterMirrorsRequestData.TopicMetadata]
+  ): util.Map[String, util.Set[Integer]] = {
+    val allPartitions = mirrorMetadataManager.getAllPartitions(mirrorName)
+    if (topics == null) {
+      return allPartitions
     }
 
-    // Collect (mirror -> topic -> partitions) for LME lookup
-    val mirrorPartitions = new util.HashMap[String, util.Map[String, util.Set[Integer]]]()
+    val filter = topics.asScala.map { tm =>
+      tm.topicName -> Option(tm.partitions).map(_.asScala.map(_.intValue()).toSet)
+    }.toMap
 
-    lastMirrorEpochLookups.forEach { lookup =>
-      val topicName = lookup.topicName
-      matchingMirrors.foreach { mirrorName =>
-        lookup.partitions.forEach { partIdx =>
-          mirrorPartitions
-            .computeIfAbsent(mirrorName, _ => new util.HashMap[String, util.Set[Integer]]())
-            .computeIfAbsent(topicName, _ => new util.HashSet[Integer]())
-            .add(partIdx)
+    val result = new util.HashMap[String, util.Set[Integer]]()
+    allPartitions.forEach { (topic, parts) =>
+      filter.get(topic) match {
+        case None => ()
+        case Some(None) => result.put(topic, parts)
+        case Some(Some(pSet)) =>
+          val filtered = new util.HashSet[Integer]()
+          parts.forEach(p => if (pSet.contains(p)) filtered.add(p))
+          if (!filtered.isEmpty) {
+            result.put(topic, filtered)
+          }
+      }
+    }
+    result
+  }
+
+  // Build map of LMEs from state responses of mirrors whose source cluster
+  // matches the requester. Used for failback truncation (A->B then B->A).
+  // Computed once before per-mirror population because a partition's LME is the max
+  // across all matching mirrors, requiring global visibility.
+  // Returns: topicName -> (partitionIndex -> max LME value)
+  private def buildLastMirrorEpochMap(
+      matchingMirrors: Set[String],
+      stateResults: ConcurrentHashMap[String, ReadMirrorStatesResponseData]
+  ): scala.collection.mutable.Map[String, scala.collection.mutable.Map[Int, Int]] = {
+    val lmeMap = scala.collection.mutable.Map[String, scala.collection.mutable.Map[Int, Int]]()
+    matchingMirrors.foreach { mirrorName =>
+      Option(stateResults.get(mirrorName)).foreach { data =>
+        data.topics().forEach { topic =>
+          topic.partitions().forEach { partition =>
+            if (partition.lastMirrorEpoch() >= 0) {
+              lmeMap.getOrElseUpdate(topic.topicName(), scala.collection.mutable.Map.empty)
+                .updateWith(partition.partitionIndex()) {
+                  case Some(existing) => Some(Math.max(existing, partition.lastMirrorEpoch()))
+                  case None => Some(partition.lastMirrorEpoch())
+                }
+            }
+          }
+        }
+      }
+    }
+    lmeMap
+  }
+
+  // Merge state, offset, and LME data into partition details on a DescribedMirror
+  private def populateMirrorDetails(
+      describedMirror: DescribeClusterMirrorsResponseData.DescribedMirror,
+      partitions: util.Map[String, util.Set[Integer]],
+      stateData: Option[ReadMirrorStatesResponseData],
+      offsetData: Option[ReadMirrorOffsetsResponseData],
+      lmeMap: scala.collection.mutable.Map[String, scala.collection.mutable.Map[Int, Int]]
+  ): Unit = {
+    // Per-topic state lookup: topicName -> (partitionIndex -> state partition)
+    val stateLookup = new util.HashMap[String, util.HashMap[Integer, ReadMirrorStatesResponseData.PartitionResult]]()
+    stateData.foreach { data =>
+      data.topics().forEach { topic =>
+        val partMap = new util.HashMap[Integer, ReadMirrorStatesResponseData.PartitionResult]()
+        topic.partitions().forEach(p => partMap.put(p.partitionIndex(), p))
+        stateLookup.put(topic.topicName(), partMap)
+      }
+    }
+
+    // Per-topic offset lookup: topicName -> (partitionIndex -> offset partition)
+    val offsetLookup = new util.HashMap[String, util.HashMap[Integer, ReadMirrorOffsetsResponseData.PartitionResult]]()
+    offsetData.foreach { data =>
+      data.topics().forEach { topic =>
+        val partMap = new util.HashMap[Integer, ReadMirrorOffsetsResponseData.PartitionResult]()
+        topic.partitions().forEach(p => partMap.put(p.partitionIndex(), p))
+        offsetLookup.put(topic.topicName(), partMap)
+      }
+    }
+
+    val topicsMap = scala.collection.mutable.Map[String, DescribeClusterMirrorsResponseData.TopicResult]()
+
+    def getOrCreateTopic(topicName: String): DescribeClusterMirrorsResponseData.TopicResult = {
+      topicsMap.getOrElseUpdate(topicName, {
+        new DescribeClusterMirrorsResponseData.TopicResult()
+          .setTopicName(topicName)
+          .setPartitions(new util.ArrayList[DescribeClusterMirrorsResponseData.PartitionDetail]())
+      })
+    }
+
+    // Build partition details from state + offset + LME
+    partitions.forEach { (topicName, parts) =>
+      val statePartMap = stateLookup.get(topicName)
+      val offsetPartMap = offsetLookup.get(topicName)
+
+      parts.forEach { partIdx =>
+        val sp = if (statePartMap != null) statePartMap.get(partIdx) else null
+        val op = if (offsetPartMap != null) offsetPartMap.get(partIdx) else null
+
+        val stateValue = if (sp != null) MirrorPartitionState.fromValue(sp.state()).name()
+                         else MirrorPartitionState.UNKNOWN.name()
+        val isMirroring = stateValue == MirrorPartitionState.MIRRORING.name()
+
+        val partitionDetail = new DescribeClusterMirrorsResponseData.PartitionDetail()
+          .setPartitionIndex(partIdx)
+          .setStateValue(stateValue)
+          .setRetryAttempt(if (sp != null) sp.retryAttempt() else 0.toShort)
+          .setErrorMessage(if (sp != null) sp.errorMessage() else null)
+          .setSourceOffset(if (op != null && isMirroring) op.sourceOffset() else -1L)
+          .setDestinationOffset(if (op != null && isMirroring) op.destinationOffset() else -1L)
+          .setLastMirrorEpoch(lmeMap.getOrElse(topicName, scala.collection.mutable.Map.empty)
+            .getOrElse(partIdx, -1))
+
+        getOrCreateTopic(topicName).partitions().add(partitionDetail)
+      }
+    }
+
+    // Inject LME data for partitions not covered by the mirror's own partition set
+    lmeMap.foreach { case (topicName, partMap) =>
+      val ownParts = partitions.get(topicName)
+      partMap.foreach { case (partIdx, lmeValue) =>
+        if (ownParts == null || !ownParts.contains(partIdx)) {
+          getOrCreateTopic(topicName).partitions().add(
+            new DescribeClusterMirrorsResponseData.PartitionDetail()
+              .setPartitionIndex(partIdx)
+              .setStateValue(MirrorPartitionState.UNKNOWN.name())
+              .setLastMirrorEpoch(lmeValue))
         }
       }
     }
 
-    if (mirrorPartitions.isEmpty) {
-      sendResponse.run()
-      return
+    if (topicsMap.nonEmpty) {
+      val topicsList = new util.ArrayList[DescribeClusterMirrorsResponseData.TopicResult]()
+      topicsMap.values.foreach(tp => topicsList.add(tp))
+      describedMirror.setTopics(topicsList)
     }
-
-    val lmeResults = mirrorMetadataManager.processLastMirrorEpochLookup(mirrorPartitions)
-
-    // Aggregate across mirrors: take max LME per (topic, partition)
-    val aggregated = new util.HashMap[String, util.Map[Integer, Integer]]()
-    lmeResults.forEach { (_, tpEpochs) =>
-      tpEpochs.forEach { (tp, lme) =>
-        aggregated
-          .computeIfAbsent(tp.topic, _ => new util.HashMap[Integer, Integer]())
-          .merge(tp.partition, lme, (a: Integer, b: Integer) => Math.max(a, b))
-      }
-    }
-
-    aggregated.forEach { (topicName, partitions) =>
-      val partitionResults = new util.ArrayList[DescribeClusterMirrorsResponseData.PartitionResult]()
-      partitions.forEach { (partIdx, lme) =>
-        partitionResults.add(new DescribeClusterMirrorsResponseData.PartitionResult()
-          .setPartitionIndex(partIdx)
-          .setLastMirrorEpoch(lme))
-      }
-      responseData.lookupResults().add(new DescribeClusterMirrorsResponseData.LookupResult()
-        .setTopicName(topicName)
-        .setPartitions(partitionResults))
-    }
-
-    sendResponse.run()
   }
 
   def handleReadMirrorStates(request: RequestChannel.Request): Unit = {

@@ -25,18 +25,20 @@
     { "name": "MirrorNames", "type": "[]string", "versions": "0+", "nullableVersions": "0+", "default": "null",
       "entityType": "mirrorName",
       "about": "The names of the mirrors to describe. Null means all mirrors." },
+    { "name": "Topics", "type": "[]TopicMetadata", "versions": "0+", "nullableVersions": "0+", "default": "null",
+      "about": "The topic metadata. Null means all topic partitions.", "fields": [
+      { "name": "TopicName", "type": "string", "versions": "0+", "mapKey": true, "entityType": "topicName",
+        "about": "The topic name." },
+      { "name": "Partitions", "type": "[]int32", "versions": "0+", "nullableVersions": "0+", "default": "null",
+        "about": "The partition indexes. Null means all partitions." }
+    ]},
+    { "name": "IncludeMirrorState", "type": "bool", "versions": "0+", "default": "false",
+      "about": "Whether to send to mirror coordinator node to get the mirror state info." },
+    { "name": "IncludeMirrorOffset", "type": "bool", "versions": "0+", "default": "false",
+      "about": "Whether to send to mirror partition leader node to get the mirror offset info." },
     { "name": "IncludeAuthorizedOperations", "type": "bool", "versions": "0+", "default": "false",
       "about": "Whether to include authorized operations." },
-    { "name": "ClusterId", "type": "string", "versions": "0+", "nullableVersions": "0+",
-      "taggedVersions": "0+", "tag": 0, "ignorable": true, "default": "null",
-      "about": "The requesting cluster's own ID for last mirror epoch lookup." },
-    { "name": "LastMirrorEpochLookups", "type": "[]LastMirrorEpochLookup", "versions": "0+",
-      "taggedVersions": "0+", "tag": 1, "ignorable": true,
-      "about": "Last mirror epoch lookups for incremental mirroring when failing back.", "fields": [
-      { "name": "TopicName", "type": "string", "versions": "0+", "entityType": "topicName",
-        "about": "The topic name." },
-      { "name": "Partitions", "type": "[]int32", "versions": "0+",
-        "about": "The partition indexes." }
-    ]}
+    { "name": "ClusterId", "type": "string", "versions": "0+", "nullableVersions": "0+", "default": "null",
+      "about": "The requesting cluster's own ID for last mirror epoch lookup." }
   ]
 }
