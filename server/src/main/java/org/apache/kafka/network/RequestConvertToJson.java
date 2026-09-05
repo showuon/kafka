@@ -168,6 +168,8 @@ import org.apache.kafka.common.message.ProduceRequestDataJsonConverter;
 import org.apache.kafka.common.message.ProduceResponseDataJsonConverter;
 import org.apache.kafka.common.message.PushTelemetryRequestDataJsonConverter;
 import org.apache.kafka.common.message.PushTelemetryResponseDataJsonConverter;
+import org.apache.kafka.common.message.ReadMirrorOffsetsRequestDataJsonConverter;
+import org.apache.kafka.common.message.ReadMirrorOffsetsResponseDataJsonConverter;
 import org.apache.kafka.common.message.ReadMirrorStatesRequestDataJsonConverter;
 import org.apache.kafka.common.message.ReadMirrorStatesResponseDataJsonConverter;
 import org.apache.kafka.common.message.ReadShareGroupStateRequestDataJsonConverter;
@@ -374,6 +376,8 @@ import org.apache.kafka.common.requests.ProduceRequest;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.PushTelemetryRequest;
 import org.apache.kafka.common.requests.PushTelemetryResponse;
+import org.apache.kafka.common.requests.ReadMirrorOffsetsRequest;
+import org.apache.kafka.common.requests.ReadMirrorOffsetsResponse;
 import org.apache.kafka.common.requests.ReadMirrorStatesRequest;
 import org.apache.kafka.common.requests.ReadMirrorStatesResponse;
 import org.apache.kafka.common.requests.ReadShareGroupStateRequest;
@@ -630,6 +634,8 @@ public class RequestConvertToJson {
                 return WriteMirrorStatesRequestDataJsonConverter.write(((WriteMirrorStatesRequest) request).data(), request.version());
             case READ_MIRROR_STATES:
                 return ReadMirrorStatesRequestDataJsonConverter.write(((ReadMirrorStatesRequest) request).data(), request.version());
+            case READ_MIRROR_OFFSETS:
+                return ReadMirrorOffsetsRequestDataJsonConverter.write(((ReadMirrorOffsetsRequest) request).data(), request.version());
             case BUMP_LEADER_EPOCHS:
                 return BumpLeaderEpochsRequestDataJsonConverter.write(((BumpLeaderEpochsRequest) request).data(), request.version());
             case DESCRIBE_CLUSTER_MIRRORS:
@@ -840,6 +846,8 @@ public class RequestConvertToJson {
                 return WriteMirrorStatesResponseDataJsonConverter.write(((WriteMirrorStatesResponse) response).data(), version);
             case READ_MIRROR_STATES:
                 return ReadMirrorStatesResponseDataJsonConverter.write(((ReadMirrorStatesResponse) response).data(), version);
+            case READ_MIRROR_OFFSETS:
+                return ReadMirrorOffsetsResponseDataJsonConverter.write(((ReadMirrorOffsetsResponse) response).data(), version);
             case BUMP_LEADER_EPOCHS:
                 return BumpLeaderEpochsResponseDataJsonConverter.write(((BumpLeaderEpochsResponse) response).data(), version);
             case DESCRIBE_CLUSTER_MIRRORS:

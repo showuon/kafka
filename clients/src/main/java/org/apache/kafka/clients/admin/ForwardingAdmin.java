@@ -300,8 +300,10 @@ public class ForwardingAdmin implements Admin {
         return delegate.deleteClusterMirror(mirrorName, options);
     }
 
-    public DescribeClusterMirrorsResult describeClusterMirrors(Collection<String> mirrorNames, DescribeClusterMirrorsOptions options) {
-        return delegate.describeClusterMirrors(mirrorNames, options);
+    public DescribeClusterMirrorsResult describeClusterMirrors(Collection<String> mirrorNames,
+                                                               Map<String, List<Integer>> topicPartitions,
+                                                               DescribeClusterMirrorsOptions options) {
+        return delegate.describeClusterMirrors(mirrorNames, topicPartitions, options);
     }
 
     @Override

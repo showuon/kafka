@@ -1403,18 +1403,21 @@ public class MockAdminClient extends AdminClient {
     }
 
     @Override
-    public synchronized DescribeClusterMirrorsResult describeClusterMirrors(Collection<String> mirrorNames, DescribeClusterMirrorsOptions options) {
+    public synchronized DescribeClusterMirrorsResult describeClusterMirrors(Collection<String> mirrorNames,
+                                                                            Map<String, List<Integer>> topicPartitions,
+                                                                            DescribeClusterMirrorsOptions options) {
         Map<String, ClusterMirrorDescription> descriptions = new HashMap<>();
-        for (String mirrorName : mirrorNames) {
-            // Return empty description for mock
-            ClusterMirrorDescription description = new ClusterMirrorDescription(
-                mirrorName,
-                null,
-                null,
-                Collections.emptyMap(),
-                null
-            );
-            descriptions.put(mirrorName, description);
+        if (mirrorNames != null) {
+            for (String mirrorName : mirrorNames) {
+                ClusterMirrorDescription description = new ClusterMirrorDescription(
+                    mirrorName,
+                    null,
+                    null,
+                    Collections.emptyMap(),
+                    null
+                );
+                descriptions.put(mirrorName, description);
+            }
         }
         KafkaFutureImpl<Map<String, ClusterMirrorDescription>> future = new KafkaFutureImpl<>();
         future.complete(descriptions);
