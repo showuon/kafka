@@ -258,7 +258,7 @@ public class ClusterMirroringIntegrationTest {
         String srcClusterId = srcCluster.controllers().values().stream().findFirst().get().clusterId();
         Map<String, List<Integer>> topicPartitions = Map.of(topic, List.of(0));
         DescribeClusterMirrorsResult describeClusterMirrors = dstAdmin.describeClusterMirrors(
-                List.of(reverseMirror), topicPartitions,
+                null, topicPartitions,
                 new DescribeClusterMirrorsOptions().clusterId(srcClusterId).includeMirrorState(true));
         Map<String, Map<Integer, Integer>> lookupEpochs = describeClusterMirrors.lookupEpochs().get(30, TimeUnit.SECONDS);
         assertEquals(1, lookupEpochs.size(), "Should have one lookup result");
