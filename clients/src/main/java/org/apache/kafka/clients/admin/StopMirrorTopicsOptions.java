@@ -17,10 +17,8 @@
 
 package org.apache.kafka.clients.admin;
 
-import java.util.List;
-
 /**
- * Options for {@link Admin#stopMirrorTopics(String, List, StopMirrorTopicsOptions)}.
+ * Options for {@link Admin#stopMirrorTopics}.
  */
 public class StopMirrorTopicsOptions extends AbstractOptions<StopMirrorTopicsOptions> {
 }

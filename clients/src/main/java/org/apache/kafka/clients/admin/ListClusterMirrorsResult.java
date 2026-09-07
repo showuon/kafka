@@ -26,7 +26,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * The result of the {@link Admin#listClusterMirrors()} call.
+ * The result of the {@link Admin#listClusterMirrors} call.
  */
 public class ListClusterMirrorsResult {
     private final KafkaFutureImpl<Collection<ClusterMirrorListing>> all;

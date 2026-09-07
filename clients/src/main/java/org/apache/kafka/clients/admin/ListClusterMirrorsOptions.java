@@ -22,7 +22,7 @@ import org.apache.kafka.common.annotation.InterfaceStability;
 import java.util.List;
 
 /**
- * Options for {@link Admin#listClusterMirrors()}.
+ * Options for {@link Admin#listClusterMirrors}.
  */
 @InterfaceStability.Evolving
 public class ListClusterMirrorsOptions extends AbstractOptions<ListClusterMirrorsOptions> {

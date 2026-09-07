@@ -19,10 +19,8 @@ package org.apache.kafka.clients.admin;
 
 import org.apache.kafka.common.KafkaFuture;
 
-import java.util.Set;
-
 /**
- * The result of the {@link Admin#stopMirrorTopics(String, Set, StopMirrorTopicsOptions)} call.
+ * The result of the {@link Admin#stopMirrorTopics} call.
  */
 public class StopMirrorTopicsResult {
     private final KafkaFuture<Void> future;

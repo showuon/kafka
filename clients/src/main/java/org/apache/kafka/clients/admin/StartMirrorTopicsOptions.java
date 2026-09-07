@@ -17,10 +17,8 @@
 
 package org.apache.kafka.clients.admin;
 
-import java.util.List;
-
 /**
- * Options for {@link Admin#startMirrorTopics(String, List, StartMirrorTopicsOptions)}.
+ * Options for {@link Admin#startMirrorTopics}.
  */
 public class StartMirrorTopicsOptions extends AbstractOptions<StartMirrorTopicsOptions> {
 }

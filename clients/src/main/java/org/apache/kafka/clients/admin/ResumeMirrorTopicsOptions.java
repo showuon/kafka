@@ -17,10 +17,8 @@
 
 package org.apache.kafka.clients.admin;
 
-import java.util.List;
-
 /**
- * Options for {@link Admin#resumeMirrorTopics(String, List, ResumeMirrorTopicsOptions)}.
+ * Options for {@link Admin#resumeMirrorTopics}.
  */
 public class ResumeMirrorTopicsOptions extends AbstractOptions<ResumeMirrorTopicsOptions> {
 }
