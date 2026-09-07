@@ -1682,11 +1682,11 @@ public interface Admin extends AutoCloseable {
      * mirror name, preventing local writes and enabling the MirrorFetcherThread to begin replication.
      *
      * @param mirrorName The cluster mirror name
-     * @param topics Set of topic names to start mirroring
+     * @param topicPatterns Regex patterns to match topic names
      * @param options Options for the start mirror topics operation
      * @return The StartMirrorTopicsResult containing futures for each topic
      */
-    StartMirrorTopicsResult startMirrorTopics(String mirrorName, Set<String> topics, StartMirrorTopicsOptions options);
+    StartMirrorTopicsResult startMirrorTopics(String mirrorName, List<String> topicPatterns, StartMirrorTopicsOptions options);
 
     /**
      * Stop mirroring for the specified topics.
@@ -1697,11 +1697,11 @@ public interface Admin extends AutoCloseable {
      * to these partitions.
      *
      * @param mirrorName The cluster mirror name
-     * @param topics Set of topic names to stop mirroring
+     * @param topicPatterns Regex patterns to match topic names
      * @param options Options for the stop mirror topics operation
      * @return The StopMirrorTopicsResult containing futures for each topic
      */
-    StopMirrorTopicsResult stopMirrorTopics(String mirrorName, Set<String> topics, StopMirrorTopicsOptions options);
+    StopMirrorTopicsResult stopMirrorTopics(String mirrorName, List<String> topicPatterns, StopMirrorTopicsOptions options);
 
     /**
      * Pause mirroring for the specified topics.
@@ -1711,11 +1711,11 @@ public interface Admin extends AutoCloseable {
      * current replicated state. Mirroring can be resumed later with {@link #resumeMirrorTopics}.
      *
      * @param mirrorName The cluster mirror name
-     * @param topics Set of topic names to pause mirroring
+     * @param topicPatterns Regex patterns to match topic names
      * @param options Options for the pause mirror topics operation
      * @return The PauseMirrorTopicsResult containing futures for each topic
      */
-    PauseMirrorTopicsResult pauseMirrorTopics(String mirrorName, Set<String> topics, PauseMirrorTopicsOptions options);
+    PauseMirrorTopicsResult pauseMirrorTopics(String mirrorName, List<String> topicPatterns, PauseMirrorTopicsOptions options);
 
     /**
      * Resume mirroring for previously paused topics.
@@ -1725,11 +1725,11 @@ public interface Admin extends AutoCloseable {
      * MIRRORING state.
      *
      * @param mirrorName The cluster mirror name
-     * @param topics Set of topic names to resume mirroring
+     * @param topicPatterns Regex patterns to match topic names
      * @param options Options for the resume mirror topics operation
      * @return The ResumeMirrorTopicsResult containing futures for each topic
      */
-    ResumeMirrorTopicsResult resumeMirrorTopics(String mirrorName, Set<String> topics, ResumeMirrorTopicsOptions options);
+    ResumeMirrorTopicsResult resumeMirrorTopics(String mirrorName, List<String> topicPatterns, ResumeMirrorTopicsOptions options);
 
     /**
      * Delete a cluster mirror including its configuration.

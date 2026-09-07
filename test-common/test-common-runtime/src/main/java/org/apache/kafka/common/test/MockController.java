@@ -125,7 +125,7 @@ public class MockController implements Controller {
             ControllerRequestContext context,
             String mirrorName,
             Set<String> topics,
-            List<String> patterns,
+            List<String> topicPatterns,
             long stateOffset) {
         throw new UnsupportedOperationException();
     }
@@ -135,8 +135,7 @@ public class MockController implements Controller {
             ControllerRequestContext context,
             String mirrorName,
             List<Controller.MirrorTopicMetadata> topics,
-            List<String> includePatterns,
-            List<String> excludePatterns,
+            List<String> topicPatterns,
             long stateOffset
     ) {
         throw new UnsupportedOperationException();

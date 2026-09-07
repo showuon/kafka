@@ -11732,13 +11732,13 @@ public class KafkaAdminClientTest {
                 Map.of(CommonClientConfigs.SOURCE_CLUSTER_ID_CONFIG, "source-cluster-id"),
                 new CreateClusterMirrorOptions()).all().get();
             env.adminClient().deleteClusterMirror("mirror", new DeleteClusterMirrorOptions()).all().get();
-            env.adminClient().startMirrorTopics("mirror", emptySet(),
+            env.adminClient().startMirrorTopics("mirror", List.of(".*"),
                     new StartMirrorTopicsOptions()).all().get();
-            env.adminClient().stopMirrorTopics("mirror", singleton("topic1"),
+            env.adminClient().stopMirrorTopics("mirror", List.of("topic1"),
                     new StopMirrorTopicsOptions()).all().get();
-            env.adminClient().pauseMirrorTopics("mirror", singleton("topic1"),
+            env.adminClient().pauseMirrorTopics("mirror", List.of("topic1"),
                     new PauseMirrorTopicsOptions()).all().get();
-            env.adminClient().resumeMirrorTopics("mirror", singleton("topic1"),
+            env.adminClient().resumeMirrorTopics("mirror", List.of("topic1"),
                     new ResumeMirrorTopicsOptions()).all().get();
         }
     }
@@ -11764,13 +11764,13 @@ public class KafkaAdminClientTest {
                 new CreateClusterMirrorOptions()).all();
             KafkaFuture<Void> delete = env.adminClient().deleteClusterMirror("mirror",
                     new DeleteClusterMirrorOptions()).all();
-            KafkaFuture<Void> start = env.adminClient().startMirrorTopics("mirror", emptySet(),
+            KafkaFuture<Void> start = env.adminClient().startMirrorTopics("mirror", List.of(".*"),
                     new StartMirrorTopicsOptions()).all();
-            KafkaFuture<Void> stop = env.adminClient().stopMirrorTopics("mirror", singleton("topic1"),
+            KafkaFuture<Void> stop = env.adminClient().stopMirrorTopics("mirror", List.of("topic1"),
                     new StopMirrorTopicsOptions()).all();
-            KafkaFuture<Void> pause = env.adminClient().pauseMirrorTopics("mirror", singleton("topic1"),
+            KafkaFuture<Void> pause = env.adminClient().pauseMirrorTopics("mirror", List.of("topic1"),
                     new PauseMirrorTopicsOptions()).all();
-            KafkaFuture<Void> resume = env.adminClient().resumeMirrorTopics("mirror", singleton("topic1"),
+            KafkaFuture<Void> resume = env.adminClient().resumeMirrorTopics("mirror", List.of("topic1"),
                     new ResumeMirrorTopicsOptions()).all();
 
             TestUtils.assertFutureThrows(InvalidRequestException.class, delete);

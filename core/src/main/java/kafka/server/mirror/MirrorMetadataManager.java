@@ -16,6 +16,8 @@
  */
 package kafka.server.mirror;
 
+import com.google.re2j.Pattern;
+
 import kafka.server.KafkaConfig;
 import kafka.server.NetworkUtils;
 import kafka.server.ReplicaManager;
@@ -24,6 +26,7 @@ import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.ClusterMirrorListing;
+import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.common.Endpoint;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
@@ -80,6 +83,7 @@ import org.apache.kafka.server.common.NodeToControllerChannelManager;
 import org.apache.kafka.server.common.RequestLocal;
 import org.apache.kafka.server.metrics.KafkaMetricsGroup;
 import org.apache.kafka.server.util.KafkaScheduler;
+import org.apache.kafka.server.util.MirrorUtils;
 import org.apache.kafka.server.util.RequestAndCompletionHandler;
 import org.apache.kafka.storage.internals.log.AppendOrigin;
 import org.apache.kafka.storage.internals.log.UnifiedLog;
@@ -1444,6 +1448,55 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         return metadataImage.topics().topicsById().values().stream()
                 .filter(t -> mirrorName.equals(t.mirrorName()))
                 .map(t -> MirrorPartitionState.fromValue(t.desiredMirrorState()).name())
+                .collect(Collectors.toSet());
+    }
+
+    public Map<String, TopicDescription> resolvePatternsFromSrc(String mirrorName,
+            List<String> topicPatterns) throws Exception {
+        if (topicPatterns == null || topicPatterns.isEmpty()) {
+            return Map.of();
+        }
+        Admin srcAdmin = getOrCreateSourceAdmin(mirrorName);
+        long timeout = brokerConfig.requestTimeoutMs();
+        Set<String> allSourceTopics = srcAdmin.listTopics().names().get(timeout, TimeUnit.MILLISECONDS);
+        Set<String> matched = resolvePatterns(allSourceTopics, topicPatterns);
+        if (matched.isEmpty()) {
+            return Map.of();
+        }
+
+        // Filter out topics matching the mirror's topics.exclude config
+        ClusterMirrorConfig mirrorConfig = ClusterMirrorConfig.fromProperties(
+                metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName)));
+        Pattern excludePattern = mirrorConfig.topicsExcludePattern();
+        if (excludePattern != null) {
+            matched.removeIf(t -> excludePattern.matcher(t).matches());
+            if (matched.isEmpty()) {
+                return Map.of();
+            }
+        }
+
+        return srcAdmin.describeTopics(matched).allTopicNames().get(timeout, TimeUnit.MILLISECONDS);
+    }
+
+    public Set<String> resolvePatternsFromDst(String mirrorName, List<String> topicPatterns,
+            Set<MirrorPartitionState> states, Set<String> existingNames) {
+        if (topicPatterns == null || topicPatterns.isEmpty()) {
+            return Set.of();
+        }
+        Set<String> mirrorTopics = getConfiguredTopics(mirrorName, states);
+        Set<String> resolved = resolvePatterns(mirrorTopics, topicPatterns);
+        resolved.removeAll(existingNames);
+        return resolved;
+    }
+
+    private Set<String> resolvePatterns(Set<String> allTopics, List<String> topicPatterns) {
+        MirrorUtils.validatePatterns(topicPatterns);
+        Pattern compiled = MirrorUtils.compilePatternList(topicPatterns);
+        if (compiled == null) {
+            return Set.of();
+        }
+        return allTopics.stream()
+                .filter(t -> compiled.matcher(t).matches())
                 .collect(Collectors.toSet());
     }
 

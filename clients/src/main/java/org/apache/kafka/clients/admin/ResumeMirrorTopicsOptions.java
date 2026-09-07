@@ -18,20 +18,9 @@
 package org.apache.kafka.clients.admin;
 
 import java.util.List;
-import java.util.Set;
 
 /**
- * Options for {@link Admin#resumeMirrorTopics(String, Set, ResumeMirrorTopicsOptions)}.
+ * Options for {@link Admin#resumeMirrorTopics(String, List, ResumeMirrorTopicsOptions)}.
  */
 public class ResumeMirrorTopicsOptions extends AbstractOptions<ResumeMirrorTopicsOptions> {
-    private List<String> selectPatterns = List.of();
-
-    public ResumeMirrorTopicsOptions selectPatterns(List<String> selectPatterns) {
-        this.selectPatterns = selectPatterns;
-        return this;
-    }
-
-    public List<String> selectPatterns() {
-        return selectPatterns;
-    }
 }

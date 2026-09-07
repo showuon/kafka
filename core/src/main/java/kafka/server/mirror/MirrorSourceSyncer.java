@@ -35,8 +35,6 @@ import org.apache.kafka.clients.admin.ListGroupsOptions;
 import org.apache.kafka.clients.admin.ListOffsetsResult;
 import org.apache.kafka.clients.admin.ListShareGroupOffsetsSpec;
 import org.apache.kafka.clients.admin.OffsetSpec;
-import org.apache.kafka.clients.admin.StartMirrorTopicsOptions;
-import org.apache.kafka.clients.admin.StopMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.KafkaFuture;
@@ -58,6 +56,8 @@ import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.DeleteAclsRequestData;
 import org.apache.kafka.common.message.DescribeClusterMirrorsRequestData;
 import org.apache.kafka.common.message.IncrementalAlterConfigsRequestData;
+import org.apache.kafka.clients.admin.StartMirrorTopicsOptions;
+import org.apache.kafka.clients.admin.StopMirrorTopicsOptions;
 import org.apache.kafka.common.message.StartMirrorTopicsRequestData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.BumpLeaderEpochsRequest;
@@ -1099,13 +1099,12 @@ class MirrorSourceSyncer {
         log.info("Discovered {} new topic(s) matching mirror.topics.include pattern for mirror {}: {}",
                 newTopics.size(), mirrorName, newTopics.stream().map(StartMirrorTopicsRequestData.TopicMetadata::topicName).toList());
 
-        // TODO: creation failures from auto-discovery are silently lost here (fire-and-forget).
-        //  Add per-topic status tracking so describeMirror can surface failed topics to users.
         try {
+            List<String> topicNames = newTopics.stream()
+                    .map(StartMirrorTopicsRequestData.TopicMetadata::topicName).toList();
             metadataManager.getOrCreateDestAdmin().startMirrorTopics(
-                    mirrorName,
-                    newTopics.stream().map(StartMirrorTopicsRequestData.TopicMetadata::topicName).collect(Collectors.toSet()),
-                    new StartMirrorTopicsOptions()).all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
+                    mirrorName, topicNames, new StartMirrorTopicsOptions())
+                    .all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
         } catch (Exception e) {
             log.warn("Failed to start discovered topics for mirror {}: {}", mirrorName, e.getMessage());
         }
@@ -1131,7 +1130,9 @@ class MirrorSourceSyncer {
                 excludedTopics.size(), mirrorName, excludedTopics);
 
         try {
-            metadataManager.getOrCreateDestAdmin().stopMirrorTopics(mirrorName, excludedTopics, new StopMirrorTopicsOptions())
+            List<String> topicNames = new ArrayList<>(excludedTopics);
+            metadataManager.getOrCreateDestAdmin().stopMirrorTopics(
+                    mirrorName, topicNames, new StopMirrorTopicsOptions())
                     .all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
         } catch (Exception e) {
             log.warn("Failed to stop excluded topics for mirror {}: {}", mirrorName, e.getMessage());

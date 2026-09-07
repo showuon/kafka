@@ -266,8 +266,7 @@ public class ConfigurationControlManager {
     ControllerResult<StartMirrorTopicsResponseData> startMirrorTopics(
             String mirrorName,
             List<Controller.MirrorTopicMetadata> topics,
-            List<String> includePatterns,
-            List<String> excludePatterns,
+            List<String> topicPatterns,
             ReplicationControlManager replicationControl,
             long stateOffset) {
         List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
@@ -290,13 +289,11 @@ public class ConfigurationControlManager {
                 includeSet.add(topicName);
                 excludeSet.remove(topicName);
             }
-            for (String pattern : includePatterns) {
-                includeSet.add(pattern);
-                excludeSet.remove(pattern);
-            }
-            for (String pattern : excludePatterns) {
-                excludeSet.add(pattern);
-                includeSet.remove(pattern);
+            if (topicPatterns != null) {
+                for (String pattern : topicPatterns) {
+                    includeSet.add(pattern);
+                    excludeSet.remove(pattern);
+                }
             }
         });
         if (patternError.isFailure()) {
@@ -403,7 +400,7 @@ public class ConfigurationControlManager {
         return ControllerResult.of(records, data);
     }
 
-    ControllerResult<StopMirrorTopicsResponseData> stopMirrorTopics(String mirrorName, Set<String> topics, List<String> selectPatterns, ReplicationControlManager replicationControl, long stateOffset) {
+    ControllerResult<StopMirrorTopicsResponseData> stopMirrorTopics(String mirrorName, Set<String> topics, List<String> topicPatterns, ReplicationControlManager replicationControl, long stateOffset) {
         List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
         StopMirrorTopicsResponseData data = new StopMirrorTopicsResponseData();
 
@@ -417,9 +414,9 @@ public class ConfigurationControlManager {
             return ControllerResult.of(records, data);
         }
 
-        if (!selectPatterns.isEmpty()) {
+        if (topicPatterns != null && !topicPatterns.isEmpty()) {
             ApiError patternError = updatePatternsAndStopExcluded(mirrorName, records, Set.of(), replicationControl, (includeSet, excludeSet) -> {
-                for (String pattern : selectPatterns) {
+                for (String pattern : topicPatterns) {
                     includeSet.remove(pattern);
                     // Always add the pattern into exclude set because the include set could be the regex pattern
                     excludeSet.add(pattern);

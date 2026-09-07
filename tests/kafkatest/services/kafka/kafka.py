@@ -2132,7 +2132,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                 cmd_suffix)
         return self.run_cli_tool(node, cmd)
 
-    def _cluster_mirror_action(self, node, mirror_name, topics_regex, action, exclude=None):
+    def _cluster_mirror_action(self, node, mirror_name, topics_regex, action):
         assert topics_regex is not None and len(topics_regex) > 0
         env_prefix, cmd_suffix = self._cmd_security_opts(node)
         cluster_mirror_script = self.path.script("kafka-cluster-mirrors.sh", node)
@@ -2145,13 +2145,11 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                 action,
                 mirror_name,
                 topics_regex)
-        if exclude is not None:
-            cmd += " --exclude %s" % exclude
         cmd += cmd_suffix
         return self.run_cli_tool(node, cmd)
 
-    def start_cluster_mirror_topics(self, node, mirror_name, topics_regex, exclude=None):
-        return self._cluster_mirror_action(node, mirror_name, topics_regex, 'start', exclude=exclude)
+    def start_cluster_mirror_topics(self, node, mirror_name, topics_regex):
+        return self._cluster_mirror_action(node, mirror_name, topics_regex, 'start')
 
     def stop_cluster_mirror_topics(self, node, mirror_name, topics_regex):
         return self._cluster_mirror_action(node, mirror_name, topics_regex, 'stop')

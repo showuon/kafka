@@ -35,11 +35,9 @@ import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.server.util.CommandDefaultOptions;
 import org.apache.kafka.server.util.CommandLineUtils;
-import org.apache.kafka.server.util.MirrorUtils;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.re2j.Pattern;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -52,7 +50,6 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
-import java.util.stream.Collectors;
 
 import joptsimple.ArgumentAcceptingOptionSpec;
 import joptsimple.OptionSpec;
@@ -132,99 +129,33 @@ public abstract class ClusterMirrorCommand {
         private void startMirrorTopics(MirrorCommandOptions opts) throws Exception {
             String mirrorName = opts.mirror().get();
             List<String> topicPatterns = opts.topics();
-            List<String> excludePatterns = opts.exclude();
-
-            var mirrorConfigEntries = describeMirrorConfig(mirrorName);
-            Properties sourceConfig = toProperties(mirrorConfigEntries);
-
-            Set<String> matchingTopicNames;
-            try (Admin sourceAdmin = Admin.create(sourceConfig)) {
-                Set<String> allSourceTopics = sourceAdmin.listTopics().names().get();
-                Pattern includePattern = MirrorUtils.compilePatternList(topicPatterns);
-                Pattern excludePattern = MirrorUtils.compilePatternList(excludePatterns);
-                matchingTopicNames = allSourceTopics.stream()
-                        .filter(t -> includePattern != null && includePattern.matcher(t).matches())
-                        .filter(t -> excludePattern == null || !excludePattern.matcher(t).matches())
-                        .collect(Collectors.toSet());
-            }
-
-            adminClient.startMirrorTopics(mirrorName, matchingTopicNames,
-                    new StartMirrorTopicsOptions()
-                            .includePatterns(topicPatterns)
-                            .excludePatterns(excludePatterns))
+            adminClient.startMirrorTopics(mirrorName, topicPatterns, new StartMirrorTopicsOptions())
                     .all().get();
-            if (!matchingTopicNames.isEmpty()) {
-                System.out.printf("Started %d topic(s) in mirror %s: %s%n",
-                        matchingTopicNames.size(), mirrorName, matchingTopicNames);
-            } else {
-                System.out.printf("No matching topics found yet. Patterns saved to mirror %s for auto-discovery.%n", mirrorName);
-            }
+            System.out.printf("Started mirror topics in %s with patterns: %s%n", mirrorName, topicPatterns);
         }
 
         private void stopMirrorTopics(MirrorCommandOptions opts) throws Exception {
             String mirrorName = opts.mirror().get();
-            List<String> patterns = opts.topics();
-
-            Set<String> topics = resolveTopicsForMirror(mirrorName, patterns);
-
-            adminClient.stopMirrorTopics(mirrorName, topics,
-                    new StopMirrorTopicsOptions().selectPatterns(patterns))
+            List<String> topicPatterns = opts.topics();
+            adminClient.stopMirrorTopics(mirrorName, topicPatterns, new StopMirrorTopicsOptions())
                     .all().get();
-            System.out.printf("Stopped %s topic(s) in mirror %s%n", topics, mirrorName);
-        }
-
-        private org.apache.kafka.clients.admin.Config describeMirrorConfig(String mirrorName) throws Exception {
-            ConfigResource mirrorConfigResource = new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName);
-            var configResult = adminClient.describeConfigs(List.of(mirrorConfigResource)).all().get();
-            var mirrorConfigEntries = configResult.get(mirrorConfigResource);
-
-            if (mirrorConfigEntries == null || mirrorConfigEntries.entries().isEmpty()) {
-                throw new RuntimeException("Mirror '" + mirrorName + "' not found or has no configuration");
-            }
-            return mirrorConfigEntries;
-        }
-
-        private static Properties toProperties(org.apache.kafka.clients.admin.Config config) {
-            Properties props = new Properties();
-            for (var entry : config.entries()) {
-                props.put(entry.name(), entry.value());
-            }
-            return props;
+            System.out.printf("Stopped mirror topics in %s with patterns: %s%n", mirrorName, topicPatterns);
         }
 
         private void pauseMirrorTopics(MirrorCommandOptions opts) throws Exception {
             String mirrorName = opts.mirror().get();
-            List<String> patterns = opts.topics();
-            Set<String> topics = resolveTopicsForMirror(mirrorName, patterns);
-
-            adminClient.pauseMirrorTopics(mirrorName, topics,
-                    new PauseMirrorTopicsOptions().selectPatterns(patterns))
+            List<String> topicPatterns = opts.topics();
+            adminClient.pauseMirrorTopics(mirrorName, topicPatterns, new PauseMirrorTopicsOptions())
                     .all().get();
-            System.out.printf("Paused %d topic(s) in mirror %s: %s%n", topics.size(), mirrorName, topics);
+            System.out.printf("Paused mirror topics in %s with patterns: %s%n", mirrorName, topicPatterns);
         }
 
         private void resumeMirrorTopics(MirrorCommandOptions opts) throws Exception {
             String mirrorName = opts.mirror().get();
-            List<String> patterns = opts.topics();
-            Set<String> topics = resolveTopicsForMirror(mirrorName, patterns);
-
-            adminClient.resumeMirrorTopics(mirrorName, topics,
-                    new ResumeMirrorTopicsOptions().selectPatterns(patterns))
+            List<String> topicPatterns = opts.topics();
+            adminClient.resumeMirrorTopics(mirrorName, topicPatterns, new ResumeMirrorTopicsOptions())
                     .all().get();
-            System.out.printf("Resumed %d topic(s) in mirror %s: %s%n", topics.size(), mirrorName, topics);
-        }
-
-        private Set<String> resolveTopicsForMirror(String mirrorName, List<String> patterns) throws Exception {
-            Map<String, ClusterMirrorDescription> descriptions = adminClient.describeClusterMirrors(
-                    List.of(mirrorName), new DescribeClusterMirrorsOptions()).allDescriptions().get();
-            ClusterMirrorDescription description = descriptions.get(mirrorName);
-            if (description == null) return Set.of();
-            Set<String> mirrorTopics = description.leaderStates().keySet();
-            Pattern compiled = MirrorUtils.compilePatternList(patterns);
-            if (compiled == null) return Set.of();
-            return mirrorTopics.stream()
-                    .filter(t -> compiled.matcher(t).matches())
-                    .collect(Collectors.toSet());
+            System.out.printf("Resumed mirror topics in %s with patterns: %s%n", mirrorName, topicPatterns);
         }
 
         private void listClusterMirrors() throws ExecutionException, InterruptedException {
@@ -425,7 +356,6 @@ public abstract class ClusterMirrorCommand {
         private final OptionSpecBuilder describeOpt;
         private final ArgumentAcceptingOptionSpec<String> mirrorOpt;
         private final ArgumentAcceptingOptionSpec<String> topicsOpt;
-        private final ArgumentAcceptingOptionSpec<String> excludeOpt;
         private final OptionSpecBuilder jsonOpt;
         private final OptionSpecBuilder failedOpt;
 
@@ -464,12 +394,6 @@ public abstract class ClusterMirrorCommand {
             topicsOpt = parser.accepts("topics", "Comma-separated list of topic names or regex patterns (e.g., 'my-topic,orders-.*,payments').")
                 .withRequiredArg()
                 .describedAs("topics")
-                .ofType(String.class);
-
-            excludeOpt = parser.accepts("exclude", "Comma-separated list of topic names or regex patterns to exclude from mirroring. " +
-                            "Only valid with --start.")
-                .withRequiredArg()
-                .describedAs("exclude patterns")
                 .ofType(String.class);
 
             jsonOpt = parser.accepts("json", "Output description in JSON format");
@@ -559,14 +483,6 @@ public abstract class ClusterMirrorCommand {
                     .toList();
         }
 
-        private List<String> exclude() {
-            if (!has(excludeOpt)) return List.of();
-            return Arrays.stream(options.valueOf(excludeOpt).split(","))
-                    .map(String::trim)
-                    .filter(s -> !s.isEmpty())
-                    .toList();
-        }
-
         @SuppressWarnings({"NPathComplexity", "CyclomaticComplexity"})
         private void checkArgs() {
             if (args.length == 0)
@@ -603,9 +519,6 @@ public abstract class ClusterMirrorCommand {
 
             if (has(resumeOpt) && !has(topicsOpt))
                 throw new IllegalArgumentException("--topics must be specified when resuming mirror topic(s)");
-
-            if (has(excludeOpt) && !has(startOpt))
-                throw new IllegalArgumentException("--exclude is only valid with --start");
 
             if (has(jsonOpt) && !has(describeOpt))
                 throw new IllegalArgumentException("--json is only supported for describing mirrors");

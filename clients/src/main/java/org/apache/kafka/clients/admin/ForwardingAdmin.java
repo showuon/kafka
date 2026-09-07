@@ -276,23 +276,23 @@ public class ForwardingAdmin implements Admin {
     }
 
     @Override
-    public StopMirrorTopicsResult stopMirrorTopics(String mirrorName, Set<String> topics, StopMirrorTopicsOptions options) {
-        return delegate.stopMirrorTopics(mirrorName, topics, options);
+    public StopMirrorTopicsResult stopMirrorTopics(String mirrorName, List<String> topicPatterns, StopMirrorTopicsOptions options) {
+        return delegate.stopMirrorTopics(mirrorName, topicPatterns, options);
     }
 
     @Override
-    public PauseMirrorTopicsResult pauseMirrorTopics(String mirrorName, Set<String> topics, PauseMirrorTopicsOptions options) {
-        return delegate.pauseMirrorTopics(mirrorName, topics, options);
+    public PauseMirrorTopicsResult pauseMirrorTopics(String mirrorName, List<String> topicPatterns, PauseMirrorTopicsOptions options) {
+        return delegate.pauseMirrorTopics(mirrorName, topicPatterns, options);
     }
 
     @Override
-    public ResumeMirrorTopicsResult resumeMirrorTopics(String mirrorName, Set<String> topics, ResumeMirrorTopicsOptions options) {
-        return delegate.resumeMirrorTopics(mirrorName, topics, options);
+    public ResumeMirrorTopicsResult resumeMirrorTopics(String mirrorName, List<String> topicPatterns, ResumeMirrorTopicsOptions options) {
+        return delegate.resumeMirrorTopics(mirrorName, topicPatterns, options);
     }
 
     @Override
-    public StartMirrorTopicsResult startMirrorTopics(String mirrorName, Set<String> topics, StartMirrorTopicsOptions options) {
-        return delegate.startMirrorTopics(mirrorName, topics, options);
+    public StartMirrorTopicsResult startMirrorTopics(String mirrorName, List<String> topicPatterns, StartMirrorTopicsOptions options) {
+        return delegate.startMirrorTopics(mirrorName, topicPatterns, options);
     }
 
     @Override
