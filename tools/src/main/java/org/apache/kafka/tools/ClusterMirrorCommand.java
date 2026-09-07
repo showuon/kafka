@@ -131,7 +131,7 @@ public abstract class ClusterMirrorCommand {
             List<String> topicPatterns = opts.topics();
             adminClient.startMirrorTopics(mirrorName, topicPatterns, new StartMirrorTopicsOptions())
                     .all().get();
-            System.out.printf("Started mirror topics in %s with patterns: %s%n", mirrorName, topicPatterns);
+            System.out.printf("Started topics in %s mirror with patterns: %s%n", mirrorName, topicPatterns);
         }
 
         private void stopMirrorTopics(MirrorCommandOptions opts) throws Exception {
@@ -139,7 +139,7 @@ public abstract class ClusterMirrorCommand {
             List<String> topicPatterns = opts.topics();
             adminClient.stopMirrorTopics(mirrorName, topicPatterns, new StopMirrorTopicsOptions())
                     .all().get();
-            System.out.printf("Stopped mirror topics in %s with patterns: %s%n", mirrorName, topicPatterns);
+            System.out.printf("Stopped topics in %s mirror with patterns: %s%n", mirrorName, topicPatterns);
         }
 
         private void pauseMirrorTopics(MirrorCommandOptions opts) throws Exception {
@@ -147,7 +147,7 @@ public abstract class ClusterMirrorCommand {
             List<String> topicPatterns = opts.topics();
             adminClient.pauseMirrorTopics(mirrorName, topicPatterns, new PauseMirrorTopicsOptions())
                     .all().get();
-            System.out.printf("Paused mirror topics in %s with patterns: %s%n", mirrorName, topicPatterns);
+            System.out.printf("Paused topics in %s mirror with patterns: %s%n", mirrorName, topicPatterns);
         }
 
         private void resumeMirrorTopics(MirrorCommandOptions opts) throws Exception {
@@ -155,7 +155,7 @@ public abstract class ClusterMirrorCommand {
             List<String> topicPatterns = opts.topics();
             adminClient.resumeMirrorTopics(mirrorName, topicPatterns, new ResumeMirrorTopicsOptions())
                     .all().get();
-            System.out.printf("Resumed mirror topics in %s with patterns: %s%n", mirrorName, topicPatterns);
+            System.out.printf("Resumed topics in %s mirror with patterns: %s%n", mirrorName, topicPatterns);
         }
 
         private void listClusterMirrors() throws ExecutionException, InterruptedException {
