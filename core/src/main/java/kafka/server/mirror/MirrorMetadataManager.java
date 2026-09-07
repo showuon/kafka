@@ -16,8 +16,6 @@
  */
 package kafka.server.mirror;
 
-import com.google.re2j.Pattern;
-
 import kafka.server.KafkaConfig;
 import kafka.server.NetworkUtils;
 import kafka.server.ReplicaManager;
@@ -88,6 +86,7 @@ import org.apache.kafka.server.util.RequestAndCompletionHandler;
 import org.apache.kafka.storage.internals.log.AppendOrigin;
 import org.apache.kafka.storage.internals.log.UnifiedLog;
 
+import com.google.re2j.Pattern;
 import com.yammer.metrics.core.Meter;
 
 import org.slf4j.Logger;

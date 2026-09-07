@@ -4906,7 +4906,7 @@ public class KafkaAdminClient extends AdminClient {
     public StartMirrorTopicsResult startMirrorTopics(String mirrorName, List<String> topicPatterns, StartMirrorTopicsOptions options) {
         final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
 
-        validateTopicPatterns(topicPatterns);
+        validatePatterns(topicPatterns);
 
         final long now = time.milliseconds();
         final Call call = new Call("startMirrorTopics", calcDeadlineMs(now, options.timeoutMs()),
@@ -4954,7 +4954,7 @@ public class KafkaAdminClient extends AdminClient {
     public StopMirrorTopicsResult stopMirrorTopics(String mirrorName, List<String> topicPatterns, StopMirrorTopicsOptions options) {
         final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
 
-        validateTopicPatterns(topicPatterns);
+        validatePatterns(topicPatterns);
 
         final long now = time.milliseconds();
         final Call call = new Call("stopMirrorTopics", calcDeadlineMs(now, options.timeoutMs()),
@@ -4998,11 +4998,9 @@ public class KafkaAdminClient extends AdminClient {
         return new StopMirrorTopicsResult(future);
     }
 
-    private static void validateTopicPatterns(List<String> topicPatterns) {
-        if (topicPatterns.isEmpty()) {
-            throw new IllegalArgumentException("At least one topic pattern must be provided");
-        }
-        for (String pattern : topicPatterns) {
+    // Not using re2j on the client to avoid adding a new dependency
+    private static void validatePatterns(List<String> patterns) {
+        for (String pattern : patterns) {
             try {
                 Pattern.compile(pattern);
             } catch (PatternSyntaxException e) {
@@ -5015,7 +5013,7 @@ public class KafkaAdminClient extends AdminClient {
     public PauseMirrorTopicsResult pauseMirrorTopics(String mirrorName, List<String> topicPatterns, PauseMirrorTopicsOptions options) {
         final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
 
-        validateTopicPatterns(topicPatterns);
+        validatePatterns(topicPatterns);
 
         final long now = time.milliseconds();
         final Call call = new Call("pauseMirrorTopics", calcDeadlineMs(now, options.timeoutMs()),
@@ -5063,7 +5061,7 @@ public class KafkaAdminClient extends AdminClient {
     public ResumeMirrorTopicsResult resumeMirrorTopics(String mirrorName, List<String> topicPatterns, ResumeMirrorTopicsOptions options) {
         final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
 
-        validateTopicPatterns(topicPatterns);
+        validatePatterns(topicPatterns);
 
         final long now = time.milliseconds();
         final Call call = new Call("resumeMirrorTopics", calcDeadlineMs(now, options.timeoutMs()),
