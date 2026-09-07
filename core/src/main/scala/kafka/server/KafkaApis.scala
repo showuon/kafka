@@ -4538,17 +4538,6 @@ class KafkaApis(val requestChannel: RequestChannel,
     val includeMirrorOffset = requestData.includeMirrorOffset
     val requestClusterId = requestData.clusterId
 
-    // Used by MirrorSourceSyncer.sendLastMirrorEpochLookup during failback truncation.
-    // Finds all local mirrors sourcing from the requester's cluster, which may not overlap
-    // with the requested mirror names. Their LME values are attached to the response.
-    val lmeMatchingMirrors: Set[String] = if (requestClusterId != null && includeMirrorState) {
-      mirrorMetadataManager.getConfiguredMirrors().asScala
-        .filter(m => Option(mirrorMetadataManager.getSourceClusterId(m)).contains(requestClusterId))
-        .toSet
-    } else {
-      Set.empty
-    }
-
     // Phase 2: Authorize each mirror and collect partition maps filtered by the Topics field
     class MirrorWork(val name: String, val describedMirror: DescribeClusterMirrorsResponseData.DescribedMirror,
                      val partitions: util.Map[String, util.Set[Integer]])
@@ -4589,13 +4578,18 @@ class KafkaApis(val requestChannel: RequestChannel,
     }
 
     // Phase 3: Fan out async RPCs to coordinator and leader nodes
-    val describedMirrorNames = authorizedMirrors.map(_.name).toSet
-    // Not authorized: looked up internally by sourceClusterId, never exposed in the response.
-    // Only their LME values (opaque integers) are attached to the described mirror's partitions.
-    val extraLmeMirrors = lmeMatchingMirrors -- describedMirrorNames
+    // LME is computed only from authorized mirrors whose sourceClusterId matches the requester.
+    // Used by MirrorSourceSyncer.sendLastMirrorEpochLookup during failback truncation.
+    // Callers wanting all LMEs should describe all mirrors (mirrorNames=null).
+    val lmeMatchingNames: Set[String] = if (requestClusterId != null && includeMirrorState) {
+      authorizedMirrors.filter(m =>
+        Option(mirrorMetadataManager.getSourceClusterId(m.name)).contains(requestClusterId)
+      ).map(_.name).toSet
+    } else {
+      Set.empty
+    }
 
-    // Count total async callbacks expected
-    val stateOps = if (includeMirrorState) authorizedMirrors.size + extraLmeMirrors.size else 0
+    val stateOps = if (includeMirrorState) authorizedMirrors.size else 0
     val offsetOps = if (includeMirrorOffset) authorizedMirrors.size else 0
     val remaining = new AtomicInteger(stateOps + offsetOps)
 
@@ -4605,7 +4599,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     // Phase 4: Merge results and send response (triggered by last callback)
     def maybeComplete(): Unit = {
       if (remaining.decrementAndGet() == 0) {
-        val lmeMap = buildLastMirrorEpochMap(lmeMatchingMirrors, stateResults)
+        val lmeMap = buildLastMirrorEpochMap(lmeMatchingNames, stateResults)
 
         authorizedMirrors.foreach { info =>
           populateMirrorDetails(info.describedMirror, info.partitions,
@@ -4623,14 +4617,6 @@ class KafkaApis(val requestChannel: RequestChannel,
       authorizedMirrors.foreach { info =>
         mirrorMetadataManager.readStateFromRemoteCoordinator(info.name, info.partitions, response => {
           stateResults.put(info.name, response.data())
-          maybeComplete()
-        })
-      }
-
-      extraLmeMirrors.foreach { mirrorName =>
-        val filtered = filterMirrorPartitions(mirrorName, requestData.topics)
-        mirrorMetadataManager.readStateFromRemoteCoordinator(mirrorName, filtered, response => {
-          stateResults.put(mirrorName, response.data())
           maybeComplete()
         })
       }
