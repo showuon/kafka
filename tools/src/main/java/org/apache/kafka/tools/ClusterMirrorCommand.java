@@ -36,9 +36,11 @@ import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.server.util.CommandDefaultOptions;
 import org.apache.kafka.server.util.CommandLineUtils;
+import org.apache.kafka.server.util.MirrorUtils;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.re2j.Pattern;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -51,6 +53,7 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 
 import joptsimple.ArgumentAcceptingOptionSpec;
 import joptsimple.OptionSpec;
@@ -84,8 +87,6 @@ public abstract class ClusterMirrorCommand {
                 mirrorService.startMirrorTopics(opts);
             } else if (opts.hasStopOption()) {
                 mirrorService.stopMirrorTopics(opts);
-            } else if (opts.hasDeleteOption()) {
-                mirrorService.deleteClusterMirror(opts);
             } else if (opts.hasPauseOption()) {
                 mirrorService.pauseMirrorTopics(opts);
             } else if (opts.hasResumeOption()) {
@@ -94,6 +95,8 @@ public abstract class ClusterMirrorCommand {
                 mirrorService.listClusterMirrors();
             } else if (opts.hasDescribeOption()) {
                 mirrorService.describeClusterMirrors(opts);
+            } else if (opts.hasDeleteOption()) {
+                mirrorService.deleteClusterMirror(opts);
             }
         }
     }
@@ -328,6 +331,21 @@ public abstract class ClusterMirrorCommand {
             }
         }
 
+        private void printPartitions(List<PartitionInfo> partitionInfos) {
+            System.out.printf("%-30s %-40s %-10s %-15s %-18s %-10s %-12s%n",
+                "MIRROR", "TOPIC", "PARTITION", "SOURCE-OFFSET", "DESTINATION-OFFSET", "LAG", "STATE");
+            for (PartitionInfo info : partitionInfos) {
+                System.out.printf("%-30s %-40s %-10d %-15s %-18s %-10s %-12s%n",
+                    truncateLeft(info.mirror(), 30),
+                    truncateLeft(info.topic(), 40),
+                    info.partition(),
+                    formatOffset(info.sourceOffset()),
+                    formatOffset(info.destinationOffset()),
+                    formatOffset(info.lag()),
+                    info.state());
+            }
+        }
+
         private int getMaxRetryAttempts() {
             try {
                 String brokerId = adminClient.describeCluster().nodes().get().iterator().next().idString();
@@ -344,29 +362,6 @@ public abstract class ClusterMirrorCommand {
                 // fall through to default
             }
             return 10;
-        }
-
-        private void printPartitions(List<PartitionInfo> partitionInfos) {
-            System.out.printf("%-30s %-40s %-10s %-15s %-18s %-10s %-12s%n",
-                "MIRROR", "TOPIC", "PARTITION", "SOURCE-OFFSET", "DESTINATION-OFFSET", "LAG", "STATE");
-            for (PartitionInfo info : partitionInfos) {
-                System.out.printf("%-30s %-40s %-10d %-15s %-18s %-10s %-12s%n",
-                    truncateLeft(info.mirror(), 30),
-                    truncateLeft(info.topic(), 40),
-                    info.partition(),
-                    formatOffset(info.sourceOffset()),
-                    formatOffset(info.destinationOffset()),
-                    formatOffset(info.lag()),
-                    info.state());
-            }
-        }
-
-        private void deleteClusterMirror(MirrorCommandOptions opts) throws ExecutionException, InterruptedException {
-            String mirrorName = opts.mirror().get();
-            DeleteClusterMirrorResult result = adminClient.deleteClusterMirror(
-                    mirrorName, new DeleteClusterMirrorOptions());
-            result.all().get();
-            System.out.printf("Deleted %s mirror%n", mirrorName);
         }
 
         // Truncate string from the left, keeping the rightmost characters
