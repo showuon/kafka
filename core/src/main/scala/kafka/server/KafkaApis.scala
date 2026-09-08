@@ -4526,7 +4526,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       return
     }
 
-    // Phase 1: Resolve mirror names and identify LME matching mirrors
+    // Phase 1: Resolve mirror names
     val describeAll = requestData.mirrorNames == null
     val requestedMirrors = if (describeAll) {
       mirrorMetadataManager.getConfiguredMirrors().asScala.toSeq
@@ -4755,20 +4755,6 @@ class KafkaApis(val requestChannel: RequestChannel,
             .getOrElse(partIdx, -1))
 
         getOrCreateTopic(topicName).partitions().add(partitionDetail)
-      }
-    }
-
-    // Inject LME data for partitions not covered by the mirror's own partition set
-    lmeMap.foreach { case (topicName, partMap) =>
-      val ownParts = partitions.get(topicName)
-      partMap.foreach { case (partIdx, lmeValue) =>
-        if (ownParts == null || !ownParts.contains(partIdx)) {
-          getOrCreateTopic(topicName).partitions().add(
-            new DescribeClusterMirrorsResponseData.PartitionDetail()
-              .setPartitionIndex(partIdx)
-              .setStateValue(MirrorPartitionState.UNKNOWN.name())
-              .setLastMirrorEpoch(lmeValue))
-        }
       }
     }
 
