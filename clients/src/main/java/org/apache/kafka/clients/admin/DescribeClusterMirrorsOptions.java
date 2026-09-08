@@ -21,34 +21,10 @@ package org.apache.kafka.clients.admin;
  * Options for {@link Admin#describeClusterMirrors}.
  */
 public class DescribeClusterMirrorsOptions extends AbstractOptions<DescribeClusterMirrorsOptions> {
-    private boolean includeAuthorizedOperations = false;
-    private String clusterId;
     private boolean includeMirrorState = false;
     private boolean includeMirrorOffset = false;
-
-    /**
-     * Set whether authorized operations should be included in the response.
-     *
-     * @param includeAuthorizedOperations whether to include authorized operations
-     * @return this instance
-     */
-    public DescribeClusterMirrorsOptions includeAuthorizedOperations(boolean includeAuthorizedOperations) {
-        this.includeAuthorizedOperations = includeAuthorizedOperations;
-        return this;
-    }
-
-    public boolean includeAuthorizedOperations() {
-        return includeAuthorizedOperations;
-    }
-
-    public DescribeClusterMirrorsOptions clusterId(String clusterId) {
-        this.clusterId = clusterId;
-        return this;
-    }
-
-    public String clusterId() {
-        return clusterId;
-    }
+    private boolean includeAuthorizedOperations = false;
+    private String clusterId;
 
     /**
      * Set whether to query the mirror coordinator node for mirror state info.
@@ -72,5 +48,29 @@ public class DescribeClusterMirrorsOptions extends AbstractOptions<DescribeClust
 
     public boolean includeMirrorOffset() {
         return includeMirrorOffset;
+    }
+
+    /**
+     * Set whether authorized operations should be included in the response.
+     *
+     * @param includeAuthorizedOperations whether to include authorized operations
+     * @return this instance
+     */
+    public DescribeClusterMirrorsOptions includeAuthorizedOperations(boolean includeAuthorizedOperations) {
+        this.includeAuthorizedOperations = includeAuthorizedOperations;
+        return this;
+    }
+
+    public boolean includeAuthorizedOperations() {
+        return includeAuthorizedOperations;
+    }
+
+    public DescribeClusterMirrorsOptions clusterId(String clusterId) {
+        this.clusterId = clusterId;
+        return this;
+    }
+
+    public String clusterId() {
+        return clusterId;
     }
 }

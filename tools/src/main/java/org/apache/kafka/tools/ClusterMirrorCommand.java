@@ -53,7 +53,6 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
-import java.util.stream.Collectors;
 
 import joptsimple.ArgumentAcceptingOptionSpec;
 import joptsimple.OptionSpec;
@@ -189,14 +188,8 @@ public abstract class ClusterMirrorCommand {
                 ? List.of(opts.mirror().get())
                 : null;
 
-            Map<String, List<Integer>> topicPartitions = null;
-            if (opts.mirror().isPresent() && !opts.topics().isEmpty()) {
-                Set<String> matchingTopics = resolveTopicsForMirror(opts.mirror().get(), opts.topics());
-                topicPartitions = matchingTopics.stream().collect(Collectors.toMap(t -> t, t -> null));
-            }
-
             Map<String, ClusterMirrorDescription> descriptions = adminClient.describeClusterMirrors(
-                mirrorNames, topicPartitions, new DescribeClusterMirrorsOptions()
+                mirrorNames, null, new DescribeClusterMirrorsOptions()
                     .includeMirrorState(true)
                     .includeMirrorOffset(true)).allDescriptions().get();
 
@@ -210,6 +203,13 @@ public abstract class ClusterMirrorCommand {
             }
 
             List<PartitionInfo> partitionInfos = collectPartitionInfos(descriptions);
+
+            if (!opts.topics().isEmpty()) {
+                Pattern compiled = MirrorUtils.compilePatternList(opts.topics());
+                if (compiled != null) {
+                    partitionInfos.removeIf(info -> !compiled.matcher(info.topic()).matches());
+                }
+            }
 
             if (opts.hasFailedOption()) {
                 partitionInfos.removeIf(info -> !"FAILED".equals(info.state()));
@@ -252,20 +252,6 @@ public abstract class ClusterMirrorCommand {
                 props.put(entry.name(), entry.value());
             }
             return props;
-        }
-
-        private Set<String> resolveTopicsForMirror(String mirrorName, List<String> patterns) throws Exception {
-            Map<String, ClusterMirrorDescription> descriptions = adminClient.describeClusterMirrors(
-                    List.of(mirrorName), null, new DescribeClusterMirrorsOptions()
-                        .includeMirrorState(true)).allDescriptions().get();
-            ClusterMirrorDescription description = descriptions.get(mirrorName);
-            if (description == null) return Set.of();
-            Set<String> mirrorTopics = description.leaderStates().keySet();
-            Pattern compiled = MirrorUtils.compilePatternList(patterns);
-            if (compiled == null) return Set.of();
-            return mirrorTopics.stream()
-                    .filter(t -> compiled.matcher(t).matches())
-                    .collect(Collectors.toSet());
         }
 
         private List<PartitionInfo> collectPartitionInfos(Map<String, ClusterMirrorDescription> descriptions) {
