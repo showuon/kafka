@@ -252,6 +252,7 @@ abstract class AbstractFetcherThread(name: String,
     // Ensure we hold a lock during truncation
 
     val partitionsNeedsRefreshMetadata = new util.HashSet[TopicPartition]()
+    val partitionsNeedsWaitForFollowers = new util.HashSet[TopicPartition]()
     inLock(partitionMapLock) {
       //Check no leadership and no leader epoch changes happened whilst we were unlocked, fetching epochs
       val epochEndOffsets = endOffsets.asScala.filter { case (tp, _) =>
@@ -266,6 +267,7 @@ abstract class AbstractFetcherThread(name: String,
 
       val result = maybeTruncateToEpochEndOffsets(epochEndOffsets, latestEpochsForPartitions)
       partitionsNeedsRefreshMetadata.addAll(result.partitionsNeedsRefreshMetadata())
+      partitionsNeedsWaitForFollowers.addAll(result.partitionsNeedsWaitForFollowers())
       handlePartitionsWithErrors(result.partitionsWithError.asScala, "truncateToEpochEndOffsets")
       updateFetchOffsetAndMaybeMarkTruncationComplete(result.result)
     }
@@ -276,6 +278,10 @@ abstract class AbstractFetcherThread(name: String,
       info(s"Refreshing source metadata for mirror name $mirrorName with partitions: $partitionsNeedsRefreshMetadata")
       removeFetcherForPartitions(partitionsNeedsRefreshMetadata.asScala)
       refreshSourceClusterMetadata(partitionsNeedsRefreshMetadata.asScala, "Truncation requires source metadata refresh")
+    }
+    if (!partitionsNeedsWaitForFollowers.isEmpty) {
+      info(s"Waiting for followers to catch up with the leader for partitions: $partitionsNeedsWaitForFollowers")
+      maybeWaitForFollowersCaughtUp(partitionsNeedsWaitForFollowers.asScala)
     }
   }
 
