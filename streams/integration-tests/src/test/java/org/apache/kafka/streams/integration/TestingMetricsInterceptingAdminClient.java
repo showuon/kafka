@@ -149,6 +149,8 @@ import org.apache.kafka.clients.admin.PauseMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.PauseMirrorTopicsResult;
 import org.apache.kafka.clients.admin.RaftVoterEndpoint;
 import org.apache.kafka.clients.admin.RecordsToDelete;
+import org.apache.kafka.clients.admin.RecoverMirrorTopicsOptions;
+import org.apache.kafka.clients.admin.RecoverMirrorTopicsResult;
 import org.apache.kafka.clients.admin.RemoveMembersFromConsumerGroupOptions;
 import org.apache.kafka.clients.admin.RemoveMembersFromConsumerGroupResult;
 import org.apache.kafka.clients.admin.RemoveRaftVoterOptions;
@@ -308,11 +310,6 @@ public class TestingMetricsInterceptingAdminClient extends AdminClient {
     }
 
     @Override
-    public ListClusterMirrorsResult listClusterMirrors(final ListClusterMirrorsOptions options) {
-        return adminDelegate.listClusterMirrors(options);
-    }
-
-    @Override
     public DescribeConsumerGroupsResult describeConsumerGroups(final Collection<String> groupIds, final DescribeConsumerGroupsOptions options) {
         return adminDelegate.describeConsumerGroups(groupIds, options);
     }
@@ -454,15 +451,24 @@ public class TestingMetricsInterceptingAdminClient extends AdminClient {
     }
 
     @Override
-    public DeleteClusterMirrorResult deleteClusterMirror(final String mirrorName, final DeleteClusterMirrorOptions options) {
-        return adminDelegate.deleteClusterMirror(mirrorName, options);
+    public RecoverMirrorTopicsResult recoverMirrorTopics(final String mirrorName, final List<String> topicPatterns, final RecoverMirrorTopicsOptions options) {
+        return adminDelegate.recoverMirrorTopics(mirrorName, topicPatterns, options);
     }
 
     @Override
+    public ListClusterMirrorsResult listClusterMirrors(final ListClusterMirrorsOptions options) {
+        return adminDelegate.listClusterMirrors(options);
+    }
+
     public DescribeClusterMirrorsResult describeClusterMirrors(final Collection<String> mirrorNames,
                                                                final Map<String, List<Integer>> topicPartitions,
                                                                final DescribeClusterMirrorsOptions options) {
         return adminDelegate.describeClusterMirrors(mirrorNames, topicPartitions, options);
+    }
+
+    @Override
+    public DeleteClusterMirrorResult deleteClusterMirror(final String mirrorName, final DeleteClusterMirrorOptions options) {
+        return adminDelegate.deleteClusterMirror(mirrorName, options);
     }
 
     @Override

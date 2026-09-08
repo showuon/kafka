@@ -28,6 +28,7 @@ import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.common.Endpoint;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.config.SaslConfigs;
@@ -377,17 +378,15 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
         this.metadataImage = newImage;
 
-        Set<TopicPartition> partitionsToTransition =
-                collectPartitionsForStateTransition(delta, newImage);
-
-        if (partitionsToTransition.isEmpty()) {
+        TransitionBatch batch = collectPartitionsForStateTransition(delta, newImage);
+        if (batch.isEmpty()) {
             return;
         }
 
         log.info("Processing metadata update for {} mirror leader partition(s): {}",
-                partitionsToTransition.size(), partitionsToTransition);
+                batch.partitions().size(), batch.partitions());
 
-        processStateTransitions(partitionsToTransition, newImage);
+        processStateTransitions(batch, newImage);
         maybeCompletePendingEpochBumps();
     }
 
@@ -401,18 +400,20 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      *   3. mirror connection config changes (teardown + reconnect)
      *   4. watched topic config changes (e.g. remote.storage.enable)
      */
-    private Set<TopicPartition> collectPartitionsForStateTransition(MetadataDelta delta, MetadataImage image) {
-        Set<TopicPartition> result = new HashSet<>();
+    private TransitionBatch collectPartitionsForStateTransition(MetadataDelta delta, MetadataImage image) {
+        Set<TopicPartition> partitions = new HashSet<>();
+        Set<Uuid> recoverTopicIds = new HashSet<>();
         Set<String> configuredMirrors = getConfiguredMirrors();
 
-        collectFromTopicsDelta(delta, image, configuredMirrors, result);
-        collectFromConfigsDelta(delta, image, configuredMirrors, result);
+        collectFromTopicsDelta(delta, image, configuredMirrors, partitions, recoverTopicIds);
+        collectFromConfigsDelta(delta, image, configuredMirrors, partitions);
 
-        return result;
+        return new TransitionBatch(partitions, recoverTopicIds);
     }
 
     private void collectFromTopicsDelta(MetadataDelta delta, MetadataImage image,
-                                        Set<String> configuredMirrors, Set<TopicPartition> result) {
+                                        Set<String> configuredMirrors, Set<TopicPartition> result,
+                                        Set<Uuid> recoverTopicIds) {
         if (delta.topicsDelta() == null) {
             return;
         }
@@ -428,8 +429,12 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         });
 
         // [2] Controller wrote a new desired state for a mirror topic
-        localReplicaChanges.mirrorTopicStates().keySet().forEach(topicId ->
-                addMirrorLeaderPartitions(image.topics().getTopic(topicId), configuredMirrors, result));
+        localReplicaChanges.mirrorTopicStates().forEach((topicId, state) -> {
+            addMirrorLeaderPartitions(image.topics().getTopic(topicId), configuredMirrors, result);
+            if (state.recover()) {
+                recoverTopicIds.add(topicId);
+            }
+        });
 
         cleanupLostLeaderPartitions(localReplicaChanges, image);
     }
@@ -559,7 +564,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             }
         });
         if (!mirrorLeaders.isEmpty()) {
-            processStateTransitions(mirrorLeaders, metadataImage);
+            processStateTransitions(new TransitionBatch(mirrorLeaders, Set.of()), metadataImage);
         }
     }
 
@@ -577,7 +582,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * partitions transition inline; remote ones are batched by mirror and transitioned
      * after reading current state from the coordinator.
      */
-    private void processStateTransitions(Set<TopicPartition> partitionsToTransition, MetadataImage newImage) {
+    private void processStateTransitions(TransitionBatch batch, MetadataImage newImage) {
+        Set<TopicPartition> partitionsToTransition = batch.partitions();
+        Set<Uuid> recoverTopicIds = batch.recoverTopicIds();
         Map<String, Map<TopicPartition, Byte>> remoteDesiredStates = new HashMap<>();
 
         partitionsToTransition.forEach(tp -> {
@@ -586,9 +593,10 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             byte desiredMirrorState = topicImage.desiredMirrorState();
             boolean stopRequested = desiredMirrorState == MirrorPartitionState.STOPPED.value();
             boolean pauseRequested = desiredMirrorState == MirrorPartitionState.PAUSED.value();
+            boolean recoverRequested = recoverTopicIds.contains(topicImage.id());
 
             if (isLocalCoordinator(mirrorName, tp.topic(), tp.partition())) {
-                readStateFromLocalCoordinator(mirrorName, tp, stopRequested, pauseRequested);
+                readStateFromLocalCoordinator(mirrorName, tp, stopRequested, pauseRequested, recoverRequested);
             } else {
                 remoteDesiredStates
                         .computeIfAbsent(mirrorName, k -> new HashMap<>())
@@ -613,10 +621,12 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                                 byte desired = desiredStates.getOrDefault(resTp, MirrorPartitionState.UNKNOWN.value());
                                 boolean stopRequested = desired == MirrorPartitionState.STOPPED.value();
                                 boolean pauseRequested = desired == MirrorPartitionState.PAUSED.value();
-                                MirrorPartitionKey mpk = MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(resTp.topic()), resTp.partition());
+                                Uuid topicId = metadataCache.getTopicId(resTp.topic());
+                                boolean recoverRequested = recoverTopicIds.contains(topicId);
+                                MirrorPartitionKey mpk = MirrorPartitionKey.of(mirrorName, topicId, resTp.partition());
                                 MirrorPartition curEntry = mirrorCache.getPartition(mpk);
                                 MirrorPartitionState curState = curEntry != null ? curEntry.state() : MirrorPartitionState.UNKNOWN;
-                                applyStateTransition(mirrorName, resTp, curState, state, stopRequested, pauseRequested);
+                                applyStateTransition(mirrorName, resTp, curState, state, stopRequested, pauseRequested, recoverRequested);
                             })));
         });
     }
@@ -629,7 +639,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * retried once {@link #onShardLoaded} re-evaluates local leader partitions for that shard.
      */
     private void readStateFromLocalCoordinator(String mirrorName, TopicPartition tp,
-                                                boolean stopRequested, boolean pauseRequested) {
+                                                boolean stopRequested, boolean pauseRequested,
+                                                boolean recoverRequested) {
         coordinatorReader.ifPresent(reader ->
                 reader.readPartitionState(mirrorName, tp).whenComplete((data, ex) -> {
                     if (ex != null) {
@@ -649,7 +660,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                         }
                         MirrorPartitionState curState = MirrorPartitionState.fromValue(partition.state());
                         log.debug("Local transition for {} (current: {})", tp, curState);
-                        applyStateTransition(mirrorName, tp, curState, null, stopRequested, pauseRequested);
+                        applyStateTransition(mirrorName, tp, curState, null, stopRequested, pauseRequested, recoverRequested);
                     }));
                 }));
     }
@@ -733,7 +744,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      */
     private void applyStateTransition(String mirrorName, TopicPartition tp,
                                       MirrorPartitionState curState, MirrorPartitionState fetchedState,
-                                      boolean stopRequested, boolean pauseRequested) {
+                                      boolean stopRequested, boolean pauseRequested, boolean recoverRequested) {
         var log = replicaManagerSupplier.get().getLog(tp);
         if (log.isDefined() && log.get().remoteLogEnabled()) {
             transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED,
@@ -742,7 +753,17 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         }
 
         if (curState == MirrorPartitionState.FAILED) {
-            transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED);
+            if (recoverRequested) {
+                MirrorPartitionKey key = MirrorPartitionKey.of(
+                    mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
+                MirrorPartition mp = MirrorPartition.orEmpty(mirrorCache.getPartition(key));
+                MirrorPartitionState target = (mp.prevState() == null
+                        || mp.prevState() == MirrorPartitionState.UNKNOWN)
+                    ? MirrorPartitionState.LOG_ALIGNMENT : mp.prevState();
+                transitionTo(mirrorName, Set.of(tp), target);
+            } else {
+                transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED);
+            }
         } else if (stopRequested) {
             if (curState != MirrorPartitionState.STOPPED) {
                 transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.STOPPING);
@@ -1856,5 +1877,12 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     public CompletableFuture<Void> bumpLeaderEpochs(Map<TopicPartition, Integer> partitionMinEpochs) {
         return sourceSyncer.sendBumpLeaderEpochs(partitionMinEpochs);
+    }
+
+
+    private record TransitionBatch(Set<TopicPartition> partitions, Set<Uuid> recoverTopicIds) {
+        boolean isEmpty() {
+            return partitions.isEmpty();
+        }
     }
 }

@@ -1176,7 +1176,7 @@ class ClusterMirroringTest(MirrorUtils, Test):
     @cluster(num_nodes=7)
     @defaults(metadata_quorum=[quorum.isolated_kraft])
     def test_failed_retry(self, metadata_quorum):
-        """Verify that mirror recovers from FAILED state after source cluster comes back."""
+        """Verify that mirror automatically recovers a retryable FAILED partition."""
         self.source_kafka.create_topic({"topic": "my-topic", "partitions": 3, "replication-factor": 1})
 
         self.logger.info("Produce initial messages and start cluster mirror")
@@ -1216,3 +1216,45 @@ class ClusterMirroringTest(MirrorUtils, Test):
         count = MirrorUtils.consume_messages(self.logger, self.dest_kafka, self.client_node, "my-topic",
                                      max_messages=6, expected_count=6)
         assert count >= 6, "Expected 6 messages on my-topic, got %d" % count
+
+    @cluster(num_nodes=7)
+    @defaults(metadata_quorum=[quorum.isolated_kraft])
+    def test_recover_failed_mirror(self, metadata_quorum):
+        """Verify that recoverMirrorTopics recovers a non-retryable FAILED partition."""
+        self.source_kafka.create_topic({"topic": "my-topic", "partitions": 1, "replication-factor": 1})
+
+        self.logger.info("Produce initial messages and start cluster mirror")
+        MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "my-topic", 3)
+
+        mirror_cfg = MirrorConfig(self.source_kafka.bootstrap_servers())
+        wait_until(
+            lambda: self.dest_kafka.create_cluster_mirror(
+                self.client_node, "my-mirror", mirror_cfg),
+            timeout_sec=120, backoff_sec=2,
+            err_msg="Failed to create cluster mirror",
+        )
+        wait_until(
+            lambda: "Started" in self.dest_kafka.start_cluster_mirror_topics(
+                self.client_node, "my-mirror", "my-topic"),
+            timeout_sec=120, backoff_sec=2,
+            err_msg="Failed to start mirror topics",
+        )
+        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"], "MIRRORING")
+
+        self.logger.info("Delete source topic to trigger non-retryable FAILED state")
+        self.source_kafka.delete_topic("my-topic")
+        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"], "FAILED",
+                               err_msg="Mirror did not reach FAILED state after source topic deletion")
+
+        self.logger.info("Re-create source topic so recovery can succeed")
+        self.source_kafka.create_topic({"topic": "my-topic", "partitions": 1, "replication-factor": 1})
+
+        self.logger.info("Recover failed mirror partitions")
+        wait_until(
+            lambda: "Recovered" in self.dest_kafka.recover_cluster_mirror_topics(
+                self.client_node, "my-mirror", "my-topic"),
+            timeout_sec=120, backoff_sec=2,
+            err_msg="Failed to recover mirror topics",
+        )
+        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"], "MIRRORING",
+                               err_msg="Mirror did not recover to MIRRORING after recover command")

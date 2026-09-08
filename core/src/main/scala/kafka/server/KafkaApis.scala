@@ -259,6 +259,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.STOP_MIRROR_TOPICS => handleStopMirrorTopics(request)
         case ApiKeys.PAUSE_MIRROR_TOPICS => handlePauseMirrorTopics(request)
         case ApiKeys.RESUME_MIRROR_TOPICS => handleResumeMirrorTopics(request)
+        case ApiKeys.RECOVER_MIRROR_TOPICS => handleRecoverMirrorTopics(request)
         case ApiKeys.DELETE_CLUSTER_MIRROR => handleDeleteClusterMirror(request)
         case ApiKeys.LIST_CLUSTER_MIRRORS => handleListClusterMirrorsRequest(request)
         case ApiKeys.DESCRIBE_CLUSTER_MIRRORS => handleDescribeClusterMirrorsRequest(request)
@@ -4434,6 +4435,44 @@ class KafkaApis(val requestChannel: RequestChannel,
           case None => handleInvalidVersionsDuringForwarding(request)
         })
       }
+    })
+  }
+
+  def handleRecoverMirrorTopics(request: RequestChannel.Request): Unit = {
+    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
+      logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring recover mirror topics request")
+      requestHelper.sendMaybeThrottle(request, new RecoverMirrorTopicsResponse(
+        new RecoverMirrorTopicsResponseData().setErrorCode(Errors.UNSUPPORTED_VERSION.code)))
+      return
+    }
+    val data = request.body[RecoverMirrorTopicsRequest].data()
+    val mirrorName = data.mirrorName()
+
+    // Resolve topic patterns against destination mirror topics that have failed partitions
+    if (data.topicPatterns() != null && !data.topicPatterns().isEmpty) {
+      if (data.topics() == null) {
+        data.setTopics(new RecoverMirrorTopicsRequestData.TopicMetadataCollection())
+      }
+      val existingNames = data.topics().asScala.map(_.topicName()).toSet.asJava
+      val newNames = mirrorMetadataManager.resolvePatternsFromDst(mirrorName, data.topicPatterns(),
+        EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED), existingNames)
+      newNames.forEach(name => data.topics().add(
+        new RecoverMirrorTopicsRequestData.TopicMetadata().setTopicName(name)))
+    }
+
+    if (data.topics() == null || data.topics().isEmpty) {
+      requestHelper.sendMaybeThrottle(request, new RecoverMirrorTopicsResponse(
+        new RecoverMirrorTopicsResponseData().setErrorCode(Errors.INVALID_REQUEST.code)
+          .setErrorMessage("No topics matched the provided patterns")))
+      return
+    }
+
+    // No state validation or optimistic locking: other operations reject FAILED at validation,
+    // and automatic retries perform the same FAILED to prevState transition as recover,
+    // so any race is harmless. stateOffset defaults to -1 (skip controller check).
+    forwardingManager.forwardRequest(request, new RecoverMirrorTopicsRequest(data, request.header.apiVersion()), {
+      case Some(response) => requestHelper.sendForwardedResponse(request, response)
+      case None => handleInvalidVersionsDuringForwarding(request)
     })
   }
 

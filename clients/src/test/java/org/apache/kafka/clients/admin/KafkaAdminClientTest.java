@@ -164,6 +164,7 @@ import org.apache.kafka.common.message.OffsetFetchRequestData.OffsetFetchRequest
 import org.apache.kafka.common.message.OffsetFetchRequestData.OffsetFetchRequestTopics;
 import org.apache.kafka.common.message.OffsetFetchResponseData;
 import org.apache.kafka.common.message.PauseMirrorTopicsResponseData;
+import org.apache.kafka.common.message.RecoverMirrorTopicsResponseData;
 import org.apache.kafka.common.message.RemoveRaftVoterRequestData;
 import org.apache.kafka.common.message.RemoveRaftVoterResponseData;
 import org.apache.kafka.common.message.ResumeMirrorTopicsResponseData;
@@ -251,6 +252,8 @@ import org.apache.kafka.common.requests.OffsetFetchRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.PauseMirrorTopicsRequest;
 import org.apache.kafka.common.requests.PauseMirrorTopicsResponse;
+import org.apache.kafka.common.requests.RecoverMirrorTopicsRequest;
+import org.apache.kafka.common.requests.RecoverMirrorTopicsResponse;
 import org.apache.kafka.common.requests.RemoveRaftVoterRequest;
 import org.apache.kafka.common.requests.RemoveRaftVoterResponse;
 import org.apache.kafka.common.requests.RequestTestUtils;
@@ -6675,7 +6678,7 @@ public class KafkaAdminClientTest {
             TestUtils.assertFutureThrows(UnsupportedVersionException.class, result.all());
         }
     }
-    
+
     @Test
     public void testDescribeShareGroups() throws Exception {
         try (AdminClientUnitTestEnv env = new AdminClientUnitTestEnv(mockCluster(1, 0))) {
@@ -10595,7 +10598,7 @@ public class KafkaAdminClientTest {
             ClientTelemetryReporter clientTelemetryReporter = mock(ClientTelemetryReporter.class);
             clientTelemetryReporter.configure(any());
             mockedCommonClientConfigs.when(() -> CommonClientConfigs.telemetryReporter(anyString(), any())).thenReturn(Optional.of(clientTelemetryReporter));
-            
+
             try (AdminClientUnitTestEnv env = mockClientEnv(AdminClientConfig.ENABLE_METRICS_PUSH_CONFIG, "true")) {
                 ClientTelemetrySender clientTelemetrySender = mock(ClientTelemetrySender.class);
                 Uuid expectedUuid = Uuid.randomUuid();
@@ -11707,10 +11710,6 @@ public class KafkaAdminClientTest {
                 createClusterMirrorResponse(Errors.NOT_COORDINATOR));
             env.kafkaClient().prepareResponse(body -> body instanceof CreateClusterMirrorRequest,
                 createClusterMirrorResponse(Errors.NONE));
-            env.kafkaClient().prepareResponse(body -> body instanceof DeleteClusterMirrorRequest,
-                    deleteClusterMirrorResponse(Errors.NOT_COORDINATOR));
-            env.kafkaClient().prepareResponse(body -> body instanceof DeleteClusterMirrorRequest,
-                    deleteClusterMirrorResponse(Errors.NONE));
             env.kafkaClient().prepareResponse(body -> body instanceof StartMirrorTopicsRequest,
                     startMirrorTopicsResponse(Errors.NOT_COORDINATOR));
             env.kafkaClient().prepareResponse(body -> body instanceof StartMirrorTopicsRequest,
@@ -11727,11 +11726,18 @@ public class KafkaAdminClientTest {
                     resumeMirrorTopicsResponse(Errors.NOT_COORDINATOR));
             env.kafkaClient().prepareResponse(body -> body instanceof ResumeMirrorTopicsRequest,
                     resumeMirrorTopicsResponse(Errors.NONE));
+            env.kafkaClient().prepareResponse(body -> body instanceof RecoverMirrorTopicsRequest,
+                    recoverMirrorTopicsResponse(Errors.NOT_COORDINATOR));
+            env.kafkaClient().prepareResponse(body -> body instanceof RecoverMirrorTopicsRequest,
+                    recoverMirrorTopicsResponse(Errors.NONE));
+            env.kafkaClient().prepareResponse(body -> body instanceof DeleteClusterMirrorRequest,
+                    deleteClusterMirrorResponse(Errors.NOT_COORDINATOR));
+            env.kafkaClient().prepareResponse(body -> body instanceof DeleteClusterMirrorRequest,
+                    deleteClusterMirrorResponse(Errors.NONE));
 
             env.adminClient().createClusterMirror("mirror",
                 Map.of(CommonClientConfigs.SOURCE_CLUSTER_ID_CONFIG, "source-cluster-id"),
                 new CreateClusterMirrorOptions()).all().get();
-            env.adminClient().deleteClusterMirror("mirror", new DeleteClusterMirrorOptions()).all().get();
             env.adminClient().startMirrorTopics("mirror", List.of(".*"),
                     new StartMirrorTopicsOptions()).all().get();
             env.adminClient().stopMirrorTopics("mirror", List.of("topic1"),
@@ -11740,6 +11746,10 @@ public class KafkaAdminClientTest {
                     new PauseMirrorTopicsOptions()).all().get();
             env.adminClient().resumeMirrorTopics("mirror", List.of("topic1"),
                     new ResumeMirrorTopicsOptions()).all().get();
+            env.adminClient().recoverMirrorTopics("mirror", List.of("topic1"),
+                    new RecoverMirrorTopicsOptions()).all().get();
+            env.adminClient().deleteClusterMirror("mirror",
+                new DeleteClusterMirrorOptions()).all().get();
         }
     }
 
@@ -11748,8 +11758,6 @@ public class KafkaAdminClientTest {
         try (AdminClientUnitTestEnv env = mirrorClientEnv()) {
             env.kafkaClient().prepareResponse(body -> body instanceof CreateClusterMirrorRequest,
                 createClusterMirrorResponse(Errors.INVALID_REQUEST));
-            env.kafkaClient().prepareResponse(body -> body instanceof DeleteClusterMirrorRequest,
-                    deleteClusterMirrorResponse(Errors.INVALID_REQUEST));
             env.kafkaClient().prepareResponse(body -> body instanceof StartMirrorTopicsRequest,
                     startMirrorTopicsResponse(Errors.INVALID_REQUEST));
             env.kafkaClient().prepareResponse(body -> body instanceof StopMirrorTopicsRequest,
@@ -11758,12 +11766,14 @@ public class KafkaAdminClientTest {
                     pauseMirrorTopicsResponse(Errors.INVALID_REQUEST));
             env.kafkaClient().prepareResponse(body -> body instanceof ResumeMirrorTopicsRequest,
                     resumeMirrorTopicsResponse(Errors.INVALID_REQUEST));
+            env.kafkaClient().prepareResponse(body -> body instanceof RecoverMirrorTopicsRequest,
+                    recoverMirrorTopicsResponse(Errors.INVALID_REQUEST));
+            env.kafkaClient().prepareResponse(body -> body instanceof DeleteClusterMirrorRequest,
+                    deleteClusterMirrorResponse(Errors.INVALID_REQUEST));
 
             KafkaFuture<Void> create = env.adminClient().createClusterMirror("mirror",
                 Map.of(CommonClientConfigs.SOURCE_CLUSTER_ID_CONFIG, "source-cluster-id"),
                 new CreateClusterMirrorOptions()).all();
-            KafkaFuture<Void> delete = env.adminClient().deleteClusterMirror("mirror",
-                    new DeleteClusterMirrorOptions()).all();
             KafkaFuture<Void> start = env.adminClient().startMirrorTopics("mirror", List.of(".*"),
                     new StartMirrorTopicsOptions()).all();
             KafkaFuture<Void> stop = env.adminClient().stopMirrorTopics("mirror", List.of("topic1"),
@@ -11772,13 +11782,18 @@ public class KafkaAdminClientTest {
                     new PauseMirrorTopicsOptions()).all();
             KafkaFuture<Void> resume = env.adminClient().resumeMirrorTopics("mirror", List.of("topic1"),
                     new ResumeMirrorTopicsOptions()).all();
+            KafkaFuture<Void> recover = env.adminClient().recoverMirrorTopics("mirror", List.of("topic1"),
+                    new RecoverMirrorTopicsOptions()).all();
+            KafkaFuture<Void> delete = env.adminClient().deleteClusterMirror("mirror",
+                    new DeleteClusterMirrorOptions()).all();
 
-            TestUtils.assertFutureThrows(InvalidRequestException.class, delete);
             TestUtils.assertFutureThrows(InvalidRequestException.class, create);
             TestUtils.assertFutureThrows(InvalidRequestException.class, start);
             TestUtils.assertFutureThrows(InvalidRequestException.class, stop);
             TestUtils.assertFutureThrows(InvalidRequestException.class, pause);
             TestUtils.assertFutureThrows(InvalidRequestException.class, resume);
+            TestUtils.assertFutureThrows(InvalidRequestException.class, recover);
+            TestUtils.assertFutureThrows(InvalidRequestException.class, delete);
         }
     }
 
@@ -11808,6 +11823,12 @@ public class KafkaAdminClientTest {
 
     private ResumeMirrorTopicsResponse resumeMirrorTopicsResponse(Errors error) {
         return new ResumeMirrorTopicsResponse(new ResumeMirrorTopicsResponseData()
+            .setErrorCode(error.code())
+            .setErrorMessage(error == Errors.NONE ? null : error.message()));
+    }
+
+    private RecoverMirrorTopicsResponse recoverMirrorTopicsResponse(Errors error) {
+        return new RecoverMirrorTopicsResponse(new RecoverMirrorTopicsResponseData()
             .setErrorCode(error.code())
             .setErrorMessage(error == Errors.NONE ? null : error.message()));
     }

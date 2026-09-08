@@ -55,6 +55,7 @@ import org.apache.kafka.common.message.ExpireDelegationTokenResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData;
 import org.apache.kafka.common.message.PauseMirrorTopicsResponseData;
+import org.apache.kafka.common.message.RecoverMirrorTopicsResponseData;
 import org.apache.kafka.common.message.RenewDelegationTokenRequestData;
 import org.apache.kafka.common.message.RenewDelegationTokenResponseData;
 import org.apache.kafka.common.message.ResumeMirrorTopicsResponseData;
@@ -104,15 +105,6 @@ public class MockController implements Controller {
     }
 
     @Override
-    public CompletableFuture<CreateClusterMirrorResponseData> createClusterMirror(
-            ControllerRequestContext context,
-            String mirrorName,
-            Map<String, Map.Entry<AlterConfigOp.OpType, String>> configChanges
-    ) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
     public CompletableFuture<List<AclDeleteResult>> deleteAcls(
         ControllerRequestContext context,
         List<AclBindingFilter> aclBindingFilters
@@ -121,12 +113,11 @@ public class MockController implements Controller {
     }
 
     @Override
-    public CompletableFuture<StopMirrorTopicsResponseData> stopMirrorTopics(
+    public CompletableFuture<CreateClusterMirrorResponseData> createClusterMirror(
             ControllerRequestContext context,
             String mirrorName,
-            Set<String> topics,
-            List<String> topicPatterns,
-            long stateOffset) {
+            Map<String, Map.Entry<AlterConfigOp.OpType, String>> configChanges
+    ) {
         throw new UnsupportedOperationException();
     }
 
@@ -141,9 +132,13 @@ public class MockController implements Controller {
         throw new UnsupportedOperationException();
     }
 
-    public CompletableFuture<BumpLeaderEpochsResponseData> bumpLeaderEpoch(
+    @Override
+    public CompletableFuture<StopMirrorTopicsResponseData> stopMirrorTopics(
             ControllerRequestContext context,
-            Map<String, Map<Integer, Integer>> partitionLeaderEpochs) {
+            String mirrorName,
+            Set<String> topics,
+            List<String> topicPatterns,
+            long stateOffset) {
         throw new UnsupportedOperationException();
     }
 
@@ -166,10 +161,25 @@ public class MockController implements Controller {
     }
 
     @Override
+    public CompletableFuture<RecoverMirrorTopicsResponseData> recoverMirrorTopics(
+            ControllerRequestContext context,
+            String mirrorName,
+            Set<String> topics,
+            long stateOffset) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
     public CompletableFuture<DeleteClusterMirrorResponseData> deleteClusterMirror(
             ControllerRequestContext context,
             String mirrorName,
             long brokerMetadataOffset) {
+        throw new UnsupportedOperationException();
+    }
+
+    public CompletableFuture<BumpLeaderEpochsResponseData> bumpLeaderEpoch(
+            ControllerRequestContext context,
+            Map<String, Map<Integer, Integer>> partitionLeaderEpochs) {
         throw new UnsupportedOperationException();
     }
 

@@ -2160,6 +2160,9 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
     def resume_cluster_mirror_topics(self, node, mirror_name, topics_regex):
         return self._cluster_mirror_action(node, mirror_name, topics_regex, 'resume')
 
+    def recover_cluster_mirror_topics(self, node, mirror_name, topics_regex):
+        return self._cluster_mirror_action(node, mirror_name, topics_regex, 'recover')
+
     def alter_mirror_config(self, node, mirror_name, config):
         force_use_zk_connection = not self.all_nodes_configs_command_uses_bootstrap_server()
         cmd = fix_opts_for_new_jvm(node)

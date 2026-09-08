@@ -315,6 +315,8 @@ public abstract class AbstractResponse implements AbstractRequestResponse {
                 return PauseMirrorTopicsResponse.parse(readable, version);
             case RESUME_MIRROR_TOPICS:
                 return ResumeMirrorTopicsResponse.parse(readable, version);
+            case RECOVER_MIRROR_TOPICS:
+                return RecoverMirrorTopicsResponse.parse(readable, version);
             case DELETE_CLUSTER_MIRROR:
                 return DeleteClusterMirrorResponse.parse(readable, version);
             default:

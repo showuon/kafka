@@ -276,6 +276,11 @@ public class ForwardingAdmin implements Admin {
     }
 
     @Override
+    public StartMirrorTopicsResult startMirrorTopics(String mirrorName, List<String> topicPatterns, StartMirrorTopicsOptions options) {
+        return delegate.startMirrorTopics(mirrorName, topicPatterns, options);
+    }
+
+    @Override
     public StopMirrorTopicsResult stopMirrorTopics(String mirrorName, List<String> topicPatterns, StopMirrorTopicsOptions options) {
         return delegate.stopMirrorTopics(mirrorName, topicPatterns, options);
     }
@@ -291,19 +296,24 @@ public class ForwardingAdmin implements Admin {
     }
 
     @Override
-    public StartMirrorTopicsResult startMirrorTopics(String mirrorName, List<String> topicPatterns, StartMirrorTopicsOptions options) {
-        return delegate.startMirrorTopics(mirrorName, topicPatterns, options);
+    public RecoverMirrorTopicsResult recoverMirrorTopics(String mirrorName, List<String> topicPatterns, RecoverMirrorTopicsOptions options) {
+        return delegate.recoverMirrorTopics(mirrorName, topicPatterns, options);
     }
 
     @Override
-    public DeleteClusterMirrorResult deleteClusterMirror(String mirrorName, DeleteClusterMirrorOptions options) {
-        return delegate.deleteClusterMirror(mirrorName, options);
+    public ListClusterMirrorsResult listClusterMirrors(ListClusterMirrorsOptions options) {
+        return delegate.listClusterMirrors(options);
     }
 
     public DescribeClusterMirrorsResult describeClusterMirrors(Collection<String> mirrorNames,
                                                                Map<String, List<Integer>> topicPartitions,
                                                                DescribeClusterMirrorsOptions options) {
         return delegate.describeClusterMirrors(mirrorNames, topicPartitions, options);
+    }
+
+    @Override
+    public DeleteClusterMirrorResult deleteClusterMirror(String mirrorName, DeleteClusterMirrorOptions options) {
+        return delegate.deleteClusterMirror(mirrorName, options);
     }
 
     @Override
@@ -395,11 +405,6 @@ public class ForwardingAdmin implements Admin {
     @Override
     public ListGroupsResult listGroups(ListGroupsOptions options) {
         return delegate.listGroups(options);
-    }
-
-    @Override
-    public ListClusterMirrorsResult listClusterMirrors(ListClusterMirrorsOptions options) {
-        return delegate.listClusterMirrors(options);
     }
 
     @Override
