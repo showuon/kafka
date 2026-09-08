@@ -1450,31 +1450,34 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 .collect(Collectors.toSet());
     }
 
-    public Map<String, TopicDescription> resolvePatternsFromSrc(String mirrorName,
-            List<String> topicPatterns) throws Exception {
+    public CompletableFuture<Map<String, TopicDescription>> resolvePatternsFromSrc(String mirrorName,
+                                                                                   List<String> topicPatterns) {
         if (topicPatterns == null || topicPatterns.isEmpty()) {
-            return Map.of();
+            return CompletableFuture.completedFuture(Map.of());
         }
         Admin srcAdmin = getOrCreateSourceAdmin(mirrorName);
-        long timeout = brokerConfig.requestTimeoutMs();
-        Set<String> allSourceTopics = srcAdmin.listTopics().names().get(timeout, TimeUnit.MILLISECONDS);
-        Set<String> matched = resolvePatterns(allSourceTopics, topicPatterns);
-        if (matched.isEmpty()) {
-            return Map.of();
-        }
 
-        // Filter out topics matching the mirror's topics.exclude config
-        ClusterMirrorConfig mirrorConfig = ClusterMirrorConfig.fromProperties(
-                metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName)));
-        Pattern excludePattern = mirrorConfig.topicsExcludePattern();
-        if (excludePattern != null) {
-            matched.removeIf(t -> excludePattern.matcher(t).matches());
-            if (matched.isEmpty()) {
-                return Map.of();
-            }
-        }
+        return srcAdmin.listTopics().names().toCompletionStage().toCompletableFuture()
+            .thenCompose(allSourceTopics -> {
+                Set<String> matched = resolvePatterns(allSourceTopics, topicPatterns);
+                if (matched.isEmpty()) {
+                    return CompletableFuture.completedFuture(Map.of());
+                }
 
-        return srcAdmin.describeTopics(matched).allTopicNames().get(timeout, TimeUnit.MILLISECONDS);
+                // Filter out topics matching the mirror's topics.exclude config
+                ClusterMirrorConfig mirrorConfig = ClusterMirrorConfig.fromProperties(
+                        metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName)));
+                Pattern excludePattern = mirrorConfig.topicsExcludePattern();
+                if (excludePattern != null) {
+                    matched.removeIf(t -> excludePattern.matcher(t).matches());
+                    if (matched.isEmpty()) {
+                        return CompletableFuture.completedFuture(Map.of());
+                    }
+                }
+
+                return srcAdmin.describeTopics(matched).allTopicNames()
+                        .toCompletionStage().toCompletableFuture();
+            });
     }
 
     public Set<String> resolvePatternsFromDst(String mirrorName, List<String> topicPatterns,

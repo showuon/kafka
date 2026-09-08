@@ -255,7 +255,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.STREAMS_GROUP_HEARTBEAT => handleStreamsGroupHeartbeat(request).exceptionally(handleError)
         case ApiKeys.GET_REPLICA_LOG_INFO => handleGetReplicaLogInfo(request)
         case ApiKeys.CREATE_CLUSTER_MIRROR => forwardToController(request)
-        case ApiKeys.START_MIRROR_TOPICS => handleStartMirrorTopics(request)
+        case ApiKeys.START_MIRROR_TOPICS => handleStartMirrorTopics(request).exceptionally(handleError)
         case ApiKeys.STOP_MIRROR_TOPICS => handleStopMirrorTopics(request)
         case ApiKeys.PAUSE_MIRROR_TOPICS => handlePauseMirrorTopics(request)
         case ApiKeys.RESUME_MIRROR_TOPICS => handleResumeMirrorTopics(request)
@@ -4251,61 +4251,64 @@ class KafkaApis(val requestChannel: RequestChannel,
   }
 
 
-  def handleStartMirrorTopics(request: RequestChannel.Request): Unit = {
+  def handleStartMirrorTopics(request: RequestChannel.Request): CompletableFuture[Unit] = {
     if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
       logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring start mirror topics request")
       requestHelper.sendMaybeThrottle(request, new StartMirrorTopicsResponse(
         new StartMirrorTopicsResponseData().setErrorCode(Errors.UNSUPPORTED_VERSION.code)))
-      return
+      return CompletableFuture.completedFuture[Unit](())
     }
     val data = request.body[StartMirrorTopicsRequest].data()
     val mirrorName = data.mirrorName()
 
-    // Resolve topic patterns against source cluster topics
-    if (data.topicPatterns() != null && !data.topicPatterns().isEmpty) {
-      try {
-        val descriptions = mirrorMetadataManager.resolvePatternsFromSrc(mirrorName, data.topicPatterns())
-        if (!descriptions.isEmpty) {
-          if (data.topics() == null) {
-            data.setTopics(new StartMirrorTopicsRequestData.TopicMetadataCollection())
-          }
-          val existingNames = data.topics().asScala.map(_.topicName()).toSet
-          descriptions.forEach { (name, desc) =>
-            if (!existingNames.contains(name)) {
-              data.topics().add(new StartMirrorTopicsRequestData.TopicMetadata()
-                .setTopicName(name)
-                .setTopicId(desc.topicId())
-                .setNumPartitions(desc.partitions().size()))
+    // Resolve topic patterns against source cluster topics asynchronously
+    val resolveFuture: CompletableFuture[Void] =
+      if (data.topicPatterns() != null && !data.topicPatterns().isEmpty) {
+        mirrorMetadataManager.resolvePatternsFromSrc(mirrorName, data.topicPatterns())
+          .thenAccept { descriptions =>
+            if (!descriptions.isEmpty) {
+              if (data.topics() == null) {
+                data.setTopics(new StartMirrorTopicsRequestData.TopicMetadataCollection())
+              }
+              val existingNames = data.topics().asScala.map(_.topicName()).toSet
+              descriptions.forEach { (name, desc) =>
+                if (!existingNames.contains(name)) {
+                  data.topics().add(new StartMirrorTopicsRequestData.TopicMetadata()
+                    .setTopicName(name)
+                    .setTopicId(desc.topicId())
+                    .setNumPartitions(desc.partitions().size()))
+                }
+              }
             }
           }
-        }
-      } catch {
-        case e: Exception =>
-          requestHelper.sendMaybeThrottle(request, new StartMirrorTopicsResponse(
-            new StartMirrorTopicsResponseData().setErrorCode(Errors.INVALID_REQUEST.code)
-              .setErrorMessage("Failed to resolve topic patterns from source cluster: " + e.getMessage)))
-          return
-      }
-    }
-
-    if (data.topics() == null || data.topics().isEmpty) {
-      requestHelper.sendMaybeThrottle(request, new StartMirrorTopicsResponse(
-        new StartMirrorTopicsResponseData().setErrorCode(Errors.INVALID_REQUEST.code)
-          .setErrorMessage("No topics matched the provided patterns")))
-      return
-    }
-
-    mirrorMetadataManager.validateStartMirrorStates(data, errOpt => {
-      if (errOpt.isPresent) {
-        requestHelper.sendMaybeThrottle(request, new StartMirrorTopicsResponse(
-          new StartMirrorTopicsResponseData().setErrorCode(errOpt.get().code()).setErrorMessage(errOpt.get().message())))
       } else {
-        forwardingManager.forwardRequest(request, new StartMirrorTopicsRequest(data, request.header.apiVersion()), {
-          case Some(response) => requestHelper.sendForwardedResponse(request, response)
-          case None => handleInvalidVersionsDuringForwarding(request)
+        CompletableFuture.completedFuture[Void](null)
+      }
+
+    resolveFuture.handle[Unit] { (_, exception) =>
+      if (exception != null) {
+        val cause = if (exception.isInstanceOf[java.util.concurrent.CompletionException]) exception.getCause else exception
+        requestHelper.sendMaybeThrottle(request, new StartMirrorTopicsResponse(
+          new StartMirrorTopicsResponseData().setErrorCode(Errors.INVALID_REQUEST.code)
+            .setErrorMessage("Failed to resolve topic patterns from source cluster: " + cause.getMessage)))
+      } else if (data.topics() == null || data.topics().isEmpty) {
+        requestHelper.sendMaybeThrottle(request, new StartMirrorTopicsResponse(
+          new StartMirrorTopicsResponseData().setErrorCode(Errors.INVALID_REQUEST.code)
+            .setErrorMessage("No topics matched the provided patterns")))
+      } else {
+        mirrorMetadataManager.validateStartMirrorStates(data, errOpt => {
+          if (errOpt.isPresent) {
+            requestHelper.sendMaybeThrottle(request, new StartMirrorTopicsResponse(
+              new StartMirrorTopicsResponseData().setErrorCode(errOpt.get().code()).setErrorMessage(errOpt.get().message())))
+          } else {
+            forwardingManager.forwardRequest(request, new StartMirrorTopicsRequest(data, request.header.apiVersion()), {
+              case Some(response) => requestHelper.sendForwardedResponse(request, response)
+              case None => handleInvalidVersionsDuringForwarding(request)
+            })
+          }
         })
       }
-    })
+    }
   }
 
   def handleStopMirrorTopics(request: RequestChannel.Request): Unit = {
