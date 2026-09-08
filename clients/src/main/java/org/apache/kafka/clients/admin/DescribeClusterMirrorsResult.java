@@ -23,7 +23,7 @@ import java.util.Collections;
 import java.util.Map;
 
 /**
- * The result of the {@link Admin#describeClusterMirrors(java.util.Collection)} call.
+ * The result of the {@link Admin#describeClusterMirrors} call.
  */
 public class DescribeClusterMirrorsResult {
     private final KafkaFuture<Map<String, ClusterMirrorDescription>> future;

@@ -479,7 +479,7 @@ class ClusterMirroringTest(MirrorUtils, Test):
         MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "orders-internal", 2)
         MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "payments", 2)
 
-        self.logger.info("Start mirror with regex include and exclude")
+        self.logger.info("Start mirror with regex include and exclude via config")
         mirror_cfg = MirrorConfig(self.source_kafka.bootstrap_servers())
         wait_until(
             lambda: self.dest_kafka.create_cluster_mirror(
@@ -487,9 +487,12 @@ class ClusterMirroringTest(MirrorUtils, Test):
             timeout_sec=120, backoff_sec=2,
             err_msg="Failed to create cluster mirror",
         )
+        self.dest_kafka.alter_mirror_config(
+            self.client_node, "my-mirror", "topics.exclude=orders-internal")
+        MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.client_node, "my-mirror")
         wait_until(
             lambda: "Started" in self.dest_kafka.start_cluster_mirror_topics(
-                self.client_node, "my-mirror", "orders-.*", exclude="orders-internal"),
+                self.client_node, "my-mirror", "orders-.*"),
             timeout_sec=120, backoff_sec=2,
             err_msg="Failed to start mirror topics",
         )

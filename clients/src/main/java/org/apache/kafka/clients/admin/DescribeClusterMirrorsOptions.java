@@ -23,7 +23,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Options for {@link Admin#describeClusterMirrors(java.util.Collection, DescribeClusterMirrorsOptions)}.
+ * Options for {@link Admin#describeClusterMirrors}.
  */
 public class DescribeClusterMirrorsOptions extends AbstractOptions<DescribeClusterMirrorsOptions> {
     private boolean includeAuthorizedOperations = false;

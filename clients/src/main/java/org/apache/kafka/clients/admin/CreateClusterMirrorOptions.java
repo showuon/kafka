@@ -17,10 +17,8 @@
 
 package org.apache.kafka.clients.admin;
 
-import java.util.Map;
-
 /**
- * Options for {@link Admin#createClusterMirror(String, Map, CreateClusterMirrorOptions)}.
+ * Options for {@link Admin#createClusterMirror}.
  */
 public class CreateClusterMirrorOptions extends AbstractOptions<CreateClusterMirrorOptions> {
 }

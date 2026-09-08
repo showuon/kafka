@@ -17,10 +17,8 @@
 
 package org.apache.kafka.clients.admin;
 
-import java.util.Set;
-
 /**
- * Options for {@link Admin#pauseMirrorTopics(String, Set, PauseMirrorTopicsOptions)}.
+ * Options for {@link Admin#pauseMirrorTopics}.
  */
 public class PauseMirrorTopicsOptions extends AbstractOptions<PauseMirrorTopicsOptions> {
 }

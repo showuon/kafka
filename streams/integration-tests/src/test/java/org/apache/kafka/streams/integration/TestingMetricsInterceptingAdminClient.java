@@ -434,23 +434,23 @@ public class TestingMetricsInterceptingAdminClient extends AdminClient {
     }
 
     @Override
-    public StartMirrorTopicsResult startMirrorTopics(final String mirrorName, final Set<String> topics, final StartMirrorTopicsOptions options) {
-        return adminDelegate.startMirrorTopics(mirrorName, topics, options);
+    public StartMirrorTopicsResult startMirrorTopics(final String mirrorName, final List<String> topicPatterns, final StartMirrorTopicsOptions options) {
+        return adminDelegate.startMirrorTopics(mirrorName, topicPatterns, options);
     }
 
     @Override
-    public StopMirrorTopicsResult stopMirrorTopics(final String mirrorName, final Set<String> topics, final StopMirrorTopicsOptions options) {
-        return adminDelegate.stopMirrorTopics(mirrorName, topics, options);
+    public StopMirrorTopicsResult stopMirrorTopics(final String mirrorName, final List<String> topicPatterns, final StopMirrorTopicsOptions options) {
+        return adminDelegate.stopMirrorTopics(mirrorName, topicPatterns, options);
     }
 
     @Override
-    public PauseMirrorTopicsResult pauseMirrorTopics(final String mirrorName, final Set<String> topics, final PauseMirrorTopicsOptions options) {
-        return adminDelegate.pauseMirrorTopics(mirrorName, topics, options);
+    public PauseMirrorTopicsResult pauseMirrorTopics(final String mirrorName, final List<String> topicPatterns, final PauseMirrorTopicsOptions options) {
+        return adminDelegate.pauseMirrorTopics(mirrorName, topicPatterns, options);
     }
 
     @Override
-    public ResumeMirrorTopicsResult resumeMirrorTopics(final String mirrorName, final Set<String> topics, final ResumeMirrorTopicsOptions options) {
-        return adminDelegate.resumeMirrorTopics(mirrorName, topics, options);
+    public ResumeMirrorTopicsResult resumeMirrorTopics(final String mirrorName, final List<String> topicPatterns, final ResumeMirrorTopicsOptions options) {
+        return adminDelegate.resumeMirrorTopics(mirrorName, topicPatterns, options);
     }
 
     @Override

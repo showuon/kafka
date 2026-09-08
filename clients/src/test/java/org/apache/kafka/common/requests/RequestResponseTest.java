@@ -1236,7 +1236,7 @@ public class RequestResponseTest {
 
     private StartMirrorTopicsResponse createStartMirrorTopicsResponse() {
         StartMirrorTopicsResponseData data = new StartMirrorTopicsResponseData()
-                .setTopics(List.of(new StartMirrorTopicsResponseData.TopicResult().setName("topic")));
+                .setTopics(List.of(new StartMirrorTopicsResponseData.TopicResult().setTopicName("topic")));
         return new StartMirrorTopicsResponse(data);
     }
 

@@ -4250,6 +4250,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     authHelper.authorize(request.context, operation, CLUSTER, CLUSTER_NAME)
   }
 
+
   def handleStartMirrorTopics(request: RequestChannel.Request): Unit = {
     if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
       logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring start mirror topics request")
@@ -4258,6 +4259,42 @@ class KafkaApis(val requestChannel: RequestChannel,
       return
     }
     val data = request.body[StartMirrorTopicsRequest].data()
+    val mirrorName = data.mirrorName()
+
+    // Resolve topic patterns against source cluster topics
+    if (data.topicPatterns() != null && !data.topicPatterns().isEmpty) {
+      try {
+        val descriptions = mirrorMetadataManager.resolvePatternsFromSrc(mirrorName, data.topicPatterns())
+        if (!descriptions.isEmpty) {
+          if (data.topics() == null) {
+            data.setTopics(new StartMirrorTopicsRequestData.TopicMetadataCollection())
+          }
+          val existingNames = data.topics().asScala.map(_.topicName()).toSet
+          descriptions.forEach { (name, desc) =>
+            if (!existingNames.contains(name)) {
+              data.topics().add(new StartMirrorTopicsRequestData.TopicMetadata()
+                .setTopicName(name)
+                .setTopicId(desc.topicId())
+                .setNumPartitions(desc.partitions().size()))
+            }
+          }
+        }
+      } catch {
+        case e: Exception =>
+          requestHelper.sendMaybeThrottle(request, new StartMirrorTopicsResponse(
+            new StartMirrorTopicsResponseData().setErrorCode(Errors.INVALID_REQUEST.code)
+              .setErrorMessage("Failed to resolve topic patterns from source cluster: " + e.getMessage)))
+          return
+      }
+    }
+
+    if (data.topics() == null || data.topics().isEmpty) {
+      requestHelper.sendMaybeThrottle(request, new StartMirrorTopicsResponse(
+        new StartMirrorTopicsResponseData().setErrorCode(Errors.INVALID_REQUEST.code)
+          .setErrorMessage("No topics matched the provided patterns")))
+      return
+    }
+
     mirrorMetadataManager.validateStartMirrorStates(data, errOpt => {
       if (errOpt.isPresent) {
         requestHelper.sendMaybeThrottle(request, new StartMirrorTopicsResponse(
@@ -4279,6 +4316,27 @@ class KafkaApis(val requestChannel: RequestChannel,
       return
     }
     val data = request.body[StopMirrorTopicsRequest].data()
+    val mirrorName = data.mirrorName()
+
+    // Resolve topic patterns against destination mirror topics
+    if (data.topicPatterns() != null && !data.topicPatterns().isEmpty) {
+      if (data.topics() == null) {
+        data.setTopics(new StopMirrorTopicsRequestData.TopicMetadataCollection())
+      }
+      val existingNames = data.topics().asScala.map(_.topicName()).toSet.asJava
+      val newNames = mirrorMetadataManager.resolvePatternsFromDst(mirrorName, data.topicPatterns(),
+        EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED), existingNames)
+      newNames.forEach(name => data.topics().add(
+        new StopMirrorTopicsRequestData.TopicMetadata().setTopicName(name)))
+    }
+
+    if (data.topics() == null || data.topics().isEmpty) {
+      requestHelper.sendMaybeThrottle(request, new StopMirrorTopicsResponse(
+        new StopMirrorTopicsResponseData().setErrorCode(Errors.INVALID_REQUEST.code)
+          .setErrorMessage("No topics matched the provided patterns")))
+      return
+    }
+
     mirrorMetadataManager.validateStopMirrorStates(data, errOpt => {
       if (errOpt.isPresent) {
         requestHelper.sendMaybeThrottle(request, new StopMirrorTopicsResponse(
@@ -4300,6 +4358,27 @@ class KafkaApis(val requestChannel: RequestChannel,
       return
     }
     val data = request.body[PauseMirrorTopicsRequest].data()
+    val mirrorName = data.mirrorName()
+
+    // Resolve topic patterns against destination mirror topics in MIRRORING state
+    if (data.topicPatterns() != null && !data.topicPatterns().isEmpty) {
+      if (data.topics() == null) {
+        data.setTopics(new PauseMirrorTopicsRequestData.TopicMetadataCollection())
+      }
+      val existingNames = data.topics().asScala.map(_.topicName()).toSet.asJava
+      val newNames = mirrorMetadataManager.resolvePatternsFromDst(mirrorName, data.topicPatterns(),
+        EnumSet.of(MirrorPartitionState.MIRRORING), existingNames)
+      newNames.forEach(name => data.topics().add(
+        new PauseMirrorTopicsRequestData.TopicMetadata().setTopicName(name)))
+    }
+
+    if (data.topics() == null || data.topics().isEmpty) {
+      requestHelper.sendMaybeThrottle(request, new PauseMirrorTopicsResponse(
+        new PauseMirrorTopicsResponseData().setErrorCode(Errors.INVALID_REQUEST.code)
+          .setErrorMessage("No topics matched the provided patterns")))
+      return
+    }
+
     mirrorMetadataManager.validatePauseMirrorStates(data, errOpt => {
       if (errOpt.isPresent) {
         requestHelper.sendMaybeThrottle(request, new PauseMirrorTopicsResponse(
@@ -4321,6 +4400,27 @@ class KafkaApis(val requestChannel: RequestChannel,
       return
     }
     val data = request.body[ResumeMirrorTopicsRequest].data()
+    val mirrorName = data.mirrorName()
+
+    // Resolve topic patterns against destination mirror topics in PAUSED state
+    if (data.topicPatterns() != null && !data.topicPatterns().isEmpty) {
+      if (data.topics() == null) {
+        data.setTopics(new ResumeMirrorTopicsRequestData.TopicMetadataCollection())
+      }
+      val existingNames = data.topics().asScala.map(_.topicName()).toSet.asJava
+      val newNames = mirrorMetadataManager.resolvePatternsFromDst(mirrorName, data.topicPatterns(),
+        EnumSet.of(MirrorPartitionState.PAUSED), existingNames)
+      newNames.forEach(name => data.topics().add(
+        new ResumeMirrorTopicsRequestData.TopicMetadata().setTopicName(name)))
+    }
+
+    if (data.topics() == null || data.topics().isEmpty) {
+      requestHelper.sendMaybeThrottle(request, new ResumeMirrorTopicsResponse(
+        new ResumeMirrorTopicsResponseData().setErrorCode(Errors.INVALID_REQUEST.code)
+          .setErrorMessage("No topics matched the provided patterns")))
+      return
+    }
+
     mirrorMetadataManager.validateResumeMirrorStates(data, errOpt => {
       if (errOpt.isPresent) {
         requestHelper.sendMaybeThrottle(request, new ResumeMirrorTopicsResponse(

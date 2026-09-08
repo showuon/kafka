@@ -309,7 +309,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
-import java.util.Properties;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
@@ -4904,14 +4903,10 @@ public class KafkaAdminClient extends AdminClient {
     }
 
     @Override
-    public StartMirrorTopicsResult startMirrorTopics(String mirrorName, Set<String> topics, StartMirrorTopicsOptions options) {
+    public StartMirrorTopicsResult startMirrorTopics(String mirrorName, List<String> topicPatterns, StartMirrorTopicsOptions options) {
         final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
 
-        validateRegexPatterns(options.includePatterns());
-        validateRegexPatterns(options.excludePatterns());
-
-        final Map<String, StartMirrorTopicsRequestData.TopicMetadata> topicMetadata =
-                fetchSourceTopicMetadata(mirrorName, topics);
+        validatePatterns(topicPatterns);
 
         final long now = time.milliseconds();
         final Call call = new Call("startMirrorTopics", calcDeadlineMs(now, options.timeoutMs()),
@@ -4922,15 +4917,7 @@ public class KafkaAdminClient extends AdminClient {
                 StartMirrorTopicsRequestData data = new StartMirrorTopicsRequestData();
                 data.setMirrorName(mirrorName);
                 data.setTimeoutMs(timeoutMs);
-                topics.forEach(t -> {
-                    StartMirrorTopicsRequestData.TopicMetadata existing = topicMetadata.get(t);
-                    // Add operation mutates the value of prev and next and if we do not duplicate
-                    // the add operation will be ignored on a retry as prev and next != INVALID_INDEX
-                    data.topics().add(existing != null ? existing.duplicate()
-                            : new StartMirrorTopicsRequestData.TopicMetadata().setTopicName(t));
-                });
-                data.setIncludePatterns(options.includePatterns());
-                data.setExcludePatterns(options.excludePatterns());
+                data.setTopicPatterns(topicPatterns);
                 return new StartMirrorTopicsRequest.Builder(data);
             }
 
@@ -4948,7 +4935,7 @@ public class KafkaAdminClient extends AdminClient {
                             log.warn("Failed to start mirror topics, retrying", error.exception());
                             throw error.exception();
                         }
-                        log.error("Mirror topics addition failed: {}", topics, error.exception());
+                        log.error("Mirror topics addition failed: {}", topicPatterns, error.exception());
                         future.completeExceptionally(error.exception());
                         break;
                 }
@@ -4963,46 +4950,11 @@ public class KafkaAdminClient extends AdminClient {
         return new StartMirrorTopicsResult(future);
     }
 
-    private Map<String, StartMirrorTopicsRequestData.TopicMetadata> fetchSourceTopicMetadata(
-            String mirrorName, Set<String> topics) {
-        if (topics.isEmpty()) {
-            return Map.of();
-        }
-        try {
-            ConfigResource mirrorResource = new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName);
-            var configResult = describeConfigs(List.of(mirrorResource)).all().get();
-            var mirrorConfig = configResult.get(mirrorResource);
-            if (mirrorConfig == null || mirrorConfig.entries().isEmpty()) {
-                throw new IllegalStateException("Mirror '" + mirrorName + "' not found or has no configuration");
-            }
-
-            Properties sourceProps = new Properties();
-            for (var entry : mirrorConfig.entries()) {
-                sourceProps.put(entry.name(), entry.value());
-            }
-
-            try (Admin sourceAdmin = Admin.create(sourceProps)) {
-                var descriptions = sourceAdmin.describeTopics(topics).allTopicNames().get();
-                Map<String, StartMirrorTopicsRequestData.TopicMetadata> topicMetadata = new HashMap<>();
-                descriptions.forEach((name, desc) ->
-                        topicMetadata.put(name, new StartMirrorTopicsRequestData.TopicMetadata()
-                                .setTopicName(name)
-                                .setTopicId(desc.topicId())
-                                .setNumPartitions(desc.partitions().size())));
-                return topicMetadata;
-            }
-        } catch (Exception e) {
-            log.warn("Failed to fetch source topic metadata for mirror '{}', " +
-                    "topics will be created at the next metadata refresh", mirrorName, e);
-            return Map.of();
-        }
-    }
-
     @Override
-    public StopMirrorTopicsResult stopMirrorTopics(String mirrorName, Set<String> topics, StopMirrorTopicsOptions options) {
+    public StopMirrorTopicsResult stopMirrorTopics(String mirrorName, List<String> topicPatterns, StopMirrorTopicsOptions options) {
         final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
 
-        validateRegexPatterns(options.patterns());
+        validatePatterns(topicPatterns);
 
         final long now = time.milliseconds();
         final Call call = new Call("stopMirrorTopics", calcDeadlineMs(now, options.timeoutMs()),
@@ -5013,8 +4965,7 @@ public class KafkaAdminClient extends AdminClient {
                 StopMirrorTopicsRequestData data = new StopMirrorTopicsRequestData();
                 data.setMirrorName(mirrorName);
                 data.setTimeoutMs(timeoutMs);
-                topics.forEach(t -> data.topics().add(new StopMirrorTopicsRequestData.TopicMetadata().setTopicName(t)));
-                data.setPatterns(options.patterns());
+                data.setTopicPatterns(topicPatterns);
                 return new StopMirrorTopicsRequest.Builder(data);
             }
 
@@ -5032,7 +4983,7 @@ public class KafkaAdminClient extends AdminClient {
                             log.warn("Failed to stop mirror topics, retrying", error.exception());
                             throw error.exception();
                         }
-                        log.error("Mirror topics removal failed: {}", topics, error.exception());
+                        log.error("Mirror topics removal failed: {}", topicPatterns, error.exception());
                         future.completeExceptionally(error.exception());
                         break;
                 }
@@ -5047,7 +4998,8 @@ public class KafkaAdminClient extends AdminClient {
         return new StopMirrorTopicsResult(future);
     }
 
-    private static void validateRegexPatterns(List<String> patterns) {
+    // Not using re2j on the client to avoid adding a new dependency
+    private static void validatePatterns(List<String> patterns) {
         for (String pattern : patterns) {
             try {
                 Pattern.compile(pattern);
@@ -5058,8 +5010,11 @@ public class KafkaAdminClient extends AdminClient {
     }
 
     @Override
-    public PauseMirrorTopicsResult pauseMirrorTopics(String mirrorName, Set<String> topics, PauseMirrorTopicsOptions options) {
+    public PauseMirrorTopicsResult pauseMirrorTopics(String mirrorName, List<String> topicPatterns, PauseMirrorTopicsOptions options) {
         final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
+
+        validatePatterns(topicPatterns);
+
         final long now = time.milliseconds();
         final Call call = new Call("pauseMirrorTopics", calcDeadlineMs(now, options.timeoutMs()),
                 new LeastLoadedBrokerOrActiveKController()) {
@@ -5069,7 +5024,7 @@ public class KafkaAdminClient extends AdminClient {
                 PauseMirrorTopicsRequestData data = new PauseMirrorTopicsRequestData();
                 data.setMirrorName(mirrorName);
                 data.setTimeoutMs(timeoutMs);
-                topics.forEach(t -> data.topics().add(new PauseMirrorTopicsRequestData.TopicMetadata().setTopicName(t)));
+                data.setTopicPatterns(topicPatterns);
                 return new PauseMirrorTopicsRequest.Builder(data);
             }
 
@@ -5087,7 +5042,7 @@ public class KafkaAdminClient extends AdminClient {
                             log.warn("Failed to pause mirror topics, retrying", error.exception());
                             throw error.exception();
                         }
-                        log.error("Mirror topics pause failed: {}", topics, error.exception());
+                        log.error("Mirror topics pause failed: {}", topicPatterns, error.exception());
                         future.completeExceptionally(error.exception());
                         break;
                 }
@@ -5103,8 +5058,11 @@ public class KafkaAdminClient extends AdminClient {
     }
 
     @Override
-    public ResumeMirrorTopicsResult resumeMirrorTopics(String mirrorName, Set<String> topics, ResumeMirrorTopicsOptions options) {
+    public ResumeMirrorTopicsResult resumeMirrorTopics(String mirrorName, List<String> topicPatterns, ResumeMirrorTopicsOptions options) {
         final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
+
+        validatePatterns(topicPatterns);
+
         final long now = time.milliseconds();
         final Call call = new Call("resumeMirrorTopics", calcDeadlineMs(now, options.timeoutMs()),
                 new LeastLoadedBrokerOrActiveKController()) {
@@ -5114,7 +5072,7 @@ public class KafkaAdminClient extends AdminClient {
                 ResumeMirrorTopicsRequestData data = new ResumeMirrorTopicsRequestData();
                 data.setMirrorName(mirrorName);
                 data.setTimeoutMs(timeoutMs);
-                topics.forEach(t -> data.topics().add(new ResumeMirrorTopicsRequestData.TopicMetadata().setTopicName(t)));
+                data.setTopicPatterns(topicPatterns);
                 return new ResumeMirrorTopicsRequest.Builder(data);
             }
 
@@ -5132,7 +5090,7 @@ public class KafkaAdminClient extends AdminClient {
                             log.warn("Failed to resume mirror topics, retrying", error.exception());
                             throw error.exception();
                         }
-                        log.error("Mirror topics resume failed: {}", topics, error.exception());
+                        log.error("Mirror topics resume failed: {}", topicPatterns, error.exception());
                         future.completeExceptionally(error.exception());
                         break;
                 }
