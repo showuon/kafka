@@ -17,8 +17,8 @@
 package kafka.server.mirror;
 
 import org.apache.kafka.common.Node;
-import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.OffsetEpoch;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.coordinator.mirror.MirrorPartitionKey;
 import org.apache.kafka.server.common.MirrorPartition;
 import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState;
