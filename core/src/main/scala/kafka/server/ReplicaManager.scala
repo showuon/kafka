@@ -23,11 +23,11 @@ import kafka.log.LogManager
 import kafka.server.HostedPartition.Online
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.ReplicaManager.{AtMinIsrPartitionCountMetricName, FailedIsrUpdatesPerSecMetricName, IsrExpandsPerSecMetricName, IsrShrinksPerSecMetricName, LeaderCountMetricName, OfflineReplicaCountMetricName, PartitionCountMetricName, PartitionsWithLateTransactionsCountMetricName, ProducerIdCountMetricName, ReassigningPartitionsMetricName, UnderMinIsrPartitionCountMetricName, UnderReplicatedPartitionsMetricName, createLogReadResult, isListOffsetsTimestampUnsupported}
-import kafka.server.mirror.{MirrorOffsetInfo, MirrorFetcherManager, MirrorMetadataManager}
+import kafka.server.mirror.{MirrorFetcherManager, MirrorMetadataManager, MirrorOffsetInfo}
 import kafka.server.share.DelayedShareFetch
 import kafka.utils._
 import org.apache.kafka.common.config.{ConfigResource, TopicConfig}
-import org.apache.kafka.common.{IsolationLevel, Node, TopicIdPartition, TopicPartition, Uuid}
+import org.apache.kafka.common.{IsolationLevel, Node, OffsetEpoch, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.common.errors._
 import org.apache.kafka.common.internals.{Plugin, Topic}
 import org.apache.kafka.common.message.DeleteRecordsResponseData.DeleteRecordsPartitionResult
@@ -1677,11 +1677,14 @@ class ReplicaManager(val config: KafkaConfig,
     delayedRemoteFetchPurgatory.tryCompleteElseWatch(remoteFetch, delayedFetchKeys.asJava)
   }
 
-  def maybeTruncateForLeaderEpoch(epochs: util.Map[TopicPartition, Integer], callback: Consumer[TopicPartition]): Unit = {
-    epochs.forEach((tp, leaderEpoch) => {
+  def maybeTruncateForLeaderEpoch(offsetEpochs: util.Map[TopicPartition, OffsetEpoch], callback: Consumer[TopicPartition]): Unit = {
+    offsetEpochs.forEach((tp, offsetEpoch) => {
       getLog(tp).map(log => {
-        val endOffsetForEpoch = log.endOffsetForEpoch(leaderEpoch)
-        val offsetToTruncate = if (endOffsetForEpoch.isPresent) endOffsetForEpoch.get().offset() else 0L
+        val endOffsetForEpoch = log.endOffsetForEpoch(offsetEpoch.epoch())
+        val lastMirrorOffset = offsetEpoch.offset()
+        val offsetToTruncate = if (endOffsetForEpoch.isPresent) {
+          Math.min(endOffsetForEpoch.get().offset(), lastMirrorOffset)
+        } else 0L
         log.truncateTo(offsetToTruncate)
         val partition = getPartitionOrException(tp)
         val mirrorUncleanLeaderElection = metadataCache.config(new ConfigResource(ConfigResource.Type.TOPIC, tp.topic()))

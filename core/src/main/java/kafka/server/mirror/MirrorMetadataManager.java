@@ -989,7 +989,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                         return;
                     }
                     sendLastMirrorEpochLookup(mirrorName, tp, sourceMirrors)
-                        .whenComplete((epochs, rawError) -> {
+                        .whenComplete((offsetEpochs, rawError) -> {
                             if (rawError != null) {
                                 Throwable error = rawError instanceof CompletionException && rawError.getCause() != null
                                     ? rawError.getCause() : rawError;
@@ -999,7 +999,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                                     log.warn("Source cluster doesn't support DescribeClusterMirror API. " +
                                         "Replication will be one-way without failback");
                                     replicaManagerSupplier.get().maybeTruncateForLeaderEpoch(
-                                        Map.of(tp, -1), truncateCallback);
+                                        Map.of(tp, new OffsetEpoch(-1, -1)), truncateCallback);
                                 } else {
                                     log.warn("Failed to truncate to last mirrored epoch for mirror {}",
                                         mirrorName, error);
@@ -1008,12 +1008,12 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                                 }
                                 return;
                             }
-                            if (!epochs.containsKey(tp)) {
+                            if (!offsetEpochs.containsKey(tp)) {
                                 log.warn("No epoch returned for {}. Using -1.", tp);
-                                epochs.put(tp, -1);
+                                offsetEpochs.put(tp, new OffsetEpoch(-1, -1));
                             }
                             replicaManagerSupplier.get().maybeTruncateForLeaderEpoch(
-                                epochs, truncateCallback);
+                                offsetEpochs, truncateCallback);
                         });
                 } catch (Exception e) {
                     log.warn("Failed to truncate to last mirror epochs for mirror {}", mirrorName, e);
@@ -1850,7 +1850,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         return sourceSyncer.listSourceClusterMirrors(mirrorName);
     }
 
-    public CompletionStage<Map<TopicPartition, Integer>> sendLastMirrorEpochLookup(
+    public CompletionStage<Map<TopicPartition, OffsetEpoch>> sendLastMirrorEpochLookup(
             String mirrorName, TopicPartition tp, Collection<ClusterMirrorListing> sourceMirrors) {
         return sourceSyncer.sendLastMirrorEpochLookup(mirrorName, tp, sourceMirrors);
     }
