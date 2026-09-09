@@ -996,7 +996,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                                     log.warn("The source cluster doesn't support DescribeClusterMirror API. " +
                                         "Replication will be one-way without failback.");
                                     replicaManagerSupplier.get().maybeTruncateForLeaderEpoch(
+<<<<<<< HEAD
                                         Map.of(tp, new EpochOffset(-1, -1)), truncateCallback);
+=======
+                                        Map.of(tp, new OffsetEpoch(-1, -1)), truncateCallback);
+>>>>>>> 2e226e7d15 (truncate to the min(endOffsetForLME, LMO))
                                 } else {
                                     log.warn("Failed to truncate to last mirror epoch for mirror {}",
                                         mirrorName, error);
@@ -1007,7 +1011,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                             }
                             if (!offsetEpochs.containsKey(tp)) {
                                 log.warn("No epoch returned for {}. Using -1.", tp);
+<<<<<<< HEAD
                                 offsetEpochs.put(tp, new EpochOffset(-1, -1));
+=======
+                                offsetEpochs.put(tp, new OffsetEpoch(-1, -1));
+>>>>>>> 2e226e7d15 (truncate to the min(endOffsetForLME, LMO))
                             }
                             replicaManagerSupplier.get().maybeTruncateForLeaderEpoch(
                                 offsetEpochs, truncateCallback);
@@ -1902,7 +1910,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         return sourceSyncer.listSourceClusterMirrors(mirrorName);
     }
 
+<<<<<<< HEAD
     public CompletionStage<Map<TopicPartition, EpochOffset>> sendLastMirrorEpochLookup(
+=======
+    public CompletionStage<Map<TopicPartition, OffsetEpoch>> sendLastMirrorEpochLookup(
+>>>>>>> 2e226e7d15 (truncate to the min(endOffsetForLME, LMO))
             String mirrorName, TopicPartition tp, Collection<ClusterMirrorListing> sourceMirrors) {
         return sourceSyncer.sendLastMirrorEpochLookup(mirrorName, tp, sourceMirrors);
     }
