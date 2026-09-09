@@ -60,7 +60,9 @@
           { "name": "DestinationOffset", "type": "int64", "versions": "0+", "default": "-1",
             "about": "The destination cluster log end offset, or -1 if not actively mirroring or IncludeMirrorOffset is disabled." },
           { "name": "LastMirrorEpoch", "type": "int32", "versions": "0+", "default": "-1",
-            "about": "The maximum last mirror epoch across the provided mirrors, or -1 if not found or IncludeMirrorState is disabled." }
+            "about": "The maximum last mirror epoch across the provided mirrors, or -1 if not found or IncludeMirrorState is disabled." },
+          { "name": "LastMirrorOffset", "type": "int64", "versions": "0+", "default": "-1",
+            "about": "The maximum last mirror offset across the provided mirrors, or -1 if not found or IncludeMirrorState is disabled." }
         ]}
       ]}
     ]}

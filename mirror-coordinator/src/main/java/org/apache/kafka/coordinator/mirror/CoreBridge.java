@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.coordinator.mirror;
 
+import org.apache.kafka.common.OffsetEpoch;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.message.ReadMirrorStatesResponseData;
@@ -58,7 +59,7 @@ public interface CoreBridge {
         boolean nonRetryable
     );
 
-    void setLastMirrorEpoch(String mirrorName, String topic, int partition, int epoch);
+    void setLastMirror(String mirrorName, String topic, int partition, OffsetEpoch lastMirror);
 
     Uuid getTopicId(String topicName);
 
@@ -81,10 +82,10 @@ public interface CoreBridge {
             boolean nonRetryable
         );
 
-        CompletableFuture<Void> writeLastMirrorEpoch(
+        CompletableFuture<Void> writeLastMirror(
             String mirrorName,
             TopicPartition tp,
-            int epoch
+            OffsetEpoch lastMirror
         );
 
         CompletableFuture<Void> writeTombstone(

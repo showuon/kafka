@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.coordinator.mirror;
 
+import org.apache.kafka.common.OffsetEpoch;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.ReadMirrorStatesResponseData;
 import org.apache.kafka.common.message.WriteMirrorStatesResponseData;
@@ -205,10 +206,11 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                     }
 
                     @Override
-                    public CompletableFuture<Void> writeLastMirrorEpoch(String mirrorName,
-                                                                        TopicPartition tp, int epoch) {
-                        return ClusterMirrorCoordinatorService.this.writeLastMirrorEpoch(
-                                mirrorName, tp, epoch);
+                    public CompletableFuture<Void> writeLastMirror(String mirrorName,
+                                                                    TopicPartition tp,
+                                                                    OffsetEpoch lastMirror) {
+                        return ClusterMirrorCoordinatorService.this.writeLastMirror(
+                                mirrorName, tp, lastMirror);
                     }
 
                     @Override
@@ -440,16 +442,16 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                 shard -> shard.writePartitionState(mirrorName, tp, state, leaderEpoch, stateEpoch, errorMessage, nonRetryable));
     }
 
-    /** Persists a last mirror epoch record. Called from {@code MirrorMetadataManager#updateLastMirrorEpoch}. */
-    private CompletableFuture<Void> writeLastMirrorEpoch(
-            String mirrorName, TopicPartition tp, int epoch
+    /** Persists a last mirror epoch and offset record. Called from {@code MirrorMetadataManager#updateLastMirror}. */
+    private CompletableFuture<Void> writeLastMirror(
+            String mirrorName, TopicPartition tp, OffsetEpoch lastMirror
     ) {
         throwIfNotActive();
         TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME,
                 partitionFor(MirrorPartitionKey.of(mirrorName, bridge.getTopicId(tp.topic()), tp.partition())));
         return runtime.scheduleWriteOperation("write-lme", mirrorStateTp,
                 Duration.ofMillis(config.coordinatorWriteTimeoutMs()),
-                shard -> shard.writeLastMirrorEpoch(mirrorName, tp, epoch));
+                shard -> shard.writeLastMirror(mirrorName, tp, lastMirror));
     }
 
     /** Persists tombstone records for a deleted mirror. Called from {@code MirrorMetadataManager#tombstoneMirror}. */
@@ -466,7 +468,8 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                 shard -> shard.writeTombstone(mirrorName, partitions));
     }
 
-    /** A single partition state or LME write entry for inter-broker WriteMirrorStates RPCs. */
+    /** A single partition state or LME/LMO write entry for inter-broker WriteMirrorStates RPCs. */
     public record MirrorStateWrite(int partition, MirrorPartitionState state, int leaderEpoch, int stateEpoch,
-                                   Integer lastMirrorEpoch, String errorMessage, boolean nonRetryable) { }
+                                   OffsetEpoch lastMirror, String errorMessage,
+                                   boolean nonRetryable) { }
 }

@@ -18,6 +18,7 @@ package kafka.server.mirror;
 
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.OffsetEpoch;
 import org.apache.kafka.coordinator.mirror.MirrorPartitionKey;
 import org.apache.kafka.server.common.MirrorPartition;
 import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState;
@@ -65,13 +66,14 @@ public class MirrorStateCache {
         partitions.put(key, partition);
     }
 
-    public void mergePartition(MirrorPartitionKey key, byte state, int stateEpoch, int lastMirrorEpoch,
+    public void mergePartition(MirrorPartitionKey key, byte state, int stateEpoch, OffsetEpoch lastMirror,
                                String errorMessage, int retryAttempt, byte previousState) {
         partitions.compute(key, (k, existing) -> {
             MirrorPartition result = MirrorPartition.orEmpty(existing);
             if (state != -1) result = result.withState(MirrorPartitionState.fromValue(state));
             if (stateEpoch >= 0) result = result.withStateEpoch(stateEpoch);
-            if (lastMirrorEpoch != -1) result = result.withLastMirrorEpoch(lastMirrorEpoch);
+            if (lastMirror.epoch() != -1) result = result.withLastMirrorEpoch(lastMirror.epoch());
+            if (lastMirror.offset() != -1) result = result.withLastMirrorOffset(lastMirror.offset());
             if (state == MirrorPartitionState.FAILED.value()) {
                 result = result.withError(errorMessage, retryAttempt, MirrorPartitionState.fromValue(previousState));
             }
@@ -98,8 +100,8 @@ public class MirrorStateCache {
         return partitions.keySet();
     }
 
-    public void setLastMirrorEpoch(MirrorPartitionKey key, int epoch) {
-        partitions.compute(key, (k, existing) -> MirrorPartition.orEmpty(existing).withLastMirrorEpoch(epoch));
+    public void setLastMirror(MirrorPartitionKey key, OffsetEpoch lastMirror) {
+        partitions.compute(key, (k, existing) -> MirrorPartition.orEmpty(existing).withLastMirror(lastMirror));
     }
 
     public void removeMirror(String mirrorName) {

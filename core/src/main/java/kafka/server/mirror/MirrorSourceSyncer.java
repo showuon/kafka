@@ -1323,20 +1323,17 @@ class MirrorSourceSyncer {
         DescribeClusterMirrorsResult result = admin.describeClusterMirrors(null, topicPartitions, options);
 
         var describeFuture = result.allDescriptions().toCompletionStage().toCompletableFuture();
-        var lookupEpochsFuture = result.lookupEpochs().toCompletionStage().toCompletableFuture();
+        var lastMirrorFuture = result.lastMirrors().toCompletionStage().toCompletableFuture();
         return describeFuture.thenApply(desc -> {
             validateSourcePartitionIsStopped(desc, sourceMirrors, tp);
             return null;
         })
-            .thenCompose(__ -> lookupEpochsFuture)
-            .thenApply(lookupEpochs -> {
+            .thenCompose(__ -> lastMirrorFuture)
+            .thenApply(lastMirrors -> {
                 Map<TopicPartition, Integer> epochs = new HashMap<>();
-                if (!lookupEpochs.isEmpty()) {
-                    lookupEpochs.forEach((topicName, partitionEpochs) -> {
-                        partitionEpochs.forEach((partIdx, lme) ->
-                                epochs.put(new TopicPartition(topicName, partIdx), lme));
-                    });
-                }
+                lastMirrors.forEach((topicName, partitionValues) ->
+                    partitionValues.forEach((partIdx, oe) ->
+                            epochs.put(new TopicPartition(topicName, partIdx), oe.epoch())));
                 log.info("Last mirror epoch lookup response for mirror {}: {}", mirrorName, epochs);
                 return epochs;
             })
