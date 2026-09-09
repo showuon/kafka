@@ -223,6 +223,7 @@ object RequestChannel extends Logging {
         if (header.apiKey == ApiKeys.FETCH) {
           val specifiedMetricName =
             if (body[FetchRequest].isFromFollower) RequestMetrics.FOLLOW_FETCH_METRIC_NAME
+            else if (FetchRequest.isMirror(body[FetchRequest].replicaId())) RequestMetrics.MIRROR_FETCH_METRIC_NAME
             else RequestMetrics.CONSUMER_FETCH_METRIC_NAME
           Seq(specifiedMetricName, header.apiKey.name)
         } else if (header.apiKey == ApiKeys.ADD_PARTITIONS_TO_TXN && body[AddPartitionsToTxnRequest].allVerifyOnlyRequest) {
