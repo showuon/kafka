@@ -59,6 +59,7 @@ import org.apache.kafka.common.message.DeleteAclsRequestData;
 import org.apache.kafka.common.message.IncrementalAlterConfigsRequestData;
 import org.apache.kafka.common.message.StartMirrorTopicsRequestData;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.BumpLeaderEpochsRequest;
 import org.apache.kafka.common.requests.CreateAclsRequest;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
@@ -244,9 +245,6 @@ class MirrorSourceSyncer {
                 log.error("Failed to refresh metadata for mirror {}", mirrorName, e);
             }
         }
-
-        // TODO: This is incremented on every metadata refresh for testing purpose, as we don't have error handling at this stage
-        metadataRefreshError.mark();
     }
 
     private void retryPendingTombstoneWrites() {
@@ -300,6 +298,7 @@ class MirrorSourceSyncer {
             throw e;
         } catch (Exception e) {
             log.warn("Failed to describe source cluster for mirror {}", mirrorName, e);
+            metadataRefreshError.mark();
         }
     }
 
@@ -412,6 +411,7 @@ class MirrorSourceSyncer {
             return Optional.of(result);
         } catch (Exception e) {
             log.warn("Failed to sync source topic state for mirror {}", mirrorName, e);
+            metadataRefreshError.mark();
             return Optional.empty();
         }
     }
@@ -491,16 +491,22 @@ class MirrorSourceSyncer {
             public void onTimeout() {
                 topicNames.forEach(mirrorCache::removePendingTopicCreation);
                 log.warn("Create mirror topics timed out for {}", topicNames);
+                metadataRefreshError.mark();
             }
 
             @Override
             public void onComplete(ClientResponse response) {
                 topicNames.forEach(mirrorCache::removePendingTopicCreation);
+                if (response.versionMismatch() != null || response.authenticationException() != null || response.wasDisconnected()) {
+                    metadataRefreshError.mark();
+                    return;
+                }
                 if (response.responseBody() instanceof CreateTopicsResponse createTopicsResponse) {
                     createTopicsResponse.data().topics().forEach(topic -> {
                         var error = Errors.forCode(topic.errorCode());
                         if (error != Errors.NONE) {
                             log.warn("Failed to create mirror topic {}: {}", topic.name(), error.message());
+                            metadataRefreshError.mark();
                         }
                     });
                 }
@@ -519,7 +525,7 @@ class MirrorSourceSyncer {
                             .setTopics(topics)
                             .setValidateOnly(false)
                             .setTimeoutMs(3000)
-            ), new TimeoutHandler(log));
+            ), new TimeoutHandler(log, metadataRefreshError));
         }
     }
 
@@ -544,6 +550,7 @@ class MirrorSourceSyncer {
             deletedSourceTopicNames.removeAll(allTopics);
         } catch (Exception e) {
             log.warn("Failed to list topics for mirror {}, skipping deleted topic detection: {}", mirrorName, e.getMessage());
+            metadataRefreshError.mark();
             return;
         }
 
@@ -627,6 +634,7 @@ class MirrorSourceSyncer {
             enforceExcludePatterns(mirrorName, mirrorConfig);
         } catch (Exception e) {
             log.error("Failed to sync mirror metadata for mirror {}", mirrorName, e);
+            metadataRefreshError.mark();
         }
     }
 
@@ -635,8 +643,6 @@ class MirrorSourceSyncer {
 
         Set<String> topics = metadataManager.getConfiguredTopics(mirrorName, EnumSet.of(MirrorPartitionState.MIRRORING));
         log.debug("Describing topic configs for topics: {}", topics);
-        // TODO: This is incremented on every metadata refresh for testing purpose, as we don't have error handling at this stage
-        topicConfigSyncError.mark();
 
         Collection<ConfigResource> resources = topics.stream()
                 .map(topic -> new ConfigResource(ConfigResource.Type.TOPIC, topic))
@@ -649,6 +655,7 @@ class MirrorSourceSyncer {
             applyConfigurationChanges(configsToChange);
         } catch (Exception e) {
             log.warn("Failed to describe topic configs for mirror {}: {}", mirrorName, e.getMessage());
+            topicConfigSyncError.mark();
         }
     }
 
@@ -712,7 +719,7 @@ class MirrorSourceSyncer {
                         .setResourceName(resource.name()).setConfigs(alterableConfigSet);
                 data.resources().add(alterConfigsResource);
             }
-            channelManager.sendRequest(new IncrementalAlterConfigsRequest.Builder(data), new TimeoutHandler(log));
+            channelManager.sendRequest(new IncrementalAlterConfigsRequest.Builder(data), new TimeoutHandler(log, topicConfigSyncError));
         }
     }
 
@@ -811,12 +818,14 @@ class MirrorSourceSyncer {
                     if (e instanceof ExecutionException && e.getCause() instanceof UnknownMemberIdException) {
                         log.debug("Skipped consumer group offset sync for active group {} in mirror {}", groupId, mirrorName);
                     } else {
-                        log.warn("Failed to commit consumer group offsets for group {} in mirror {}: {}", groupId, mirrorName, e.getMessage());
+                        log.warn("Failed to commit consumer group offsets for group {} in mirror {}", groupId, mirrorName, e);
+                        consumerGroupOffsetSyncError.mark();
                     }
                 }
             }
         } catch (Exception e) {
-            log.warn("Failed to sync consumer group offsets for mirror {}: {}", mirrorName, e.getMessage());
+            log.warn("Failed to sync consumer group offsets for mirror {}", mirrorName, e);
+            consumerGroupOffsetSyncError.mark();
         }
     }
 
@@ -886,12 +895,14 @@ class MirrorSourceSyncer {
                     if (e instanceof ExecutionException && e.getCause() instanceof GroupNotEmptyException) {
                         log.error("Skipped share group offset sync for active group {} in mirror {}", groupId, mirrorName);
                     } else {
-                        log.warn("Failed to commit share group offsets for group {} in mirror {}: {}", groupId, mirrorName, e.getMessage());
+                        log.warn("Failed to commit share group offsets for group {} in mirror {}", groupId, mirrorName, e);
+                        shareGroupOffsetSyncError.mark();
                     }
                 }
             }
         } catch (Exception e) {
             log.warn("Failed to sync share group offsets for mirror {}: {}", mirrorName, e);
+            shareGroupOffsetSyncError.mark();
         }
     }
 
@@ -964,9 +975,6 @@ class MirrorSourceSyncer {
 
         Admin srcAdmin = metadataManager.getOrCreateSourceAdmin(mirrorName);
 
-        // TODO: This is incremented on every metadata refresh for testing purpose, as we don't have error handling at this stage
-        aclSyncError.mark();
-
         try {
             Collection<AclBinding> sourceAcls = srcAdmin.describeAcls(AclBindingFilter.ANY)
                     .values().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
@@ -981,12 +989,14 @@ class MirrorSourceSyncer {
             applyAclChanges(mirrorName, aclChanges);
         } catch (ExecutionException e) {
             if (e.getCause() instanceof SecurityDisabledException) {
-                log.debug("ACL sync skipped for mirror {}: {}", mirrorName, e.getCause().getMessage());
+                log.debug("ACL sync skipped for mirror {}", mirrorName, e.getCause());
             } else {
-                log.warn("Failed to describe ACLs for mirror {}: {}", mirrorName, e.getMessage());
+                log.warn("Failed to describe ACLs for mirror {}", mirrorName, e);
+                aclSyncError.mark();
             }
         } catch (Exception e) {
-            log.warn("Failed to sync ACLs for mirror {}: {}", mirrorName, e.getMessage());
+            log.warn("Failed to sync ACLs for mirror {}", mirrorName, e);
+            aclSyncError.mark();
         }
     }
 
@@ -1025,7 +1035,7 @@ class MirrorSourceSyncer {
                     .toList();
             channelManager.sendRequest(
                     new CreateAclsRequest.Builder(new CreateAclsRequestData().setCreations(requestData)),
-                    new TimeoutHandler(log)
+                    new TimeoutHandler(log, aclSyncError)
             );
         }
 
@@ -1043,7 +1053,7 @@ class MirrorSourceSyncer {
                     .toList();
             channelManager.sendRequest(
                     new DeleteAclsRequest.Builder(new DeleteAclsRequestData().setFilters(requestData)),
-                    new TimeoutHandler(log)
+                    new TimeoutHandler(log, aclSyncError)
             );
         }
     }
@@ -1088,6 +1098,7 @@ class MirrorSourceSyncer {
                     .toList();
         } catch (Exception e) {
             log.warn("Failed to discover topics by pattern for mirror {}", mirrorName, e);
+            metadataRefreshError.mark();
             return;
         }
 
@@ -1106,6 +1117,7 @@ class MirrorSourceSyncer {
                     .all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
         } catch (Exception e) {
             log.warn("Failed to start discovered topics for mirror {}: {}", mirrorName, e.getMessage());
+            metadataRefreshError.mark();
         }
     }
 
@@ -1135,6 +1147,7 @@ class MirrorSourceSyncer {
                     .all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
         } catch (Exception e) {
             log.warn("Failed to stop excluded topics for mirror {}: {}", mirrorName, e.getMessage());
+            metadataRefreshError.mark();
         }
     }
 
@@ -1342,15 +1355,30 @@ class MirrorSourceSyncer {
             .orTimeout(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
     }
 
-    record TimeoutHandler(Logger log) implements ControllerRequestCompletionHandler {
+    record TimeoutHandler(Logger log, Meter errorMeter) implements ControllerRequestCompletionHandler {
         @Override
         public void onTimeout() {
             log.warn("Controller request timed out");
+            errorMeter.mark();
         }
 
         @Override
         public void onComplete(ClientResponse response) {
+            if (response.authenticationException() != null || response.wasDisconnected() || response.versionMismatch() != null) {
+                maybeMarkError();
+            }
+            AbstractResponse abstractResponse = response.responseBody();
+            Map<Errors, Integer> errors = abstractResponse.errorCounts();
+            if (errors != null && !errors.isEmpty()) {
+                maybeMarkError();
+            }
             log.debug("Controller request completed: {}", response);
+        }
+
+        private void maybeMarkError() {
+            if (errorMeter != null) {
+                errorMeter.mark();
+            }
         }
     }
 
