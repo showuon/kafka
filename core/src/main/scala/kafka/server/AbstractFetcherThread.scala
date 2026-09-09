@@ -17,7 +17,7 @@
 
 package kafka.server
 
-import com.yammer.metrics.core.Meter
+import com.yammer.metrics.core.{Histogram, Meter}
 import kafka.utils.CoreUtils.inLock
 import kafka.utils.Logging
 import org.apache.kafka.common.errors._
@@ -54,6 +54,10 @@ import scala.jdk.CollectionConverters._
 import scala.jdk.OptionConverters.{RichOption, RichOptional}
 import scala.math._
 
+object AbstractFetcherThread {
+  private val MillisInNano = 1_000_000.0
+}
+
 /**
  * Abstract class for fetching data from multiple partitions from the same broker.
  */
@@ -65,7 +69,8 @@ abstract class AbstractFetcherThread(name: String,
                                      fetchBackOffMs: Int = 0,
                                      isInterruptible: Boolean = true,
                                      val brokerTopicStats: BrokerTopicStats, // BrokerTopicStats's lifecycle managed by ReplicaManager
-                                     val mirrorName: String = "") // Cluster mirror name for remote replica fetching
+                                     val mirrorName: String = "", // Cluster mirror name for remote replica fetching
+                                     val time: Time = Time.SYSTEM)
   extends ShutdownableThread(name, isInterruptible) with Logging {
 
   this.logIdent = this.logPrefix
@@ -471,6 +476,7 @@ abstract class AbstractFetcherThread(name: String,
     var responseData: Map[TopicPartition, FetchData] = Map.empty
     var fetchException: Option[Throwable] = None
 
+    val startNs = time.nanoseconds()
     try {
       responseData = leader.fetch(fetchRequest).asScala
     } catch {
@@ -482,6 +488,9 @@ abstract class AbstractFetcherThread(name: String,
             partitionsWithError ++= partitionStates.partitionSet.asScala
           }
         }
+    } finally {
+      val endNs = time.nanoseconds()
+      fetcherStats.requestLatency.update(Math.round((endNs - startNs).toDouble / AbstractFetcherThread.MillisInNano))
     }
     fetcherStats.requestRate.mark()
 
@@ -1089,6 +1098,7 @@ object FetcherMetrics {
   val ConsumerLag = "ConsumerLag"
   val RequestsPerSec = "RequestsPerSec"
   val BytesPerSec = "BytesPerSec"
+  val RequestTimeMs = "RequestTimeMs"
 }
 
 class FetcherLagMetrics(metricId: ClientIdTopicPartition) {
@@ -1141,9 +1151,12 @@ class FetcherStats(metricId: ClientIdAndBroker) {
 
   val byteRate: Meter = metricsGroup.newMeter(FetcherMetrics.BytesPerSec, "bytes", TimeUnit.SECONDS, tags)
 
+  val requestLatency: Histogram = metricsGroup.newHistogram(FetcherMetrics.RequestTimeMs, true, tags)
+
   def unregister(): Unit = {
     metricsGroup.removeMetric(FetcherMetrics.RequestsPerSec, tags)
     metricsGroup.removeMetric(FetcherMetrics.BytesPerSec, tags)
+    metricsGroup.removeMetric(FetcherMetrics.RequestTimeMs, tags)
   }
 
 }
