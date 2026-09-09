@@ -26,8 +26,12 @@ import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.ClusterMirrorListing;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.common.Endpoint;
+<<<<<<< HEAD
 import org.apache.kafka.common.EpochOffset;
+=======
+>>>>>>> ce74c8c389 (spotbug)
 import org.apache.kafka.common.Node;
+import org.apache.kafka.common.OffsetEpoch;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigDef;
