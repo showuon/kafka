@@ -20,6 +20,7 @@ import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.ClusterMirrorDescription;
 import org.apache.kafka.clients.admin.ClusterMirrorListing;
+import org.apache.kafka.clients.admin.Config;
 import org.apache.kafka.clients.admin.CreateClusterMirrorOptions;
 import org.apache.kafka.clients.admin.CreateClusterMirrorResult;
 import org.apache.kafka.clients.admin.DeleteClusterMirrorOptions;
@@ -35,9 +36,11 @@ import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.server.util.CommandDefaultOptions;
 import org.apache.kafka.server.util.CommandLineUtils;
+import org.apache.kafka.server.util.MirrorUtils;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.re2j.Pattern;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -83,8 +86,6 @@ public abstract class ClusterMirrorCommand {
                 mirrorService.startMirrorTopics(opts);
             } else if (opts.hasStopOption()) {
                 mirrorService.stopMirrorTopics(opts);
-            } else if (opts.hasDeleteOption()) {
-                mirrorService.deleteClusterMirror(opts);
             } else if (opts.hasPauseOption()) {
                 mirrorService.pauseMirrorTopics(opts);
             } else if (opts.hasResumeOption()) {
@@ -93,6 +94,8 @@ public abstract class ClusterMirrorCommand {
                 mirrorService.listClusterMirrors();
             } else if (opts.hasDescribeOption()) {
                 mirrorService.describeClusterMirrors(opts);
+            } else if (opts.hasDeleteOption()) {
+                mirrorService.deleteClusterMirror(opts);
             }
         }
     }
@@ -108,12 +111,7 @@ public abstract class ClusterMirrorCommand {
             this.mirrorConfigs = mirrorConfigs;
         }
 
-        private static Admin createAdminClient(Optional<String> bootstrapServer, Properties commandConfig) {
-            bootstrapServer.ifPresent(s -> commandConfig.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, s));
-            return Admin.create(commandConfig);
-        }
-
-        private void createClusterMirror(MirrorCommandOptions opts) throws ExecutionException, InterruptedException {
+        private void createClusterMirror(MirrorCommandOptions opts) throws Exception {
             Map<String, String> configMap = new HashMap<>();
             mirrorConfigs.forEach((k, v) -> configMap.put(k.toString(), v.toString()));
 
@@ -167,13 +165,9 @@ public abstract class ClusterMirrorCommand {
                 return;
             }
 
-            // Sort by mirror name
             listing.sort(Comparator.comparing(ClusterMirrorListing::mirrorName));
 
-            // Print header
             System.out.printf("%-30s %-10s %-26s %-50s%n", "MIRROR", "TOPICS", "SOURCE-CLUSTER-ID", "SOURCE-BOOTSTRAP-SERVER");
-
-            // Print each mirror
             for (ClusterMirrorListing mirror : listing) {
                 String sourceBootstrap = mirror.sourceBootstrap() != null && !mirror.sourceBootstrap().isEmpty()
                     ? mirror.sourceBootstrap()
@@ -189,13 +183,15 @@ public abstract class ClusterMirrorCommand {
             }
         }
 
-        private void describeClusterMirrors(MirrorCommandOptions opts) throws ExecutionException, InterruptedException {
+        private void describeClusterMirrors(MirrorCommandOptions opts) throws Exception {
             List<String> mirrorNames = opts.mirror().isPresent()
                 ? List.of(opts.mirror().get())
                 : null;
 
             Map<String, ClusterMirrorDescription> descriptions = adminClient.describeClusterMirrors(
-                mirrorNames, new DescribeClusterMirrorsOptions()).allDescriptions().get();
+                mirrorNames, null, new DescribeClusterMirrorsOptions()
+                    .includeMirrorState(true)
+                    .includeMirrorOffset(true)).allDescriptions().get();
 
             if (descriptions.isEmpty()) {
                 if (opts.hasJsonOption()) {
@@ -208,6 +204,13 @@ public abstract class ClusterMirrorCommand {
 
             List<PartitionInfo> partitionInfos = collectPartitionInfos(descriptions);
 
+            if (!opts.topics().isEmpty()) {
+                Pattern compiled = MirrorUtils.compilePatternList(opts.topics());
+                if (compiled != null) {
+                    partitionInfos.removeIf(info -> !compiled.matcher(info.topic()).matches());
+                }
+            }
+
             if (opts.hasFailedOption()) {
                 partitionInfos.removeIf(info -> !"FAILED".equals(info.state()));
             }
@@ -216,27 +219,39 @@ public abstract class ClusterMirrorCommand {
                 .thenComparing(PartitionInfo::topic)
                 .thenComparing(PartitionInfo::partition));
 
-            if (opts.hasJsonOption()) {
-                try {
-                    System.out.printf(OBJECT_MAPPER.writeValueAsString(partitionInfos));
-                    return;
-                } catch (JsonProcessingException e) {
-                    throw new RuntimeException("Failed to serialize JSON", e);
-                }
-            }
+            printDescribeResult(partitionInfos, opts);
+        }
 
-            if (partitionInfos.isEmpty()) {
-                if (opts.hasFailedOption()) {
-                    System.out.println("No failed partitions found");
-                }
-                return;
-            }
+        private void deleteClusterMirror(MirrorCommandOptions opts) throws Exception {
+            String mirrorName = opts.mirror().get();
+            DeleteClusterMirrorResult result = adminClient.deleteClusterMirror(
+                    mirrorName, new DeleteClusterMirrorOptions());
+            result.all().get();
+            System.out.printf("Deleted mirror %s%n", mirrorName);
+        }
 
-            if (opts.hasFailedOption()) {
-                printFailedPartitions(partitionInfos, getMaxRetryAttempts());
-            } else {
-                printPartitions(partitionInfos);
+        private static Admin createAdminClient(Optional<String> bootstrapServer, Properties commandConfig) {
+            bootstrapServer.ifPresent(s -> commandConfig.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, s));
+            return Admin.create(commandConfig);
+        }
+
+        private Config describeMirrorConfig(String mirrorName) throws Exception {
+            ConfigResource mirrorConfigResource = new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName);
+            var configResult = adminClient.describeConfigs(List.of(mirrorConfigResource)).all().get();
+            var mirrorConfigEntries = configResult.get(mirrorConfigResource);
+
+            if (mirrorConfigEntries == null || mirrorConfigEntries.entries().isEmpty()) {
+                throw new RuntimeException("Mirror '" + mirrorName + "' not found or has no configuration");
             }
+            return mirrorConfigEntries;
+        }
+
+        private static Properties toProperties(Config config) {
+            Properties props = new Properties();
+            for (var entry : config.entries()) {
+                props.put(entry.name(), entry.value());
+            }
+            return props;
         }
 
         private List<PartitionInfo> collectPartitionInfos(Map<String, ClusterMirrorDescription> descriptions) {
@@ -257,25 +272,32 @@ public abstract class ClusterMirrorCommand {
             return partitionInfos;
         }
 
-        private int getMaxRetryAttempts() {
-            try {
-                String brokerId = adminClient.describeCluster().nodes().get().iterator().next().idString();
-                ConfigResource brokerResource = new ConfigResource(ConfigResource.Type.BROKER, brokerId);
-                var configs = adminClient.describeConfigs(List.of(brokerResource)).all().get();
-                var brokerConfig = configs.get(brokerResource);
-                if (brokerConfig != null) {
-                    var entry = brokerConfig.get("mirror.failed.retry.max.attempts");
-                    if (entry != null) {
-                        return Integer.parseInt(entry.value());
-                    }
+        private void printDescribeResult(List<PartitionInfo> partitionInfos, MirrorCommandOptions opts) {
+            if (opts.hasJsonOption()) {
+                try {
+                    System.out.printf(OBJECT_MAPPER.writeValueAsString(partitionInfos));
+                } catch (JsonProcessingException e) {
+                    throw new RuntimeException("Failed to serialize JSON", e);
                 }
-            } catch (RuntimeException | InterruptedException | ExecutionException e) {
-                // fall through to default
+                return;
             }
-            return 10;
+
+            if (partitionInfos.isEmpty()) {
+                if (opts.hasFailedOption()) {
+                    System.out.println("No failed partitions found");
+                }
+                return;
+            }
+
+            if (opts.hasFailedOption()) {
+                printFailedPartitions(partitionInfos);
+            } else {
+                printPartitions(partitionInfos);
+            }
         }
 
-        private void printFailedPartitions(List<PartitionInfo> partitionInfos, int maxRetryAttempts) {
+        private void printFailedPartitions(List<PartitionInfo> partitionInfos) {
+            int maxRetryAttempts = getMaxRetryAttempts();
             int maxError = 80;
             System.out.printf("%-30s %-40s %-10s %-7s %s%n",
                 "MIRROR", "TOPIC", "PARTITION", "RETRY", "ERROR");
@@ -310,12 +332,22 @@ public abstract class ClusterMirrorCommand {
             }
         }
 
-        private void deleteClusterMirror(MirrorCommandOptions opts) throws ExecutionException, InterruptedException {
-            String mirrorName = opts.mirror().get();
-            DeleteClusterMirrorResult result = adminClient.deleteClusterMirror(
-                    mirrorName, new DeleteClusterMirrorOptions());
-            result.all().get();
-            System.out.printf("Deleted %s mirror%n", mirrorName);
+        private int getMaxRetryAttempts() {
+            try {
+                String brokerId = adminClient.describeCluster().nodes().get().iterator().next().idString();
+                ConfigResource brokerResource = new ConfigResource(ConfigResource.Type.BROKER, brokerId);
+                var configs = adminClient.describeConfigs(List.of(brokerResource)).all().get();
+                var brokerConfig = configs.get(brokerResource);
+                if (brokerConfig != null) {
+                    var entry = brokerConfig.get("mirror.failed.retry.max.attempts");
+                    if (entry != null) {
+                        return Integer.parseInt(entry.value());
+                    }
+                }
+            } catch (RuntimeException | InterruptedException | ExecutionException e) {
+                // fall through to default
+            }
+            return 10;
         }
 
         // Truncate string from the left, keeping the rightmost characters
@@ -490,7 +522,7 @@ public abstract class ClusterMirrorCommand {
 
             CommandLineUtils.maybePrintHelpOrVersion(this, "This tool helps to create cluster mirrors and manage mirror topics.");
 
-            // should have exactly one action
+            // Should have exactly one action
             if ((has(createOpt) ? 1 : 0) + (has(startOpt) ? 1 : 0) + (has(stopOpt) ? 1 : 0)
                     + (has(deleteOpt) ? 1 : 0) + (has(pauseOpt) ? 1 : 0) + (has(resumeOpt) ? 1 : 0)
                     + (has(listOpt) ? 1 : 0) + (has(describeOpt) ? 1 : 0) != 1)
