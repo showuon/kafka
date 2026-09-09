@@ -456,6 +456,11 @@ public class TestingMetricsInterceptingAdminClient extends AdminClient {
     }
 
     @Override
+    public DeleteClusterMirrorResult deleteClusterMirror(final String mirrorName, final DeleteClusterMirrorOptions options) {
+        return adminDelegate.deleteClusterMirror(mirrorName, options);
+    }
+
+    @Override
     public ListClusterMirrorsResult listClusterMirrors(final ListClusterMirrorsOptions options) {
         return adminDelegate.listClusterMirrors(options);
     }
@@ -464,11 +469,6 @@ public class TestingMetricsInterceptingAdminClient extends AdminClient {
                                                                final Map<String, List<Integer>> topicPartitions,
                                                                final DescribeClusterMirrorsOptions options) {
         return adminDelegate.describeClusterMirrors(mirrorNames, topicPartitions, options);
-    }
-
-    @Override
-    public DeleteClusterMirrorResult deleteClusterMirror(final String mirrorName, final DeleteClusterMirrorOptions options) {
-        return adminDelegate.deleteClusterMirror(mirrorName, options);
     }
 
     @Override

@@ -318,7 +318,7 @@ public abstract class ClusterMirrorCommand {
                     error = error.substring(0, maxError - 3) + "...";
                 }
                 String retry = info.retryAttempt() == -1
-                    ? "NonRetryable" : info.retryAttempt() + "/" + maxRetryAttempts;
+                    ? "-1" : info.retryAttempt() + "/" + maxRetryAttempts;
                 System.out.printf("%-30s %-40s %-10d %-7s %s%n",
                     truncateLeft(info.mirror(), 30),
                     truncateLeft(info.topic(), 40),

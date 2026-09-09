@@ -4467,12 +4467,16 @@ class KafkaApis(val requestChannel: RequestChannel,
       return
     }
 
-    // No state validation or optimistic locking: other operations reject FAILED at validation,
-    // and automatic retries perform the same FAILED to prevState transition as recover,
-    // so any race is harmless. stateOffset defaults to -1 (skip controller check).
-    forwardingManager.forwardRequest(request, new RecoverMirrorTopicsRequest(data, request.header.apiVersion()), {
-      case Some(response) => requestHelper.sendForwardedResponse(request, response)
-      case None => handleInvalidVersionsDuringForwarding(request)
+    mirrorMetadataManager.recoverMirrorPartitions(data, errOpt => {
+      if (errOpt.isPresent) {
+        requestHelper.sendMaybeThrottle(request, new RecoverMirrorTopicsResponse(
+          new RecoverMirrorTopicsResponseData().setErrorCode(errOpt.get().code()).setErrorMessage(errOpt.get().message())))
+      } else {
+        forwardingManager.forwardRequest(request, new RecoverMirrorTopicsRequest(data, request.header.apiVersion()), {
+          case Some(response) => requestHelper.sendForwardedResponse(request, response)
+          case None => handleInvalidVersionsDuringForwarding(request)
+        })
+      }
     })
   }
 

@@ -457,9 +457,14 @@ class MirrorSourceSyncer {
             } else if (destTopic == null &&
                     metadataManager.metadataImage().topics().getTopic(ti.topic()) != null &&
                     ti.exists()) {
-                log.error("Mirror topic {} exists on destination with TopicId {} but source has TopicId {}. "
-                                + "Delete the topic on destination and let auto-creation recreate it with the correct TopicId.",
-                        ti.topic(), metadataManager.metadataImage().topics().getTopic(ti.topic()).id(), ti.topicId());
+                TopicImage staleTopic = metadataManager.metadataImage().topics().getTopic(ti.topic());
+                log.error("Mirror topic {} exists on destination with ID {} but source has ID {}. "
+                                + "Delete the topic on destination and let auto-creation recreate it.",
+                        ti.topic(), staleTopic.id(), ti.topicId());
+                String errorMsg = "Source topic recreated with different ID";
+                staleTopic.partitions().forEach((partitionId, partition) ->
+                        metadataManager.transitionTo(mirrorName, Set.of(new TopicPartition(ti.topic(), partitionId)),
+                                MirrorPartitionState.FAILED, errorMsg, true));
             }
         });
 
@@ -558,7 +563,7 @@ class MirrorSourceSyncer {
                     if (topicImage != null) {
                         topicImage.partitions().forEach((partitionId, partition) ->
                                 metadataManager.transitionTo(mirrorName, Set.of(new TopicPartition(name, partitionId)),
-                                        MirrorPartitionState.FAILED, "The source topic is deleted.", true));
+                                        MirrorPartitionState.FAILED, "The source topic is deleted", true));
                     }
                 } else {
                     log.debug("Topic {} not found in source cluster {}, pending deletion confirmation on next sync", name, mirrorName);

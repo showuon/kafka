@@ -130,7 +130,8 @@ public record MirrorPartition(MirrorPartitionState state, int stateEpoch, int la
                         || source == MirrorPartitionState.ULE_RECOVERY
                         || source == MirrorPartitionState.FAILED;
             case STOPPED:
-                return source == MirrorPartitionState.STOPPING;
+                return source == MirrorPartitionState.STOPPING
+                        || source == MirrorPartitionState.FAILED;
             case FAILED:
                 return true;
             default:
@@ -138,7 +139,17 @@ public record MirrorPartition(MirrorPartitionState state, int stateEpoch, int la
         }
     }
 
+    // Clears error message and prevState but preserves retryAttempt.
+    // Used for transient state transitions (e.g. LOG_ALIGNMENT) where
+    // the operation may still fail and return to FAILED.
     public MirrorPartition clearError() {
+        return new MirrorPartition(state, stateEpoch, lastMirrorEpoch, null, retryAttempt, null);
+    }
+
+    // Clears error message, prevState, and retryAttempt.
+    // Used when reaching a stable state (MIRRORING, PAUSED, STOPPED)
+    // where consecutive failure tracking should restart from zero.
+    public MirrorPartition resetRetry() {
         return new MirrorPartition(state, stateEpoch, lastMirrorEpoch, null, 0, null);
     }
 

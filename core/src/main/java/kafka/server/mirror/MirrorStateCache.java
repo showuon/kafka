@@ -114,15 +114,25 @@ public class MirrorStateCache {
             int attempt = existing.nextAttempt(nonRetryable);
             MirrorPartitionState previousState = existing.resolvePrevState(curState);
             partitions.compute(key, (k, e) -> MirrorPartition.orEmpty(e).withError(errorMessage, attempt, previousState));
-        } else if (newState == MirrorPartitionState.LOG_ALIGNMENT
-                || newState == MirrorPartitionState.STOPPED
-                || newState == MirrorPartitionState.PAUSED) {
+        } else if (isStableState(newState) && curState != MirrorPartitionState.FAILED) {
+            resetFailedInfo(key);
+        } else {
             clearFailedInfo(key);
         }
     }
 
+    private static boolean isStableState(MirrorPartitionState state) {
+        return state == MirrorPartitionState.MIRRORING
+                || state == MirrorPartitionState.PAUSED
+                || state == MirrorPartitionState.STOPPED;
+    }
+
     public void clearFailedInfo(MirrorPartitionKey key) {
         partitions.computeIfPresent(key, (k, existing) -> existing.clearError());
+    }
+
+    public void resetFailedInfo(MirrorPartitionKey key) {
+        partitions.computeIfPresent(key, (k, existing) -> existing.resetRetry());
     }
 
     // -- Source leader operations --

@@ -273,6 +273,10 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                             writePartitionState(mirrorName, tp, partition.state(),
                                     partition.leaderEpoch(), partition.stateEpoch(),
                                     partition.errorMessage(), partition.nonRetryable());
+                    if (result.records().isEmpty()) {
+                        results.put(tp, new PartitionWriteResult(Errors.INVALID_CLUSTER_MIRROR_STATE, -1));
+                        return;
+                    }
                     records.addAll(result.records());
                     int newEpoch = stateEpochMap.getOrDefault(
                             MirrorPartitionKey.of(mirrorName, coreBridge.getTopicId(topic), tp.partition()), 0);

@@ -2206,7 +2206,8 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                 "src_offset": src,
                 "dst_offset": dst,
                 "lag": lag,
-                "state": item["state"]
+                "state": item["state"],
+                "retry_attempt": item.get("retryAttempt", 0)
             }
 
         return mirrors
