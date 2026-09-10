@@ -4843,8 +4843,12 @@ public class KafkaAdminClient extends AdminClient {
                             log.warn("Failed to create mirror, retrying", error.exception());
                             throw error.exception();
                         }
-                        log.error("Create mirror {} failed", mirrorName, error.exception());
-                        future.completeExceptionally(error.exception(response.data().errorMessage()));
+                        String errorMsg = response.data().errorMessage();
+                        if (errorMsg != null && !errorMsg.isEmpty()) {
+                            future.completeExceptionally(new InvalidRequestException(errorMsg));
+                        } else {
+                            future.completeExceptionally(error.exception());
+                        }
                         break;
                 }
             }
@@ -4887,8 +4891,12 @@ public class KafkaAdminClient extends AdminClient {
                             log.warn("Failed to delete mirror, retrying", error.exception());
                             throw error.exception();
                         }
-                        log.error("Delete mirror {} failed", mirrorName, error.exception());
-                        future.completeExceptionally(error.exception(response.data().errorMessage()));
+                        String errorMsg = response.data().errorMessage();
+                        if (errorMsg != null && !errorMsg.isEmpty()) {
+                            future.completeExceptionally(new InvalidRequestException(errorMsg));
+                        } else {
+                            future.completeExceptionally(error.exception());
+                        }
                         break;
                 }
             }
@@ -4935,8 +4943,12 @@ public class KafkaAdminClient extends AdminClient {
                             log.warn("Failed to start mirror topics, retrying", error.exception());
                             throw error.exception();
                         }
-                        log.error("Mirror topics addition failed: {}", topicPatterns, error.exception());
-                        future.completeExceptionally(error.exception());
+                        String errorMsg = response.data().errorMessage();
+                        if (errorMsg != null && !errorMsg.isEmpty()) {
+                            future.completeExceptionally(new InvalidRequestException(errorMsg));
+                        } else {
+                            future.completeExceptionally(error.exception());
+                        }
                         break;
                 }
             }
@@ -4983,8 +4995,12 @@ public class KafkaAdminClient extends AdminClient {
                             log.warn("Failed to stop mirror topics, retrying", error.exception());
                             throw error.exception();
                         }
-                        log.error("Mirror topics removal failed: {}", topicPatterns, error.exception());
-                        future.completeExceptionally(error.exception());
+                        String errorMsg = response.data().errorMessage();
+                        if (errorMsg != null && !errorMsg.isEmpty()) {
+                            future.completeExceptionally(new InvalidRequestException(errorMsg));
+                        } else {
+                            future.completeExceptionally(error.exception());
+                        }
                         break;
                 }
             }
@@ -5042,8 +5058,12 @@ public class KafkaAdminClient extends AdminClient {
                             log.warn("Failed to pause mirror topics, retrying", error.exception());
                             throw error.exception();
                         }
-                        log.error("Mirror topics pause failed: {}", topicPatterns, error.exception());
-                        future.completeExceptionally(error.exception());
+                        String errorMsg = response.data().errorMessage();
+                        if (errorMsg != null && !errorMsg.isEmpty()) {
+                            future.completeExceptionally(new InvalidRequestException(errorMsg));
+                        } else {
+                            future.completeExceptionally(error.exception());
+                        }
                         break;
                 }
             }
@@ -5090,8 +5110,12 @@ public class KafkaAdminClient extends AdminClient {
                             log.warn("Failed to resume mirror topics, retrying", error.exception());
                             throw error.exception();
                         }
-                        log.error("Mirror topics resume failed: {}", topicPatterns, error.exception());
-                        future.completeExceptionally(error.exception());
+                        String errorMsg = response.data().errorMessage();
+                        if (errorMsg != null && !errorMsg.isEmpty()) {
+                            future.completeExceptionally(new InvalidRequestException(errorMsg));
+                        } else {
+                            future.completeExceptionally(error.exception());
+                        }
                         break;
                 }
             }
