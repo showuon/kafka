@@ -457,8 +457,8 @@ class MirrorSourceSyncer {
             } else if (destTopic == null &&
                     metadataManager.metadataImage().topics().getTopic(ti.topic()) != null &&
                     ti.exists()) {
-                log.error("Mirror topic {} exists on destination with TopicId {} but source has TopicId {}. "
-                                + "Delete the topic on destination and let auto-creation recreate it with the correct TopicId.",
+                log.error("Topic {} exists on destination cluster with ID {} but source cluster has ID {}. "
+                                + "Delete the topic on destination and let auto-creation recreate it with the correct ID.",
                         ti.topic(), metadataManager.metadataImage().topics().getTopic(ti.topic()).id(), ti.topicId());
             }
         });
@@ -552,13 +552,13 @@ class MirrorSourceSyncer {
         allTopics.forEach(name -> {
             if (deletedSourceTopicNames.contains(name)) {
                 if (mirrorCache.isSourceDeletion(mirrorName, name)) {
-                    log.info("Detected topic {} deleted in source cluster {}, marking mirror partitions as non-retryable", name, mirrorName);
+                    log.info("Detected topic {} deleted in source cluster {}, marking partitions as failed (non retryable)", name, mirrorName);
                     mirrorCache.removeSourceDeletion(mirrorName, name);
                     TopicImage topicImage = metadataManager.metadataImage().topics().getTopic(name);
                     if (topicImage != null) {
                         topicImage.partitions().forEach((partitionId, partition) ->
                                 metadataManager.transitionTo(mirrorName, Set.of(new TopicPartition(name, partitionId)),
-                                        MirrorPartitionState.FAILED, "The source topic is deleted.", true));
+                                        MirrorPartitionState.FAILED, "The source topic is deleted", true));
                     }
                 } else {
                     log.debug("Topic {} not found in source cluster {}, pending deletion confirmation on next sync", name, mirrorName);
@@ -771,7 +771,7 @@ class MirrorSourceSyncer {
                             TopicPartition topicPartition = ent.getKey();
                             PartitionLogInfo plog = logInfoMap.get(topicPartition);
                             if (plog == null) {
-                                log.debug("Cannot resolve log offsets for partition {}, skip consumer group sync for it.", topicPartition);
+                                log.debug("Cannot resolve log offsets for partition {}, skip consumer group sync for it", topicPartition);
                                 return;
                             }
                             OffsetAndMetadata sourceGroupOffsetAndMetadata = ent.getValue();
@@ -783,13 +783,13 @@ class MirrorSourceSyncer {
                                 filtered.put(topicPartition, sourceGroupOffsetAndMetadata);
                             } else if (finalOffset == plog.logEndOffset()) {
                                 if (plog.logEndEpoch() < 0) {
-                                    log.debug("Cannot get the log end epoch for partition {}, skip consumer group sync for it.", topicPartition);
+                                    log.debug("Cannot get the log end epoch for partition {}, skip consumer group sync for it", topicPartition);
                                 } else {
                                     filtered.put(topicPartition, new OffsetAndMetadata(plog.logEndOffset(), Optional.of(plog.logEndEpoch()), ""));
                                 }
                             } else {
                                 if (plog.logStartEpoch() < 0) {
-                                    log.debug("Cannot get the log start epoch for partition {}, skip consumer group sync for it.", topicPartition);
+                                    log.debug("Cannot get the log start epoch for partition {}, skip consumer group sync for it", topicPartition);
                                 } else {
                                     filtered.put(topicPartition, new OffsetAndMetadata(plog.logStartOffset(), Optional.of(plog.logStartEpoch()), ""));
                                 }
@@ -864,7 +864,7 @@ class MirrorSourceSyncer {
                             TopicPartition topicPartition = ent.getKey();
                             PartitionLogInfo plog = logInfoMap.get(topicPartition);
                             if (plog == null) {
-                                log.debug("Cannot resolve log offsets for partition {}, skip share group sync for it.", topicPartition);
+                                log.debug("Cannot resolve log offsets for partition {}, skip share group sync for it", topicPartition);
                                 return;
                             }
                             OffsetAndMetadata sourceGroupOffsetAndMetadata = ent.getValue();
@@ -1302,8 +1302,7 @@ class MirrorSourceSyncer {
                 log.error("Source mirror(s) {} mirroring from this cluster ({}) have not stopped for partition {}",
                         localClusterSourceMirrors, metadataManager.clusterId(), tp);
                 throw new IllegalStateException("Source mirror(s) " + localClusterSourceMirrors
-                        + " mirroring from this cluster (" + metadataManager.clusterId() + ") have not stopped for partition "
-                        + tp + ".");
+                        + " mirroring from this cluster (" + metadataManager.clusterId() + ") have not stopped for partition " + tp);
             }
         }
     }
