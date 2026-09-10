@@ -266,6 +266,11 @@ class ClusterMirroringCompTest(MirrorUtils, Test):
             err_msg="Mirror did not reach MIRRORING state",
         )
 
+        dest_broker0 = self.dest_kafka.nodes[0]
+        enable_ule_support_cmd = "%s --entity-type topics --entity-name %s --alter --add-config mirror.support.unclean.leader.election=true" % \
+               (self.dest_kafka.kafka_configs_cmd_with_optional_security_settings(dest_broker0, force_use_zk_connection=False), "my-topic")
+        dest_broker0.account.ssh(enable_ule_support_cmd)
+
         self.logger.info("Stop source broker 0 (broker 0 becomes stale)")
         self.source_kafka.stop_node(src_broker0)
 
