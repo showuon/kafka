@@ -5,6 +5,7 @@ target/
 build/
 build_eclipse/
 out/
+bin/
 .gradle/
 .vscode/
 lib_managed/
