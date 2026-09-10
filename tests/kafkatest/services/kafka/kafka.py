@@ -296,7 +296,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                 use_share_groups = context.injected_args.get(arg_name)
             if use_share_groups is None:
                 use_share_groups = context.globals.get(arg_name)
-        
+
         # Assign the determined value.
         self.use_transactions_v2 = use_transactions_v2
         self.use_share_groups = use_share_groups
@@ -474,7 +474,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
 
     def node_id_as_isolated_controller(self, node):
         """
-        Generates the node id for a controller-only node, starting from config_property.FIRST_CONTROLLER_ID so as not  
+        Generates the node id for a controller-only node, starting from config_property.FIRST_CONTROLLER_ID so as not
         to overlap with broker id numbering.
         This method does not do any validation to check this node is actually part of an isolated controller quorum.
         """
@@ -2160,6 +2160,9 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
     def resume_cluster_mirror_topics(self, node, mirror_name, topics_regex):
         return self._cluster_mirror_action(node, mirror_name, topics_regex, 'resume')
 
+    def recover_cluster_mirror_topics(self, node, mirror_name, topics_regex):
+        return self._cluster_mirror_action(node, mirror_name, topics_regex, 'recover')
+
     def alter_mirror_config(self, node, mirror_name, config):
         force_use_zk_connection = not self.all_nodes_configs_command_uses_bootstrap_server()
         cmd = fix_opts_for_new_jvm(node)
@@ -2190,11 +2193,11 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
             mirror = item["mirror"]
             if mirror not in mirrors:
                 mirrors[mirror] = {}
-            
+
             topic = item["topic"]
             if topic not in mirrors[mirror]:
                 mirrors[mirror][topic] = {}
-            
+
             partition = item["partition"]
             src = item["sourceOffset"]
             dst = item["destinationOffset"]
@@ -2203,7 +2206,8 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                 "src_offset": src,
                 "dst_offset": dst,
                 "lag": lag,
-                "state": item["state"]
+                "state": item["state"],
+                "retry_attempt": item.get("retryAttempt", 0)
             }
 
         return mirrors

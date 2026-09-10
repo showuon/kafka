@@ -49,6 +49,7 @@ import org.apache.kafka.common.message.ExpireDelegationTokenResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData;
 import org.apache.kafka.common.message.PauseMirrorTopicsResponseData;
+import org.apache.kafka.common.message.RecoverMirrorTopicsResponseData;
 import org.apache.kafka.common.message.RenewDelegationTokenRequestData;
 import org.apache.kafka.common.message.RenewDelegationTokenResponseData;
 import org.apache.kafka.common.message.ResumeMirrorTopicsResponseData;
@@ -195,6 +196,13 @@ public interface Controller extends AclMutator, AutoCloseable {
     );
 
     CompletableFuture<ResumeMirrorTopicsResponseData> resumeMirrorTopics(
+            ControllerRequestContext context,
+            String mirrorName,
+            Set<String> topics,
+            long stateOffset
+    );
+
+    CompletableFuture<RecoverMirrorTopicsResponseData> recoverMirrorTopics(
             ControllerRequestContext context,
             String mirrorName,
             Set<String> topics,

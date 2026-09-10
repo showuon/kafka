@@ -55,6 +55,7 @@ import org.apache.kafka.common.message.ExpireDelegationTokenResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData;
 import org.apache.kafka.common.message.PauseMirrorTopicsResponseData;
+import org.apache.kafka.common.message.RecoverMirrorTopicsResponseData;
 import org.apache.kafka.common.message.RenewDelegationTokenRequestData;
 import org.apache.kafka.common.message.RenewDelegationTokenResponseData;
 import org.apache.kafka.common.message.ResumeMirrorTopicsResponseData;
@@ -158,6 +159,15 @@ public class MockController implements Controller {
 
     @Override
     public CompletableFuture<ResumeMirrorTopicsResponseData> resumeMirrorTopics(
+            ControllerRequestContext context,
+            String mirrorName,
+            Set<String> topics,
+            long stateOffset) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<RecoverMirrorTopicsResponseData> recoverMirrorTopics(
             ControllerRequestContext context,
             String mirrorName,
             Set<String> topics,

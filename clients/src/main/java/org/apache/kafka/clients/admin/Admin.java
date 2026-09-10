@@ -1732,6 +1732,19 @@ public interface Admin extends AutoCloseable {
     ResumeMirrorTopicsResult resumeMirrorTopics(String mirrorName, List<String> topicPatterns, ResumeMirrorTopicsOptions options);
 
     /**
+     * Recover failed mirror partitions whose automatic retry attempts are exhausted or
+     * non-retryable. Resets the partition state to its previous state before the failure
+     * and clears the retry counter so that mirroring can resume.
+     *
+     * @param mirrorName The cluster mirror name
+     * @param topicPatterns Topic name patterns to recover
+     * @param options Options for the recover operation
+     * @return The RecoverMirrorTopicsResult containing futures for each topic
+     */
+    RecoverMirrorTopicsResult recoverMirrorTopics(String mirrorName, List<String> topicPatterns, RecoverMirrorTopicsOptions options);
+
+
+    /**
      * Delete a cluster mirror including its configuration.
      *
      * The mirror must be empty (no topics) or all its topics must have been removed (in STOPPED

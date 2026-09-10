@@ -146,6 +146,7 @@ public enum ApiKeys {
     WRITE_MIRROR_STATES(ApiMessageType.WRITE_MIRROR_STATES),
     PAUSE_MIRROR_TOPICS(ApiMessageType.PAUSE_MIRROR_TOPICS, false, true),
     RESUME_MIRROR_TOPICS(ApiMessageType.RESUME_MIRROR_TOPICS, false, true),
+    RECOVER_MIRROR_TOPICS(ApiMessageType.RECOVER_MIRROR_TOPICS, false, true),
     DELETE_CLUSTER_MIRROR(ApiMessageType.DELETE_CLUSTER_MIRROR, false, true),
     BUMP_LEADER_EPOCHS(ApiMessageType.BUMP_LEADER_EPOCHS, false, true);
 

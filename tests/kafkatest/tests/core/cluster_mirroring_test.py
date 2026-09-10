@@ -46,6 +46,7 @@ class ClusterMirroringTest(MirrorUtils, Test):
             ["share.coordinator.state.topic.replication.factor", "2"],
             ["share.coordinator.state.topic.min.isr", "1"],
             ["mirror.state.topic.replication.factor", "2"],
+            ["mirror.failed.retry.max.attempts", "10"],
             ["mirror.metadata.refresh.interval.ms", "5000"],
             ["mirror.num.replica.fetchers", "2"],
             ["mirror.failed.retry.initial.backoff.ms", "1000"],
@@ -1175,8 +1176,8 @@ class ClusterMirroringTest(MirrorUtils, Test):
 
     @cluster(num_nodes=7)
     @defaults(metadata_quorum=[quorum.isolated_kraft])
-    def test_failed_retry(self, metadata_quorum):
-        """Verify that mirror recovers from FAILED state after source cluster comes back."""
+    def test_failed_auto_recovery(self, metadata_quorum):
+        """Verify that a FAILED partition can be automatically recovered after source broker restart."""
         self.source_kafka.create_topic({"topic": "my-topic", "partitions": 3, "replication-factor": 1})
 
         self.logger.info("Produce initial messages and start cluster mirror")
@@ -1216,3 +1217,52 @@ class ClusterMirroringTest(MirrorUtils, Test):
         count = MirrorUtils.consume_messages(self.logger, self.dest_kafka, self.client_node, "my-topic",
                                      max_messages=6, expected_count=6)
         assert count >= 6, "Expected 6 messages on my-topic, got %d" % count
+
+    @cluster(num_nodes=7)
+    @defaults(metadata_quorum=[quorum.isolated_kraft])
+    def test_failed_manual_recovery(self, metadata_quorum):
+        """Verify that a FAILED partition can be manually recovered after source broker restart."""
+        self.source_kafka.create_topic({"topic": "my-topic", "partitions": 3, "replication-factor": 1})
+
+        self.logger.info("Produce initial messages and start cluster mirror")
+        MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "my-topic", 3)
+
+        mirror_cfg = MirrorConfig(self.source_kafka.bootstrap_servers())
+        wait_until(
+            lambda: self.dest_kafka.create_cluster_mirror(
+                self.client_node, "my-mirror", mirror_cfg),
+            timeout_sec=120, backoff_sec=2,
+            err_msg="Failed to create cluster mirror",
+        )
+        wait_until(
+            lambda: "Started" in self.dest_kafka.start_cluster_mirror_topics(
+                self.client_node, "my-mirror", "my-topic"),
+            timeout_sec=120, backoff_sec=2,
+            err_msg="Failed to start mirror topics",
+        )
+        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"], "MIRRORING")
+
+        self.logger.info("Stop all source brokers to trigger FAILED state with retries exhausted")
+        for node in self.source_kafka.nodes:
+            self.source_kafka.stop_node(node)
+        MirrorUtils.wait_mirror_retries_exhausted(self.logger, self.dest_kafka, self.client_node, "my-mirror",
+                                                  ["my-topic"], max_attempts=10,
+                                                  err_msg="Mirror did not exhaust retries after source shutdown")
+
+        self.logger.info("Restart source brokers")
+        for node in self.source_kafka.nodes:
+            self.source_kafka.start_node(node)
+
+        self.logger.info("Recover failed mirror partitions")
+        wait_until(
+            lambda: "Recovered" in self.dest_kafka.recover_cluster_mirror_topics(
+                self.client_node, "my-mirror", "my-topic"),
+            timeout_sec=120, backoff_sec=2,
+            err_msg="Failed to recover mirror topics",
+        )
+        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"], "MIRRORING",
+                               err_msg="Mirror did not recover to MIRRORING after recover command")
+
+        self.logger.info("Verify data still flows after recovery")
+        MirrorUtils.produce_messages(self.logger, self.source_kafka, self.client_node, "my-topic", 3)
+        MirrorUtils.wait_mirror_lag_zero(self.logger, self.dest_kafka, self.client_node, "my-mirror", ["my-topic"])

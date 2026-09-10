@@ -204,6 +204,18 @@ class MirrorUtils:
         wait_until(check, timeout_sec=120, backoff_sec=2, err_msg=err_msg)
 
     @staticmethod
+    def wait_mirror_retries_exhausted(logger, kafka, client_node, mirror_name,
+                                      topics, max_attempts, err_msg=None):
+        """Wait until all mirror partitions are FAILED with retryAttempt >= max_attempts."""
+        def check():
+            return MirrorUtils.all_satisfy_in_mirror(logger,
+                kafka, client_node, mirror_name,
+                lambda p: p["state"] == "FAILED" and p["retry_attempt"] >= max_attempts, topics)
+        if err_msg is None:
+            err_msg = "Mirror did not exhaust %d retries" % max_attempts
+        wait_until(check, timeout_sec=240, backoff_sec=2, err_msg=err_msg)
+
+    @staticmethod
     def wait_mirror_lag_zero(logger, kafka, client_node, mirror_name,
                              topics, err_msg="Mirror did not catch up"):
         """Wait until all mirror partitions reach MIRRORING state with zero lag."""
