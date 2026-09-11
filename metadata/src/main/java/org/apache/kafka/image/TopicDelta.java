@@ -203,10 +203,9 @@ public final class TopicDelta {
 
         boolean mirrorNameChanged = mirrorName != null
                 && !mirrorName.equals(image.mirrorName());
-        boolean mirrorStateChanged = desiredMirrorState != null
-                && desiredMirrorState != MirrorPartitionState.UNKNOWN.value()
-                && desiredMirrorState != image.desiredMirrorState();
-        if (mirrorNameChanged || mirrorStateChanged) {
+        boolean mirrorRecordReplayed = desiredMirrorState != null
+                && desiredMirrorState != MirrorPartitionState.UNKNOWN.value();
+        if (mirrorNameChanged || mirrorRecordReplayed) {
             mirrorTopicChanges.put(image.id(), new LocalReplicaChanges.MirrorTopicState(mirrorName, desiredMirrorState));
         }
 

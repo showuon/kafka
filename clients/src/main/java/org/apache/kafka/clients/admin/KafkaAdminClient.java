@@ -170,6 +170,7 @@ import org.apache.kafka.common.message.ListGroupsResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.MetadataRequestData;
 import org.apache.kafka.common.message.PauseMirrorTopicsRequestData;
+import org.apache.kafka.common.message.RecoverMirrorTopicsRequestData;
 import org.apache.kafka.common.message.RemoveRaftVoterRequestData;
 import org.apache.kafka.common.message.RenewDelegationTokenRequestData;
 import org.apache.kafka.common.message.ResumeMirrorTopicsRequestData;
@@ -261,6 +262,8 @@ import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.PauseMirrorTopicsRequest;
 import org.apache.kafka.common.requests.PauseMirrorTopicsResponse;
+import org.apache.kafka.common.requests.RecoverMirrorTopicsRequest;
+import org.apache.kafka.common.requests.RecoverMirrorTopicsResponse;
 import org.apache.kafka.common.requests.RemoveRaftVoterRequest;
 import org.apache.kafka.common.requests.RemoveRaftVoterResponse;
 import org.apache.kafka.common.requests.RenewDelegationTokenRequest;
@@ -5127,6 +5130,58 @@ public class KafkaAdminClient extends AdminClient {
         };
         runnable.call(call, now);
         return new ResumeMirrorTopicsResult(future);
+    }
+
+    @Override
+    public RecoverMirrorTopicsResult recoverMirrorTopics(String mirrorName, List<String> topicPatterns, RecoverMirrorTopicsOptions options) {
+        final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
+
+        validatePatterns(topicPatterns);
+
+        final long now = time.milliseconds();
+        final Call call = new Call("recoverMirrorTopics", calcDeadlineMs(now, options.timeoutMs()),
+                new LeastLoadedBrokerOrActiveKController()) {
+
+            @Override
+            RecoverMirrorTopicsRequest.Builder createRequest(int timeoutMs) {
+                RecoverMirrorTopicsRequestData data = new RecoverMirrorTopicsRequestData();
+                data.setMirrorName(mirrorName);
+                data.setTimeoutMs(timeoutMs);
+                data.setTopicPatterns(topicPatterns);
+                return new RecoverMirrorTopicsRequest.Builder(data);
+            }
+
+            @Override
+            void handleResponse(AbstractResponse abstractResponse) {
+                final RecoverMirrorTopicsResponse response =
+                        (RecoverMirrorTopicsResponse) abstractResponse;
+                Errors error = Errors.forCode(response.data().errorCode());
+                switch (error) {
+                    case NONE:
+                        future.complete(null);
+                        break;
+                    default:
+                        if (error.exception() instanceof RetriableException) {
+                            log.warn("Failed to recover mirror topics, retrying", error.exception());
+                            throw error.exception();
+                        }
+                        String errorMsg = response.data().errorMessage();
+                        if (errorMsg != null && !errorMsg.isEmpty()) {
+                            future.completeExceptionally(new InvalidRequestException(errorMsg));
+                        } else {
+                            future.completeExceptionally(error.exception());
+                        }
+                        break;
+                }
+            }
+
+            @Override
+            void handleFailure(Throwable throwable) {
+                future.completeExceptionally(throwable);
+            }
+        };
+        runnable.call(call, now);
+        return new RecoverMirrorTopicsResult(future);
     }
 
     @Override

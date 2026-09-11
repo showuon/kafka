@@ -37,6 +37,7 @@ import org.apache.kafka.clients.admin.ListConfigResourcesOptions;
 import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.admin.RecordsToDelete;
+import org.apache.kafka.clients.admin.RecoverMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.StartMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.StopMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.TopicDescription;
@@ -165,7 +166,7 @@ public class ClusterMirroringIntegrationTest {
                 // Fast mirror timeouts and retry backoff for testing
                 .setConfigProp(ServerConfigs.REQUEST_TIMEOUT_MS_CONFIG, "5000")
                 .setConfigProp(ClusterMirrorConfig.SOCKET_TIMEOUT_MS_CONFIG, "5000")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_ATTEMPTS_CONFIG, "3")
+                .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_ATTEMPTS_CONFIG, "10")
                 .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_CONFIG, "1000")
                 .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_BACKOFF_MS_CONFIG, "5000")
 
@@ -714,38 +715,6 @@ public class ClusterMirroringIntegrationTest {
         }, DEFAULT_MAX_WAIT_MS, "Tombstone records not found in last batch of " + mirrorStateTp);
     }
 
-    @Test
-    void testFailedRetryExhaustion() throws Exception {
-        String topic = "failed-retry-topic";
-        int partitionNum = 3;
-
-        var result = srcAdmin.createTopics(List.of(
-                new NewTopic(topic, partitionNum, (short) 1)));
-        result.all().get(30, TimeUnit.SECONDS);
-
-        Uuid topicId = result.topicId(topic).get();
-
-        produceRecords(srcCluster, topic, 0, 50);
-
-        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(topic), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
-
-        // Stop all source brokers to trigger FAILED state
-        srcCluster.brokers().values().forEach(b -> b.shutdown());
-
-        waitForFailedWithRetriesExhausted(topic, 2);
-
-        MirrorRecordSerde serde = new MirrorRecordSerde();
-        // verify the errorMessage, retryAttempt, state, previousState are correct persisted
-        for (int i = 0; i < partitionNum; i++) {
-            validateMirrorPartitionState(topicId, i, serde);
-        }
-    }
-
     private void validateMirrorPartitionState(Uuid topicId, int partition, MirrorRecordSerde serde) {
         // Get the partition index hosting the metadata for the mirror topic partition
         int partId = dstCluster.brokers().get(0).clusterMirrorCoordinator()
@@ -840,6 +809,76 @@ public class ClusterMirroringIntegrationTest {
                     "Non-retryable partitions must not be restarted by metadata refresh");
             TimeUnit.MILLISECONDS.sleep(1_000);
         }
+    }
+
+    @Test
+    void testRecoverAfterRetryExhaustion() throws Exception {
+        String topic = "recover-retry-topic";
+
+        srcAdmin.createTopics(List.of(
+                new NewTopic(topic, 1, (short) 1)
+        )).all().get(30, TimeUnit.SECONDS);
+
+        produceRecords(srcCluster, topic, 0, 20);
+
+        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
+                "bootstrap.servers", singleSourceBootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+        dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(topic), new StartMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
+
+        // Shut down source to trigger FAILED state
+        srcCluster.brokers().values().forEach(b -> b.shutdown());
+        waitForFailedWithRetriesExhausted(topic, 2);
+
+        // Restart source so recovery can succeed
+        srcCluster.brokers().values().forEach(b -> {
+            try {
+                b.startup();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        // Recover the failed partitions
+        dstAdmin.recoverMirrorTopics(MIRROR_NAME, List.of(topic), new RecoverMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+
+        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
+    }
+
+    @Test
+    void testRecoverNonRetryableFailed() throws Exception {
+        String topic = "recover-nonretryable-topic";
+
+        srcAdmin.createTopics(List.of(
+                new NewTopic(topic, 1, (short) 1)
+        )).all().get(30, TimeUnit.SECONDS);
+
+        produceRecords(srcCluster, topic, 0, 20);
+
+        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
+                "bootstrap.servers", singleSourceBootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+        dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(topic), new StartMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
+
+        // Delete source topic to trigger non-retryable failure
+        srcAdmin.deleteTopics(List.of(topic)).all().get(30, TimeUnit.SECONDS);
+        waitForNonRetryableFailed(topic);
+
+        // Re-create source topic so recovery can succeed
+        srcAdmin.createTopics(List.of(
+                new NewTopic(topic, 1, (short) 1)
+        )).all().get(30, TimeUnit.SECONDS);
+
+        // Recover the non-retryable failed partitions
+        dstAdmin.recoverMirrorTopics(MIRROR_NAME, List.of(topic), new RecoverMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topic, "MIRRORING");
     }
 
     @Test

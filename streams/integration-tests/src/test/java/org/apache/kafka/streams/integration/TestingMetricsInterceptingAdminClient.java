@@ -149,6 +149,8 @@ import org.apache.kafka.clients.admin.PauseMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.PauseMirrorTopicsResult;
 import org.apache.kafka.clients.admin.RaftVoterEndpoint;
 import org.apache.kafka.clients.admin.RecordsToDelete;
+import org.apache.kafka.clients.admin.RecoverMirrorTopicsOptions;
+import org.apache.kafka.clients.admin.RecoverMirrorTopicsResult;
 import org.apache.kafka.clients.admin.RemoveMembersFromConsumerGroupOptions;
 import org.apache.kafka.clients.admin.RemoveMembersFromConsumerGroupResult;
 import org.apache.kafka.clients.admin.RemoveRaftVoterOptions;
@@ -451,6 +453,11 @@ public class TestingMetricsInterceptingAdminClient extends AdminClient {
     @Override
     public ResumeMirrorTopicsResult resumeMirrorTopics(final String mirrorName, final List<String> topicPatterns, final ResumeMirrorTopicsOptions options) {
         return adminDelegate.resumeMirrorTopics(mirrorName, topicPatterns, options);
+    }
+
+    @Override
+    public RecoverMirrorTopicsResult recoverMirrorTopics(final String mirrorName, final List<String> topicPatterns, final RecoverMirrorTopicsOptions options) {
+        return adminDelegate.recoverMirrorTopics(mirrorName, topicPatterns, options);
     }
 
     @Override

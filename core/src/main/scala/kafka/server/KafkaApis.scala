@@ -22,8 +22,8 @@ import kafka.network.RequestChannel
 import kafka.server.QuotaFactory.{QuotaManagers, UNBOUNDED_QUOTA}
 import kafka.server.handlers.DescribeTopicPartitionsRequestHandler
 import kafka.server.mirror.MirrorMetadataManager
-import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService.MirrorStateWrite
 import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService
+import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService.MirrorStateWrite
 import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState
 import org.apache.kafka.server.common.ClusterMirrorVersion
 import kafka.server.share.{ShareFetchUtils, SharePartitionManager}
@@ -259,6 +259,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.STOP_MIRROR_TOPICS => handleStopMirrorTopics(request)
         case ApiKeys.PAUSE_MIRROR_TOPICS => handlePauseMirrorTopics(request)
         case ApiKeys.RESUME_MIRROR_TOPICS => handleResumeMirrorTopics(request)
+        case ApiKeys.RECOVER_MIRROR_TOPICS => handleRecoverMirrorTopics(request)
         case ApiKeys.DELETE_CLUSTER_MIRROR => handleDeleteClusterMirror(request)
         case ApiKeys.LIST_CLUSTER_MIRRORS => handleListClusterMirrorsRequest(request)
         case ApiKeys.DESCRIBE_CLUSTER_MIRRORS => handleDescribeClusterMirrorsRequest(request)
@@ -4436,6 +4437,55 @@ class KafkaApis(val requestChannel: RequestChannel,
       }
     })
   }
+
+  def handleRecoverMirrorTopics(request: RequestChannel.Request): Unit = {
+    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
+      logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring recover mirror topics request")
+      requestHelper.sendMaybeThrottle(request, new RecoverMirrorTopicsResponse(
+        new RecoverMirrorTopicsResponseData().setErrorCode(Errors.UNSUPPORTED_VERSION.code)))
+      return
+    }
+    val data = request.body[RecoverMirrorTopicsRequest].data()
+    val mirrorName = data.mirrorName()
+
+    // Resolve topic patterns against destination mirror topics that have failed partitions
+    if (data.topicPatterns() != null && !data.topicPatterns().isEmpty) {
+      if (data.topics() == null) {
+        data.setTopics(new RecoverMirrorTopicsRequestData.TopicMetadataCollection())
+      }
+      val existingNames = data.topics().asScala.map(_.topicName()).toSet.asJava
+      val newNames = mirrorMetadataManager.resolvePatternsFromDst(mirrorName, data.topicPatterns(),
+        EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED), existingNames)
+      newNames.forEach(name => data.topics().add(
+        new RecoverMirrorTopicsRequestData.TopicMetadata().setTopicName(name)))
+    }
+
+    if (data.topics() == null || data.topics().isEmpty) {
+      requestHelper.sendMaybeThrottle(request, new RecoverMirrorTopicsResponse(
+        new RecoverMirrorTopicsResponseData().setErrorCode(Errors.INVALID_REQUEST.code)
+          .setErrorMessage("No topics matched the provided patterns")))
+      return
+    }
+
+    // Write recovery records to coordinator and wait for completion before forwarding.
+    // This ensures the coordinator has the correct state before MMM reads it during
+    // onMetadataUpdate, preventing the race where automatic retries fail due to
+    // exhausted retryAttempt.
+    val topics = data.topics().asScala.map(_.topicName()).toSet.asJava
+    mirrorMetadataManager.writeRecoverRecords(mirrorName, topics).handle[Unit] { (v, ex) =>
+      if (ex != null) {
+        logger.warn("Failed to write recovery records for mirror {}: {}", mirrorName, ex.getMessage)
+        requestHelper.sendMaybeThrottle(request, new RecoverMirrorTopicsResponse(
+          new RecoverMirrorTopicsResponseData().setErrorCode(Errors.UNKNOWN_SERVER_ERROR.code)))
+      } else {
+        forwardingManager.forwardRequest(request, new RecoverMirrorTopicsRequest(data, request.header.apiVersion()), {
+          case Some(response) => requestHelper.sendForwardedResponse(request, response)
+          case None => handleInvalidVersionsDuringForwarding(request)
+        })
+      }
+    }
+  }
+
 
   def handleDeleteClusterMirror(request: RequestChannel.Request): Unit = {
     if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
