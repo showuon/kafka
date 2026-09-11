@@ -18,6 +18,7 @@
 package org.apache.kafka.clients.admin;
 
 import org.apache.kafka.common.KafkaFuture;
+import org.apache.kafka.common.OffsetEpoch;
 
 import java.util.Collections;
 import java.util.Map;
@@ -27,16 +28,16 @@ import java.util.Map;
  */
 public class DescribeClusterMirrorsResult {
     private final KafkaFuture<Map<String, ClusterMirrorDescription>> future;
-    private final KafkaFuture<Map<String, Map<Integer, Integer>>> lookupEpochsFuture;
+    private final KafkaFuture<Map<String, Map<Integer, OffsetEpoch>>> lastMirrorFuture;
 
     DescribeClusterMirrorsResult(KafkaFuture<Map<String, ClusterMirrorDescription>> future) {
         this(future, KafkaFuture.completedFuture(Collections.emptyMap()));
     }
 
     DescribeClusterMirrorsResult(KafkaFuture<Map<String, ClusterMirrorDescription>> future,
-                                 KafkaFuture<Map<String, Map<Integer, Integer>>> lookupEpochsFuture) {
+                                 KafkaFuture<Map<String, Map<Integer, OffsetEpoch>>> lastMirrorFuture) {
         this.future = future;
-        this.lookupEpochsFuture = lookupEpochsFuture;
+        this.lastMirrorFuture = lastMirrorFuture;
     }
 
     /**
@@ -47,10 +48,10 @@ public class DescribeClusterMirrorsResult {
     }
 
     /**
-     * Return a future containing last mirror epoch lookup results.
-     * Keyed by topicId, then partitionIndex to lastMirrorEpoch.
+     * Return a future containing last mirror epoch and offset lookup results.
+     * Keyed by topicName, then partitionIndex to {@link OffsetEpoch}.
      */
-    public KafkaFuture<Map<String, Map<Integer, Integer>>> lookupEpochs() {
-        return lookupEpochsFuture;
+    public KafkaFuture<Map<String, Map<Integer, OffsetEpoch>>> lastMirrors() {
+        return lastMirrorFuture;
     }
 }

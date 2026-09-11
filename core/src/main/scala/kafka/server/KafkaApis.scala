@@ -30,6 +30,7 @@ import kafka.server.share.{ShareFetchUtils, SharePartitionManager}
 import kafka.utils.Logging
 import org.apache.kafka.clients.CommonClientConfigs
 import org.apache.kafka.clients.admin.EndpointType
+import org.apache.kafka.common.OffsetEpoch
 import org.apache.kafka.common.acl.AclOperation
 import org.apache.kafka.common.acl.AclOperation._
 import org.apache.kafka.common.config.ConfigResource
@@ -4602,13 +4603,13 @@ class KafkaApis(val requestChannel: RequestChannel,
     // Phase 4: Merge results and send response (triggered by last callback)
     def maybeComplete(): Unit = {
       if (remaining.decrementAndGet() == 0) {
-        val lmeMap = buildLastMirrorEpochMap(lmeMatchingNames, stateResults)
+        val lastMirrorMap = buildLastMirrorMap(lmeMatchingNames, stateResults)
 
         authorizedMirrors.foreach { info =>
           populateMirrorDetails(info.describedMirror, info.partitions,
             Option(stateResults.get(info.name)),
             Option(offsetResults.get(info.name)),
-            lmeMap)
+            lastMirrorMap)
         }
 
         requestHelper.sendMaybeThrottle(request, new DescribeClusterMirrorsResponse(responseData))
@@ -4667,41 +4668,45 @@ class KafkaApis(val requestChannel: RequestChannel,
     result
   }
 
-  // Build map of LMEs from state responses of mirrors whose source cluster
-  // matches the requester. Used for failback truncation (A->B then B->A).
-  // Computed once before per-mirror population because a partition's LME is the max
+  // Build map of last-mirror OffsetEpoch from state responses of mirrors whose source
+  // cluster matches the requester. Used for failback truncation (A->B then B->A).
+  // Computed once before per-mirror population because a partition's values are the max
   // across all matching mirrors, requiring global visibility.
-  // Returns: topicName -> (partitionIndex -> max LME value)
-  private def buildLastMirrorEpochMap(
+  // Returns: topicName -> (partitionIndex -> OffsetEpoch with max epoch and max offset)
+  private def buildLastMirrorMap(
       matchingMirrors: Set[String],
       stateResults: ConcurrentHashMap[String, ReadMirrorStatesResponseData]
-  ): scala.collection.mutable.Map[String, scala.collection.mutable.Map[Int, Int]] = {
-    val lmeMap = scala.collection.mutable.Map[String, scala.collection.mutable.Map[Int, Int]]()
+  ): scala.collection.mutable.Map[String, scala.collection.mutable.Map[Int, OffsetEpoch]] = {
+    val result = scala.collection.mutable.Map[String, scala.collection.mutable.Map[Int, OffsetEpoch]]()
     matchingMirrors.foreach { mirrorName =>
       Option(stateResults.get(mirrorName)).foreach { data =>
         data.topics().forEach { topic =>
           topic.partitions().forEach { partition =>
-            if (partition.lastMirrorEpoch() >= 0) {
-              lmeMap.getOrElseUpdate(topic.topicName(), scala.collection.mutable.Map.empty)
+            val epoch = partition.lastMirrorEpoch()
+            val offset = partition.lastMirrorOffset()
+            if (epoch >= 0 || offset >= 0) {
+              result.getOrElseUpdate(topic.topicName(), scala.collection.mutable.Map.empty)
                 .updateWith(partition.partitionIndex()) {
-                  case Some(existing) => Some(Math.max(existing, partition.lastMirrorEpoch()))
-                  case None => Some(partition.lastMirrorEpoch())
+                  case Some(existing) => Some(new OffsetEpoch(
+                    Math.max(existing.epoch(), epoch),
+                    Math.max(existing.offset(), offset)))
+                  case None => Some(new OffsetEpoch(epoch, offset))
                 }
             }
           }
         }
       }
     }
-    lmeMap
+    result
   }
 
-  // Merge state, offset, and LME data into partition details on a DescribedMirror
+  // Merge state, offset, and last-mirror data into partition details on a DescribedMirror
   private def populateMirrorDetails(
       describedMirror: DescribeClusterMirrorsResponseData.DescribedMirror,
       partitions: util.Map[String, util.Set[Integer]],
       stateData: Option[ReadMirrorStatesResponseData],
       offsetData: Option[ReadMirrorOffsetsResponseData],
-      lmeMap: scala.collection.mutable.Map[String, scala.collection.mutable.Map[Int, Int]]
+      lastMirrorMap: scala.collection.mutable.Map[String, scala.collection.mutable.Map[Int, OffsetEpoch]]
   ): Unit = {
     // Per-topic state lookup: topicName -> (partitionIndex -> state partition).
     // Merged response may contain duplicate topic entries from different coordinators,
@@ -4754,8 +4759,11 @@ class KafkaApis(val requestChannel: RequestChannel,
           .setErrorMessage(if (sp != null) sp.errorMessage() else null)
           .setSourceOffset(if (op != null && isMirroring) op.sourceOffset() else -1L)
           .setDestinationOffset(if (op != null && isMirroring) op.destinationOffset() else -1L)
-          .setLastMirrorEpoch(lmeMap.getOrElse(topicName, scala.collection.mutable.Map.empty)
-            .getOrElse(partIdx, -1))
+        val lm = lastMirrorMap.getOrElse(topicName, scala.collection.mutable.Map.empty)
+          .getOrElse(partIdx, OffsetEpoch.EMPTY)
+        partitionDetail
+          .setLastMirrorEpoch(lm.epoch())
+          .setLastMirrorOffset(lm.offset())
 
         getOrCreateTopic(topicName).partitions().add(partitionDetail)
       }
@@ -4876,9 +4884,11 @@ class KafkaApis(val requestChannel: RequestChannel,
     writeMirrorStatesRequest.data().topics().forEach(topic => {
       val topicState = new util.HashSet[MirrorStateWrite]()
       topic.partitions().forEach(part => {
+        val lm = if (part.lastMirrorEpoch() != -1 || part.lastMirrorOffset() != -1L)
+          new OffsetEpoch(part.lastMirrorEpoch(), part.lastMirrorOffset()) else null
         topicState.add(new MirrorStateWrite(part.partitionIndex(),
           MirrorPartitionState.fromValue(part.state()), part.leaderEpoch(), part.stateEpoch(),
-            part.lastMirrorEpoch(), part.errorMessage(), part.nonRetryable()))
+            lm, part.errorMessage(), part.nonRetryable()))
       })
       mirrorState.put(topic.topicName(), topicState)
     })

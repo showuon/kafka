@@ -1297,6 +1297,7 @@ public class RequestResponseTest {
                                         .setDestinationOffset(0)
                                         .setSourceOffset(100)
                                         .setLastMirrorEpoch(-1)
+                                        .setLastMirrorOffset(-1)
                                 ))
                         ))));
         return new DescribeClusterMirrorsResponse(data);
@@ -1320,6 +1321,7 @@ public class RequestResponseTest {
                                 .setState((byte) 0)
                                 .setPartitionIndex(0)
                                 .setLastMirrorEpoch(0)
+                                .setLastMirrorOffset(0)
                         ))));
         return new ReadMirrorStatesResponse(data);
     }
@@ -1332,6 +1334,7 @@ public class RequestResponseTest {
                         .setPartitions(List.of(new WriteMirrorStatesRequestData.PartitionData()
                                 .setPartitionIndex(0)
                                 .setLastMirrorEpoch(0)
+                                .setLastMirrorOffset(0)
                                 .setState((byte) 0)
                         ))
                 ));

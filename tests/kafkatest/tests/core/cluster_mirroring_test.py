@@ -320,9 +320,13 @@ class ClusterMirroringTest(MirrorUtils, Test):
                 line = line.strip()
                 if line:
                     self.logger.info("LME lookup log on %s: %s", node.name, line)
-                    epoch = int(line.split("my-topic-0=")[1].split("}")[0])
+                    value = line.split("my-topic-0=")[1].split("}")[0]
+                    epoch = int(value.split("epoch=")[1].split(",")[0])
+                    offset = int(value.split("offset=")[1].split(")")[0])
                     assert epoch >= 1, \
                         "Expected LME epoch >= 1, got %d in: %s" % (epoch, line)
+                    assert offset == 6, \
+                        "Expected LME offset == 6, got %s in: %s" % (offset, line)
                     found = True
         assert found, "No LME lookup log found on any source broker"
 
@@ -766,6 +770,11 @@ class ClusterMirroringTest(MirrorUtils, Test):
             self.dest_kafka, self.client_node, "new-mirror", ["my-topic"], "MIRRORING",
             err_msg="Mirror did not reach MIRRORING state",
         )
+
+        dest_broker0 = self.dest_kafka.nodes[0]
+        enable_ule_support_cmd = "%s --entity-type topics --entity-name %s --alter --add-config mirror.support.unclean.leader.election=true" % \
+               (self.dest_kafka.kafka_configs_cmd_with_optional_security_settings(dest_broker0, force_use_zk_connection=False), "my-topic")
+        dest_broker0.account.ssh(enable_ule_support_cmd)
 
         self.logger.info("Stop source broker 0 (broker 0 becomes stale)")
         self.source_kafka.stop_node(src_broker0)

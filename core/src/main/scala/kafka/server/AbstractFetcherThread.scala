@@ -252,6 +252,7 @@ abstract class AbstractFetcherThread(name: String,
     // Ensure we hold a lock during truncation
 
     val partitionsNeedsRefreshMetadata = new util.HashSet[TopicPartition]()
+    val partitionsNeedsWaitForFollowers = new util.HashSet[TopicPartition]()
     inLock(partitionMapLock) {
       //Check no leadership and no leader epoch changes happened whilst we were unlocked, fetching epochs
       val epochEndOffsets = endOffsets.asScala.filter { case (tp, _) =>
@@ -266,6 +267,7 @@ abstract class AbstractFetcherThread(name: String,
 
       val result = maybeTruncateToEpochEndOffsets(epochEndOffsets, latestEpochsForPartitions)
       partitionsNeedsRefreshMetadata.addAll(result.partitionsNeedsRefreshMetadata())
+      partitionsNeedsWaitForFollowers.addAll(result.partitionsNeedsWaitForFollowers())
       handlePartitionsWithErrors(result.partitionsWithError.asScala, "truncateToEpochEndOffsets")
       updateFetchOffsetAndMaybeMarkTruncationComplete(result.result)
     }
@@ -276,6 +278,10 @@ abstract class AbstractFetcherThread(name: String,
       info(s"Refreshing source metadata for mirror name $mirrorName with partitions: $partitionsNeedsRefreshMetadata")
       removeFetcherForPartitions(partitionsNeedsRefreshMetadata.asScala)
       refreshSourceClusterMetadata(partitionsNeedsRefreshMetadata.asScala, "Truncation requires source metadata refresh")
+    }
+    if (!partitionsNeedsWaitForFollowers.isEmpty) {
+      info(s"Waiting for followers to catch up with the leader for partitions: $partitionsNeedsWaitForFollowers")
+      maybeWaitForFollowersCaughtUp(partitionsNeedsWaitForFollowers.asScala)
     }
   }
 
@@ -395,13 +401,16 @@ abstract class AbstractFetcherThread(name: String,
       if (partitionStates.contains(tp)) {
         Errors.forCode(leaderEpochOffset.errorCode) match {
           case Errors.NONE =>
+            val currentLocalLogEndOffset = logEndOffset(tp)
             val offsetTruncationState = getOffsetTruncationState(tp, leaderEpochOffset)
             info(s"Truncating partition $tp with $offsetTruncationState due to leader epoch and offset $leaderEpochOffset")
             if (doTruncate(tp, offsetTruncationState)) {
               fetchOffsets.put(tp, offsetTruncationState)
-              if (!mirrorName.isBlank) {
+              if (!mirrorName.isBlank && currentLocalLogEndOffset > offsetTruncationState.offset) {
                 // If it's mirror fetcher thread, the log truncation means the source cluster metadata has unclean leader election.
                 // We should wait for all replicas to catch up with the leader before next fetch.
+                // Note, the doTruncate() return true only means the truncation completes without error. But it doesn't mean
+                // the truncation indeed proceeds. So added the `currentLocalLogEndOffset > offsetTruncationState.offset` here.
                 partitionsNeedsWaitForFollowers += tp
               }
             }

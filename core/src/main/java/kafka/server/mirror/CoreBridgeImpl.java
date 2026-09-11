@@ -16,6 +16,7 @@
  */
 package kafka.server.mirror;
 
+import org.apache.kafka.common.OffsetEpoch;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.coordinator.mirror.CoreBridge;
 import org.apache.kafka.coordinator.mirror.MirrorPartitionKey;
@@ -86,8 +87,8 @@ public class CoreBridgeImpl implements CoreBridge {
     }
 
     @Override
-    public void setLastMirrorEpoch(String mirrorName, String topic, int partition, int epoch) {
-        metadataManager.setLastMirrorEpoch(mirrorName, topic, partition, epoch);
+    public void setLastMirror(String mirrorName, String topic, int partition, OffsetEpoch lastMirror) {
+        metadataManager.setLastMirror(mirrorName, topic, partition, lastMirror);
     }
 
     @Override

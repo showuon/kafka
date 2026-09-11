@@ -76,6 +76,7 @@ import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.Node;
+import org.apache.kafka.common.OffsetEpoch;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicCollection;
 import org.apache.kafka.common.TopicCollection.TopicIdCollection;
@@ -5183,7 +5184,7 @@ public class KafkaAdminClient extends AdminClient {
                                                                Map<String, List<Integer>> topicPartitions,
                                                                DescribeClusterMirrorsOptions options) {
         final KafkaFutureImpl<Map<String, ClusterMirrorDescription>> all = new KafkaFutureImpl<>();
-        final KafkaFutureImpl<Map<String, Map<Integer, Integer>>> lineageAll = new KafkaFutureImpl<>();
+        final KafkaFutureImpl<Map<String, Map<Integer, OffsetEpoch>>> lastMirrorAll = new KafkaFutureImpl<>();
         final long now = time.milliseconds();
         final long deadline = calcDeadlineMs(now, options.timeoutMs());
 
@@ -5220,13 +5221,13 @@ public class KafkaAdminClient extends AdminClient {
             void handleResponse(AbstractResponse abstractResponse) {
                 DescribeClusterMirrorsResponse response = (DescribeClusterMirrorsResponse) abstractResponse;
                 Map<String, ClusterMirrorDescription> descriptions = new HashMap<>();
-                Map<String, Map<Integer, Integer>> epochs = new HashMap<>();
+                Map<String, Map<Integer, OffsetEpoch>> lastMirrors = new HashMap<>();
 
                 for (DescribeClusterMirrorsResponseData.DescribedMirror mirror : response.data().mirrors()) {
                     Errors errorCode = Errors.forCode(mirror.errorCode());
                     if (errorCode != Errors.NONE) {
                         all.completeExceptionally(errorCode.exception());
-                        lineageAll.completeExceptionally(errorCode.exception());
+                        lastMirrorAll.completeExceptionally(errorCode.exception());
                         return;
                     }
 
@@ -5246,10 +5247,14 @@ public class KafkaAdminClient extends AdminClient {
                                     partition.retryAttempt(),
                                     partition.errorMessage()));
 
-                            if (partition.lastMirrorEpoch() >= 0) {
-                                epochs
+                            if (partition.lastMirrorEpoch() >= 0 || partition.lastMirrorOffset() >= 0) {
+                                lastMirrors
                                     .computeIfAbsent(topic.topicName(), k -> new HashMap<>())
-                                    .merge(partition.partitionIndex(), partition.lastMirrorEpoch(), Math::max);
+                                    .merge(partition.partitionIndex(),
+                                        new OffsetEpoch(partition.lastMirrorEpoch(), partition.lastMirrorOffset()),
+                                        (a, b) -> new OffsetEpoch(
+                                            Math.max(a.epoch(), b.epoch()),
+                                            Math.max(a.offset(), b.offset())));
                             }
                         }
                     }
@@ -5263,18 +5268,18 @@ public class KafkaAdminClient extends AdminClient {
                 }
 
                 all.complete(descriptions);
-                lineageAll.complete(epochs);
+                lastMirrorAll.complete(lastMirrors);
             }
 
             @Override
             void handleFailure(Throwable throwable) {
                 KafkaException exception = new KafkaException("Failed to describe cluster mirrors", throwable);
                 all.completeExceptionally(exception);
-                lineageAll.completeExceptionally(exception);
+                lastMirrorAll.completeExceptionally(exception);
             }
         }, now);
 
-        return new DescribeClusterMirrorsResult(all, lineageAll);
+        return new DescribeClusterMirrorsResult(all, lastMirrorAll);
     }
 
     @Override

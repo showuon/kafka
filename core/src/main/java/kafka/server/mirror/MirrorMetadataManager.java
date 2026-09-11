@@ -27,6 +27,7 @@ import org.apache.kafka.clients.admin.ClusterMirrorListing;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.common.Endpoint;
 import org.apache.kafka.common.Node;
+import org.apache.kafka.common.OffsetEpoch;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigResource;
@@ -882,8 +883,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                         MirrorPartitionKey key = MirrorPartitionKey.of(
                                 mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
                         mirrorCache.mergePartition(key, partition.state(), partition.stateEpoch(),
-                                partition.lastMirrorEpoch(), partition.errorMessage(),
-                                partition.retryAttempt(), partition.previousState());
+                                new OffsetEpoch(partition.lastMirrorEpoch(), partition.lastMirrorOffset()),
+                                partition.errorMessage(), partition.retryAttempt(), partition.previousState());
                         transitionTo(mirrorName, Set.of(tp), state, errorMessage, nonRetryable, true);
                     }
                 })));
@@ -947,7 +948,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         rm.mirrorFetcherManager().removeFetcherForPartitions(CollectionConverters.asScala(Set.of(tp)));
         var logOpt = rm.getPartitionOrException(tp).log();
         int latestEpoch = logOpt.isDefined() ? logOpt.get().latestEpoch().orElse(-1) : -1;
-        updateLastMirrorEpoch(mirrorName, tp, latestEpoch)
+        long latestOffset = logOpt.isDefined() ? logOpt.get().logEndOffset() : -1L;
+        updateLastMirror(mirrorName, tp, new OffsetEpoch(latestEpoch, latestOffset))
             .thenCompose(v -> bumpLeaderEpochs(getLatestLocalEpoch(tp)))
             .thenCompose(v -> abortOngoingTransactions(tp))
             .thenCompose(v -> writePidResetBarrier(mirrorName, tp))
@@ -958,17 +960,17 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             });
     }
 
-    /** Updates the last mirror epoch in the local cache and persists it to the coordinator shard. */
-    private CompletableFuture<Void> updateLastMirrorEpoch(String mirrorName, TopicPartition tp, int epoch) {
-        if (epoch == -1) {
+    /** Updates the last mirror epoch and offset in the local cache and persists them to the coordinator shard. */
+    private CompletableFuture<Void> updateLastMirror(String mirrorName, TopicPartition tp, OffsetEpoch lastMirror) {
+        if (lastMirror.epoch() == -1 && lastMirror.offset() == -1) {
             return CompletableFuture.completedFuture(null);
         }
-        setLastMirrorEpoch(mirrorName, tp.topic(), tp.partition(), epoch);
+        setLastMirror(mirrorName, tp.topic(), tp.partition(), lastMirror);
         if (isLocalCoordinator(mirrorName, tp.topic(), tp.partition())) {
-            return coordinatorWriter.get().writeLastMirrorEpoch(mirrorName, tp, epoch);
+            return coordinatorWriter.get().writeLastMirror(mirrorName, tp, lastMirror);
         } else {
             writeStateToRemoteCoordinator(mirrorName,
-                Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), null, -1, -1, epoch, null, false))),
+                Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), null, -1, -1, lastMirror, null, false))),
                 Set.of(), res -> { });
             return CompletableFuture.completedFuture(null);
         }
@@ -987,7 +989,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                         return;
                     }
                     sendLastMirrorEpochLookup(mirrorName, tp, sourceMirrors)
-                        .whenComplete((epochs, rawError) -> {
+                        .whenComplete((offsetEpochs, rawError) -> {
                             if (rawError != null) {
                                 Throwable error = rawError instanceof CompletionException && rawError.getCause() != null
                                     ? rawError.getCause() : rawError;
@@ -997,7 +999,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                                     log.warn("Source cluster doesn't support DescribeClusterMirror API. " +
                                         "Replication will be one-way without failback");
                                     replicaManagerSupplier.get().maybeTruncateForLeaderEpoch(
-                                        Map.of(tp, -1), truncateCallback);
+                                        Map.of(tp, new OffsetEpoch(-1, -1)), truncateCallback);
                                 } else {
                                     log.warn("Failed to truncate to last mirrored epoch for mirror {}",
                                         mirrorName, error);
@@ -1006,12 +1008,12 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                                 }
                                 return;
                             }
-                            if (!epochs.containsKey(tp)) {
+                            if (!offsetEpochs.containsKey(tp)) {
                                 log.warn("No epoch returned for {}. Using -1.", tp);
-                                epochs.put(tp, -1);
+                                offsetEpochs.put(tp, new OffsetEpoch(-1, -1));
                             }
                             replicaManagerSupplier.get().maybeTruncateForLeaderEpoch(
-                                epochs, truncateCallback);
+                                offsetEpochs, truncateCallback);
                         });
                 } catch (Exception e) {
                     log.warn("Failed to truncate to last mirror epochs for mirror {}", mirrorName, e);
@@ -1219,8 +1221,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                                     MirrorPartitionKey mpk = MirrorPartitionKey.of(
                                             mirrorName, metadataCache.getTopicId(topic.topicName()), partition.partitionIndex());
                                     mirrorCache.mergePartition(mpk, partition.state(), partition.stateEpoch(),
-                                            partition.lastMirrorEpoch(), partition.errorMessage(),
-                                            partition.retryAttempt(), partition.previousState());
+                                            new OffsetEpoch(partition.lastMirrorEpoch(), partition.lastMirrorOffset()),
+                                            partition.errorMessage(), partition.retryAttempt(),
+                                            partition.previousState());
                                 }));
 
                             synchronized (merged) {
@@ -1333,7 +1336,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 partitionData.setState(m.state() == null ? MirrorPartitionState.UNKNOWN.value() : m.state().value());
                 partitionData.setLeaderEpoch(m.leaderEpoch());
                 partitionData.setStateEpoch(m.stateEpoch());
-                partitionData.setLastMirrorEpoch(m.lastMirrorEpoch() != null ? m.lastMirrorEpoch() : -1);
+                OffsetEpoch lm = m.lastMirror();
+                partitionData.setLastMirrorEpoch(lm != null ? lm.epoch() : -1);
+                partitionData.setLastMirrorOffset(lm != null ? lm.offset() : -1L);
                 partitionData.setPartitionIndex(m.partition());
                 partitionData.setErrorMessage(m.errorMessage());
                 partitionData.setNonRetryable(m.nonRetryable());
@@ -1804,9 +1809,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         mirrorCache.removePartition(key);
     }
 
-    public void setLastMirrorEpoch(String mirrorName, String topic, int partition, int epoch) {
+    public void setLastMirror(String mirrorName, String topic, int partition, OffsetEpoch lastMirror) {
         MirrorPartitionKey key = MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(topic), partition);
-        mirrorCache.setLastMirrorEpoch(key, epoch);
+        mirrorCache.setLastMirror(key, lastMirror);
     }
 
     public void updateFailedInfo(MirrorPartitionKey key, MirrorPartitionState currentState,
@@ -1845,7 +1850,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         return sourceSyncer.listSourceClusterMirrors(mirrorName);
     }
 
-    public CompletionStage<Map<TopicPartition, Integer>> sendLastMirrorEpochLookup(
+    public CompletionStage<Map<TopicPartition, OffsetEpoch>> sendLastMirrorEpochLookup(
             String mirrorName, TopicPartition tp, Collection<ClusterMirrorListing> sourceMirrors) {
         return sourceSyncer.sendLastMirrorEpochLookup(mirrorName, tp, sourceMirrors);
     }
