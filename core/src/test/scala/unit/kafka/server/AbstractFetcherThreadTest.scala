@@ -73,7 +73,7 @@ class AbstractFetcherThreadTest {
     fetcher.start()
 
     val brokerTopicStatsMetrics = fetcher.brokerTopicStats.allTopicsStats.metricMapKeySet().asScala
-    val fetcherMetrics = Set(FetcherMetrics.BytesPerSec, FetcherMetrics.RequestsPerSec, FetcherMetrics.ConsumerLag)
+    val fetcherMetrics = Set(FetcherMetrics.BytesPerSec, FetcherMetrics.RequestsPerSec, FetcherMetrics.ConsumerLag, FetcherMetrics.RequestTimeMs)
 
     // wait until all fetcher metrics are present
     TestUtils.waitUntilTrue(() => allMetricsNames == brokerTopicStatsMetrics ++ fetcherMetrics,
@@ -1181,5 +1181,28 @@ class AbstractFetcherThreadTest {
 
     fetcher.processFetchRequest(partitionData, fetchRequestOpt)
     assertEquals(0, replicaState.logEndOffset, "FetchResponse should be ignored when leader epoch does not match")
+  }
+
+  @Test
+  def testFetchMarksRequestLatency(): Unit = {
+    val epoch = 0
+
+    val partition = new TopicPartition("topic", 0)
+    val mockLeaderEndpoint = new MockLeaderEndPoint(version = version)
+    val mockTierStateMachine = new MockTierStateMachine(mockLeaderEndpoint)
+    val fetcher = new MockFetcherThread(mockLeaderEndpoint, mockTierStateMachine)
+
+    val replicaState = PartitionState(leaderEpoch = epoch)
+    fetcher.setReplicaState(partition, replicaState)
+    val initFetchState = initialFetchState(topicIds.get(partition.topic), 0L, leaderEpoch = epoch)
+    fetcher.addPartitions(Map(partition -> initFetchState))
+    val partitionData = Map(partition -> new FetchRequest.PartitionData(Uuid.randomUuid(), 0, 0, 1048576, Optional.of(epoch), Optional.of(epoch))).asJava
+    val fetchRequestOpt = FetchRequest.Builder.forReplica(0, 0, epoch, 0, Int.MaxValue, partitionData)
+
+    fetcher.processFetchRequest(partitionData, fetchRequestOpt)
+
+    val snapshot = fetcher.fetcherStats.requestLatency.getSnapshot
+    assertEquals(1, snapshot.getValues.length)
+    assertTrue(snapshot.getValues.head > 0)
   }
 }
