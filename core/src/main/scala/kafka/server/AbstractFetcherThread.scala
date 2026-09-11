@@ -401,13 +401,16 @@ abstract class AbstractFetcherThread(name: String,
       if (partitionStates.contains(tp)) {
         Errors.forCode(leaderEpochOffset.errorCode) match {
           case Errors.NONE =>
+            val currentLocalLogEndOffset = logEndOffset(tp)
             val offsetTruncationState = getOffsetTruncationState(tp, leaderEpochOffset)
             info(s"Truncating partition $tp with $offsetTruncationState due to leader epoch and offset $leaderEpochOffset")
             if (doTruncate(tp, offsetTruncationState)) {
               fetchOffsets.put(tp, offsetTruncationState)
-              if (!mirrorName.isBlank) {
+              if (!mirrorName.isBlank && currentLocalLogEndOffset > offsetTruncationState.offset) {
                 // If it's mirror fetcher thread, the log truncation means the source cluster metadata has unclean leader election.
                 // We should wait for all replicas to catch up with the leader before next fetch.
+                // Note, the doTruncate() return true only means the truncation completes without error. But it doesn't mean
+                // the truncation indeed proceeds. So added the `currentLocalLogEndOffset > offsetTruncationState.offset` here.
                 partitionsNeedsWaitForFollowers += tp
               }
             }
