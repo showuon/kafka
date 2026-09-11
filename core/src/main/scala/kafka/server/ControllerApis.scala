@@ -1368,10 +1368,9 @@ class ControllerApis(
       authHelper.authorize(request.context, ALTER_CONFIGS, TOPIC, topic, logIfDenied = false))
     if (unauthorizedTopics.nonEmpty)
       throw new TopicAuthorizationException(unauthorizedTopics.asJava)
-    val stateOffset = recoverRequest.data().stateOffset()
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       requestTimeoutMsToDeadlineNs(time, recoverRequest.data().timeoutMs()))
-    controller.recoverMirrorTopics(context, mirrorName, topics, stateOffset)
+    controller.recoverMirrorTopics(context, mirrorName, topics)
       .handle[Unit] { (response, exception) =>
         if (exception != null) {
           requestHelper.handleError(request, exception)

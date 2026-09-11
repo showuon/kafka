@@ -170,8 +170,7 @@ public class MockController implements Controller {
     public CompletableFuture<RecoverMirrorTopicsResponseData> recoverMirrorTopics(
             ControllerRequestContext context,
             String mirrorName,
-            Set<String> topics,
-            long stateOffset) {
+            Set<String> topics) {
         throw new UnsupportedOperationException();
     }
 

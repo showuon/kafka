@@ -1616,7 +1616,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         }
 
         CompletableFuture<Void> allLocalWrites = CompletableFuture.allOf(
-                localWrites.toArray(new CompletableFuture[0]));
+                localWrites.toArray(new CompletableFuture<?>[0]));
 
         if (!remoteWrites.isEmpty()) {
             CompletableFuture<Void> remoteWritesFuture = new CompletableFuture<>();

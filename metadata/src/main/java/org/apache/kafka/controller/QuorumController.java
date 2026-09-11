@@ -1840,11 +1840,10 @@ public final class QuorumController implements Controller {
     public CompletableFuture<RecoverMirrorTopicsResponseData> recoverMirrorTopics(
             ControllerRequestContext context,
             String mirrorName,
-            Set<String> topics,
-            long stateOffset
+            Set<String> topics
     ) {
         return appendWriteEvent("recoverMirrorTopics", context.deadlineNs(),
-                () -> configurationControl.recoverMirrorTopics(mirrorName, topics, replicationControl, stateOffset));
+                () -> configurationControl.recoverMirrorTopics(mirrorName, topics, replicationControl));
     }
 
     @Override

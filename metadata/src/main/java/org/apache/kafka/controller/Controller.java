@@ -205,8 +205,7 @@ public interface Controller extends AclMutator, AutoCloseable {
     CompletableFuture<RecoverMirrorTopicsResponseData> recoverMirrorTopics(
             ControllerRequestContext context,
             String mirrorName,
-            Set<String> topics,
-            long stateOffset
+            Set<String> topics
     );
 
     CompletableFuture<DeleteClusterMirrorResponseData> deleteClusterMirror(

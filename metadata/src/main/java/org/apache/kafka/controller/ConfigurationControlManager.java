@@ -602,19 +602,9 @@ public class ConfigurationControlManager {
         return ControllerResult.of(records, data);
     }
 
-    ControllerResult<RecoverMirrorTopicsResponseData> recoverMirrorTopics(String mirrorName, Set<String> topics, ReplicationControlManager replicationControl, long stateOffset) {
+    ControllerResult<RecoverMirrorTopicsResponseData> recoverMirrorTopics(String mirrorName, Set<String> topics, ReplicationControlManager replicationControl) {
         List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
         RecoverMirrorTopicsResponseData data = new RecoverMirrorTopicsResponseData();
-
-        var errorTopicInfo = checkForConcurrentStateChange(stateOffset, replicationControl, mirrorName, topics);
-        if (errorTopicInfo.isPresent()) {
-            data.setErrorCode(Errors.INVALID_CLUSTER_MIRROR_STATE.code());
-            data.setErrorMessage("Mirror state for topic '" + errorTopicInfo.get().name()
-                    + "' changed after broker validated partition states (broker offset: "
-                    + stateOffset + ", last change offset: "
-                    + errorTopicInfo.get().lastStateOffset() + ")");
-            return ControllerResult.of(records, data);
-        }
 
         List<RecoverMirrorTopicsResponseData.TopicResult> topicResList = new ArrayList<>();
         for (String topic : topics) {
