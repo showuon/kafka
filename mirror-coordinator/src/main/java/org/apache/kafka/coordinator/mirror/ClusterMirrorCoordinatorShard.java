@@ -118,9 +118,9 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
 
         @Override
         public ClusterMirrorCoordinatorShard build() {
-            if (logContext == null) throw new IllegalArgumentException("LogContext must not be null.");
-            if (topicPartition == null) throw new IllegalArgumentException("TopicPartition must not be null.");
-            if (snapshotRegistry == null) throw new IllegalArgumentException("SnapshotRegistry must not be null.");
+            if (logContext == null) throw new IllegalArgumentException("LogContext must not be null");
+            if (topicPartition == null) throw new IllegalArgumentException("TopicPartition must not be null");
+            if (snapshotRegistry == null) throw new IllegalArgumentException("SnapshotRegistry must not be null");
             return new ClusterMirrorCoordinatorShard(logContext, coreBridge, topicPartition, numPartitions, snapshotRegistry);
         }
     }
@@ -216,14 +216,14 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
 
     @Override
     public void onLoaded(CoordinatorMetadataImage newImage) {
-        log.info("Loaded shard for {}.", topicPartition);
+        log.info("Loaded shard for partition {}", topicPartition);
         coreBridge.onShardLoaded(topicPartition.partition());
     }
 
     @Override
     public void onUnloaded() {
         coreBridge.onShardUnloaded(topicPartition.partition(), numPartitions);
-        log.info("Unloaded shard for {}.", topicPartition);
+        log.info("Unloaded shard for partition {}", topicPartition);
     }
 
     @Override
@@ -298,20 +298,20 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
     ) {
         MirrorPartitionKey pk = MirrorPartitionKey.of(mirrorName, coreBridge.getTopicId(tp.topic()), tp.partition());
         if (leaderEpoch != -1 && leaderEpochMap.containsKey(pk) && leaderEpochMap.get(pk) > leaderEpoch) {
-            log.info("Write fenced for {}: leader epoch {} < current {}.", tp, leaderEpoch, leaderEpochMap.get(pk));
+            log.info("Write fenced for partition {}: leader epoch {} < current {}", tp, leaderEpoch, leaderEpochMap.get(pk));
             throw Errors.FENCED_LEADER_EPOCH.exception();
         }
         int currentStateEpoch = stateEpochMap.getOrDefault(pk, 0);
         if (expectedStateEpoch != -1 && currentStateEpoch > expectedStateEpoch) {
-            log.info("Write fenced for {}: current epoch {} > expected {}.", tp, currentStateEpoch, expectedStateEpoch);
+            log.info("Write fenced for {}: current epoch {} > expected {}", tp, currentStateEpoch, expectedStateEpoch);
             throw Errors.FENCED_STATE_EPOCH.exception();
         }
         MirrorPartitionState currentState = MirrorPartition.orEmpty(coreBridge.getPartition(pk)).state();
         if (!MirrorPartition.isValidStateTransition(currentState, state)) {
-            log.warn("Skipping invalid transition from {} to {} for {}.", currentState, state, tp);
+            log.warn("Skipping invalid transition from {} to {} for partition {}", currentState, state, tp);
             return new CoordinatorResult<>(List.of(), null);
         }
-        log.debug("Transitioning partition {} from {} to {}.", tp, currentState, state);
+        log.debug("Transitioning partition {} from {} to {}", tp, currentState, state);
 
         coreBridge.updateFailedInfo(pk, currentState, state, errorMessage, nonRetryable);
         maybeUpdateLeaderEpochMap(pk, leaderEpoch);
