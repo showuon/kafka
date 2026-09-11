@@ -1359,7 +1359,7 @@ class MirrorSourceSyncer {
         @Override
         public void onTimeout() {
             log.warn("Controller request timed out");
-            errorMeter.mark();
+            maybeMarkError();
         }
 
         @Override
@@ -1369,7 +1369,8 @@ class MirrorSourceSyncer {
             }
             AbstractResponse abstractResponse = response.responseBody();
             Map<Errors, Integer> errors = abstractResponse.errorCounts();
-            if (errors != null && !errors.isEmpty()) {
+            int numErrors = errors == null ? 0 : errors.entrySet().stream().filter(e -> e.getKey() != Errors.NONE).mapToInt(Map.Entry::getValue).sum();
+            if (numErrors > 0) {
                 maybeMarkError();
             }
             log.debug("Controller request completed: {}", response);
