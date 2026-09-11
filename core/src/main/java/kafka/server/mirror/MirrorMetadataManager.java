@@ -1579,49 +1579,60 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
      * writes the prevState with retryAttempt reset to 0, ensuring MMM reads the
      * correct state on the next metadata update without exhausted retry attempts.
      */
-    public void writeRecoverRecords(String mirrorName, Set<String> topics) {
-        coordinatorWriter.ifPresent(writer -> {
-            MetadataImage currentImage = metadataImage;
-            Map<String, Set<MirrorStateWrite>> remoteWrites = new HashMap<>();
+    public CompletableFuture<Void> writeRecoverRecords(String mirrorName, Set<String> topics) {
+        if (coordinatorWriter.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
 
-            for (String topic : topics) {
-                TopicImage topicImage = currentImage.topics().getTopic(topic);
-                if (topicImage == null) {
-                    continue;
-                }
-                for (int i = 0; i < topicImage.partitions().size(); i++) {
-                    TopicPartition tp = new TopicPartition(topic, i);
-                    MirrorPartitionKey key = MirrorPartitionKey.of(mirrorName, currentImage.topics().getTopic(topic).id(), i);
-                    MirrorPartition mp = MirrorPartition.orEmpty(getPartition(key));
-                    if (mp.state() == MirrorPartitionState.FAILED && mp.prevState() != null) {
-                        MirrorPartitionState targetState = mp.prevState();
-                        if (isLocalCoordinator(mirrorName, topic, i)) {
-                            writer.writePartitionState(mirrorName, tp, targetState,
-                                            mp.lastMirrorEpoch(), mp.stateEpoch(), null, false)
-                                    .whenComplete((v, ex) -> {
-                                        if (ex != null) {
-                                            log.warn("Failed to pre-write recover state for partition {}: {}", tp, ex.getMessage());
-                                        }
-                                    });
-                        } else {
-                            remoteWrites.computeIfAbsent(topic, k -> new HashSet<>())
-                                    .add(new MirrorStateWrite(i, targetState,
-                                            mp.lastMirrorEpoch(), mp.stateEpoch(), null, null, false));
-                        }
+        MetadataImage currentImage = metadataImage;
+        Map<String, Set<MirrorStateWrite>> remoteWrites = new HashMap<>();
+        List<CompletableFuture<Void>> localWrites = new ArrayList<>();
+
+        for (String topic : topics) {
+            TopicImage topicImage = currentImage.topics().getTopic(topic);
+            if (topicImage == null) {
+                continue;
+            }
+            for (int i = 0; i < topicImage.partitions().size(); i++) {
+                TopicPartition tp = new TopicPartition(topic, i);
+                MirrorPartitionKey key = MirrorPartitionKey.of(mirrorName, currentImage.topics().getTopic(topic).id(), i);
+                MirrorPartition mp = MirrorPartition.orEmpty(getPartition(key));
+                if (mp.state() == MirrorPartitionState.FAILED && mp.prevState() != null) {
+                    MirrorPartitionState targetState = mp.prevState();
+                    if (isLocalCoordinator(mirrorName, topic, i)) {
+                        localWrites.add(coordinatorWriter.get().writePartitionState(mirrorName, tp, targetState,
+                                        mp.lastMirrorEpoch(), mp.stateEpoch(), null, false)
+                                .exceptionally(ex -> {
+                                    log.warn("Failed to write recover state for partition {}: {}", tp, ex.getMessage());
+                                    return null;
+                                }));
+                    } else {
+                        remoteWrites.computeIfAbsent(topic, k -> new HashSet<>())
+                                .add(new MirrorStateWrite(i, targetState,
+                                        mp.lastMirrorEpoch(), mp.stateEpoch(), null, null, false));
                     }
                 }
             }
+        }
 
-            if (!remoteWrites.isEmpty()) {
-                writeStateToRemoteCoordinator(mirrorName, remoteWrites, Set.of(), res ->
-                        res.data().topics().forEach(t -> t.partitions().forEach(p -> {
-                            if (p.errorCode() != Errors.NONE.code()) {
-                                log.warn("Failed to pre-write recover state for partition {}-{}: {}",
-                                        t.topicName(), p.partitionIndex(), Errors.forCode(p.errorCode()));
-                            }
-                        })));
-            }
-        });
+        CompletableFuture<Void> allLocalWrites = CompletableFuture.allOf(
+                localWrites.toArray(new CompletableFuture[0]));
+
+        if (!remoteWrites.isEmpty()) {
+            CompletableFuture<Void> remoteWritesFuture = new CompletableFuture<>();
+            writeStateToRemoteCoordinator(mirrorName, remoteWrites, Set.of(), res -> {
+                res.data().topics().forEach(t -> t.partitions().forEach(p -> {
+                    if (p.errorCode() != Errors.NONE.code()) {
+                        log.warn("Failed to write recover state for partition {}-{}: {}",
+                                t.topicName(), p.partitionIndex(), Errors.forCode(p.errorCode()));
+                    }
+                }));
+                remoteWritesFuture.complete(null);
+            });
+            return allLocalWrites.thenCompose(v -> remoteWritesFuture);
+        } else {
+            return allLocalWrites;
+        }
     }
 
     public void validateDeleteMirrorStates(DeleteClusterMirrorRequestData data, Consumer<Optional<Errors>> callback) {

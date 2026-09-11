@@ -4467,15 +4467,23 @@ class KafkaApis(val requestChannel: RequestChannel,
       return
     }
 
-    // No controller state validation: we write recovery records to coordinator before forwarding,
-    // ensuring MMM reads correct state and retryAttempt when metadata update is triggered.
-    // stateOffset defaults to -1 (skip controller check).
+    // Write recovery records to coordinator and wait for completion before forwarding.
+    // This ensures the coordinator has the correct state before MMM reads it during
+    // onMetadataUpdate, preventing the race where automatic retries fail due to
+    // exhausted retryAttempt.
     val topics = data.topics().asScala.map(_.topicName()).toSet.asJava
-    mirrorMetadataManager.writeRecoverRecords(mirrorName, topics)
-    forwardingManager.forwardRequest(request, new RecoverMirrorTopicsRequest(data, request.header.apiVersion()), {
-      case Some(response) => requestHelper.sendForwardedResponse(request, response)
-      case None => handleInvalidVersionsDuringForwarding(request)
-    })
+    mirrorMetadataManager.writeRecoverRecords(mirrorName, topics).handle[Unit] { (v, ex) =>
+      if (ex != null) {
+        logger.warn("Failed to write recovery records for mirror {}: {}", mirrorName, ex.getMessage)
+        requestHelper.sendMaybeThrottle(request, new RecoverMirrorTopicsResponse(
+          new RecoverMirrorTopicsResponseData().setErrorCode(Errors.UNKNOWN_SERVER_ERROR.code)))
+      } else {
+        forwardingManager.forwardRequest(request, new RecoverMirrorTopicsRequest(data, request.header.apiVersion()), {
+          case Some(response) => requestHelper.sendForwardedResponse(request, response)
+          case None => handleInvalidVersionsDuringForwarding(request)
+        })
+      }
+    }
   }
 
 
