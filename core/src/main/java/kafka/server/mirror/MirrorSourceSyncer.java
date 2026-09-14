@@ -1343,6 +1343,7 @@ class MirrorSourceSyncer {
         })
             .thenCompose(__ -> lastMirrorPositionFuture)
 <<<<<<< HEAD
+<<<<<<< HEAD
             .thenApply(lastMirrorPositions -> {
 <<<<<<< HEAD
                 log.info("Last mirror epoch lookup response for mirror {}: {}", mirrorName, lastMirrorPositions);
@@ -1358,6 +1359,12 @@ class MirrorSourceSyncer {
             })
 =======
 >>>>>>> d67c8460bf (key by TopicPartition in DescribeClusterMirrors admin)
+=======
+            .thenApply(lastMirrorPositions -> {
+                log.info("Last mirror epoch lookup response for mirror {}: {}", mirrorName, lastMirrorPositions);
+                return lastMirrorPositions;
+            })
+>>>>>>> bd92e4d1b0 (Fix logging)
             .orTimeout(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
     }
 

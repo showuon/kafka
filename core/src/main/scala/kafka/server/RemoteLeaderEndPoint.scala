@@ -141,7 +141,6 @@ class RemoteLeaderEndPoint(logPrefix: String,
 =======
     if (isClusterMirror) {
       val negotiatedVersion = clientResponse.requestHeader().apiVersion()
-      info("!!! negotiating:" + negotiatedVersion + ";;" + supportedVersion)
       if (negotiatedVersion != supportedVersion) {
         val prev = supportedVersion
         supportedVersion = negotiatedVersion
