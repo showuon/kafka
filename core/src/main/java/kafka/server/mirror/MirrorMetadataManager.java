@@ -27,11 +27,15 @@ import org.apache.kafka.clients.admin.ClusterMirrorListing;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.common.Endpoint;
 <<<<<<< HEAD
+<<<<<<< HEAD
 import org.apache.kafka.common.EpochOffset;
 =======
 >>>>>>> ce74c8c389 (spotbug)
 import org.apache.kafka.common.Node;
+=======
+>>>>>>> 5245d0d4c8 (spotless)
 import org.apache.kafka.common.EpochOffset;
+import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigDef;

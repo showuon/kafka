@@ -77,7 +77,10 @@ import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.Node;
+<<<<<<< HEAD
 import org.apache.kafka.common.OffsetEpoch;
+=======
+>>>>>>> 5245d0d4c8 (spotless)
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicCollection;
 import org.apache.kafka.common.TopicCollection.TopicIdCollection;
