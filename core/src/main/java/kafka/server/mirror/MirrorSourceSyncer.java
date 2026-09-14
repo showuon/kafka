@@ -1343,8 +1343,17 @@ class MirrorSourceSyncer {
         })
             .thenCompose(__ -> lastMirrorPositionFuture)
             .thenApply(lastMirrorPositions -> {
+<<<<<<< HEAD
                 log.info("Last mirror epoch lookup response for mirror {}: {}", mirrorName, lastMirrorPositions);
                 return lastMirrorPositions;
+=======
+                Map<TopicPartition, EpochOffset> epochs = new HashMap<>();
+                lastMirrorPositions.forEach((topicName, partitionValues) ->
+                    partitionValues.forEach((partIdx, oe) ->
+                            epochs.put(new TopicPartition(topicName, partIdx), new EpochOffset(oe.epoch(), oe.offset()))));
+                log.info("Last mirror epoch lookup response for mirror {}: {}", mirrorName, epochs);
+                return epochs;
+>>>>>>> 28a98540e4 (rename lastMirror to lastMirrorPosition)
             })
             .orTimeout(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
     }

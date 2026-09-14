@@ -224,11 +224,18 @@ public class ClusterMirroringIntegrationTest {
         DescribeClusterMirrorsResult describeClusterMirrors = dstAdmin.describeClusterMirrors(
                 null, topicPartitions,
                 new DescribeClusterMirrorsOptions().clusterId(srcClusterId).includeMirrorState(true));
+<<<<<<< HEAD
         Map<TopicPartition, EpochOffset> lastMirrorPositions = describeClusterMirrors.lastMirrorPositions().get(30, TimeUnit.SECONDS);
         TopicPartition tp0 = new TopicPartition(topic, 0);
         assertEquals(1, lastMirrorPositions.size(), "Should have one lookup result");
         assertTrue(lastMirrorPositions.containsKey(tp0), "Should have partition 0");
         assertTrue(lastMirrorPositions.get(tp0).epoch() >= 0, "Should have LME >= 0");
+=======
+        Map<String, Map<Integer, EpochOffset>> lastMirrors = describeClusterMirrors.lastMirrorPositions().get(30, TimeUnit.SECONDS);
+        assertEquals(1, lastMirrors.size(), "Should have one lookup result");
+        assertEquals(1, lastMirrors.get(topic).size(), "Should have one partition");
+        assertTrue(lastMirrors.get(topic).get(0).epoch() >= 0, "Should have LME >= 0");
+>>>>>>> 28a98540e4 (rename lastMirror to lastMirrorPosition)
 
         // Failback: src mirrors from dst under a different name
         srcAdmin.createClusterMirror(reverseMirror, Map.of(

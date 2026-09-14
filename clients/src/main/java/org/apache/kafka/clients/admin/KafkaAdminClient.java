@@ -5240,7 +5240,11 @@ public class KafkaAdminClient extends AdminClient {
                                                                Map<String, List<Integer>> topicPartitions,
                                                                DescribeClusterMirrorsOptions options) {
         final KafkaFutureImpl<Map<String, ClusterMirrorDescription>> all = new KafkaFutureImpl<>();
+<<<<<<< HEAD
         final KafkaFutureImpl<Map<TopicPartition, EpochOffset>> lastMirrorPositionFutures = new KafkaFutureImpl<>();
+=======
+        final KafkaFutureImpl<Map<String, Map<Integer, EpochOffset>>> lastMirrorPositionFutures = new KafkaFutureImpl<>();
+>>>>>>> 28a98540e4 (rename lastMirror to lastMirrorPosition)
         final long now = time.milliseconds();
         final long deadline = calcDeadlineMs(now, options.timeoutMs());
 
@@ -5277,7 +5281,11 @@ public class KafkaAdminClient extends AdminClient {
             void handleResponse(AbstractResponse abstractResponse) {
                 DescribeClusterMirrorsResponse response = (DescribeClusterMirrorsResponse) abstractResponse;
                 Map<String, ClusterMirrorDescription> descriptions = new HashMap<>();
+<<<<<<< HEAD
                 Map<TopicPartition, EpochOffset> lastMirrorPositions = new HashMap<>();
+=======
+                Map<String, Map<Integer, EpochOffset>> lastMirrorPositions = new HashMap<>();
+>>>>>>> 28a98540e4 (rename lastMirror to lastMirrorPosition)
 
                 for (DescribeClusterMirrorsResponseData.DescribedMirror mirror : response.data().mirrors()) {
                     Errors errorCode = Errors.forCode(mirror.errorCode());
@@ -5305,7 +5313,12 @@ public class KafkaAdminClient extends AdminClient {
 
                             if (partition.lastMirrorEpoch() >= 0 || partition.lastMirrorOffset() >= 0) {
                                 lastMirrorPositions
+<<<<<<< HEAD
                                     .merge(new TopicPartition(topic.topicName(), partition.partitionIndex()),
+=======
+                                    .computeIfAbsent(topic.topicName(), k -> new HashMap<>())
+                                    .merge(partition.partitionIndex(),
+>>>>>>> 28a98540e4 (rename lastMirror to lastMirrorPosition)
                                         new EpochOffset(partition.lastMirrorEpoch(), partition.lastMirrorOffset()),
                                         (a, b) -> new EpochOffset(
                                             Math.max(a.epoch(), b.epoch()),
