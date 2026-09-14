@@ -1330,14 +1330,6 @@ class MirrorSourceSyncer {
             return null;
         })
             .thenCompose(__ -> lastMirrorPositionFuture)
-            .thenApply(lastMirrorPositions -> {
-                Map<TopicPartition, EpochOffset> epochs = new HashMap<>();
-                lastMirrorPositions.forEach((topicName, partitionValues) ->
-                    partitionValues.forEach((partIdx, oe) ->
-                            epochs.put(new TopicPartition(topicName, partIdx), new EpochOffset(oe.epoch(), oe.offset()))));
-                log.info("Last mirror epoch lookup response for mirror {}: {}", mirrorName, epochs);
-                return epochs;
-            })
             .orTimeout(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
     }
 

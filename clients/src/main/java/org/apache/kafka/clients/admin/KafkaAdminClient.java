@@ -5160,7 +5160,7 @@ public class KafkaAdminClient extends AdminClient {
                                                                Map<String, List<Integer>> topicPartitions,
                                                                DescribeClusterMirrorsOptions options) {
         final KafkaFutureImpl<Map<String, ClusterMirrorDescription>> all = new KafkaFutureImpl<>();
-        final KafkaFutureImpl<Map<String, Map<Integer, EpochOffset>>> lastMirrorPositionFutures = new KafkaFutureImpl<>();
+        final KafkaFutureImpl<Map<TopicPartition, EpochOffset>> lastMirrorPositionFutures = new KafkaFutureImpl<>();
         final long now = time.milliseconds();
         final long deadline = calcDeadlineMs(now, options.timeoutMs());
 
@@ -5197,7 +5197,7 @@ public class KafkaAdminClient extends AdminClient {
             void handleResponse(AbstractResponse abstractResponse) {
                 DescribeClusterMirrorsResponse response = (DescribeClusterMirrorsResponse) abstractResponse;
                 Map<String, ClusterMirrorDescription> descriptions = new HashMap<>();
-                Map<String, Map<Integer, EpochOffset>> lastMirrorPositions = new HashMap<>();
+                Map<TopicPartition, EpochOffset> lastMirrorPositions = new HashMap<>();
 
                 for (DescribeClusterMirrorsResponseData.DescribedMirror mirror : response.data().mirrors()) {
                     Errors errorCode = Errors.forCode(mirror.errorCode());
@@ -5225,8 +5225,7 @@ public class KafkaAdminClient extends AdminClient {
 
                             if (partition.lastMirrorEpoch() >= 0 || partition.lastMirrorOffset() >= 0) {
                                 lastMirrorPositions
-                                    .computeIfAbsent(topic.topicName(), k -> new HashMap<>())
-                                    .merge(partition.partitionIndex(),
+                                    .merge(new TopicPartition(topic.topicName(), partition.partitionIndex()),
                                         new EpochOffset(partition.lastMirrorEpoch(), partition.lastMirrorOffset()),
                                         (a, b) -> new EpochOffset(
                                             Math.max(a.epoch(), b.epoch()),
