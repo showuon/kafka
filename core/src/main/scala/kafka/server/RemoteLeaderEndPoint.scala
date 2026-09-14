@@ -114,14 +114,22 @@ class RemoteLeaderEndPoint(logPrefix: String,
 
     // Latch supportedVersion to the version NetworkClient actually negotiated, as reported
     // in the response header. This is updated on every successful fetch, so source rolling
+<<<<<<< HEAD
     // upgrades and downgrades across the v11/v12 boundary are both handled:
     //   - Upgrade (<=v11 -> v12+): supportedVersion rises above 11, isTruncationOnFetchSupported
     //     becomes true. Already-FETCHING partitions handle diverging epochs naturally; no restart needed.
     //   - Downgrade (v12+ -> <=v11): isTruncationOnFetchSupported transitions from true to false.
+=======
+    // upgrades (v11 -> v12+) and downgrades (v12+ -> v11) are both handled:
+    //   - Upgrade: supportedVersion rises, isTruncationOnFetchSupported becomes true.
+    //     Already-FETCHING partitions handle diverging epochs naturally; no restart needed.
+    //   - Downgrade: supportedVersion falls, isTruncationOnFetchSupported becomes false.
+>>>>>>> a72ac53421 (simplify the fetch version check)
     //     Throw UnsupportedVersionException to force all partitions through the error path,
     //     which re-adds them via partitionFetchState -> TRUNCATING for a fresh OFLE round-trip.
     //     This ensures lastFetchedEpoch is dropped from the next request and log divergence
     //     from a source ULE cannot be silently missed.
+<<<<<<< HEAD
     //   - Version differences entirely above v11 (e.g. v17 vs v18) do not affect truncation
     //     behaviour; silently update supportedVersion with no partition reset needed.
     if (isClusterMirror) {
@@ -130,13 +138,27 @@ class RemoteLeaderEndPoint(logPrefix: String,
         val prev = supportedVersion
         supportedVersion = negotiatedVersion
         if (prev > 11 && negotiatedVersion <= 11) {
+=======
+    if (isClusterMirror) {
+      val negotiatedVersion = clientResponse.requestHeader().apiVersion()
+      info("!!! negotiating:" + negotiatedVersion + ";;" + supportedVersion)
+      if (negotiatedVersion != supportedVersion) {
+        val prev = supportedVersion
+        supportedVersion = negotiatedVersion
+        if (negotiatedVersion < prev) {
+>>>>>>> a72ac53421 (simplify the fetch version check)
           val msg = s"Source Fetch API version downgraded from $prev to $negotiatedVersion; " +
             s"switching to OffsetsForLeaderEpoch path and resetting partitions"
           warn(msg)
           fetchSessionHandler.handleError(new UnsupportedVersionException(msg))
           throw new UnsupportedVersionException(msg)
         } else {
+<<<<<<< HEAD
           info(s"Source Fetch API version changed from $prev to $negotiatedVersion")
+=======
+          info(s"Source Fetch API version upgraded from $prev to $negotiatedVersion; " +
+            s"switching to truncation-on-fetch path")
+>>>>>>> a72ac53421 (simplify the fetch version check)
         }
       }
     }
