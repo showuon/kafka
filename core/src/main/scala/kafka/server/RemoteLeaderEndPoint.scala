@@ -83,10 +83,16 @@ class RemoteLeaderEndPoint(logPrefix: String,
   private val maxBytes: Int = mirrorConfig.map(_.fetchResponseMaxBytes()).getOrElse(brokerConfig.replicaFetchResponseMaxBytes)
   private val fetchSize: Int = mirrorConfig.map(_.fetchMaxBytes()).getOrElse(brokerConfig.replicaFetchMaxBytes)
   private val lastSeenEndpointList = new util.HashMap[Integer, Node]()
+  // Tracks the Fetch API version actually negotiated with the source broker, updated from
+  // the response header on every successful fetch. Initialised to the destination's own
+  // version (always > 11 for any version that supports Cluster Mirroring).
+  // Written only from the single fetcher thread; @volatile for visibility to isTruncationOnFetchSupported.
   @volatile private var supportedVersion = metadataVersionSupplier().fetchRequestVersion
 
-  // The "supportedVersion > 11" check should not impact normal replication because the supported version should
-  // always be > 11 when cluster mirror is supported, but only adopt the logic in Mirror in case of some exception
+  // For Cluster Mirroring, truncation-on-fetch (diverging epoch in Fetch responses) requires
+  // Fetch API v12+. Falls back to explicit OffsetsForLeaderEpoch requests for v11 or lower.
+  // Re-evaluated on every fetch cycle, so source rolling upgrades and downgrades are
+  // picked up automatically.
   override def isTruncationOnFetchSupported: Boolean = if (isClusterMirror) supportedVersion > 11 else true
 
   override def initiateClose(): Unit = blockingSender.initiateClose()
@@ -102,12 +108,37 @@ class RemoteLeaderEndPoint(logPrefix: String,
       blockingSender.sendRequest(fetchRequest)
     } catch {
       case t: Throwable =>
-        if (isClusterMirror && t.isInstanceOf[UnsupportedVersionException]) {
-          // setting highest supported version when UnsupportedVersionException is thrown
-          supportedVersion = fetchRequest.version()
-        }
         fetchSessionHandler.handleError(t)
         throw t
+    }
+
+    // Latch supportedVersion to the version NetworkClient actually negotiated, as reported
+    // in the response header. This is updated on every successful fetch, so source rolling
+    // upgrades (v11 -> v12+) and downgrades (v12+ -> v11) are both handled:
+    //   - Upgrade: supportedVersion rises, isTruncationOnFetchSupported becomes true.
+    //     Already-FETCHING partitions handle diverging epochs naturally; no restart needed.
+    //   - Downgrade: supportedVersion falls, isTruncationOnFetchSupported becomes false.
+    //     Throw UnsupportedVersionException to force all partitions through the error path,
+    //     which re-adds them via partitionFetchState -> TRUNCATING for a fresh OFLE round-trip.
+    //     This ensures lastFetchedEpoch is dropped from the next request and log divergence
+    //     from a source ULE cannot be silently missed.
+    if (isClusterMirror) {
+      val negotiatedVersion = clientResponse.requestHeader().apiVersion()
+      info("!!! negotiating:" + negotiatedVersion + ";;" + supportedVersion)
+      if (negotiatedVersion != supportedVersion) {
+        val prev = supportedVersion
+        supportedVersion = negotiatedVersion
+        if (negotiatedVersion < prev) {
+          val msg = s"Source Fetch API version downgraded from $prev to $negotiatedVersion; " +
+            s"switching to OffsetsForLeaderEpoch path and resetting partitions"
+          warn(msg)
+          fetchSessionHandler.handleError(new UnsupportedVersionException(msg))
+          throw new UnsupportedVersionException(msg)
+        } else {
+          info(s"Source Fetch API version upgraded from $prev to $negotiatedVersion; " +
+            s"switching to truncation-on-fetch path")
+        }
+      }
     }
 
     val fetchResponse = clientResponse.responseBody.asInstanceOf[FetchResponse]
