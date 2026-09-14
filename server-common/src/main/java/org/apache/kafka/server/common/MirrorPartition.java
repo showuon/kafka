@@ -16,22 +16,22 @@
  */
 package org.apache.kafka.server.common;
 
-import org.apache.kafka.common.OffsetEpoch;
+import org.apache.kafka.common.EpochOffset;
 
 /**
  * Immutable snapshot of a mirror partition.
  *
  * @param state            the current lifecycle state, or null if unknown
  * @param stateEpoch       monotonically increasing epoch incremented on every state transition
- * @param lastMirror       the last mirrored epoch and offset, or {@link OffsetEpoch#EMPTY} if not yet recorded
+ * @param lastMirror       the last mirrored epoch and offset, or {@link EpochOffset#EMPTY} if not yet recorded
  * @param errorMessage     the failure reason when in FAILED state, or null otherwise
  * @param retryAttempt     the retry count in FAILED state, 0 if not failed,
  *                         or {@link #NON_RETRYABLE_ATTEMPT} if non-retryable
  * @param prevState        the state before entering FAILED, or null if not applicable
  */
-public record MirrorPartition(MirrorPartitionState state, int stateEpoch, OffsetEpoch lastMirror,
+public record MirrorPartition(MirrorPartitionState state, int stateEpoch, EpochOffset lastMirror,
                               String errorMessage, int retryAttempt, MirrorPartitionState prevState) {
-    public static final MirrorPartition EMPTY = new MirrorPartition(MirrorPartitionState.UNKNOWN, 0, OffsetEpoch.EMPTY, null, 0, null);
+    public static final MirrorPartition EMPTY = new MirrorPartition(MirrorPartitionState.UNKNOWN, 0, EpochOffset.EMPTY, null, 0, null);
     public static final int NON_RETRYABLE_ATTEMPT = -1;
 
     /**
@@ -99,16 +99,16 @@ public record MirrorPartition(MirrorPartitionState state, int stateEpoch, Offset
         return new MirrorPartition(state, newStateEpoch, lastMirror, errorMessage, retryAttempt, prevState);
     }
 
-    public MirrorPartition withLastMirror(OffsetEpoch newLastMirror) {
+    public MirrorPartition withLastMirror(EpochOffset newLastMirror) {
         return new MirrorPartition(state, stateEpoch, newLastMirror, errorMessage, retryAttempt, prevState);
     }
 
     public MirrorPartition withLastMirrorEpoch(int newEpoch) {
-        return withLastMirror(new OffsetEpoch(newEpoch, lastMirror.offset()));
+        return withLastMirror(new EpochOffset(newEpoch, lastMirror.offset()));
     }
 
     public MirrorPartition withLastMirrorOffset(long newOffset) {
-        return withLastMirror(new OffsetEpoch(lastMirror.epoch(), newOffset));
+        return withLastMirror(new EpochOffset(lastMirror.epoch(), newOffset));
     }
 
     public MirrorPartition withError(String errorMessage, int retryAttempt, MirrorPartitionState previousState) {

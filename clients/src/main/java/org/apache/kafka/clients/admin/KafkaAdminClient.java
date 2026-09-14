@@ -76,7 +76,7 @@ import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.Node;
-import org.apache.kafka.common.OffsetEpoch;
+import org.apache.kafka.common.EpochOffset;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicCollection;
 import org.apache.kafka.common.TopicCollection.TopicIdCollection;
@@ -5160,7 +5160,7 @@ public class KafkaAdminClient extends AdminClient {
                                                                Map<String, List<Integer>> topicPartitions,
                                                                DescribeClusterMirrorsOptions options) {
         final KafkaFutureImpl<Map<String, ClusterMirrorDescription>> all = new KafkaFutureImpl<>();
-        final KafkaFutureImpl<Map<String, Map<Integer, OffsetEpoch>>> lastMirrorAll = new KafkaFutureImpl<>();
+        final KafkaFutureImpl<Map<String, Map<Integer, EpochOffset>>> lastMirrorAll = new KafkaFutureImpl<>();
         final long now = time.milliseconds();
         final long deadline = calcDeadlineMs(now, options.timeoutMs());
 
@@ -5197,7 +5197,7 @@ public class KafkaAdminClient extends AdminClient {
             void handleResponse(AbstractResponse abstractResponse) {
                 DescribeClusterMirrorsResponse response = (DescribeClusterMirrorsResponse) abstractResponse;
                 Map<String, ClusterMirrorDescription> descriptions = new HashMap<>();
-                Map<String, Map<Integer, OffsetEpoch>> lastMirrors = new HashMap<>();
+                Map<String, Map<Integer, EpochOffset>> lastMirrors = new HashMap<>();
 
                 for (DescribeClusterMirrorsResponseData.DescribedMirror mirror : response.data().mirrors()) {
                     Errors errorCode = Errors.forCode(mirror.errorCode());
@@ -5227,8 +5227,8 @@ public class KafkaAdminClient extends AdminClient {
                                 lastMirrors
                                     .computeIfAbsent(topic.topicName(), k -> new HashMap<>())
                                     .merge(partition.partitionIndex(),
-                                        new OffsetEpoch(partition.lastMirrorEpoch(), partition.lastMirrorOffset()),
-                                        (a, b) -> new OffsetEpoch(
+                                        new EpochOffset(partition.lastMirrorEpoch(), partition.lastMirrorOffset()),
+                                        (a, b) -> new EpochOffset(
                                             Math.max(a.epoch(), b.epoch()),
                                             Math.max(a.offset(), b.offset())));
                             }

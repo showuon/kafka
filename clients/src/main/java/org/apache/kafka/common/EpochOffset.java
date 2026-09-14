@@ -22,13 +22,13 @@ import java.util.Objects;
  * Pairs a leader epoch with a log offset, used to record the last mirrored
  * position of a partition before mirroring stops.
  */
-public final class OffsetEpoch {
-    public static final OffsetEpoch EMPTY = new OffsetEpoch(-1, -1L);
+public final class EpochOffset {
+    public static final EpochOffset EMPTY = new EpochOffset(-1, -1L);
 
     private final int epoch;
     private final long offset;
 
-    public OffsetEpoch(int epoch, long offset) {
+    public EpochOffset(int epoch, long offset) {
         this.epoch = epoch;
         this.offset = offset;
     }
@@ -47,7 +47,7 @@ public final class OffsetEpoch {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        OffsetEpoch that = (OffsetEpoch) o;
+        EpochOffset that = (EpochOffset) o;
         return epoch == that.epoch && offset == that.offset;
     }
 

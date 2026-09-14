@@ -27,7 +27,7 @@ import kafka.server.mirror.{MirrorFetcherManager, MirrorMetadataManager, MirrorO
 import kafka.server.share.DelayedShareFetch
 import kafka.utils._
 import org.apache.kafka.common.config.{ConfigResource, TopicConfig}
-import org.apache.kafka.common.{IsolationLevel, Node, OffsetEpoch, TopicIdPartition, TopicPartition, Uuid}
+import org.apache.kafka.common.{IsolationLevel, Node, EpochOffset, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.common.errors._
 import org.apache.kafka.common.internals.{Plugin, Topic}
 import org.apache.kafka.common.message.DeleteRecordsResponseData.DeleteRecordsPartitionResult
@@ -1677,12 +1677,16 @@ class ReplicaManager(val config: KafkaConfig,
     delayedRemoteFetchPurgatory.tryCompleteElseWatch(remoteFetch, delayedFetchKeys.asJava)
   }
 
-  def maybeTruncateForLeaderEpoch(offsetEpochs: util.Map[TopicPartition, OffsetEpoch], callback: Consumer[TopicPartition]): Unit = {
-    offsetEpochs.forEach((tp, offsetEpoch) => {
+  def maybeTruncateForLeaderEpoch(epochsOffset: util.Map[TopicPartition, EpochOffset], callback: Consumer[TopicPartition]): Unit = {
+    epochsOffset.forEach((tp, offsetEpoch) => {
       getLog(tp).map(log => {
         val endOffsetForEpoch = log.endOffsetForEpoch(offsetEpoch.epoch())
         val lastMirrorOffset = offsetEpoch.offset()
         val offsetToTruncate = if (endOffsetForEpoch.isPresent) {
+          // Taking the minimum of both ensures that records beyond LMO are
+          // removed (they were not mirrored, they were locally produced),
+          // and Records in a diverging epoch beyond LME are removed
+          // (they are not from the source).
           Math.min(endOffsetForEpoch.get().offset(), lastMirrorOffset)
         } else 0L
         log.truncateTo(offsetToTruncate)

@@ -42,7 +42,7 @@
         { "name": "StateEpoch", "type": "int32", "versions": "0+", "default": "0",
           "about": "The current state epoch for the partition." },
         { "name": "LastMirrorEpoch", "type": "int32", "versions": "0+", "default": "-1",
-          "about": "The last mirror leader epoch, or -1 if not yet recorded." },
+          "about": "The last mirror epoch, or -1 if not available." },
         { "name": "LastMirrorOffset", "type": "int64", "versions": "0+", "default": "-1",
           "about": "The last mirror offset, or -1 if not available." },
         { "name": "ErrorCode", "type": "int16", "versions": "0+",

@@ -48,7 +48,7 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.OffsetEpoch;
+import org.apache.kafka.common.EpochOffset;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigResource;
@@ -261,7 +261,7 @@ public class ClusterMirroringIntegrationTest {
         DescribeClusterMirrorsResult describeClusterMirrors = dstAdmin.describeClusterMirrors(
                 null, topicPartitions,
                 new DescribeClusterMirrorsOptions().clusterId(srcClusterId).includeMirrorState(true));
-        Map<String, Map<Integer, OffsetEpoch>> lastMirrors = describeClusterMirrors.lastMirrors().get(30, TimeUnit.SECONDS);
+        Map<String, Map<Integer, EpochOffset>> lastMirrors = describeClusterMirrors.lastMirrors().get(30, TimeUnit.SECONDS);
         assertEquals(1, lastMirrors.size(), "Should have one lookup result");
         assertEquals(1, lastMirrors.get(topic).size(), "Should have one partition");
         assertTrue(lastMirrors.get(topic).get(0).epoch() >= 0, "Should have LME >= 0");

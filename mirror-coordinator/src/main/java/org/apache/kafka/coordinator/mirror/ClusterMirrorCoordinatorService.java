@@ -16,7 +16,7 @@
  */
 package org.apache.kafka.coordinator.mirror;
 
-import org.apache.kafka.common.OffsetEpoch;
+import org.apache.kafka.common.EpochOffset;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.ReadMirrorStatesResponseData;
 import org.apache.kafka.common.message.WriteMirrorStatesResponseData;
@@ -208,7 +208,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                     @Override
                     public CompletableFuture<Void> writeLastMirror(String mirrorName,
                                                                     TopicPartition tp,
-                                                                    OffsetEpoch lastMirror) {
+                                                                    EpochOffset lastMirror) {
                         return ClusterMirrorCoordinatorService.this.writeLastMirror(
                                 mirrorName, tp, lastMirror);
                     }
@@ -444,7 +444,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
 
     /** Persists a last mirror epoch and offset record. Called from {@code MirrorMetadataManager#updateLastMirror}. */
     private CompletableFuture<Void> writeLastMirror(
-            String mirrorName, TopicPartition tp, OffsetEpoch lastMirror
+            String mirrorName, TopicPartition tp, EpochOffset lastMirror
     ) {
         throwIfNotActive();
         TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME,
@@ -470,6 +470,6 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
 
     /** A single partition state or LME/LMO write entry for inter-broker WriteMirrorStates RPCs. */
     public record MirrorStateWrite(int partition, MirrorPartitionState state, int leaderEpoch, int stateEpoch,
-                                   OffsetEpoch lastMirror, String errorMessage,
+                                   EpochOffset lastMirror, String errorMessage,
                                    boolean nonRetryable) { }
 }

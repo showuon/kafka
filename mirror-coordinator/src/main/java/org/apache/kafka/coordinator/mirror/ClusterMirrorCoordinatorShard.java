@@ -16,7 +16,7 @@
  */
 package org.apache.kafka.coordinator.mirror;
 
-import org.apache.kafka.common.OffsetEpoch;
+import org.apache.kafka.common.EpochOffset;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.errors.FencedLeaderEpochException;
@@ -209,7 +209,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
             LastMirrorEpochsValue epochsValue = (LastMirrorEpochsValue) value.message();
             coreBridge.getTopicName(key.topicId()).ifPresent(topicName ->
                 coreBridge.setLastMirror(key.mirrorName(), topicName, key.partition(),
-                        new OffsetEpoch(epochsValue.lastMirrorEpoch(), epochsValue.lastMirrorOffset())));
+                        new EpochOffset(epochsValue.lastMirrorEpoch(), epochsValue.lastMirrorOffset())));
         } else {
             coreBridge.removePartition(pk);
         }
@@ -287,7 +287,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                     return;
                 }
             }
-            OffsetEpoch lm = partition.lastMirror();
+            EpochOffset lm = partition.lastMirror();
             if (lm != null && (lm.epoch() != -1 || lm.offset() != -1)) {
                 records.addAll(writeLastMirror(mirrorName, tp, lm).records());
             }
@@ -339,7 +339,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
     }
 
     public CoordinatorResult<Void, CoordinatorRecord> writeLastMirror(
-            String mirrorName, TopicPartition tp, OffsetEpoch lastMirror
+            String mirrorName, TopicPartition tp, EpochOffset lastMirror
     ) {
         MirrorPartitionKey pk = MirrorPartitionKey.of(
                 mirrorName, coreBridge.getTopicId(tp.topic()), tp.partition());

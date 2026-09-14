@@ -17,7 +17,7 @@
 package kafka.server.mirror;
 
 import org.apache.kafka.common.Node;
-import org.apache.kafka.common.OffsetEpoch;
+import org.apache.kafka.common.EpochOffset;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.coordinator.mirror.MirrorPartitionKey;
 import org.apache.kafka.server.common.MirrorPartition;
@@ -66,7 +66,7 @@ public class MirrorStateCache {
         partitions.put(key, partition);
     }
 
-    public void mergePartition(MirrorPartitionKey key, byte state, int stateEpoch, OffsetEpoch lastMirror,
+    public void mergePartition(MirrorPartitionKey key, byte state, int stateEpoch, EpochOffset lastMirror,
                                String errorMessage, int retryAttempt, byte previousState) {
         partitions.compute(key, (k, existing) -> {
             MirrorPartition result = MirrorPartition.orEmpty(existing);
@@ -100,7 +100,7 @@ public class MirrorStateCache {
         return partitions.keySet();
     }
 
-    public void setLastMirror(MirrorPartitionKey key, OffsetEpoch lastMirror) {
+    public void setLastMirror(MirrorPartitionKey key, EpochOffset lastMirror) {
         partitions.compute(key, (k, existing) -> MirrorPartition.orEmpty(existing).withLastMirror(lastMirror));
     }
 

@@ -30,7 +30,6 @@ import kafka.server.share.{ShareFetchUtils, SharePartitionManager}
 import kafka.utils.Logging
 import org.apache.kafka.clients.CommonClientConfigs
 import org.apache.kafka.clients.admin.EndpointType
-import org.apache.kafka.common.OffsetEpoch
 import org.apache.kafka.common.acl.AclOperation
 import org.apache.kafka.common.acl.AclOperation._
 import org.apache.kafka.common.config.ConfigResource
@@ -62,7 +61,7 @@ import org.apache.kafka.common.resource.{Resource, ResourceType}
 import org.apache.kafka.common.security.auth.{KafkaPrincipal, SecurityProtocol}
 import org.apache.kafka.common.security.token.delegation.{DelegationToken, TokenInformation}
 import org.apache.kafka.common.utils.{ProducerIdAndEpoch, Time}
-import org.apache.kafka.common.{Node, TopicIdPartition, TopicPartition, Uuid}
+import org.apache.kafka.common.{EpochOffset, Node, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.coordinator.group.{Group, GroupConfig, GroupConfigManager, GroupCoordinator}
 import org.apache.kafka.coordinator.share.ShareCoordinator
 import org.apache.kafka.metadata.{ConfigRepository, MetadataCache}
@@ -4676,8 +4675,8 @@ class KafkaApis(val requestChannel: RequestChannel,
   private def buildLastMirrorMap(
       matchingMirrors: Set[String],
       stateResults: ConcurrentHashMap[String, ReadMirrorStatesResponseData]
-  ): scala.collection.mutable.Map[String, scala.collection.mutable.Map[Int, OffsetEpoch]] = {
-    val result = scala.collection.mutable.Map[String, scala.collection.mutable.Map[Int, OffsetEpoch]]()
+  ): scala.collection.mutable.Map[String, scala.collection.mutable.Map[Int, EpochOffset]] = {
+    val result = scala.collection.mutable.Map[String, scala.collection.mutable.Map[Int, EpochOffset]]()
     matchingMirrors.foreach { mirrorName =>
       Option(stateResults.get(mirrorName)).foreach { data =>
         data.topics().forEach { topic =>
@@ -4687,10 +4686,10 @@ class KafkaApis(val requestChannel: RequestChannel,
             if (epoch >= 0 || offset >= 0) {
               result.getOrElseUpdate(topic.topicName(), scala.collection.mutable.Map.empty)
                 .updateWith(partition.partitionIndex()) {
-                  case Some(existing) => Some(new OffsetEpoch(
+                  case Some(existing) => Some(new EpochOffset(
                     Math.max(existing.epoch(), epoch),
                     Math.max(existing.offset(), offset)))
-                  case None => Some(new OffsetEpoch(epoch, offset))
+                  case None => Some(new EpochOffset(epoch, offset))
                 }
             }
           }
@@ -4706,7 +4705,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       partitions: util.Map[String, util.Set[Integer]],
       stateData: Option[ReadMirrorStatesResponseData],
       offsetData: Option[ReadMirrorOffsetsResponseData],
-      lastMirrorMap: scala.collection.mutable.Map[String, scala.collection.mutable.Map[Int, OffsetEpoch]]
+      lastMirrorMap: scala.collection.mutable.Map[String, scala.collection.mutable.Map[Int, EpochOffset]]
   ): Unit = {
     // Per-topic state lookup: topicName -> (partitionIndex -> state partition).
     // Merged response may contain duplicate topic entries from different coordinators,
@@ -4760,7 +4759,7 @@ class KafkaApis(val requestChannel: RequestChannel,
           .setSourceOffset(if (op != null && isMirroring) op.sourceOffset() else -1L)
           .setDestinationOffset(if (op != null && isMirroring) op.destinationOffset() else -1L)
         val lm = lastMirrorMap.getOrElse(topicName, scala.collection.mutable.Map.empty)
-          .getOrElse(partIdx, OffsetEpoch.EMPTY)
+          .getOrElse(partIdx, EpochOffset.EMPTY)
         partitionDetail
           .setLastMirrorEpoch(lm.epoch())
           .setLastMirrorOffset(lm.offset())
@@ -4885,7 +4884,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       val topicState = new util.HashSet[MirrorStateWrite]()
       topic.partitions().forEach(part => {
         val lm = if (part.lastMirrorEpoch() != -1 || part.lastMirrorOffset() != -1L)
-          new OffsetEpoch(part.lastMirrorEpoch(), part.lastMirrorOffset()) else null
+          new EpochOffset(part.lastMirrorEpoch(), part.lastMirrorOffset()) else null
         topicState.add(new MirrorStateWrite(part.partitionIndex(),
           MirrorPartitionState.fromValue(part.state()), part.leaderEpoch(), part.stateEpoch(),
             lm, part.errorMessage(), part.nonRetryable()))
