@@ -474,10 +474,14 @@ public class ClusterMirroringIntegrationTest {
         consumeRecords(dstCluster, topicB, 20);
 
 <<<<<<< HEAD
+<<<<<<< HEAD
         // Stop topic orders-eu
 =======
         // Stop orders-eu
 >>>>>>> 14414b08aa (add lastMirrorOffset)
+=======
+        // Stop topic orders-eu
+>>>>>>> b936847f15 (address review comments)
         dstAdmin.stopMirrorTopics(MIRROR_NAME, List.of(topicB), new StopMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
         waitForMirrorState(dstAdmin, MIRROR_NAME, topicB, "STOPPED");
