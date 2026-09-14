@@ -5241,10 +5241,14 @@ public class KafkaAdminClient extends AdminClient {
                                                                DescribeClusterMirrorsOptions options) {
         final KafkaFutureImpl<Map<String, ClusterMirrorDescription>> all = new KafkaFutureImpl<>();
 <<<<<<< HEAD
+<<<<<<< HEAD
         final KafkaFutureImpl<Map<TopicPartition, EpochOffset>> lastMirrorPositionFutures = new KafkaFutureImpl<>();
 =======
         final KafkaFutureImpl<Map<String, Map<Integer, EpochOffset>>> lastMirrorPositionFutures = new KafkaFutureImpl<>();
 >>>>>>> 28a98540e4 (rename lastMirror to lastMirrorPosition)
+=======
+        final KafkaFutureImpl<Map<TopicPartition, EpochOffset>> lastMirrorPositionFutures = new KafkaFutureImpl<>();
+>>>>>>> d67c8460bf (key by TopicPartition in DescribeClusterMirrors admin)
         final long now = time.milliseconds();
         final long deadline = calcDeadlineMs(now, options.timeoutMs());
 
@@ -5282,10 +5286,14 @@ public class KafkaAdminClient extends AdminClient {
                 DescribeClusterMirrorsResponse response = (DescribeClusterMirrorsResponse) abstractResponse;
                 Map<String, ClusterMirrorDescription> descriptions = new HashMap<>();
 <<<<<<< HEAD
+<<<<<<< HEAD
                 Map<TopicPartition, EpochOffset> lastMirrorPositions = new HashMap<>();
 =======
                 Map<String, Map<Integer, EpochOffset>> lastMirrorPositions = new HashMap<>();
 >>>>>>> 28a98540e4 (rename lastMirror to lastMirrorPosition)
+=======
+                Map<TopicPartition, EpochOffset> lastMirrorPositions = new HashMap<>();
+>>>>>>> d67c8460bf (key by TopicPartition in DescribeClusterMirrors admin)
 
                 for (DescribeClusterMirrorsResponseData.DescribedMirror mirror : response.data().mirrors()) {
                     Errors errorCode = Errors.forCode(mirror.errorCode());
@@ -5314,11 +5322,15 @@ public class KafkaAdminClient extends AdminClient {
                             if (partition.lastMirrorEpoch() >= 0 || partition.lastMirrorOffset() >= 0) {
                                 lastMirrorPositions
 <<<<<<< HEAD
+<<<<<<< HEAD
                                     .merge(new TopicPartition(topic.topicName(), partition.partitionIndex()),
 =======
                                     .computeIfAbsent(topic.topicName(), k -> new HashMap<>())
                                     .merge(partition.partitionIndex(),
 >>>>>>> 28a98540e4 (rename lastMirror to lastMirrorPosition)
+=======
+                                    .merge(new TopicPartition(topic.topicName(), partition.partitionIndex()),
+>>>>>>> d67c8460bf (key by TopicPartition in DescribeClusterMirrors admin)
                                         new EpochOffset(partition.lastMirrorEpoch(), partition.lastMirrorOffset()),
                                         (a, b) -> new EpochOffset(
                                             Math.max(a.epoch(), b.epoch()),

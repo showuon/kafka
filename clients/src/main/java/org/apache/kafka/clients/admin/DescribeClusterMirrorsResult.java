@@ -18,7 +18,10 @@
 package org.apache.kafka.clients.admin;
 
 import org.apache.kafka.common.EpochOffset;
+<<<<<<< HEAD
 import org.apache.kafka.common.KafkaFuture;
+=======
+>>>>>>> d67c8460bf (key by TopicPartition in DescribeClusterMirrors admin)
 import org.apache.kafka.common.TopicPartition;
 
 import java.util.Collections;
@@ -53,10 +56,14 @@ public class DescribeClusterMirrorsResult {
      * Keyed by {@link TopicPartition} to {@link EpochOffset}.
      */
 <<<<<<< HEAD
+<<<<<<< HEAD
     public KafkaFuture<Map<TopicPartition, EpochOffset>> lastMirrorPositions() {
 =======
     public KafkaFuture<Map<String, Map<Integer, EpochOffset>>> lastMirrorPositions() {
 >>>>>>> 28a98540e4 (rename lastMirror to lastMirrorPosition)
+=======
+    public KafkaFuture<Map<TopicPartition, EpochOffset>> lastMirrorPositions() {
+>>>>>>> d67c8460bf (key by TopicPartition in DescribeClusterMirrors admin)
         return lastMirrorFuture;
     }
 }
