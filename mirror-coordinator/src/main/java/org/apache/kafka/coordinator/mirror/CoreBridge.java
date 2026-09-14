@@ -59,7 +59,7 @@ public interface CoreBridge {
         boolean nonRetryable
     );
 
-    void setLastMirror(String mirrorName, String topic, int partition, EpochOffset lastMirror);
+    void setLastMirrorPosition(String mirrorName, String topic, int partition, EpochOffset lastMirrorPosition);
 
     Uuid getTopicId(String topicName);
 
@@ -82,10 +82,10 @@ public interface CoreBridge {
             boolean nonRetryable
         );
 
-        CompletableFuture<Void> writeLastMirror(
+        CompletableFuture<Void> writeLastMirrorPosition(
             String mirrorName,
             TopicPartition tp,
-            EpochOffset lastMirror
+            EpochOffset lastMirrorPosition
         );
 
         CompletableFuture<Void> writeTombstone(

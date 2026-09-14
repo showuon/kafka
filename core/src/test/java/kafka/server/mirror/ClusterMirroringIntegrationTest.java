@@ -261,7 +261,7 @@ public class ClusterMirroringIntegrationTest {
         DescribeClusterMirrorsResult describeClusterMirrors = dstAdmin.describeClusterMirrors(
                 null, topicPartitions,
                 new DescribeClusterMirrorsOptions().clusterId(srcClusterId).includeMirrorState(true));
-        Map<String, Map<Integer, EpochOffset>> lastMirrors = describeClusterMirrors.lastMirrors().get(30, TimeUnit.SECONDS);
+        Map<String, Map<Integer, EpochOffset>> lastMirrors = describeClusterMirrors.lastMirrorPositions().get(30, TimeUnit.SECONDS);
         assertEquals(1, lastMirrors.size(), "Should have one lookup result");
         assertEquals(1, lastMirrors.get(topic).size(), "Should have one partition");
         assertTrue(lastMirrors.get(topic).get(0).epoch() >= 0, "Should have LME >= 0");

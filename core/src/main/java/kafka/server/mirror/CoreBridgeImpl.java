@@ -87,8 +87,8 @@ public class CoreBridgeImpl implements CoreBridge {
     }
 
     @Override
-    public void setLastMirror(String mirrorName, String topic, int partition, EpochOffset lastMirror) {
-        metadataManager.setLastMirror(mirrorName, topic, partition, lastMirror);
+    public void setLastMirrorPosition(String mirrorName, String topic, int partition, EpochOffset lastMirrorPosition) {
+        metadataManager.setLastMirrorPosition(mirrorName, topic, partition, lastMirrorPosition);
     }
 
     @Override

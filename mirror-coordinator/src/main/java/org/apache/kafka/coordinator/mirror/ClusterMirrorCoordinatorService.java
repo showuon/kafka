@@ -206,11 +206,11 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                     }
 
                     @Override
-                    public CompletableFuture<Void> writeLastMirror(String mirrorName,
-                                                                    TopicPartition tp,
-                                                                    EpochOffset lastMirror) {
-                        return ClusterMirrorCoordinatorService.this.writeLastMirror(
-                                mirrorName, tp, lastMirror);
+                    public CompletableFuture<Void> writeLastMirrorPosition(String mirrorName,
+                                                                           TopicPartition tp,
+                                                                           EpochOffset lastMirrorPosition) {
+                        return ClusterMirrorCoordinatorService.this.writeLastMirrorPosition(
+                                mirrorName, tp, lastMirrorPosition);
                     }
 
                     @Override
@@ -443,15 +443,15 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
     }
 
     /** Persists a last mirror epoch and offset record. Called from {@code MirrorMetadataManager#updateLastMirror}. */
-    private CompletableFuture<Void> writeLastMirror(
-            String mirrorName, TopicPartition tp, EpochOffset lastMirror
+    private CompletableFuture<Void> writeLastMirrorPosition(
+            String mirrorName, TopicPartition tp, EpochOffset lastMirrorPosition
     ) {
         throwIfNotActive();
         TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME,
                 partitionFor(MirrorPartitionKey.of(mirrorName, bridge.getTopicId(tp.topic()), tp.partition())));
         return runtime.scheduleWriteOperation("write-lme", mirrorStateTp,
                 Duration.ofMillis(config.coordinatorWriteTimeoutMs()),
-                shard -> shard.writeLastMirror(mirrorName, tp, lastMirror));
+                shard -> shard.writeLastMirrorPosition(mirrorName, tp, lastMirrorPosition));
     }
 
     /** Persists tombstone records for a deleted mirror. Called from {@code MirrorMetadataManager#tombstoneMirror}. */
@@ -470,6 +470,6 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
 
     /** A single partition state or LME/LMO write entry for inter-broker WriteMirrorStates RPCs. */
     public record MirrorStateWrite(int partition, MirrorPartitionState state, int leaderEpoch, int stateEpoch,
-                                   EpochOffset lastMirror, String errorMessage,
+                                   EpochOffset lastMirrorPosition, String errorMessage,
                                    boolean nonRetryable) { }
 }

@@ -1324,15 +1324,15 @@ class MirrorSourceSyncer {
         DescribeClusterMirrorsResult result = admin.describeClusterMirrors(null, topicPartitions, options);
 
         var describeFuture = result.allDescriptions().toCompletionStage().toCompletableFuture();
-        var lastMirrorFuture = result.lastMirrors().toCompletionStage().toCompletableFuture();
+        var lastMirrorPositionFuture = result.lastMirrorPositions().toCompletionStage().toCompletableFuture();
         return describeFuture.thenApply(desc -> {
             validateSourcePartitionIsStopped(desc, sourceMirrors, tp);
             return null;
         })
-            .thenCompose(__ -> lastMirrorFuture)
-            .thenApply(lastMirrors -> {
+            .thenCompose(__ -> lastMirrorPositionFuture)
+            .thenApply(lastMirrorPositions -> {
                 Map<TopicPartition, EpochOffset> epochs = new HashMap<>();
-                lastMirrors.forEach((topicName, partitionValues) ->
+                lastMirrorPositions.forEach((topicName, partitionValues) ->
                     partitionValues.forEach((partIdx, oe) ->
                             epochs.put(new TopicPartition(topicName, partIdx), new EpochOffset(oe.epoch(), oe.offset()))));
                 log.info("Last mirror epoch lookup response for mirror {}: {}", mirrorName, epochs);

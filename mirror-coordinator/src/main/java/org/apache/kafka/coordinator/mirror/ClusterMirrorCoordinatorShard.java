@@ -208,7 +208,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
         if (value != null) {
             LastMirrorEpochsValue epochsValue = (LastMirrorEpochsValue) value.message();
             coreBridge.getTopicName(key.topicId()).ifPresent(topicName ->
-                coreBridge.setLastMirror(key.mirrorName(), topicName, key.partition(),
+                coreBridge.setLastMirrorPosition(key.mirrorName(), topicName, key.partition(),
                         new EpochOffset(epochsValue.lastMirrorEpoch(), epochsValue.lastMirrorOffset())));
         } else {
             coreBridge.removePartition(pk);
@@ -287,9 +287,9 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                     return;
                 }
             }
-            EpochOffset lm = partition.lastMirror();
+            EpochOffset lm = partition.lastMirrorPosition();
             if (lm != null && (lm.epoch() != -1 || lm.offset() != -1)) {
-                records.addAll(writeLastMirror(mirrorName, tp, lm).records());
+                records.addAll(writeLastMirrorPosition(mirrorName, tp, lm).records());
             }
         }));
         return new CoordinatorResult<>(records, results);
@@ -338,7 +338,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
         return new CoordinatorResult<>(List.of(record), null);
     }
 
-    public CoordinatorResult<Void, CoordinatorRecord> writeLastMirror(
+    public CoordinatorResult<Void, CoordinatorRecord> writeLastMirrorPosition(
             String mirrorName, TopicPartition tp, EpochOffset lastMirror
     ) {
         MirrorPartitionKey pk = MirrorPartitionKey.of(

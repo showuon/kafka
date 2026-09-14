@@ -66,14 +66,14 @@ public class MirrorStateCache {
         partitions.put(key, partition);
     }
 
-    public void mergePartition(MirrorPartitionKey key, byte state, int stateEpoch, EpochOffset lastMirror,
+    public void mergePartition(MirrorPartitionKey key, byte state, int stateEpoch, EpochOffset lastMirrorPosition,
                                String errorMessage, int retryAttempt, byte previousState) {
         partitions.compute(key, (k, existing) -> {
             MirrorPartition result = MirrorPartition.orEmpty(existing);
             if (state != -1) result = result.withState(MirrorPartitionState.fromValue(state));
             if (stateEpoch >= 0) result = result.withStateEpoch(stateEpoch);
-            if (lastMirror.epoch() != -1) result = result.withLastMirrorEpoch(lastMirror.epoch());
-            if (lastMirror.offset() != -1) result = result.withLastMirrorOffset(lastMirror.offset());
+            if (lastMirrorPosition.epoch() != -1) result = result.withLastMirrorEpoch(lastMirrorPosition.epoch());
+            if (lastMirrorPosition.offset() != -1) result = result.withLastMirrorOffset(lastMirrorPosition.offset());
             if (state == MirrorPartitionState.FAILED.value()) {
                 result = result.withError(errorMessage, retryAttempt, MirrorPartitionState.fromValue(previousState));
             }
@@ -100,8 +100,8 @@ public class MirrorStateCache {
         return partitions.keySet();
     }
 
-    public void setLastMirror(MirrorPartitionKey key, EpochOffset lastMirror) {
-        partitions.compute(key, (k, existing) -> MirrorPartition.orEmpty(existing).withLastMirror(lastMirror));
+    public void setLastMirrorPosition(MirrorPartitionKey key, EpochOffset lastMirrorPosition) {
+        partitions.compute(key, (k, existing) -> MirrorPartition.orEmpty(existing).withLastMirrorPosition(lastMirrorPosition));
     }
 
     public void removeMirror(String mirrorName) {

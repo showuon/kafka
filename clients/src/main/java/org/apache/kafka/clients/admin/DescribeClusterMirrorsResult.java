@@ -51,7 +51,7 @@ public class DescribeClusterMirrorsResult {
      * Return a future containing last mirror epoch and offset lookup results.
      * Keyed by topicName, then partitionIndex to {@link EpochOffset}.
      */
-    public KafkaFuture<Map<String, Map<Integer, EpochOffset>>> lastMirrors() {
+    public KafkaFuture<Map<String, Map<Integer, EpochOffset>>> lastMirrorPositions() {
         return lastMirrorFuture;
     }
 }
