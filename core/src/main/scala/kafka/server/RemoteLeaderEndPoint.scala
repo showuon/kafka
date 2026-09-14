@@ -115,20 +115,27 @@ class RemoteLeaderEndPoint(logPrefix: String,
     // Latch supportedVersion to the version NetworkClient actually negotiated, as reported
     // in the response header. This is updated on every successful fetch, so source rolling
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> bb5eefee87 (Only reset partitions when the version crosses the v11/v12 boundary)
     // upgrades and downgrades across the v11/v12 boundary are both handled:
     //   - Upgrade (<=v11 -> v12+): supportedVersion rises above 11, isTruncationOnFetchSupported
     //     becomes true. Already-FETCHING partitions handle diverging epochs naturally; no restart needed.
     //   - Downgrade (v12+ -> <=v11): isTruncationOnFetchSupported transitions from true to false.
+<<<<<<< HEAD
 =======
     // upgrades (v11 -> v12+) and downgrades (v12+ -> v11) are both handled:
     //   - Upgrade: supportedVersion rises, isTruncationOnFetchSupported becomes true.
     //     Already-FETCHING partitions handle diverging epochs naturally; no restart needed.
     //   - Downgrade: supportedVersion falls, isTruncationOnFetchSupported becomes false.
 >>>>>>> a72ac53421 (simplify the fetch version check)
+=======
+>>>>>>> bb5eefee87 (Only reset partitions when the version crosses the v11/v12 boundary)
     //     Throw UnsupportedVersionException to force all partitions through the error path,
     //     which re-adds them via partitionFetchState -> TRUNCATING for a fresh OFLE round-trip.
     //     This ensures lastFetchedEpoch is dropped from the next request and log divergence
     //     from a source ULE cannot be silently missed.
+<<<<<<< HEAD
 <<<<<<< HEAD
     //   - Version differences entirely above v11 (e.g. v17 vs v18) do not affect truncation
     //     behaviour; silently update supportedVersion with no partition reset needed.
@@ -139,13 +146,21 @@ class RemoteLeaderEndPoint(logPrefix: String,
         supportedVersion = negotiatedVersion
         if (prev > 11 && negotiatedVersion <= 11) {
 =======
+=======
+    //   - Version differences entirely above v11 (e.g. v17 vs v18) do not affect truncation
+    //     behaviour; silently update supportedVersion with no partition reset needed.
+>>>>>>> bb5eefee87 (Only reset partitions when the version crosses the v11/v12 boundary)
     if (isClusterMirror) {
       val negotiatedVersion = clientResponse.requestHeader().apiVersion()
       if (negotiatedVersion != supportedVersion) {
         val prev = supportedVersion
         supportedVersion = negotiatedVersion
+<<<<<<< HEAD
         if (negotiatedVersion < prev) {
 >>>>>>> a72ac53421 (simplify the fetch version check)
+=======
+        if (prev > 11 && negotiatedVersion <= 11) {
+>>>>>>> bb5eefee87 (Only reset partitions when the version crosses the v11/v12 boundary)
           val msg = s"Source Fetch API version downgraded from $prev to $negotiatedVersion; " +
             s"switching to OffsetsForLeaderEpoch path and resetting partitions"
           warn(msg)
@@ -153,11 +168,15 @@ class RemoteLeaderEndPoint(logPrefix: String,
           throw new UnsupportedVersionException(msg)
         } else {
 <<<<<<< HEAD
+<<<<<<< HEAD
           info(s"Source Fetch API version changed from $prev to $negotiatedVersion")
 =======
           info(s"Source Fetch API version upgraded from $prev to $negotiatedVersion; " +
             s"switching to truncation-on-fetch path")
 >>>>>>> a72ac53421 (simplify the fetch version check)
+=======
+          info(s"Source Fetch API version changed from $prev to $negotiatedVersion")
+>>>>>>> bb5eefee87 (Only reset partitions when the version crosses the v11/v12 boundary)
         }
       }
     }
