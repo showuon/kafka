@@ -342,17 +342,17 @@ class MirrorSourceSyncer {
      * a mirror loop, based on the mirrors currently configured on the source cluster.
      *
      * @param mirrorName      the local mirror being started
-     * @param topicPartitions the partitions about to be mirrored
+     * @param topicPartition  the partition about to be mirrored
      * @param sourceMirrors   mirrors configured on the source cluster, as returned by
      *                        {@link #listSourceClusterMirrors(String)}
      * @return true if the given partitions would create a mirror loop, false otherwise
      */
-    boolean hasMirrorLoop(String mirrorName, TopicPartition tp,
+    boolean hasMirrorLoop(String mirrorName, TopicPartition topicPartition,
                           Collection<ClusterMirrorListing> sourceMirrors) {
         if (sourceMirrors.isEmpty()) {
             return false;
         }
-        String topicName = tp.topic();
+        String topicName = topicPartition.topic();
         for (ClusterMirrorListing sourceMirror : sourceMirrors) {
             if (!metadataManager.clusterId().equals(sourceMirror.sourceClusterId())) {
                 continue;

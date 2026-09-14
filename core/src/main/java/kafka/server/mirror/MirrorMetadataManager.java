@@ -31,7 +31,7 @@ import org.apache.kafka.common.EpochOffset;
 =======
 >>>>>>> ce74c8c389 (spotbug)
 import org.apache.kafka.common.Node;
-import org.apache.kafka.common.OffsetEpoch;
+import org.apache.kafka.common.EpochOffset;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigDef;
@@ -950,7 +950,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         var logOpt = rm.getPartitionOrException(tp).log();
         int latestEpoch = logOpt.isDefined() ? logOpt.get().latestEpoch().orElse(-1) : -1;
         long latestOffset = logOpt.isDefined() ? logOpt.get().logEndOffset() : -1L;
+<<<<<<< HEAD
         updateLastMirrorPosition(mirrorName, tp, new EpochOffset(latestEpoch, latestOffset))
+=======
+        updateLastMirror(mirrorName, tp, new EpochOffset(latestEpoch, latestOffset))
+>>>>>>> 78e149d314 (address review comments)
             .thenCompose(v -> bumpLeaderEpochs(getLatestLocalEpoch(tp)))
             .thenCompose(v -> abortOngoingTransactions(tp))
             .thenCompose(v -> writePidResetBarrier(mirrorName, tp))
@@ -962,8 +966,13 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
     /** Updates the last mirror epoch and offset in the local cache and persists them to the coordinator shard. */
+<<<<<<< HEAD
     private CompletableFuture<Void> updateLastMirrorPosition(String mirrorName, TopicPartition tp, EpochOffset lastMirrorPosition) {
         if (lastMirrorPosition.epoch() == -1 && lastMirrorPosition.offset() == -1) {
+=======
+    private CompletableFuture<Void> updateLastMirror(String mirrorName, TopicPartition tp, EpochOffset lastMirror) {
+        if (lastMirror.epoch() == -1 && lastMirror.offset() == -1) {
+>>>>>>> 78e149d314 (address review comments)
             return CompletableFuture.completedFuture(null);
         }
         setLastMirrorPosition(mirrorName, tp.topic(), tp.partition(), lastMirrorPosition);
@@ -1001,10 +1010,14 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                                         "Replication will be one-way without failback.");
                                     replicaManagerSupplier.get().maybeTruncateForLeaderEpoch(
 <<<<<<< HEAD
+<<<<<<< HEAD
                                         Map.of(tp, new EpochOffset(-1, -1)), truncateCallback);
 =======
                                         Map.of(tp, new OffsetEpoch(-1, -1)), truncateCallback);
 >>>>>>> 2e226e7d15 (truncate to the min(endOffsetForLME, LMO))
+=======
+                                        Map.of(tp, new EpochOffset(-1, -1)), truncateCallback);
+>>>>>>> 78e149d314 (address review comments)
                                 } else {
                                     log.warn("Failed to truncate to last mirror epoch for mirror {}",
                                         mirrorName, error);
@@ -1016,10 +1029,14 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                             if (!offsetEpochs.containsKey(tp)) {
                                 log.warn("No epoch returned for {}. Using -1.", tp);
 <<<<<<< HEAD
+<<<<<<< HEAD
                                 offsetEpochs.put(tp, new EpochOffset(-1, -1));
 =======
                                 offsetEpochs.put(tp, new OffsetEpoch(-1, -1));
 >>>>>>> 2e226e7d15 (truncate to the min(endOffsetForLME, LMO))
+=======
+                                offsetEpochs.put(tp, new EpochOffset(-1, -1));
+>>>>>>> 78e149d314 (address review comments)
                             }
                             replicaManagerSupplier.get().maybeTruncateForLeaderEpoch(
                                 offsetEpochs, truncateCallback);
@@ -1345,7 +1362,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 partitionData.setState(m.state() == null ? MirrorPartitionState.UNKNOWN.value() : m.state().value());
                 partitionData.setLeaderEpoch(m.leaderEpoch());
                 partitionData.setStateEpoch(m.stateEpoch());
+<<<<<<< HEAD
                 EpochOffset lm = m.lastMirrorPosition();
+=======
+                EpochOffset lm = m.lastMirror();
+>>>>>>> 78e149d314 (address review comments)
                 partitionData.setLastMirrorEpoch(lm != null ? lm.epoch() : -1);
                 partitionData.setLastMirrorOffset(lm != null ? lm.offset() : -1L);
                 partitionData.setPartitionIndex(m.partition());
@@ -1873,7 +1894,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         mirrorCache.removePartition(key);
     }
 
+<<<<<<< HEAD
     public void setLastMirrorPosition(String mirrorName, String topic, int partition, EpochOffset lastMirrorPosition) {
+=======
+    public void setLastMirror(String mirrorName, String topic, int partition, EpochOffset lastMirror) {
+>>>>>>> 78e149d314 (address review comments)
         MirrorPartitionKey key = MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(topic), partition);
         mirrorCache.setLastMirrorPosition(key, lastMirrorPosition);
     }
@@ -1915,10 +1940,14 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
     }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     public CompletionStage<Map<TopicPartition, EpochOffset>> sendLastMirrorEpochLookup(
 =======
     public CompletionStage<Map<TopicPartition, OffsetEpoch>> sendLastMirrorEpochLookup(
 >>>>>>> 2e226e7d15 (truncate to the min(endOffsetForLME, LMO))
+=======
+    public CompletionStage<Map<TopicPartition, EpochOffset>> sendLastMirrorEpochLookup(
+>>>>>>> 78e149d314 (address review comments)
             String mirrorName, TopicPartition tp, Collection<ClusterMirrorListing> sourceMirrors) {
         return sourceSyncer.sendLastMirrorEpochLookup(mirrorName, tp, sourceMirrors);
     }
