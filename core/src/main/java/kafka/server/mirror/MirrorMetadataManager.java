@@ -691,6 +691,21 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             dstAdmin.close(Duration.ZERO);
         }
         mirrorCache.clear();
+
+        metricsGroup.removeMetric("TopicMetadataRefreshError");
+        metricsGroup.removeMetric("TopicConfigSyncError");
+        metricsGroup.removeMetric("ConsumerGroupOffsetSyncError");
+        metricsGroup.removeMetric("ShareGroupOffsetSyncError");
+        metricsGroup.removeMetric("AclSyncError");
+        metricsGroup.removeMetric("LogAlignmentPartitionState");
+        metricsGroup.removeMetric("UleRecoveryPartitionState");
+        metricsGroup.removeMetric("EpochFencingPartitionState");
+        metricsGroup.removeMetric("MirroringPartitionState");
+        metricsGroup.removeMetric("PausingPartitionState");
+        metricsGroup.removeMetric("PausedPartitionState");
+        metricsGroup.removeMetric("StoppingPartitionState");
+        metricsGroup.removeMetric("StoppedPartitionState");
+        metricsGroup.removeMetric("FailedPartitionState");
     }
 
     public void closeSourceAdmins() {
