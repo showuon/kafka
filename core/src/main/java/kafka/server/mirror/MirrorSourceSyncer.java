@@ -1330,6 +1330,10 @@ class MirrorSourceSyncer {
             return null;
         })
             .thenCompose(__ -> lastMirrorPositionFuture)
+            .thenApply(lastMirrorPositions -> {
+                log.info("Last mirror epoch lookup response for mirror {}: {}", mirrorName, lastMirrorPositions);
+                return lastMirrorPositions;
+            })
             .orTimeout(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
     }
 
