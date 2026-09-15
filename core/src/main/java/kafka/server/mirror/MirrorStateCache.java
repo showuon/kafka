@@ -39,6 +39,7 @@ public class MirrorStateCache {
     private final Set<Integer> loadedCoordPartitions = ConcurrentHashMap.newKeySet();
     private final Set<String> pendingTopicCreations = ConcurrentHashMap.newKeySet();
     private final Set<PendingLeaderEpochBump> pendingLederEpochBumps = ConcurrentHashMap.newKeySet();
+    private final Map<TopicPartition, MirrorPartitionState> inProgressPartitions = new ConcurrentHashMap<>();
 
     public static MirrorStateCache empty() {
         return new MirrorStateCache();
@@ -54,6 +55,7 @@ public class MirrorStateCache {
         loadedCoordPartitions.clear();
         pendingTopicCreations.clear();
         pendingLederEpochBumps.clear();
+        inProgressPartitions.clear();
     }
 
     // -- Partition cache operations --
@@ -174,6 +176,19 @@ public class MirrorStateCache {
         if (topics != null) {
             topics.remove(topic);
         }
+    }
+
+    // -- In-progress partition states
+    public MirrorPartitionState inProgressPartition(TopicPartition tp) {
+        return inProgressPartitions.get(tp);
+    }
+
+    public void addInProgressPartition(TopicPartition tp, MirrorPartitionState state) {
+        inProgressPartitions.put(tp, state);
+    }
+
+    public void removeInProgressPartition(TopicPartition tp) {
+        inProgressPartitions.remove(tp);
     }
 
     // -- Pending topic creation operations --

@@ -448,6 +448,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             if (mirrorName == null) {
                 return;
             }
+            mirrorCache.removeInProgressPartition(tp);
             mirrorCache.getPendingLederEpochBumps().removeIf(bump -> {
                 bump.partitionToEpoch().remove(tp);
                 if (bump.partitionToEpoch().isEmpty()) {
@@ -793,6 +794,12 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         coordinatorWriter.ifPresent(writer -> {
             for (TopicPartition tp : topicPartitions) {
                 MirrorPartitionState currentState = getPartitionState(mirrorName, tp);
+                MirrorPartitionState inProgressState = mirrorCache.inProgressPartition(tp);
+                if (inProgressState != null && inProgressState == state) {
+                    log.warn("Partition {} is in progress for {} state. Skipping transition from {} to {}", tp, inProgressState, currentState, state);
+                    continue;
+                }
+                mirrorCache.addInProgressPartition(tp, state);
                 if (!MirrorPartition.isValidStateTransition(currentState, state)) {
                     log.warn("Skipping invalid transition from {} to {} for partition {}", currentState, state, tp);
                     continue;
