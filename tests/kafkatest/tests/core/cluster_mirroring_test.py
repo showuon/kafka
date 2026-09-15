@@ -466,8 +466,8 @@ class ClusterMirroringTest(MirrorUtils, Test):
 
     @cluster(num_nodes=7)
     @defaults(metadata_quorum=[quorum.isolated_kraft])
-    def test_topics_filtering(self, metadata_quorum):
-        """Verify topic include/exclude filtering, stopped topics not re-discovered, and auto-discovery."""
+    def test_topics_include_and_exclude(self, metadata_quorum):
+        """Verify topic include and exclude filtering via mirror config, stopped topics not re-discovered, and auto-discovery."""
         self.logger.info("Create 4 topics on source")
         topics = {
             "orders-us": {"partitions": 1, "replication-factor": 2},
@@ -493,14 +493,8 @@ class ClusterMirroringTest(MirrorUtils, Test):
             err_msg="Failed to create cluster mirror",
         )
         self.dest_kafka.alter_mirror_config(
-            self.client_node, "my-mirror", "topics.exclude=orders-internal")
+            self.client_node, "my-mirror", "topics.include=orders-.*,topics.exclude=orders-internal")
         MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.client_node, "my-mirror")
-        wait_until(
-            lambda: "Started" in self.dest_kafka.start_cluster_mirror_topics(
-                self.client_node, "my-mirror", "orders-.*"),
-            timeout_sec=120, backoff_sec=2,
-            err_msg="Failed to start mirror topics",
-        )
 
         self.logger.info("Only orders-us and orders-eu should be mirrored")
         MirrorUtils.wait_mirror_lag_zero(self.logger, self.dest_kafka, self.client_node, "my-mirror",
