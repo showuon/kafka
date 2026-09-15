@@ -30,7 +30,7 @@
           "about": "The topic name." }
       ]},
     { "name": "TopicPatterns", "type": "[]string", "versions": "0+", "nullableVersions": "0+",
-      "about": "Regex patterns to match mirror topic names to resume." },
+      "about": "Regex patterns to match topic names." },
     { "name": "StateOffset", "type": "int64", "versions": "0+", "default": "-1",
       "about": "Cluster metadata log offset used for validating partition state preconditions. -1 to skip validation."},
     { "name": "TimeoutMs", "type": "int32", "versions": "0+",

@@ -814,7 +814,45 @@ public class ClusterMirroringIntegrationTest {
     }
 
     @Test
-    void testRecoverAfterRetryExhaustion() throws Exception {
+    void testAutomaticRecovery() throws Exception {
+        String topic = "auto-recover-topic";
+
+        srcAdmin.createTopics(List.of(
+                new NewTopic(topic, 1, (short) 1)
+        )).all().get(30, TimeUnit.SECONDS);
+
+        produceRecords(srcCluster, topic, 0, 20);
+
+        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
+                "bootstrap.servers", singleSourceBootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+        dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(topic), new StartMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
+
+        // Shut down source to trigger FAILED state
+        srcCluster.brokers().values().forEach(b -> b.shutdown());
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topic, "FAILED");
+
+        // Restart source so scheduled retry can automatically recover
+        srcCluster.brokers().values().forEach(b -> {
+            try {
+                b.startup();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
+
+        // Verify data still flows after automatic recovery
+        produceRecords(srcCluster, topic, 20, 20);
+        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
+        consumeRecords(dstCluster, topic, 40);
+    }
+
+    @Test
+    void testManualRecovery() throws Exception {
         String topic = "recover-retry-topic";
 
         srcAdmin.createTopics(List.of(
@@ -851,39 +889,6 @@ public class ClusterMirroringIntegrationTest {
     }
 
     @Test
-    void testRecoverNonRetryableFailed() throws Exception {
-        String topic = "recover-nonretryable-topic";
-
-        srcAdmin.createTopics(List.of(
-                new NewTopic(topic, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
-
-        produceRecords(srcCluster, topic, 0, 20);
-
-        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(topic), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
-
-        // Delete source topic to trigger non-retryable failure
-        srcAdmin.deleteTopics(List.of(topic)).all().get(30, TimeUnit.SECONDS);
-        waitForNonRetryableFailed(topic);
-
-        // Re-create source topic so recovery can succeed
-        srcAdmin.createTopics(List.of(
-                new NewTopic(topic, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
-
-        // Recover the non-retryable failed partitions
-        dstAdmin.recoverMirrorTopics(MIRROR_NAME, List.of(topic), new RecoverMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-
-        waitForMirrorState(dstAdmin, MIRROR_NAME, topic, "MIRRORING");
-    }
-
-    @Test
     void testCreatePartitionsAllowedOnNonMirrorTopic() throws Exception {
         String mirrorTopic = "mirror-topic";
         String nonMirrorTopic = "non-mirror-topic";
@@ -905,7 +910,7 @@ public class ClusterMirroringIntegrationTest {
                 .all().get(30, TimeUnit.SECONDS);
         waitForMirrorState(dstAdmin, MIRROR_NAME, mirrorTopic, "MIRRORING");
 
-        // With the cluster mirror feature enabled the broker intercepts CreatePartitions, but a
+        // With Cluster Mirroring feature enabled the broker intercepts CreatePartitions, but a
         // topic that belongs to no mirror must be forwarded and created without any mirror check.
         dstAdmin.createPartitions(Map.of(nonMirrorTopic, NewPartitions.increaseTo(2)))
                 .all().get(30, TimeUnit.SECONDS);
@@ -949,7 +954,7 @@ public class ClusterMirroringIntegrationTest {
     }
 
     @Test
-    void testCreatePartitionsMultipleMirrorTopics() throws Exception {
+    void testCreatePartitionsMultipleTopics() throws Exception {
         String topicA = "topic-a";
         String topicB = "topic-b";
 
@@ -994,33 +999,7 @@ public class ClusterMirroringIntegrationTest {
     }
 
     @Test
-    void testDeleteTopicsDisallowedOnNonStoppedMirror() throws Exception {
-        // Create topic and produce data
-        srcAdmin.createTopics(List.of(
-                new NewTopic(TOPIC_NAME, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
-
-        // Create mirror and start topic
-        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(TOPIC_NAME), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "MIRRORING");
-
-        // Attempt to delete topic
-        ExecutionException e = assertThrows(ExecutionException.class, () -> dstAdmin.deleteTopics(Set.of(TOPIC_NAME)).all().get());
-        assertEquals(InvalidMirrorStateException.class, e.getCause().getClass());
-
-        // Stop mirroring and retry
-        dstAdmin.stopMirrorTopics(MIRROR_NAME, List.of(TOPIC_NAME), new StopMirrorTopicsOptions()).all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "STOPPED");
-
-        dstAdmin.deleteTopics(Set.of(TOPIC_NAME)).all().get();
-    }
-
-    @Test
-    void testDeleteTopicsMixedMirrorAndNonMirrorTopics() throws Exception {
+    void testDeleteWithMirrorAndNonMirrorTopics() throws Exception {
         String mirrorTopic = "mirror-topic";
         String nonMirrorTopic = "non-mirror-topic";
 
@@ -1047,7 +1026,33 @@ public class ClusterMirroringIntegrationTest {
     }
 
     @Test
-    void testDeleteRecordsDisallowedOnNonStoppedMirror() throws Exception {
+    void testDeleteTopicsDisallowedOnNonStoppedTopic() throws Exception {
+        // Create topic and produce data
+        srcAdmin.createTopics(List.of(
+                new NewTopic(TOPIC_NAME, 1, (short) 1)
+        )).all().get(30, TimeUnit.SECONDS);
+
+        // Create mirror and start topic
+        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
+                "bootstrap.servers", singleSourceBootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+        dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(TOPIC_NAME), new StartMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "MIRRORING");
+
+        // Attempt to delete topic
+        ExecutionException e = assertThrows(ExecutionException.class, () -> dstAdmin.deleteTopics(Set.of(TOPIC_NAME)).all().get());
+        assertEquals(InvalidMirrorStateException.class, e.getCause().getClass());
+
+        // Stop mirroring and retry
+        dstAdmin.stopMirrorTopics(MIRROR_NAME, List.of(TOPIC_NAME), new StopMirrorTopicsOptions()).all().get(30, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "STOPPED");
+
+        dstAdmin.deleteTopics(Set.of(TOPIC_NAME)).all().get();
+    }
+
+    @Test
+    void testDeleteRecordsDisallowedOnNonStoppedTopic() throws Exception {
         // Create topic and produce data
         srcAdmin.createTopics(List.of(
                 new NewTopic(TOPIC_NAME, 1, (short) 1)
@@ -1101,7 +1106,7 @@ public class ClusterMirroringIntegrationTest {
                 .all().get(30, TimeUnit.SECONDS);
         waitForMirrorState(dstAdmin, MIRROR_NAME, mirrorTopic, "MIRRORING");
 
-        // With the cluster mirror feature enabled the broker intercepts DeleteRecords, but a
+        // With Cluster Mirroring feature enabled the broker intercepts DeleteRecords, but a
         // topic that belongs to no mirror must be handled without any mirror check.
         TopicPartition tp = new TopicPartition(nonMirrorTopic, 0);
         DeleteRecordsResult result = dstAdmin.deleteRecords(Map.of(tp, RecordsToDelete.beforeOffset(5)));
