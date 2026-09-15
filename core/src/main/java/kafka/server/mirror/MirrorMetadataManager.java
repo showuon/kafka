@@ -805,7 +805,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 }
                 if (state == MirrorPartitionState.FAILED) {
                     log.info("Transitioning partition {} from {} to {} due to {}{}",
-                            topicPartitions, currentState, state, errorMessage,
+                            tp, currentState, state, errorMessage,
                             nonRetryable ? " ( non retryable error)" : "( retryable error)");
                 } else {
                     log.info("Transitioning {} from {} to {}", tp, currentState, state);
@@ -850,10 +850,12 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         res.data().topics().forEach(topic -> topic.partitions().forEach(par -> {
             if (par.errorCode() == Errors.NONE.code()) {
                 updateLocalFailedState(key, state, errorMessage, nonRetryable);
+                MirrorPartition curState = mirrorCache.getPartition(key);
                 mirrorCache.setPartition(key,
                         MirrorPartition.orEmpty(mirrorCache.getPartition(key))
                                 .withState(state)
-                                .withStateEpoch(par.stateEpoch()));
+                                .withStateEpoch(par.stateEpoch())
+                                .withError(curState.errorMessage(), curState.retryAttempt(), curState.prevState()));
                 onStateTransition(mirrorName, tp, state);
             } else if (par.errorCode() == Errors.FENCED_LEADER_EPOCH.code()
                     || par.errorCode() == Errors.FENCED_STATE_EPOCH.code()) {
