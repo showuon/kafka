@@ -111,8 +111,8 @@ public class MirrorStateCache {
 
     public void updateFailedInfo(MirrorPartitionKey key, MirrorPartitionState curState,
                                  MirrorPartitionState newState, String errorMessage, boolean nonRetryable) {
+        MirrorPartition existing = MirrorPartition.orEmpty(getPartition(key));
         if (newState == MirrorPartitionState.FAILED) {
-            MirrorPartition existing = MirrorPartition.orEmpty(getPartition(key));
             int attempt = existing.nextAttempt(nonRetryable);
             MirrorPartitionState previousState = existing.resolvePrevState(curState);
             partitions.compute(key, (k, e) -> MirrorPartition.orEmpty(e).withError(errorMessage, attempt, previousState));
@@ -125,6 +125,10 @@ public class MirrorStateCache {
             // we already filter out the newState == FAILED case above, so skip the check
             // 3. For MIRRORING, it'll clean up after the first successful fetch response in MirrorFetcherThread.
             clearFailedInfo(key);
+        } else {
+            // Update the error message to make sure it is up-to-date
+            partitions.compute(key, (k, e) -> existing.withError(errorMessage, existing.retryAttempt(), existing.prevState()));
+
         }
     }
 
