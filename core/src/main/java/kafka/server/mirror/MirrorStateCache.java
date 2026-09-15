@@ -39,6 +39,7 @@ public class MirrorStateCache {
     private final Set<Integer> loadedCoordPartitions = ConcurrentHashMap.newKeySet();
     private final Set<String> pendingTopicCreations = ConcurrentHashMap.newKeySet();
     private final Set<PendingLeaderEpochBump> pendingLederEpochBumps = ConcurrentHashMap.newKeySet();
+    private final Map<TopicPartition, MirrorPartitionState> inProgressPartitions = new ConcurrentHashMap<>();
 
     public static MirrorStateCache empty() {
         return new MirrorStateCache();
@@ -54,6 +55,7 @@ public class MirrorStateCache {
         loadedCoordPartitions.clear();
         pendingTopicCreations.clear();
         pendingLederEpochBumps.clear();
+        inProgressPartitions.clear();
     }
 
     // -- Partition cache operations --
@@ -116,9 +118,14 @@ public class MirrorStateCache {
             int attempt = existing.nextAttempt(nonRetryable);
             MirrorPartitionState previousState = existing.resolvePrevState(curState);
             partitions.compute(key, (k, e) -> MirrorPartition.orEmpty(e).withError(errorMessage, attempt, previousState));
-        } else if (newState == MirrorPartitionState.LOG_ALIGNMENT
+        } else if ((curState != MirrorPartitionState.FAILED && curState != newState)
                 || newState == MirrorPartitionState.STOPPED
                 || newState == MirrorPartitionState.PAUSED) {
+            // clean up the state when:
+            // 1. new state is STOPPED or PAUSED state
+            // 2. there is state change, but not change from/to FAILED
+            // we already filter out the newState == FAILED case above, so skip the check
+            // 3. For MIRRORING, it'll clean up after the first successful fetch response in MirrorFetcherThread.
             clearFailedInfo(key);
         }
     }
@@ -169,6 +176,19 @@ public class MirrorStateCache {
         if (topics != null) {
             topics.remove(topic);
         }
+    }
+
+    // -- In-progress partition states
+    public MirrorPartitionState inProgressPartition(TopicPartition tp) {
+        return inProgressPartitions.get(tp);
+    }
+
+    public void addInProgressPartition(TopicPartition tp, MirrorPartitionState state) {
+        inProgressPartitions.put(tp, state);
+    }
+
+    public void removeInProgressPartition(TopicPartition tp) {
+        inProgressPartitions.remove(tp);
     }
 
     // -- Pending topic creation operations --
