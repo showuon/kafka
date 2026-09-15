@@ -473,7 +473,11 @@ public class ClusterMirroringIntegrationTest {
         consumeRecords(dstCluster, topicA, 20);
         consumeRecords(dstCluster, topicB, 20);
 
+<<<<<<< HEAD
         // Stop topic orders-eu
+=======
+        // Stop orders-eu
+>>>>>>> 14414b08aa (add lastMirrorOffset)
         dstAdmin.stopMirrorTopics(MIRROR_NAME, List.of(topicB), new StopMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
         waitForMirrorState(dstAdmin, MIRROR_NAME, topicB, "STOPPED");
