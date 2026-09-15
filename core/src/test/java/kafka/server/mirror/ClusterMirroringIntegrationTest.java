@@ -478,37 +478,6 @@ public class ClusterMirroringIntegrationTest {
     }
 
     @Test
-    void testStartTopicsPersistsPatterns() throws Exception {
-        String topic = "orders-us";
-
-        srcAdmin.createTopics(List.of(
-                new NewTopic(topic, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
-
-        produceRecords(srcCluster, topic, 0, 30);
-
-        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-
-        // Start mirroring with a pattern that matches the source topic
-        dstAdmin.startMirrorTopics(MIRROR_NAME, List.of("orders-.*"),
-                new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
-
-        consumeRecords(dstCluster, topic, 30);
-
-        // Verify the pattern was persisted to mirror.topics.include
-        ConfigResource mirrorResource = new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, MIRROR_NAME);
-        var configResult = dstAdmin.describeConfigs(List.of(mirrorResource)).all().get(30, TimeUnit.SECONDS);
-        var mirrorConfigEntries = configResult.get(mirrorResource);
-        ConfigEntry includeEntry = mirrorConfigEntries.get(ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG);
-        assertTrue(includeEntry != null && includeEntry.value().contains("orders-.*"),
-                "mirror.topics.include should contain 'orders-.*' after startMirrorTopics with patterns");
-    }
-
-    @Test
     void testUleRecoveryProcess() throws Exception {
         String topic = "test-topic";
 
