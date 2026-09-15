@@ -142,17 +142,17 @@ class MirrorSourceSyncer {
     private final Meter aclSyncError;
 
     MirrorSourceSyncer(
-        KafkaConfig brokerConfig,
-        MirrorMetadataManager metadataManager,
-        NodeToControllerChannelManager channelManager,
-        MetadataCache metadataCache,
-        MirrorStateCache mirrorCache,
-        KafkaMetricsGroup metricsGroup,
-        Meter metadataRefreshError,
-        Meter topicConfigSyncError,
-        Meter consumerGroupOffsetSyncError,
-        Meter shareGroupOffsetSyncError,
-        Meter aclSyncError
+            KafkaConfig brokerConfig,
+            MirrorMetadataManager metadataManager,
+            NodeToControllerChannelManager channelManager,
+            MetadataCache metadataCache,
+            MirrorStateCache mirrorCache,
+            KafkaMetricsGroup metricsGroup,
+            Meter metadataRefreshError,
+            Meter topicConfigSyncError,
+            Meter consumerGroupOffsetSyncError,
+            Meter shareGroupOffsetSyncError,
+            Meter aclSyncError
     ) {
         this.brokerConfig = brokerConfig;
         this.nodeId = brokerConfig.nodeId();
@@ -193,7 +193,7 @@ class MirrorSourceSyncer {
         MetadataImage image = metadataManager.metadataImage();
         if (image.topics().getTopic(MIRROR_STATE_TOPIC_NAME) != null) {
             int partition = Utils.abs(mirrorName.hashCode())
-                % brokerConfig.mirrorConfig().stateTopicNumPartitions();
+                    % brokerConfig.mirrorConfig().stateTopicNumPartitions();
             int leader = image.topics().getTopic(MIRROR_STATE_TOPIC_NAME)
                     .partitions().get(partition).leader;
             return leader == nodeId;
@@ -342,17 +342,17 @@ class MirrorSourceSyncer {
      * a mirror loop, based on the mirrors currently configured on the source cluster.
      *
      * @param mirrorName      the local mirror being started
-     * @param topicPartition  the partition about to be mirrored
+     * @param topicPartitions the partitions about to be mirrored
      * @param sourceMirrors   mirrors configured on the source cluster, as returned by
      *                        {@link #listSourceClusterMirrors(String)}
      * @return true if the given partitions would create a mirror loop, false otherwise
      */
-    boolean hasMirrorLoop(String mirrorName, TopicPartition topicPartition,
+    boolean hasMirrorLoop(String mirrorName, TopicPartition tp,
                           Collection<ClusterMirrorListing> sourceMirrors) {
         if (sourceMirrors.isEmpty()) {
             return false;
         }
-        String topicName = topicPartition.topic();
+        String topicName = tp.topic();
         for (ClusterMirrorListing sourceMirror : sourceMirrors) {
             if (!metadataManager.clusterId().equals(sourceMirror.sourceClusterId())) {
                 continue;
@@ -814,7 +814,7 @@ class MirrorSourceSyncer {
                 try {
                     log.debug("Committing consumer group offsets for group {} on destination, partitions={}", groupId, filtered.keySet());
                     metadataManager.getOrCreateDestAdmin().alterConsumerGroupOffsets(groupId, filtered)
-                        .all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
+                            .all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
                 } catch (Exception e) {
                     if (e instanceof ExecutionException && e.getCause() instanceof UnknownMemberIdException) {
                         log.debug("Skipped consumer group offset sync for active group {} in mirror {}", groupId, mirrorName);
@@ -951,12 +951,12 @@ class MirrorSourceSyncer {
             for (TopicPartition tp : earliestSpecs.keySet()) {
                 try {
                     var earliest = earliestResult.partitionResult(tp)
-                        .get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
+                            .get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
                     var latest = latestResult.partitionResult(tp)
-                        .get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
+                            .get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
                     result.put(tp, new PartitionLogInfo(
-                        earliest.offset(), earliest.leaderEpoch().orElse(-1),
-                        latest.offset(), latest.leaderEpoch().orElse(-1)));
+                            earliest.offset(), earliest.leaderEpoch().orElse(-1),
+                            latest.offset(), latest.leaderEpoch().orElse(-1)));
                 } catch (ExecutionException e) {
                     log.debug("Failed to fetch offsets for partition {} via Admin: {}", tp, e.getMessage());
                 }
@@ -1114,7 +1114,7 @@ class MirrorSourceSyncer {
             List<String> topicNames = newTopics.stream()
                     .map(StartMirrorTopicsRequestData.TopicMetadata::topicName).toList();
             metadataManager.getOrCreateDestAdmin().startMirrorTopics(
-                    mirrorName, topicNames, new StartMirrorTopicsOptions())
+                            mirrorName, topicNames, new StartMirrorTopicsOptions())
                     .all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
         } catch (Exception e) {
             log.warn("Failed to start discovered topics for mirror {}: {}", mirrorName, e.getMessage());
@@ -1144,7 +1144,7 @@ class MirrorSourceSyncer {
         try {
             List<String> topicNames = new ArrayList<>(excludedTopics);
             metadataManager.getOrCreateDestAdmin().stopMirrorTopics(
-                    mirrorName, topicNames, new StopMirrorTopicsOptions())
+                            mirrorName, topicNames, new StopMirrorTopicsOptions())
                     .all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
         } catch (Exception e) {
             log.warn("Failed to stop excluded topics for mirror {}: {}", mirrorName, e.getMessage());
@@ -1172,9 +1172,9 @@ class MirrorSourceSyncer {
     private CompletableFuture<Void> maybeBumpLeaderEpochs(String mirrorName, Optional<List<SourceTopicState>> sourceTopicStates, Set<TopicPartition> topicPartitions) {
         return sourceTopicStates
                 .map(topicStates -> sendBumpLeaderEpochs(buildSourceEpochBumpTargets(mirrorName, topicStates, topicPartitions))
-                .whenComplete((v, ex) -> {
-                    if (ex != null) log.warn("Failed to bump leader epoch for mirror {}", mirrorName, ex);
-                })).orElseGet(() -> CompletableFuture.completedFuture(null));
+                        .whenComplete((v, ex) -> {
+                            if (ex != null) log.warn("Failed to bump leader epoch for mirror {}", mirrorName, ex);
+                        })).orElseGet(() -> CompletableFuture.completedFuture(null));
     }
 
     /** Sends an AlterPartition request to bump leader epochs on the destination. */
@@ -1341,31 +1341,12 @@ class MirrorSourceSyncer {
             validateSourcePartitionIsStopped(desc, sourceMirrors, tp);
             return null;
         })
-            .thenCompose(__ -> lastMirrorPositionFuture)
-<<<<<<< HEAD
-<<<<<<< HEAD
-            .thenApply(lastMirrorPositions -> {
-<<<<<<< HEAD
-                log.info("Last mirror epoch lookup response for mirror {}: {}", mirrorName, lastMirrorPositions);
-                return lastMirrorPositions;
-=======
-                Map<TopicPartition, EpochOffset> epochs = new HashMap<>();
-                lastMirrorPositions.forEach((topicName, partitionValues) ->
-                    partitionValues.forEach((partIdx, oe) ->
-                            epochs.put(new TopicPartition(topicName, partIdx), new EpochOffset(oe.epoch(), oe.offset()))));
-                log.info("Last mirror epoch lookup response for mirror {}: {}", mirrorName, epochs);
-                return epochs;
->>>>>>> 28a98540e4 (rename lastMirror to lastMirrorPosition)
-            })
-=======
->>>>>>> d67c8460bf (key by TopicPartition in DescribeClusterMirrors admin)
-=======
-            .thenApply(lastMirrorPositions -> {
-                log.info("Last mirror epoch lookup response for mirror {}: {}", mirrorName, lastMirrorPositions);
-                return lastMirrorPositions;
-            })
->>>>>>> bd92e4d1b0 (Fix logging)
-            .orTimeout(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
+        .thenCompose(__ -> lastMirrorPositionFuture)
+        .thenApply(lastMirrorPositions -> {
+            log.info("Last mirror epoch lookup response for mirror {}: {}", mirrorName, lastMirrorPositions);
+            return lastMirrorPositions;
+        })
+        .orTimeout(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
     }
 
     record TimeoutHandler(Logger log, Meter errorMeter) implements ControllerRequestCompletionHandler {

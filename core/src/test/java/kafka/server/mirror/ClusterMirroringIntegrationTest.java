@@ -224,24 +224,12 @@ public class ClusterMirroringIntegrationTest {
         DescribeClusterMirrorsResult describeClusterMirrors = dstAdmin.describeClusterMirrors(
                 null, topicPartitions,
                 new DescribeClusterMirrorsOptions().clusterId(srcClusterId).includeMirrorState(true));
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> d67c8460bf (key by TopicPartition in DescribeClusterMirrors admin)
+
         Map<TopicPartition, EpochOffset> lastMirrorPositions = describeClusterMirrors.lastMirrorPositions().get(30, TimeUnit.SECONDS);
         TopicPartition tp0 = new TopicPartition(topic, 0);
         assertEquals(1, lastMirrorPositions.size(), "Should have one lookup result");
         assertTrue(lastMirrorPositions.containsKey(tp0), "Should have partition 0");
         assertTrue(lastMirrorPositions.get(tp0).epoch() >= 0, "Should have LME >= 0");
-<<<<<<< HEAD
-=======
-        Map<String, Map<Integer, EpochOffset>> lastMirrors = describeClusterMirrors.lastMirrorPositions().get(30, TimeUnit.SECONDS);
-        assertEquals(1, lastMirrors.size(), "Should have one lookup result");
-        assertEquals(1, lastMirrors.get(topic).size(), "Should have one partition");
-        assertTrue(lastMirrors.get(topic).get(0).epoch() >= 0, "Should have LME >= 0");
->>>>>>> 28a98540e4 (rename lastMirror to lastMirrorPosition)
-=======
->>>>>>> d67c8460bf (key by TopicPartition in DescribeClusterMirrors admin)
 
         // Failback: src mirrors from dst under a different name
         srcAdmin.createClusterMirror(reverseMirror, Map.of(
@@ -473,15 +461,7 @@ public class ClusterMirroringIntegrationTest {
         consumeRecords(dstCluster, topicA, 20);
         consumeRecords(dstCluster, topicB, 20);
 
-<<<<<<< HEAD
-<<<<<<< HEAD
         // Stop topic orders-eu
-=======
-        // Stop orders-eu
->>>>>>> 14414b08aa (add lastMirrorOffset)
-=======
-        // Stop topic orders-eu
->>>>>>> b936847f15 (address review comments)
         dstAdmin.stopMirrorTopics(MIRROR_NAME, List.of(topicB), new StopMirrorTopicsOptions())
                 .all().get(30, TimeUnit.SECONDS);
         waitForMirrorState(dstAdmin, MIRROR_NAME, topicB, "STOPPED");
@@ -683,7 +663,7 @@ public class ClusterMirroringIntegrationTest {
     }
 
     @Test
-    void testAutomaticTopicRecovery() throws Exception {
+    void testAutoTopicRecovery() throws Exception {
         String topic = "auto-recover-topic";
 
         srcAdmin.createTopics(List.of(
