@@ -683,7 +683,7 @@ public class ClusterMirroringIntegrationTest {
     }
 
     @Test
-    void testAutomaticRecovery() throws Exception {
+    void testAutomaticTopicRecovery() throws Exception {
         String topic = "auto-recover-topic";
 
         srcAdmin.createTopics(List.of(
@@ -721,7 +721,7 @@ public class ClusterMirroringIntegrationTest {
     }
 
     @Test
-    void testManualRecovery() throws Exception {
+    void testManualTopicRecovery() throws Exception {
         String topic = "recover-retry-topic";
 
         srcAdmin.createTopics(List.of(

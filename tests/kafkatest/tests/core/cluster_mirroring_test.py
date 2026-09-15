@@ -1187,7 +1187,7 @@ class ClusterMirroringTest(MirrorUtils, Test):
 
     @cluster(num_nodes=7)
     @defaults(metadata_quorum=[quorum.isolated_kraft])
-    def test_failed_auto_recovery(self, metadata_quorum):
+    def test_failed_auto_topic_recovery(self, metadata_quorum):
         """Verify that a FAILED partition can be automatically recovered after source broker restart."""
         self.source_kafka.create_topic({"topic": "my-topic", "partitions": 3, "replication-factor": 1})
 
@@ -1231,7 +1231,7 @@ class ClusterMirroringTest(MirrorUtils, Test):
 
     @cluster(num_nodes=7)
     @defaults(metadata_quorum=[quorum.isolated_kraft])
-    def test_failed_manual_recovery(self, metadata_quorum):
+    def test_failed_manual_topic_recovery(self, metadata_quorum):
         """Verify that a FAILED partition can be manually recovered after source broker restart."""
         self.source_kafka.create_topic({"topic": "my-topic", "partitions": 3, "replication-factor": 1})
 
