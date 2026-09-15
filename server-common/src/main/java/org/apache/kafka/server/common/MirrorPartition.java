@@ -16,20 +16,22 @@
  */
 package org.apache.kafka.server.common;
 
+import org.apache.kafka.common.EpochOffset;
+
 /**
  * Immutable snapshot of a mirror partition.
  *
- * @param state            the current lifecycle state, or null if unknown
- * @param stateEpoch       monotonically increasing epoch incremented on every state transition
- * @param lastMirrorEpoch  the last mirror leader epoch, or -1 if not yet recorded
- * @param errorMessage     the failure reason when in FAILED state, or null otherwise
- * @param retryAttempt     the retry count in FAILED state, 0 if not failed,
- *                         or {@link #NON_RETRYABLE_ATTEMPT} if non-retryable
- * @param prevState        the state before entering FAILED, or null if not applicable
+ * @param state                 the current lifecycle state, or null if unknown
+ * @param stateEpoch            monotonically increasing epoch incremented on every state transition
+ * @param lastMirrorPosition    the last mirrored epoch and offset, or {@link EpochOffset#EMPTY} if not yet recorded
+ * @param errorMessage          the failure reason when in FAILED state, or null otherwise
+ * @param retryAttempt          the retry count in FAILED state, 0 if not failed,
+ *                              or {@link #NON_RETRYABLE_ATTEMPT} if non-retryable
+ * @param prevState             the state before entering FAILED, or null if not applicable
  */
-public record MirrorPartition(MirrorPartitionState state, int stateEpoch, int lastMirrorEpoch,
+public record MirrorPartition(MirrorPartitionState state, int stateEpoch, EpochOffset lastMirrorPosition,
                               String errorMessage, int retryAttempt, MirrorPartitionState prevState) {
-    public static final MirrorPartition EMPTY = new MirrorPartition(MirrorPartitionState.UNKNOWN, 0, -1, null, 0, null);
+    public static final MirrorPartition EMPTY = new MirrorPartition(MirrorPartitionState.UNKNOWN, 0, EpochOffset.EMPTY, null, 0, null);
     public static final int NON_RETRYABLE_ATTEMPT = -1;
 
     /**
@@ -79,20 +81,38 @@ public record MirrorPartition(MirrorPartitionState state, int stateEpoch, int la
         return mp != null ? mp : EMPTY;
     }
 
+    /** Convenience accessor for the last mirror leader epoch. */
+    public int lastMirrorEpoch() {
+        return lastMirrorPosition.epoch();
+    }
+
+    /** Convenience accessor for the last mirror offset. */
+    public long lastMirrorOffset() {
+        return lastMirrorPosition.offset();
+    }
+
     public MirrorPartition withState(MirrorPartitionState newState) {
-        return new MirrorPartition(newState, stateEpoch, lastMirrorEpoch, errorMessage, retryAttempt, prevState);
+        return new MirrorPartition(newState, stateEpoch, lastMirrorPosition, errorMessage, retryAttempt, prevState);
     }
 
     public MirrorPartition withStateEpoch(int newStateEpoch) {
-        return new MirrorPartition(state, newStateEpoch, lastMirrorEpoch, errorMessage, retryAttempt, prevState);
+        return new MirrorPartition(state, newStateEpoch, lastMirrorPosition, errorMessage, retryAttempt, prevState);
+    }
+
+    public MirrorPartition withLastMirrorPosition(EpochOffset newLastMirrorPosition) {
+        return new MirrorPartition(state, stateEpoch, newLastMirrorPosition, errorMessage, retryAttempt, prevState);
     }
 
     public MirrorPartition withLastMirrorEpoch(int newEpoch) {
-        return new MirrorPartition(state, stateEpoch, newEpoch, errorMessage, retryAttempt, prevState);
+        return withLastMirrorPosition(new EpochOffset(newEpoch, lastMirrorPosition.offset()));
+    }
+
+    public MirrorPartition withLastMirrorOffset(long newOffset) {
+        return withLastMirrorPosition(new EpochOffset(lastMirrorPosition.epoch(), newOffset));
     }
 
     public MirrorPartition withError(String errorMessage, int retryAttempt, MirrorPartitionState previousState) {
-        return new MirrorPartition(state, stateEpoch, lastMirrorEpoch, errorMessage, retryAttempt, previousState);
+        return new MirrorPartition(state, stateEpoch, lastMirrorPosition, errorMessage, retryAttempt, previousState);
     }
 
     @SuppressWarnings({"cyclomaticComplexity", "BooleanExpressionComplexity"})
@@ -139,7 +159,7 @@ public record MirrorPartition(MirrorPartitionState state, int stateEpoch, int la
     }
 
     public MirrorPartition clearError() {
-        return new MirrorPartition(state, stateEpoch, lastMirrorEpoch, null, 0, null);
+        return new MirrorPartition(state, stateEpoch, lastMirrorPosition, null, 0, null);
     }
 
     public int nextAttempt(boolean nonRetryable) {

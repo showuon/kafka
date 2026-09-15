@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.coordinator.mirror;
 
+import org.apache.kafka.common.EpochOffset;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.errors.FencedLeaderEpochException;
@@ -207,8 +208,8 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
         if (value != null) {
             LastMirrorEpochsValue epochsValue = (LastMirrorEpochsValue) value.message();
             coreBridge.getTopicName(key.topicId()).ifPresent(topicName ->
-                    coreBridge.setLastMirrorEpoch(key.mirrorName(),
-                            topicName, key.partition(), epochsValue.lastMirrorEpoch()));
+                coreBridge.setLastMirrorPosition(key.mirrorName(), topicName, key.partition(),
+                        new EpochOffset(epochsValue.lastMirrorEpoch(), epochsValue.lastMirrorOffset())));
         } else {
             coreBridge.removePartition(pk);
         }
@@ -248,6 +249,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                         .setPreviousState(mp.prevState() != null ?
                                 mp.prevState().value() : MirrorPartitionState.UNKNOWN.value())
                         .setLastMirrorEpoch(mp.lastMirrorEpoch())
+                        .setLastMirrorOffset(mp.lastMirrorOffset())
                         .setRetryAttempt((short) mp.retryAttempt())
                         .setErrorMessage(mp.errorMessage());
                 partitionResults.add(pr);
@@ -285,8 +287,9 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                     return;
                 }
             }
-            if (partition.lastMirrorEpoch() != null && partition.lastMirrorEpoch() != -1) {
-                records.addAll(writeLastMirrorEpoch(mirrorName, tp, partition.lastMirrorEpoch()).records());
+            EpochOffset lm = partition.lastMirrorPosition();
+            if (lm != null && (lm.epoch() != -1 || lm.offset() != -1)) {
+                records.addAll(writeLastMirrorPosition(mirrorName, tp, lm).records());
             }
         }));
         return new CoordinatorResult<>(records, results);
@@ -335,8 +338,8 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
         return new CoordinatorResult<>(List.of(record), null);
     }
 
-    public CoordinatorResult<Void, CoordinatorRecord> writeLastMirrorEpoch(
-            String mirrorName, TopicPartition tp, int epoch
+    public CoordinatorResult<Void, CoordinatorRecord> writeLastMirrorPosition(
+            String mirrorName, TopicPartition tp, EpochOffset lastMirror
     ) {
         MirrorPartitionKey pk = MirrorPartitionKey.of(
                 mirrorName, coreBridge.getTopicId(tp.topic()), tp.partition());
@@ -344,7 +347,9 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                 .setMirrorName(pk.mirrorName())
                 .setTopicId(pk.topicId())
                 .setPartition(pk.partition());
-        var val = new LastMirrorEpochsValue().setLastMirrorEpoch(epoch);
+        var val = new LastMirrorEpochsValue()
+                .setLastMirrorEpoch(lastMirror.epoch())
+                .setLastMirrorOffset(lastMirror.offset());
         CoordinatorRecord record = CoordinatorRecord.record(key,
                 new ApiMessageAndVersion(val, LastMirrorEpochsValue.HIGHEST_SUPPORTED_VERSION));
         return new CoordinatorResult<>(List.of(record), null);

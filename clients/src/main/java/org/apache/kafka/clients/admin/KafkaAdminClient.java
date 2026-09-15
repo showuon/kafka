@@ -69,6 +69,7 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.internals.ConsumerProtocol;
 import org.apache.kafka.common.Cluster;
 import org.apache.kafka.common.ElectionType;
+import org.apache.kafka.common.EpochOffset;
 import org.apache.kafka.common.GroupState;
 import org.apache.kafka.common.GroupType;
 import org.apache.kafka.common.KafkaException;
@@ -5238,7 +5239,7 @@ public class KafkaAdminClient extends AdminClient {
                                                                Map<String, List<Integer>> topicPartitions,
                                                                DescribeClusterMirrorsOptions options) {
         final KafkaFutureImpl<Map<String, ClusterMirrorDescription>> all = new KafkaFutureImpl<>();
-        final KafkaFutureImpl<Map<String, Map<Integer, Integer>>> lineageAll = new KafkaFutureImpl<>();
+        final KafkaFutureImpl<Map<TopicPartition, EpochOffset>> lastMirrorPositionFutures = new KafkaFutureImpl<>();
         final long now = time.milliseconds();
         final long deadline = calcDeadlineMs(now, options.timeoutMs());
 
@@ -5275,13 +5276,13 @@ public class KafkaAdminClient extends AdminClient {
             void handleResponse(AbstractResponse abstractResponse) {
                 DescribeClusterMirrorsResponse response = (DescribeClusterMirrorsResponse) abstractResponse;
                 Map<String, ClusterMirrorDescription> descriptions = new HashMap<>();
-                Map<String, Map<Integer, Integer>> epochs = new HashMap<>();
+                Map<TopicPartition, EpochOffset> lastMirrorPositions = new HashMap<>();
 
                 for (DescribeClusterMirrorsResponseData.DescribedMirror mirror : response.data().mirrors()) {
                     Errors errorCode = Errors.forCode(mirror.errorCode());
                     if (errorCode != Errors.NONE) {
                         all.completeExceptionally(errorCode.exception());
-                        lineageAll.completeExceptionally(errorCode.exception());
+                        lastMirrorPositionFutures.completeExceptionally(errorCode.exception());
                         return;
                     }
 
@@ -5301,10 +5302,13 @@ public class KafkaAdminClient extends AdminClient {
                                     partition.retryAttempt(),
                                     partition.errorMessage()));
 
-                            if (partition.lastMirrorEpoch() >= 0) {
-                                epochs
-                                    .computeIfAbsent(topic.topicName(), k -> new HashMap<>())
-                                    .merge(partition.partitionIndex(), partition.lastMirrorEpoch(), Math::max);
+                            if (partition.lastMirrorEpoch() >= 0 || partition.lastMirrorOffset() >= 0) {
+                                lastMirrorPositions
+                                    .merge(new TopicPartition(topic.topicName(), partition.partitionIndex()),
+                                        new EpochOffset(partition.lastMirrorEpoch(), partition.lastMirrorOffset()),
+                                        (a, b) -> new EpochOffset(
+                                            Math.max(a.epoch(), b.epoch()),
+                                            Math.max(a.offset(), b.offset())));
                             }
                         }
                     }
@@ -5318,18 +5322,18 @@ public class KafkaAdminClient extends AdminClient {
                 }
 
                 all.complete(descriptions);
-                lineageAll.complete(epochs);
+                lastMirrorPositionFutures.complete(lastMirrorPositions);
             }
 
             @Override
             void handleFailure(Throwable throwable) {
                 KafkaException exception = new KafkaException("Failed to describe cluster mirrors", throwable);
                 all.completeExceptionally(exception);
-                lineageAll.completeExceptionally(exception);
+                lastMirrorPositionFutures.completeExceptionally(exception);
             }
         }, now);
 
-        return new DescribeClusterMirrorsResult(all, lineageAll);
+        return new DescribeClusterMirrorsResult(all, lastMirrorPositionFutures);
     }
 
     @Override

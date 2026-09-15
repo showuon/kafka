@@ -49,6 +49,7 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.EpochOffset;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigResource;
@@ -261,10 +262,11 @@ public class ClusterMirroringIntegrationTest {
         DescribeClusterMirrorsResult describeClusterMirrors = dstAdmin.describeClusterMirrors(
                 null, topicPartitions,
                 new DescribeClusterMirrorsOptions().clusterId(srcClusterId).includeMirrorState(true));
-        Map<String, Map<Integer, Integer>> lookupEpochs = describeClusterMirrors.lookupEpochs().get(30, TimeUnit.SECONDS);
-        assertEquals(1, lookupEpochs.size(), "Should have one lookup result");
-        assertEquals(1, lookupEpochs.get(topic).size(), "Should have one partition");
-        assertTrue(lookupEpochs.get(topic).get(0) >= 0, "Should have LME >= 0");
+        Map<TopicPartition, EpochOffset> lastMirrorPositions = describeClusterMirrors.lastMirrorPositions().get(30, TimeUnit.SECONDS);
+        TopicPartition tp0 = new TopicPartition(topic, 0);
+        assertEquals(1, lastMirrorPositions.size(), "Should have one lookup result");
+        assertTrue(lastMirrorPositions.containsKey(tp0), "Should have partition 0");
+        assertTrue(lastMirrorPositions.get(tp0).epoch() >= 0, "Should have LME >= 0");
 
         // Failback: src mirrors from dst under a different name
         srcAdmin.createClusterMirror(reverseMirror, Map.of(

@@ -39,6 +39,7 @@ import org.apache.kafka.clients.admin.StartMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.StopMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.EpochOffset;
 import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
@@ -1321,7 +1322,7 @@ class MirrorSourceSyncer {
     }
 
     /** Looks up last mirror epochs from the source cluster for failback truncation. */
-    CompletionStage<Map<TopicPartition, Integer>> sendLastMirrorEpochLookup(
+    CompletionStage<Map<TopicPartition, EpochOffset>> sendLastMirrorEpochLookup(
             String mirrorName, TopicPartition tp, Collection<ClusterMirrorListing> sourceMirrors) {
         Admin admin = metadataManager.getOrCreateSourceAdmin(mirrorName);
         log.info("Last mirror epoch lookup request for mirror {}: topic={} partition={}", mirrorName, tp.topic(), tp.partition());
@@ -1335,22 +1336,15 @@ class MirrorSourceSyncer {
         DescribeClusterMirrorsResult result = admin.describeClusterMirrors(null, topicPartitions, options);
 
         var describeFuture = result.allDescriptions().toCompletionStage().toCompletableFuture();
-        var lookupEpochsFuture = result.lookupEpochs().toCompletionStage().toCompletableFuture();
+        var lastMirrorPositionFuture = result.lastMirrorPositions().toCompletionStage().toCompletableFuture();
         return describeFuture.thenApply(desc -> {
             validateSourcePartitionIsStopped(desc, sourceMirrors, tp);
             return null;
         })
-            .thenCompose(__ -> lookupEpochsFuture)
-            .thenApply(lookupEpochs -> {
-                Map<TopicPartition, Integer> epochs = new HashMap<>();
-                if (!lookupEpochs.isEmpty()) {
-                    lookupEpochs.forEach((topicName, partitionEpochs) -> {
-                        partitionEpochs.forEach((partIdx, lme) ->
-                                epochs.put(new TopicPartition(topicName, partIdx), lme));
-                    });
-                }
-                log.info("Last mirror epoch lookup response for mirror {}: {}", mirrorName, epochs);
-                return epochs;
+            .thenCompose(__ -> lastMirrorPositionFuture)
+            .thenApply(lastMirrorPositions -> {
+                log.info("Last mirror epoch lookup response for mirror {}: {}", mirrorName, lastMirrorPositions);
+                return lastMirrorPositions;
             })
             .orTimeout(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
     }
