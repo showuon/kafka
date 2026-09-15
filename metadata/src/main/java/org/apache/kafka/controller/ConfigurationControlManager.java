@@ -47,13 +47,9 @@ import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState;
 import org.apache.kafka.server.mutable.BoundedList;
 import org.apache.kafka.server.policy.AlterConfigPolicy;
 import org.apache.kafka.server.policy.AlterConfigPolicy.RequestMetadata;
-import org.apache.kafka.server.util.MirrorUtils;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
 import org.apache.kafka.timeline.TimelineHashSet;
-
-import com.google.re2j.Pattern;
-import com.google.re2j.PatternSyntaxException;
 
 import org.slf4j.Logger;
 
@@ -61,7 +57,6 @@ import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -69,13 +64,11 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import static org.apache.kafka.clients.admin.AlterConfigOp.OpType.APPEND;
 import static org.apache.kafka.clients.admin.AlterConfigOp.OpType.DELETE;
-import static org.apache.kafka.clients.admin.AlterConfigOp.OpType.SET;
 import static org.apache.kafka.common.config.ConfigResource.Type.BROKER;
 import static org.apache.kafka.common.config.TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG;
 import static org.apache.kafka.common.config.TopicConfig.UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG;
@@ -267,7 +260,6 @@ public class ConfigurationControlManager {
     ControllerResult<StartMirrorTopicsResponseData> startMirrorTopics(
             String mirrorName,
             List<Controller.MirrorTopicMetadata> topics,
-            List<String> topicPatterns,
             ReplicationControlManager replicationControl,
             long stateOffset) {
         List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
@@ -282,23 +274,6 @@ public class ConfigurationControlManager {
                     + "' changed after broker validated partition states (broker offset: "
                     + stateOffset + ", last change offset: "
                     + errorTopicInfo.get().lastStateOffset() + ")");
-            return ControllerResult.of(records, data);
-        }
-
-        ApiError patternError = updatePatternsAndStopExcluded(mirrorName, records, topicNames, replicationControl, (includeSet, excludeSet) -> {
-            for (String topicName : topicNames) {
-                includeSet.add(topicName);
-                excludeSet.remove(topicName);
-            }
-            if (topicPatterns != null) {
-                for (String pattern : topicPatterns) {
-                    includeSet.add(pattern);
-                    excludeSet.remove(pattern);
-                }
-            }
-        });
-        if (patternError.isFailure()) {
-            data.setErrorCode(patternError.error().code());
             return ControllerResult.of(records, data);
         }
 
@@ -401,7 +376,7 @@ public class ConfigurationControlManager {
         return ControllerResult.of(records, data);
     }
 
-    ControllerResult<StopMirrorTopicsResponseData> stopMirrorTopics(String mirrorName, Set<String> topics, List<String> topicPatterns, ReplicationControlManager replicationControl, long stateOffset) {
+    ControllerResult<StopMirrorTopicsResponseData> stopMirrorTopics(String mirrorName, Set<String> topics, ReplicationControlManager replicationControl, long stateOffset) {
         List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
         StopMirrorTopicsResponseData data = new StopMirrorTopicsResponseData();
 
@@ -413,20 +388,6 @@ public class ConfigurationControlManager {
                     + stateOffset + ", last change offset: "
                     + errorTopicInfo.get().lastStateOffset() + ")");
             return ControllerResult.of(records, data);
-        }
-
-        if (topicPatterns != null && !topicPatterns.isEmpty()) {
-            ApiError patternError = updatePatternsAndStopExcluded(mirrorName, records, Set.of(), replicationControl, (includeSet, excludeSet) -> {
-                for (String pattern : topicPatterns) {
-                    includeSet.remove(pattern);
-                    // Always add the pattern into exclude set because the include set could be the regex pattern
-                    excludeSet.add(pattern);
-                }
-            });
-            if (patternError.isFailure()) {
-                data.setErrorCode(patternError.error().code());
-                return ControllerResult.of(records, data);
-            }
         }
 
         List<StopMirrorTopicsResponseData.TopicResult> topicResList = new ArrayList<>();
@@ -753,102 +714,6 @@ public class ConfigurationControlManager {
         return Optional.empty();
     }
 
-    private static Set<String> parseCsvToSet(String csv) {
-        Set<String> result = new LinkedHashSet<>();
-        if (csv != null && !csv.isEmpty()) {
-            for (String s : csv.split(",")) {
-                String trimmed = s.trim();
-                if (!trimmed.isEmpty()) {
-                    result.add(trimmed);
-                }
-            }
-        }
-        return result;
-    }
-
-    private ApiError updatePatternsAndStopExcluded(String mirrorName,
-                                                   List<ApiMessageAndVersion> records,
-                                                   Set<String> topics,
-                                                   ReplicationControlManager replicationControl,
-                                                   BiConsumer<Set<String>,
-                                                   Set<String>> mutator) {
-        ConfigResource mirrorResource = new ConfigResource(Type.CLUSTER_MIRROR, mirrorName);
-        TimelineHashMap<String, String> mirrorConfigs = configData.get(mirrorResource);
-
-        String currentInclude = mirrorConfigs != null ? mirrorConfigs.getOrDefault("topics.include", "") : "";
-        String currentExclude = mirrorConfigs != null ? mirrorConfigs.getOrDefault("topics.exclude", "") : "";
-
-        Set<String> includeSet = parseCsvToSet(currentInclude);
-        Set<String> excludeSet = parseCsvToSet(currentExclude);
-        mutator.accept(includeSet, excludeSet);
-
-        try {
-            MirrorUtils.validatePatterns(includeSet.stream().toList());
-            MirrorUtils.validatePatterns(excludeSet.stream().toList());
-        } catch (PatternSyntaxException e) {
-            return new ApiError(Errors.INVALID_REGULAR_EXPRESSION, e.getMessage());
-        }
-
-        ApiError topicsInPatternsError = validateTopicsInPatterns(topics, includeSet, excludeSet);
-        if (topicsInPatternsError.isFailure()) {
-            return topicsInPatternsError;
-        }
-
-        Map<String, Entry<OpType, String>> ops = Map.of(
-                "topics.include", new AbstractMap.SimpleImmutableEntry<>(SET, String.join(",", includeSet)),
-                "topics.exclude", new AbstractMap.SimpleImmutableEntry<>(SET, String.join(",", excludeSet)));
-        ControllerResult<ApiError> result = incrementalAlterConfig(mirrorResource, ops, false);
-        if (result.response().isFailure()) {
-            return result.response();
-        }
-        records.addAll(result.records());
-        stopExcludedTopics(mirrorName, excludeSet, records, replicationControl);
-        return ApiError.NONE;
-    }
-
-    private ApiError validateTopicsInPatterns(Set<String> topics, Set<String> includeSet, Set<String> excludeSet) {
-        if (topics.isEmpty()) {
-            return ApiError.NONE;
-        }
-        Pattern includePatterns = MirrorUtils.compilePatternList(includeSet.stream().toList());
-        Pattern excludePatterns = MirrorUtils.compilePatternList(excludeSet.stream().toList());
-
-        if (excludePatterns != null) {
-            boolean topicExcluded = topics.stream().anyMatch(topic -> excludePatterns.matcher(topic).matches());
-            if (topicExcluded) {
-                return new ApiError(Errors.INVALID_REQUEST, "Unable to start the topics to mirror because some topics are excluded by exclude patterns: " + excludeSet);
-            }
-        }
-        if (includePatterns != null) {
-            boolean topicNotIncluded = topics.stream().anyMatch(topic -> !includePatterns.matcher(topic).matches());
-            if (topicNotIncluded) {
-                return new ApiError(Errors.INVALID_REQUEST, "Unable to start the topics to mirror because some topics are not included in include patterns: " + includeSet);
-            }
-        }
-
-        return ApiError.NONE;
-    }
-
-    private void stopExcludedTopics(String mirrorName, Set<String> excludePatterns, List<ApiMessageAndVersion> records, ReplicationControlManager replicationControl) {
-        if (excludePatterns.isEmpty()) return;
-
-        String combined = String.join("|", excludePatterns);
-        Pattern excludePattern = Pattern.compile("^(" + combined + ")$");
-
-        replicationControl.getMirrorTopics().forEach(topicInfo -> {
-            String topicName = topicInfo.name();
-            String curMirrorName = topicInfo.mirrorName();
-            if (topicName == null || !curMirrorName.equals(mirrorName))
-                return;
-
-            if (excludePattern.matcher(topicName).matches()) {
-                records.add(new ApiMessageAndVersion(new MirrorTopicStateChangeRecord()
-                    .setTopicName(topicName)
-                    .setMirrorName(mirrorName)
-                    .setDesiredState(MirrorPartitionState.STOPPED.value()), (short) 0));
-            }
-        });
-    }
 
     List<ApiMessageAndVersion> createClearElrRecordsAsNeeded(List<ApiMessageAndVersion> input) {
         if (!featureControl.isElrFeatureEnabled()) {
