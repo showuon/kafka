@@ -111,7 +111,7 @@ class MirrorFetcherThread(name: String,
         s"epoch $highestBatchLeaderEpoch is higher than local leader epoch $localLeaderEpoch")
     } else {
       replicaMgr.mirrorMetadataManager.foreach { mmm =>
-        mmm.clearFailedInfo(mirrorName, topicPartition)
+        mmm.clearFailedInfoPersistState(mirrorName, topicPartition)
 
         if (highestBatchLeaderEpoch > localLeaderEpoch - LEADER_EPOCH_BUMP_THRESHOLD) {
           // When source batch is close to the local epoch (within LEADER_EPOCH_BUMP_THRESHOLD),
