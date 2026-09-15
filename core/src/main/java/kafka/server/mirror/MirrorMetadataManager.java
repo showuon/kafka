@@ -792,7 +792,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             for (TopicPartition tp : topicPartitions) {
                 MirrorPartitionState currentState = getPartitionState(mirrorName, tp);
                 MirrorPartitionState inProgressState = mirrorCache.inProgressPartition(tp);
-                if (inProgressState != null && inProgressState == state) {
+                // Avoid unnecessary state transition to the same state when the state is applying in progress.
+                // For MIRRORING, because we remove fetcher thread when becoming the leader, we need to transition to MIRRORING state again.
+                if (inProgressState != MirrorPartitionState.MIRRORING && inProgressState == state) {
                     log.warn("Partition {} is in progress for {} state. Skipping transition from {} to {}", tp, inProgressState, currentState, state);
                     continue;
                 }
@@ -808,20 +810,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 } else {
                     log.info("Transitioning {} from {} to {}", tp, currentState, state);
                 }
-                MirrorPartitionKey key = MirrorPartitionKey.of(
-                        mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
-                int leaderEpoch = getLeaderEpoch(tp);
-                int stateEpoch = MirrorPartition.orEmpty(mirrorCache.getPartition(key)).stateEpoch();
-                if (isLocalCoordinator(mirrorName, tp.topic(), tp.partition())) {
-                    writer.writePartitionState(mirrorName, tp, state, leaderEpoch, stateEpoch, errorMessage, nonRetryable)
-                            .whenComplete((v, ex) -> onLocalWriteComplete(mirrorName, tp, key, state, ex));
-                } else {
-                    Map<String, Set<MirrorStateWrite>> topicMetadata =
-                            Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), state, leaderEpoch, stateEpoch,
-                                    null, errorMessage, nonRetryable)));
-                    writeStateToRemoteCoordinator(mirrorName, topicMetadata, Set.of(),
-                            res -> onRemoteWriteComplete(mirrorName, tp, key, state, errorMessage, nonRetryable, res, remoteRetry));
-                }
+                persistState(mirrorName, tp, state, errorMessage, nonRetryable, remoteRetry);
             }
         });
     }
@@ -877,9 +866,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             } else {
                 log.error("Failed to write partition state to remote coordinator: {}",
                         par.errorCode());
-                if (state != MirrorPartitionState.FAILED) {
-                    transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED, par.errorMessage());
-                }
             }
         }));
     }
@@ -1830,34 +1816,35 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         mirrorCache.clearFailedInfo(MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition()));
     }
 
-    public void clearFailedInfoPersistState(String mirrorName, TopicPartition tp) {
+    public void clearFailedInfoPersistStateForMirroring(String mirrorName, TopicPartition tp) {
+        MirrorPartition curState = mirrorCache.getPartition(MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition()));
+        if (MirrorPartitionState.MIRRORING != curState.state()) {
+            log.info("Skipping clearing failed information for MIRRORING state due to the state has changed to {}.", curState);
+            return;
+        }
         clearFailedInfo(mirrorName, tp);
-        schedulePersistState(mirrorName, tp);
+        persistState(mirrorName, tp, curState.state(), curState.errorMessage(), curState.retryAttempt() == NON_RETRYABLE_ATTEMPT, false);
     }
 
-    private void schedulePersistState(String mirrorName, TopicPartition tp) {
-        sharedScheduler.scheduleOnce("persistState-" + mirrorName + "-" + tp,
-            () -> {
-                coordinatorWriter.ifPresent(writer -> {
-                    MirrorPartitionKey key = MirrorPartitionKey.of(
-                            mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
-                    MirrorPartition partitionInfo = getPartition(key);
-                    int leaderEpoch = getLeaderEpoch(tp);
-                    MirrorPartitionState state = partitionInfo.state();
-                    boolean nonRetryable = partitionInfo.retryAttempt() == NON_RETRYABLE_ATTEMPT;
-                    if (isLocalCoordinator(mirrorName, tp.topic(), tp.partition())) {
-                        writer.writePartitionState(mirrorName, tp, state, leaderEpoch, partitionInfo.stateEpoch(),
-                                        partitionInfo.errorMessage(), nonRetryable)
-                                .whenComplete((v, ex) -> onLocalWriteComplete(mirrorName, tp, key, state, ex));
-                    } else {
-                        Map<String, Set<MirrorStateWrite>> topicMetadata =
-                                Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), state, leaderEpoch, partitionInfo.stateEpoch(),
-                                        null, partitionInfo.errorMessage(), nonRetryable)));
-                        writeStateToRemoteCoordinator(mirrorName, topicMetadata, Set.of(),
-                                res -> onRemoteWriteComplete(mirrorName, tp, key, state, partitionInfo.errorMessage(), nonRetryable, res, false));
-                    }
-                });
-            });
+    private void persistState(String mirrorName, TopicPartition tp, MirrorPartitionState state, String errorMessage,
+                              boolean nonRetryable, boolean remoteRetry) {
+        coordinatorWriter.ifPresent(writer -> {
+            MirrorPartitionKey key = MirrorPartitionKey.of(
+                    mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
+            int stateEpoch = MirrorPartition.orEmpty(mirrorCache.getPartition(key)).stateEpoch();
+            int leaderEpoch = getLeaderEpoch(tp);
+            if (isLocalCoordinator(mirrorName, tp.topic(), tp.partition())) {
+                writer.writePartitionState(mirrorName, tp, state, leaderEpoch, stateEpoch,
+                                errorMessage, nonRetryable)
+                        .whenComplete((v, ex) -> onLocalWriteComplete(mirrorName, tp, key, state, ex));
+            } else {
+                Map<String, Set<MirrorStateWrite>> topicMetadata =
+                        Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), state, leaderEpoch, stateEpoch,
+                                null, errorMessage, nonRetryable)));
+                writeStateToRemoteCoordinator(mirrorName, topicMetadata, Set.of(),
+                        res -> onRemoteWriteComplete(mirrorName, tp, key, state, errorMessage, nonRetryable, res, remoteRetry));
+            }
+        });
     }
 
     public MirrorStateCache.SourceLeader resolveSourceLeader(String mirrorName, TopicPartition tp) {
