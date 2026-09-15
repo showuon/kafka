@@ -1445,33 +1445,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         return result;
     }
 
-    /**
-     * Local-only LME lookup. Returns LME from the local coordinator cache
-     * for partitions this broker coordinates, and -1 for the rest. The admin
-     * client broadcasts DescribeClusterMirrors to all brokers and takes the
-     * max, so each broker only needs its local view.
-     *
-     * @param mirrorPartitions mirrorName -> topicName -> partition indices
-     * @return mirrorName -> (TopicPartition -> LME)
-     */
-    public Map<String, Map<TopicPartition, Integer>> processLastMirrorEpochLookup(
-            Map<String, Map<String, Set<Integer>>> mirrorPartitions) {
-        Map<String, Map<TopicPartition, Integer>> result = new HashMap<>();
-        mirrorPartitions.forEach((mirrorName, topicParts) -> {
-            topicParts.forEach((topic, parts) -> {
-                parts.forEach(part -> {
-                    MirrorPartitionKey pk = MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(topic), part);
-                    MirrorPartition cached = mirrorCache.getPartition(pk);
-                    int lme = isLocalCoordinator(mirrorName, topic, part) && cached != null
-                            ? cached.lastMirrorEpoch() : -1;
-                    result.computeIfAbsent(mirrorName, k -> new HashMap<>())
-                            .put(new TopicPartition(topic, part), lme);
-                });
-            });
-        });
-        return result;
-    }
-
     public String getSourceClusterId(String mirrorName) {
         Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName));
         return (String) props.get(CommonClientConfigs.SOURCE_CLUSTER_ID_CONFIG);
