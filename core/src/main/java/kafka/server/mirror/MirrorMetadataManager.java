@@ -1552,12 +1552,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         if (topicPatterns == null || topicPatterns.isEmpty()) {
             return CompletableFuture.completedFuture(Map.of());
         }
-        Admin srcAdmin;
-        try {
-            srcAdmin = getOrCreateSourceAdmin(mirrorName);
-        } catch (Exception e) {
-            return CompletableFuture.failedFuture(e.getCause() == null ? e : e.getCause());
-        }
+        Admin srcAdmin = getOrCreateSourceAdmin(mirrorName);
 
         return srcAdmin.listTopics().names().toCompletionStage().toCompletableFuture()
             .thenCompose(allSourceTopics -> {
