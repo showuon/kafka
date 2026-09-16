@@ -37,6 +37,7 @@ import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.errors.CoordinatorLoadInProgressException;
 import org.apache.kafka.common.errors.FencedLeaderEpochException;
 import org.apache.kafka.common.errors.FencedStateEpochException;
+import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.message.DeleteClusterMirrorRequestData;
 import org.apache.kafka.common.message.MetadataResponseData;
@@ -270,6 +271,11 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         }
         return srcAdmins.computeIfAbsent(mirrorName, k -> {
             Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, k));
+            if (!props.containsKey(BOOTSTRAP_SERVERS_CONFIG)) {
+                // Because we know the bootstrap.server must be set when creating the cluster mirror,
+                // throw a retryable exception here and retry later when the metadata log is not propagated to this broker.
+                throw new UnknownTopicOrPartitionException();
+            }
             props.put(AdminClientConfig.CLIENT_ID_CONFIG, "mirror-src-admin-" + k + "-" + nodeId);
             return Admin.create(props);
         });
@@ -1546,7 +1552,12 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         if (topicPatterns == null || topicPatterns.isEmpty()) {
             return CompletableFuture.completedFuture(Map.of());
         }
-        Admin srcAdmin = getOrCreateSourceAdmin(mirrorName);
+        Admin srcAdmin;
+        try {
+            srcAdmin = getOrCreateSourceAdmin(mirrorName);
+        } catch (Exception e) {
+            return CompletableFuture.failedFuture(e.getCause() == null ? e : e.getCause());
+        }
 
         return srcAdmin.listTopics().names().toCompletionStage().toCompletableFuture()
             .thenCompose(allSourceTopics -> {
