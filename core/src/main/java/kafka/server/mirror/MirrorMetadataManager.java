@@ -802,7 +802,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                 }
                 if (state == MirrorPartitionState.FAILED) {
                     log.info("Transitioning partition {} from {} to {} due to {}{}",
-                            topicPartitions, currentState, state, errorMessage,
+                            tp, currentState, state, errorMessage,
                             nonRetryable ? " ( non retryable error)" : "( retryable error)");
                 } else {
                     log.info("Transitioning partition {} from {} to {}", tp, currentState, state);
