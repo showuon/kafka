@@ -1214,7 +1214,7 @@ class Partition(val topicPartition: TopicPartition,
 
     leaderLog.maybeIncrementHighWatermark(newHighWatermark).toScala match {
       case Some(oldHighWatermark) =>
-        debug(s"High watermark updated from $oldHighWatermark to $newHighWatermark")
+        info(s"!!! High watermark updated from $oldHighWatermark to $newHighWatermark")
         true
 
       case None =>
