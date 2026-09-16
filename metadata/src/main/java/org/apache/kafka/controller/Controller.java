@@ -176,7 +176,6 @@ public interface Controller extends AclMutator, AutoCloseable {
             ControllerRequestContext context,
             String mirrorName,
             List<MirrorTopicMetadata> topics,
-            List<String> topicPatterns,
             long stateOffset
     );
 
@@ -184,7 +183,6 @@ public interface Controller extends AclMutator, AutoCloseable {
             ControllerRequestContext context,
             String mirrorName,
             Set<String> topics,
-            List<String> topicPatterns,
             long stateOffset
     );
 

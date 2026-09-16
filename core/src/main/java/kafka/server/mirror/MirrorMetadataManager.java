@@ -1445,33 +1445,6 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         return result;
     }
 
-    /**
-     * Local-only LME lookup. Returns LME from the local coordinator cache
-     * for partitions this broker coordinates, and -1 for the rest. The admin
-     * client broadcasts DescribeClusterMirrors to all brokers and takes the
-     * max, so each broker only needs its local view.
-     *
-     * @param mirrorPartitions mirrorName -> topicName -> partition indices
-     * @return mirrorName -> (TopicPartition -> LME)
-     */
-    public Map<String, Map<TopicPartition, Integer>> processLastMirrorEpochLookup(
-            Map<String, Map<String, Set<Integer>>> mirrorPartitions) {
-        Map<String, Map<TopicPartition, Integer>> result = new HashMap<>();
-        mirrorPartitions.forEach((mirrorName, topicParts) -> {
-            topicParts.forEach((topic, parts) -> {
-                parts.forEach(part -> {
-                    MirrorPartitionKey pk = MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(topic), part);
-                    MirrorPartition cached = mirrorCache.getPartition(pk);
-                    int lme = isLocalCoordinator(mirrorName, topic, part) && cached != null
-                            ? cached.lastMirrorEpoch() : -1;
-                    result.computeIfAbsent(mirrorName, k -> new HashMap<>())
-                            .put(new TopicPartition(topic, part), lme);
-                });
-            });
-        });
-        return result;
-    }
-
     public String getSourceClusterId(String mirrorName) {
         Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName));
         return (String) props.get(CommonClientConfigs.SOURCE_CLUSTER_ID_CONFIG);
@@ -1605,17 +1578,45 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         }
 
         MetadataImage currentImage = metadataImage;
-        Map<String, Set<MirrorStateWrite>> remoteWrites = new HashMap<>();
+        Map<String, Set<Integer>> remotePartitions = collectRemotePartitions(mirrorName, topics, currentImage);
+
+        CompletableFuture<Void> readRemoteFuture = new CompletableFuture<>();
+        if (!remotePartitions.isEmpty()) {
+            readStateFromRemoteCoordinator(mirrorName, remotePartitions, res -> readRemoteFuture.complete(null));
+        } else {
+            readRemoteFuture.complete(null);
+        }
+
+        return readRemoteFuture.thenCompose(v -> executeRecoverWrites(mirrorName, topics, currentImage));
+    }
+
+    private Map<String, Set<Integer>> collectRemotePartitions(String mirrorName, Set<String> topics, MetadataImage image) {
+        Map<String, Set<Integer>> remotePartitions = new HashMap<>();
+        for (String topic : topics) {
+            TopicImage topicImage = image.topics().getTopic(topic);
+            if (topicImage != null) {
+                for (int i = 0; i < topicImage.partitions().size(); i++) {
+                    if (!isLocalCoordinator(mirrorName, topic, i)) {
+                        remotePartitions.computeIfAbsent(topic, k -> new HashSet<>()).add(i);
+                    }
+                }
+            }
+        }
+        return remotePartitions;
+    }
+
+    private CompletableFuture<Void> executeRecoverWrites(String mirrorName, Set<String> topics, MetadataImage image) {
         List<CompletableFuture<Void>> localWrites = new ArrayList<>();
+        Map<String, Set<MirrorStateWrite>> remoteWrites = new HashMap<>();
 
         for (String topic : topics) {
-            TopicImage topicImage = currentImage.topics().getTopic(topic);
+            TopicImage topicImage = image.topics().getTopic(topic);
             if (topicImage == null) {
                 continue;
             }
             for (int i = 0; i < topicImage.partitions().size(); i++) {
                 TopicPartition tp = new TopicPartition(topic, i);
-                MirrorPartitionKey key = MirrorPartitionKey.of(mirrorName, currentImage.topics().getTopic(topic).id(), i);
+                MirrorPartitionKey key = MirrorPartitionKey.of(mirrorName, topicImage.id(), i);
                 MirrorPartition mp = MirrorPartition.orEmpty(getPartition(key));
                 if (mp.state() == MirrorPartitionState.FAILED && mp.prevState() != null) {
                     MirrorPartitionState targetState = mp.prevState();
@@ -1638,21 +1639,21 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         CompletableFuture<Void> allLocalWrites = CompletableFuture.allOf(
                 localWrites.toArray(new CompletableFuture<?>[0]));
 
-        if (!remoteWrites.isEmpty()) {
-            CompletableFuture<Void> remoteWritesFuture = new CompletableFuture<>();
-            writeStateToRemoteCoordinator(mirrorName, remoteWrites, Set.of(), res -> {
-                res.data().topics().forEach(t -> t.partitions().forEach(p -> {
-                    if (p.errorCode() != Errors.NONE.code()) {
-                        log.warn("Failed to write recover state for partition {}-{}: {}",
-                                t.topicName(), p.partitionIndex(), Errors.forCode(p.errorCode()));
-                    }
-                }));
-                remoteWritesFuture.complete(null);
-            });
-            return allLocalWrites.thenCompose(v -> remoteWritesFuture);
-        } else {
+        if (remoteWrites.isEmpty()) {
             return allLocalWrites;
         }
+
+        CompletableFuture<Void> remoteWritesFuture = new CompletableFuture<>();
+        writeStateToRemoteCoordinator(mirrorName, remoteWrites, Set.of(), res -> {
+            res.data().topics().forEach(t -> t.partitions().forEach(p -> {
+                if (p.errorCode() != Errors.NONE.code()) {
+                    log.warn("Failed to write recover state for partition {}-{}: {}",
+                            t.topicName(), p.partitionIndex(), Errors.forCode(p.errorCode()));
+                }
+            }));
+            remoteWritesFuture.complete(null);
+        });
+        return allLocalWrites.thenCompose(res -> remoteWritesFuture);
     }
 
     public void validateDeleteMirrorStates(DeleteClusterMirrorRequestData data, Consumer<Optional<Errors>> callback) {

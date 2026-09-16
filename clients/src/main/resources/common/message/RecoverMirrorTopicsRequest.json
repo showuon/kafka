@@ -30,7 +30,7 @@
           "about": "The topic name." }
       ]},
     { "name": "TopicPatterns", "type": "[]string", "versions": "0+", "nullableVersions": "0+",
-      "about": "Regex patterns to match mirror topic names to recover." },
+      "about": "Regex patterns to match topic names." },
     { "name": "TimeoutMs", "type": "int32", "versions": "0+",
       "about": "How long to wait in milliseconds before timing out the request." }
   ]

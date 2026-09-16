@@ -1237,12 +1237,10 @@ class ControllerApis(
       throw new TopicAuthorizationException(unauthorizedTopics.asJava)
     val topics = wireTopics.asScala.map(t =>
       new Controller.MirrorTopicMetadata(t.topicName(), t.topicId(), t.numPartitions())).toList.asJava
-    val topicPatterns = startRequest.data().topicPatterns()
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       requestTimeoutMsToDeadlineNs(time, startRequest.data().timeoutMs()))
     val stateOffset = startRequest.data().stateOffset()
-    controller.startMirrorTopics(context, mirrorName, topics,
-        topicPatterns, stateOffset)
+    controller.startMirrorTopics(context, mirrorName, topics, stateOffset)
       .handle[Unit] { (response, exception) =>
         if (exception != null) {
           requestHelper.handleError(request, exception)
@@ -1273,11 +1271,10 @@ class ControllerApis(
       authHelper.authorize(request.context, ALTER_CONFIGS, TOPIC, topic, logIfDenied = false))
     if (unauthorizedTopics.nonEmpty)
       throw new TopicAuthorizationException(unauthorizedTopics.asJava)
-    val topicPatterns = stopRequest.data().topicPatterns()
     val stateOffset = stopRequest.data().stateOffset()
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       requestTimeoutMsToDeadlineNs(time, stopRequest.data().timeoutMs()))
-    controller.stopMirrorTopics(context, mirrorName, topics, topicPatterns, stateOffset)
+    controller.stopMirrorTopics(context, mirrorName, topics, stateOffset)
       .handle[Unit] { (response, exception) =>
         if (exception != null) {
           requestHelper.handleError(request, exception)
