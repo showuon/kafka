@@ -845,6 +845,8 @@ class ClusterMirroringTest(MirrorUtils, Test):
 
         self.logger.info("Start the stopped source broker so all replicas rejoin ISR for LME truncation")
         self.source_kafka.start_node(src_broker0)
+
+        # here
         MirrorUtils.wait_mirror_state(self.logger, self.source_kafka, self.client_node,
                         "new-mirror", ["my-topic"], "MIRRORING", err_msg="Reverse mirror did not reach MIRRORING state")
 

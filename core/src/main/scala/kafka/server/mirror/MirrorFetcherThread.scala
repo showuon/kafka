@@ -167,9 +167,9 @@ class MirrorFetcherThread(name: String,
     // Append batches from the source cluster to the destination partition's log.
     val logAppendInfo = partition.appendRecordsToFollowerOrFutureReplica(records, isFuture = false, partitionLeaderEpoch, isMirrorLeader = true)
 
-    if (logTrace)
-      trace("Mirror follower has replica log end offset %d after appending %d bytes of messages for partition %s"
-        .format(log.logEndOffset, records.sizeInBytes, topicPartition))
+//    if (logTrace)
+    info("Mirror follower has replica log end offset %d after appending %d bytes of messages for partition %s"
+      .format(log.logEndOffset, records.sizeInBytes, topicPartition))
 
     val leaderLogStartOffset = partitionData.logStartOffset
 
@@ -182,6 +182,7 @@ class MirrorFetcherThread(name: String,
 
     log.maybeIncrementLogStartOffset(leaderLogStartOffset, LogStartOffsetIncrementReason.LeaderOffsetIncremented)
 
+    info("!!! HW:" + log.highWatermark() + ";;" + log.logEndOffset())
     // Update mirroring lag
     replicaMgr.updateMirrorOffsetInfo(mirrorName, topicPartition, partitionData.highWatermark, log.highWatermark)
 
