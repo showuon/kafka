@@ -88,6 +88,7 @@ import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.errors.ListenerNotFoundException;
 import org.apache.kafka.common.errors.LogDirNotFoundException;
 import org.apache.kafka.common.errors.MemberIdRequiredException;
+import org.apache.kafka.common.errors.MirrorConfigNotAvailableException;
 import org.apache.kafka.common.errors.MismatchedEndpointTypeException;
 import org.apache.kafka.common.errors.NetworkException;
 import org.apache.kafka.common.errors.NewLeaderElectedException;
@@ -432,7 +433,8 @@ public enum Errors {
     TOPIC_ALREADY_IN_CLUSTER_MIRROR(138, "The topic is already assigned to a cluster mirror.", TopicAlreadyInClusterMirrorException::new),
     TOPIC_NOT_IN_CLUSTER_MIRROR(139, "The topic does not belong to the specified cluster mirror.", TopicNotInClusterMirrorException::new),
     CLUSTER_MIRROR_AUTHORIZATION_FAILED(144, "Cluster mirror authorization failed.", ClusterMirrorAuthorizationException::new),
-    INVALID_CLUSTER_MIRROR_STATE(145, "Invalid cluster mirror state.", InvalidMirrorStateException::new);
+    INVALID_CLUSTER_MIRROR_STATE(145, "Invalid cluster mirror state.", InvalidMirrorStateException::new),
+    MIRROR_CONFIG_NOT_AVAILABLE(146, "Mirror config is not available.", MirrorConfigNotAvailableException::new);
 
     private static final Logger log = LoggerFactory.getLogger(Errors.class);
 
