@@ -4289,8 +4289,9 @@ class KafkaApis(val requestChannel: RequestChannel,
     resolveFuture.handle[Unit] { (_, exception) =>
       if (exception != null) {
         val cause = if (exception.isInstanceOf[java.util.concurrent.CompletionException]) exception.getCause else exception
+        val errorCode = if (Errors.forException(cause) == -1) Errors.INVALID_REQUEST.code else Errors.forException(cause).code
         requestHelper.sendMaybeThrottle(request, new StartMirrorTopicsResponse(
-          new StartMirrorTopicsResponseData().setErrorCode(Errors.INVALID_REQUEST.code)
+          new StartMirrorTopicsResponseData().setErrorCode(errorCode)
             .setErrorMessage("Failed to resolve topic patterns from source cluster: " + cause.getMessage)))
       } else if (data.topics() == null || data.topics().isEmpty) {
         requestHelper.sendMaybeThrottle(request, new StartMirrorTopicsResponse(
