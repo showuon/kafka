@@ -1682,6 +1682,8 @@ class Partition(val topicPartition: TopicPartition,
 
     lastFetchedEpoch.ifPresent { fetchEpoch =>
       val epochEndOffset = lastOffsetForLeaderEpoch(currentLeaderEpoch, fetchEpoch, fetchOnlyFromLeader = false)
+      if (topic.equals("quickstart-events"))
+        info("!!! epochEndOffset:" + epochEndOffset)
       val error = Errors.forCode(epochEndOffset.errorCode)
       if (error != Errors.NONE) {
         throw error.exception()

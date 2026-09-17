@@ -1313,6 +1313,8 @@ public class UnifiedLog implements AutoCloseable {
 
     public Optional<OffsetAndEpoch> endOffsetForEpoch(int leaderEpoch) {
         Map.Entry<Integer, Long> entry = leaderEpochCache.endOffsetFor(leaderEpoch, logEndOffset());
+        if (topicPartition().topic().equals("quickstart-events"))
+            logger.info("!!! endOffsetForEpoch called: topicPartition=" + topicPartition() + ", leaderEpoch=" + leaderEpoch + ";" + ", logEndOffset=" + logEndOffset() + ";" + leaderEpochCache.epochEntries() + ";" + entry);
         int foundEpoch = entry.getKey();
         long foundOffset = entry.getValue();
         if (foundOffset == UNDEFINED_EPOCH_OFFSET) {

@@ -17,6 +17,7 @@
 package kafka.server.mirror;
 
 import kafka.server.KafkaBroker;
+import kafka.server.BrokerServer;
 import kafka.utils.TestUtils;
 
 import org.apache.kafka.clients.admin.Admin;
@@ -60,6 +61,7 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.test.KafkaClusterTestKit;
 import org.apache.kafka.common.test.TestKitNodes;
+import org.apache.kafka.common.network.ListenerName;
 import org.apache.kafka.coordinator.common.runtime.CoordinatorRecord;
 import org.apache.kafka.coordinator.group.GroupCoordinatorConfig;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig;
@@ -79,9 +81,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -92,6 +98,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 
 import static org.apache.kafka.common.config.TopicConfig.MIRROR_SUPPORT_UNCLEAN_LEADER_ELECTION_CONFIG;
+import static org.apache.kafka.common.config.TopicConfig.UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG;
 import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
 import static org.apache.kafka.server.config.ReplicationConfigs.DEFAULT_REPLICATION_FACTOR_CONFIG;
 import static org.apache.kafka.test.TestUtils.DEFAULT_MAX_WAIT_MS;
@@ -1029,6 +1036,118 @@ public class ClusterMirroringIntegrationTest {
         }
     }
 
+    /**
+     * Verify log convergence after unclean leader elections and failover/failback.
+     * Translated from cluster_mirroring_test.py#test_log_convergence_ule.
+     */
+    @Test
+    void testLogConvergenceUle() throws Exception {
+        // luke
+        String topic = "my-topic";
+        TopicPartition tp = new TopicPartition(topic, 0);
+
+        System.out.println("!!! 1");
+        // Create source topic with ULE support enabled, 1 partition, RF=2
+        srcAdmin.createTopics(List.of(new NewTopic(topic, 1, (short) 2)))
+                .all().get(30, TimeUnit.SECONDS);
+        ConfigResource topicResource = new ConfigResource(ConfigResource.Type.TOPIC, topic);
+        srcAdmin.incrementalAlterConfigs(Map.of(topicResource, List.of(
+                new AlterConfigOp(
+                        new ConfigEntry(MIRROR_SUPPORT_UNCLEAN_LEADER_ELECTION_CONFIG, "true"),
+                        AlterConfigOp.OpType.SET),
+                new AlterConfigOp(
+                        new ConfigEntry(UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG, "true"),
+                        AlterConfigOp.OpType.SET)))).all().get(30, TimeUnit.SECONDS);
+        System.out.println("!!! 2");
+
+        List<Integer> brokerIds = new ArrayList<>(srcCluster.brokers().keySet());
+        int broker0Id = brokerIds.get(0);
+        int broker1Id = brokerIds.get(1);
+
+        // Bounce source brokers to trigger leader elections
+        for (int id : brokerIds) {
+            System.out.println("!!! 21");
+            srcCluster.brokers().get(id).shutdown();
+            System.out.println("!!! 22");
+            srcCluster.brokers().get(id).startup();
+            System.out.println("!!! 23");
+        }
+
+        System.out.println("!!! 3");
+        // Send 1 message via source broker 0
+        produceRecordsViaBroker(srcCluster, broker0Id, topic, 0, 1);
+
+        System.out.println("!!! 4");
+        // Start cluster mirror on destination
+        dstAdmin.createClusterMirror(OTHER_MIRROR_NAME, Map.of(
+                "bootstrap.servers", srcCluster.bootstrapServers()
+        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+        dstAdmin.startMirrorTopics(OTHER_MIRROR_NAME, List.of(topic), new StartMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+        System.out.println("!!! 5");
+        waitForMirrorState(dstAdmin, OTHER_MIRROR_NAME, topic, "MIRRORING");
+
+        System.out.println("!!! 6");
+
+        // Stop source broker 0 (broker 0 becomes stale)
+        srcCluster.brokers().get(broker0Id).shutdown();
+
+        // Send 1 message via source broker 1
+        produceRecordsViaBroker(srcCluster, broker1Id, topic, 1, 1);
+        waitForMirrorLagZero(dstAdmin, OTHER_MIRROR_NAME, topic);
+
+        // ULE 1: stop broker 1, start broker 0 (stale), elect it as leader
+        srcCluster.brokers().get(broker1Id).shutdown();
+        srcCluster.brokers().get(broker0Id).startup();
+
+        // Send 2 messages via source broker 0
+        produceRecordsViaBroker(srcCluster, broker0Id, topic, 2, 2);
+        waitForMirrorLagZero(dstAdmin, OTHER_MIRROR_NAME, topic);
+
+        System.out.println("!!! 7");
+        // Failover: stop mirror so destination topic becomes writable
+        dstAdmin.stopMirrorTopics(OTHER_MIRROR_NAME, List.of(topic), new StopMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, OTHER_MIRROR_NAME, topic, "STOPPED");
+
+        System.out.println("!!! 8");
+        // Send 2 messages via destination
+        produceRecords(dstCluster, topic, 0, 2);
+
+        System.out.println("!!! 9");
+        // ULE 2: stop broker 0, start broker 1 (stale), elect it as leader
+        srcCluster.brokers().get(broker0Id).shutdown();
+        srcCluster.brokers().get(broker1Id).startup();
+
+        System.out.println("!!! 10");
+        // Send 6 messages via source broker 1
+        produceRecordsViaBroker(srcCluster, broker1Id, topic, 4, 6);
+
+        // Failback: source now mirrors from destination
+        srcAdmin.createClusterMirror(OTHER_MIRROR_NAME, Map.of(
+                "bootstrap.servers", dstCluster.bootstrapServers()
+        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+        srcAdmin.startMirrorTopics(OTHER_MIRROR_NAME, List.of(topic), new StartMirrorTopicsOptions())
+                .all().get(30, TimeUnit.SECONDS);
+
+        System.out.println("!!! 11");
+        // Mirror stays in LOG_ALIGNMENT until all source replicas rejoin ISR for LME truncation
+        waitForMirrorState(srcAdmin, OTHER_MIRROR_NAME, topic, "LOG_ALIGNMENT");
+
+        System.out.println("!!! 12");
+        // Start the stopped source broker so all replicas rejoin ISR for LME truncation
+        srcCluster.brokers().get(broker0Id).startup();
+
+        System.out.println("!!! 13");
+        // Wait for reverse mirror to reach MIRRORING state and catch up
+        waitForMirrorState(srcAdmin, OTHER_MIRROR_NAME, topic, "MIRRORING");
+        waitForMirrorLagZero(srcAdmin, OTHER_MIRROR_NAME, topic);
+
+        System.out.println("!!! 14");
+        // Verify log convergence (dest is source of truth after failback)
+        waitForLogConvergence(dstCluster, srcCluster, topic, 0);
+    }
+
     private void produceRecords(KafkaClusterTestKit cluster, String topic,
                                 int startIndex, int count) {
         Properties props = new Properties();
@@ -1226,6 +1345,7 @@ public class ClusterMirroringIntegrationTest {
         var descriptions = result.allDescriptions().get(5, TimeUnit.SECONDS);
         ClusterMirrorDescription desc = descriptions.get(mirrorName);
         if (desc == null) return false;
+        System.out.println("!!! desc:" + desc);
         var pattern = java.util.regex.Pattern.compile(topicPattern);
         var matched = desc.leaderStates().entrySet().stream()
                 .filter(e -> pattern.matcher(e.getKey()).matches())
@@ -1336,5 +1456,76 @@ public class ClusterMirroringIntegrationTest {
             assertEquals(expectedCount, records.size(), message);
             TimeUnit.MILLISECONDS.sleep(1_000);
         }
+    }
+
+    private String brokerBootstrap(KafkaClusterTestKit cluster, int brokerId) {
+        BrokerServer broker = cluster.brokers().get(brokerId);
+        ListenerName listenerName = cluster.nodes().brokerListenerName();
+        int port = broker.boundPort(ListenerName.normalised(listenerName.value()));
+        return "localhost:" + port;
+    }
+
+    private void produceRecordsViaBroker(KafkaClusterTestKit cluster, int brokerId,
+                                         String topic, int startIndex, int count) {
+        Properties props = new Properties();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, brokerBootstrap(cluster, brokerId));
+        props.put(ProducerConfig.ACKS_CONFIG, "1");
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+
+        try (KafkaProducer<String, String> producer = new KafkaProducer<>(props)) {
+            for (int i = startIndex; i < startIndex + count; i++) {
+                producer.send(new ProducerRecord<>(topic, "key-" + i, "value-" + i));
+            }
+            producer.flush();
+        }
+    }
+
+    private void waitForLogConvergence(KafkaClusterTestKit authoritative, KafkaClusterTestKit mirrored,
+                                       String topic, int partition) throws Exception {
+        TopicPartition tp = new TopicPartition(topic, partition);
+        waitForCondition(() -> {
+            try {
+                // Find authoritative leader
+                int leaderId = -1;
+                for (BrokerServer broker : authoritative.brokers().values()) {
+                    var optIsr = broker.metadataCache().getLeaderAndIsr(topic, partition);
+                    if (optIsr.isPresent() && optIsr.get().leader() == broker.config().nodeId()) {
+                        leaderId = broker.config().nodeId();
+                        break;
+                    }
+                }
+                if (leaderId < 0) return false;
+
+                var authLog = authoritative.brokers().get(leaderId).replicaManager().getLog(tp);
+                if (authLog.isEmpty()) return false;
+                Map<Long, byte[]> authSegments = readLogSegmentBytes(authLog.get());
+                if (authSegments.isEmpty()) return false;
+
+                for (BrokerServer broker : mirrored.brokers().values()) {
+                    var mirroredLog = broker.replicaManager().getLog(tp);
+                    if (mirroredLog.isEmpty()) return false;
+                    Map<Long, byte[]> mirroredSegments = readLogSegmentBytes(mirroredLog.get());
+                    if (!authSegments.keySet().equals(mirroredSegments.keySet())) return false;
+                    for (Map.Entry<Long, byte[]> entry : authSegments.entrySet()) {
+                        if (!Arrays.equals(entry.getValue(), mirroredSegments.get(entry.getKey())))
+                            return false;
+                    }
+                }
+                return true;
+            } catch (Exception e) {
+                return false;
+            }
+        }, 60_000, "Log segments did not converge between authoritative and mirrored cluster");
+    }
+
+    private Map<Long, byte[]> readLogSegmentBytes(
+            org.apache.kafka.storage.internals.log.UnifiedLog log) throws IOException {
+        Map<Long, byte[]> result = new HashMap<>();
+        for (var segment : log.logSegments()) {
+            byte[] data = Files.readAllBytes(segment.log().file().toPath());
+            result.put(segment.baseOffset(), data);
+        }
+        return result;
     }
 }

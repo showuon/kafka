@@ -201,7 +201,7 @@ class MirrorUtils:
                 lambda p: p["state"] == state, topics)
         if err_msg is None:
             err_msg = "Mirror did not reach %s state" % state
-        wait_until(check, timeout_sec=120, backoff_sec=2, err_msg=err_msg)
+        wait_until(check, timeout_sec=20, backoff_sec=2, err_msg=err_msg)
 
     @staticmethod
     def wait_mirror_retries_exhausted(logger, kafka, client_node, mirror_name,
