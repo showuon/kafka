@@ -5141,7 +5141,7 @@ public class KafkaAdminClient extends AdminClient {
     public RecoverMirrorTopicsResult recoverMirrorTopics(String mirrorName, List<String> topicPatterns, RecoverMirrorTopicsOptions options) {
         final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
 
-        validatePatterns(topicPatterns);
+        validateJavaPatterns(topicPatterns);
 
         final long now = time.milliseconds();
         final Call call = new Call("recoverMirrorTopics", calcDeadlineMs(now, options.timeoutMs()),
