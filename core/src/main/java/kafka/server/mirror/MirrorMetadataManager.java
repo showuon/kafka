@@ -1069,8 +1069,9 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     private void updateLocalFailedState(MirrorPartitionKey key, MirrorPartitionState newState,
                                         String errorMessage, boolean nonRetryable) {
+        int maxAttempts = brokerConfig.mirrorConfig().failedRetryMaxAttempts();
         MirrorPartitionState curState = MirrorPartition.orEmpty(mirrorCache.getPartition(key)).state();
-        mirrorCache.updateFailedInfo(key, curState, newState, errorMessage, nonRetryable);
+        mirrorCache.updateFailedInfo(key, curState, newState, errorMessage, nonRetryable, maxAttempts);
     }
 
     private Map<TopicPartition, Integer> getLatestLocalEpoch(TopicPartition tp) {
@@ -1809,7 +1810,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     public void updateFailedInfo(MirrorPartitionKey key, MirrorPartitionState currentState,
                                  MirrorPartitionState newState, String errorMessage, boolean nonRetryable) {
-        mirrorCache.updateFailedInfo(key, currentState, newState, errorMessage, nonRetryable);
+        int maxAttempts = brokerConfig.mirrorConfig().failedRetryMaxAttempts();
+        mirrorCache.updateFailedInfo(key, currentState, newState, errorMessage, nonRetryable, maxAttempts);
     }
 
     public void clearFailedInfo(String mirrorName, TopicPartition tp) {
