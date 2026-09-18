@@ -9,6 +9,52 @@
 [![CI](https://github.com/apache/kafka/actions/workflows/ci.yml/badge.svg?branch=trunk&event=push)](https://github.com/apache/kafka/actions/workflows/ci.yml?query=event%3Apush+branch%3Atrunk)
 [![Flaky Test Report](https://github.com/apache/kafka/actions/workflows/generate-reports.yml/badge.svg?branch=trunk&event=schedule)](https://github.com/apache/kafka/actions/workflows/generate-reports.yml?query=event%3Aschedule+branch%3Atrunk)
 
+This is a PoC branch for KIP-1279 Cluster Mirroring. Please note that this is a work in progress and is not intended for production use.
+
+### Quick start to run cluster mirroring feature:
+1. Checkout this branch.
+2. Build the project
+```
+./gradlew jar
+```
+3. Follow instructions in https://kafka.apache.org/quickstart to start up 2 kafka clusters.
+Suppose the bootstrap.server in source cluster is `localhost:9092`, and the one in destination cluster is `localhost:9094`
+
+4. Create a topic in the source cluster.
+```
+bin/kafka-topics.sh --create --bootstrap-server localhost:9092 --topic test
+```
+5. Write messages to the topic.
+```
+bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic test
+```
+6. Prepare the mirror configurations. The required one is `bootstrap.servers`. The full list is [here](https://cwiki.apache.org/confluence/spaces/KAFKA/pages/406620973/KIP-1279+Cluster+Mirroring#KIP1279:ClusterMirroring-Mirror).
+```
+echo "bootstrap.servers=localhost:9092" > /tmp/test.properties
+```
+7. Create a cluster mirror named "my-link" and provides the mirror configurations created above.
+```
+bin/kafka-cluster-mirrors.sh --bootstrap-server localhost:9094 --create --mirror my-link --mirror-config /tmp/test.properties
+```
+8. Start a mirror for topic `test`.
+```
+bin/kafka-cluster-mirrors.sh --bootstrap-server localhost:9094 --start --mirror my-link --topics test
+```
+9. After starting the mirror, you can check the status of the mirror using the following command:
+```
+bin/kafka-cluster-mirrors.sh --bootstrap-server localhost:9094 --describe
+```
+10. Stop the mirror.
+```
+bin/kafka-cluster-mirrors.sh --bootstrap-server localhost:9094 --stop --mirror my-link --topics test
+```
+11. Delete the mirror.
+```
+bin/kafka-cluster-mirrors.sh --bootstrap-server localhost:9094 --delete --mirror my-link
+```
+
+==================
+
 [**Apache Kafka**](https://kafka.apache.org) is an open-source distributed event streaming platform used by thousands of companies for high-performance data pipelines, streaming analytics, data integration, and mission-critical applications.
 
 You need to have [Java](http://www.oracle.com/technetwork/java/javase/downloads/index.html) installed.
