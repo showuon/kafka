@@ -743,7 +743,10 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         }
 
         if (curState == MirrorPartitionState.FAILED) {
-            transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED);
+            MirrorPartitionKey key = MirrorPartitionKey.of(
+                    mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
+            MirrorPartition mp = MirrorPartition.orEmpty(mirrorCache.getPartition(key));
+            transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED, mp.errorMessage(), mp.retryAttempt() == NON_RETRYABLE_ATTEMPT);
         } else if (stopRequested) {
             if (curState != MirrorPartitionState.STOPPED) {
                 transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.STOPPING);
