@@ -111,10 +111,10 @@ public class MirrorStateCache {
     }
 
     public void updateFailedInfo(MirrorPartitionKey key, MirrorPartitionState curState,
-                                 MirrorPartitionState newState, String errorMessage, boolean nonRetryable) {
+                                 MirrorPartitionState newState, String errorMessage, boolean nonRetryable, int maxAttempts) {
         MirrorPartition existing = MirrorPartition.orEmpty(getPartition(key));
         if (newState == MirrorPartitionState.FAILED) {
-            int attempt = existing.nextAttempt(nonRetryable);
+            int attempt = existing.nextAttempt(nonRetryable, maxAttempts);
             MirrorPartitionState previousState = existing.resolvePrevState(curState);
             partitions.compute(key, (k, e) -> MirrorPartition.orEmpty(e).withError(errorMessage, attempt, previousState));
         } else if ((curState != MirrorPartitionState.FAILED && curState != newState)
