@@ -32,13 +32,13 @@ bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic test
 ```
 echo "bootstrap.servers=localhost:9092" > /tmp/test.properties
 ```
-7. Create a cluster mirror named "my-link" and provides the mirror configurations created above.
+7. Create a cluster mirror named "my-mirror" and provides the mirror configurations created above.
 ```
-bin/kafka-cluster-mirrors.sh --bootstrap-server localhost:9094 --create --mirror my-link --mirror-config /tmp/test.properties
+bin/kafka-cluster-mirrors.sh --bootstrap-server localhost:9094 --create --mirror my-mirror --mirror-config /tmp/test.properties
 ```
 8. Start a mirror for topic `test`.
 ```
-bin/kafka-cluster-mirrors.sh --bootstrap-server localhost:9094 --start --mirror my-link --topics test
+bin/kafka-cluster-mirrors.sh --bootstrap-server localhost:9094 --start --mirror my-mirror --topics test
 ```
 9. After starting the mirror, you can check the status of the mirror using the following command:
 ```
@@ -46,11 +46,11 @@ bin/kafka-cluster-mirrors.sh --bootstrap-server localhost:9094 --describe
 ```
 10. Stop the mirror.
 ```
-bin/kafka-cluster-mirrors.sh --bootstrap-server localhost:9094 --stop --mirror my-link --topics test
+bin/kafka-cluster-mirrors.sh --bootstrap-server localhost:9094 --stop --mirror my-mirror --topics test
 ```
 11. Delete the mirror.
 ```
-bin/kafka-cluster-mirrors.sh --bootstrap-server localhost:9094 --delete --mirror my-link
+bin/kafka-cluster-mirrors.sh --bootstrap-server localhost:9094 --delete --mirror my-mirror
 ```
 
 ==================
