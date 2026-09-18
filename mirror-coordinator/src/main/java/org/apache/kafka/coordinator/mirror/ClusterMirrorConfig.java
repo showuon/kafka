@@ -89,7 +89,7 @@ public final class ClusterMirrorConfig {
             "This controls how frequently the coordinator polls source clusters to detect new topics and metadata changes.";
 
     public static final String MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_CONFIG = "mirror.failed.retry.initial.backoff.ms";
-    public static final long MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_DEFAULT = 1000L;
+    public static final long MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_DEFAULT = 100L;
     public static final String MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_DOC = "The initial backoff time in milliseconds before retrying a mirror partition " +
             "in FAILED state. The actual delay uses full jitter: a uniform random value in [0, backoff].";
 
@@ -98,7 +98,7 @@ public final class ClusterMirrorConfig {
     public static final String MIRROR_FAILED_RETRY_MAX_BACKOFF_MS_DOC = "The maximum backoff time in milliseconds for retrying a mirror partition in FAILED state.";
 
     public static final String MIRROR_FAILED_RETRY_MAX_ATTEMPTS_CONFIG = "mirror.failed.retry.max.attempts";
-    public static final int MIRROR_FAILED_RETRY_MAX_ATTEMPTS_DEFAULT = 100;
+    public static final int MIRROR_FAILED_RETRY_MAX_ATTEMPTS_DEFAULT = 20;
     public static final String MIRROR_FAILED_RETRY_MAX_ATTEMPTS_DOC = "The maximum number of automatic retry attempts for a mirror partition in FAILED state. " +
             "After this limit is reached, manual intervention is required via the start-mirror-topics command. " +
             "Set to 0 to disable automatic retries.";
