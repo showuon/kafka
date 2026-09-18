@@ -773,7 +773,7 @@ class RequestQuotaTest extends BaseRequestTest {
           new ListClusterMirrorsRequest.Builder(new ListClusterMirrorsRequestData())
 
         case ApiKeys.CREATE_CLUSTER_MIRROR =>
-          new CreateClusterMirrorRequest.Builder(new CreateClusterMirrorRequestData())
+          new CreateClusterMirrorRequest.Builder("test-mirror", util.Map.of("bootstrap.servers", "localhost:1234"), 100)
 
         case ApiKeys.START_MIRROR_TOPICS =>
           new StartMirrorTopicsRequest.Builder(new StartMirrorTopicsRequestData())
@@ -804,6 +804,9 @@ class RequestQuotaTest extends BaseRequestTest {
 
         case ApiKeys.BUMP_LEADER_EPOCHS =>
           new BumpLeaderEpochsRequest.Builder(new BumpLeaderEpochsRequestData())
+
+        case ApiKeys.RECOVER_MIRROR_TOPICS =>
+          new RecoverMirrorTopicsRequest.Builder(new RecoverMirrorTopicsRequestData())
 
       case _ =>
           throw new IllegalArgumentException("Unsupported API key " + apiKey)
