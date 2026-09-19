@@ -166,7 +166,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         ClusterMirrorMetadataManager metadataManager,
         Metrics metrics
     ) {
-        String name = "[ClusterMirrorCoordinatorService id=" + nodeId + "] ";
+        String name = "[" + ClusterMirrorCoordinatorService.class.getSimpleName() + " id=" + nodeId + "] ";
         this.log = new LogContext(name).logger(ClusterMirrorCoordinatorService.class);
         this.config = config;
         this.runtime = runtime;
