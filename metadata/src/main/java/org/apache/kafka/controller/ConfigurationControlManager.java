@@ -714,7 +714,6 @@ public class ConfigurationControlManager {
         return Optional.empty();
     }
 
-
     List<ApiMessageAndVersion> createClearElrRecordsAsNeeded(List<ApiMessageAndVersion> input) {
         if (!featureControl.isElrFeatureEnabled()) {
             return List.of();

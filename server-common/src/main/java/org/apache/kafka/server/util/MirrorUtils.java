@@ -19,6 +19,7 @@ package org.apache.kafka.server.util;
 import org.apache.kafka.common.acl.AclBinding;
 import org.apache.kafka.common.acl.AclOperation;
 import org.apache.kafka.common.acl.AclPermissionType;
+import org.apache.kafka.common.errors.InvalidRegularExpression;
 import org.apache.kafka.common.resource.ResourceType;
 
 import com.google.re2j.Pattern;
@@ -35,13 +36,17 @@ public final class MirrorUtils {
      * Validates that each pattern in the list is a valid RE2J regular expression.
      *
      * @param patterns the list of regex pattern strings to validate
-     * @throws PatternSyntaxException if any pattern is invalid
+     * @throws InvalidRegularExpression if any pattern is invalid
      */
-    public static void validatePatterns(List<String> patterns) {
-        for (String pattern : patterns) {
-            String trimmed = pattern.trim();
-            if (!trimmed.isEmpty()) {
-                Pattern.compile(trimmed);
+    public static void validateRe2jPatterns(List<String> patterns) {
+        for (String p : patterns) {
+            String pattern = p.trim();
+            if (!pattern.isEmpty()) {
+                try {
+                    Pattern.compile(pattern);
+                } catch (PatternSyntaxException e) {
+                    throw new InvalidRegularExpression("Invalid pattern: " + pattern);
+                }
             }
         }
     }
