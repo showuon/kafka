@@ -18,10 +18,12 @@
 package org.apache.kafka.clients.admin;
 
 import org.apache.kafka.common.KafkaFuture;
+import org.apache.kafka.common.annotation.InterfaceStability;
 
 /**
  * The result of the {@link Admin#createClusterMirror} call.
  */
+@InterfaceStability.Evolving
 public class CreateClusterMirrorResult {
     private final KafkaFuture<Void> future;
 

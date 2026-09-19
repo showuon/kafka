@@ -17,6 +17,8 @@
 
 package org.apache.kafka.clients.admin;
 
+import org.apache.kafka.common.annotation.InterfaceStability;
+
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -24,6 +26,7 @@ import java.util.Objects;
 /**
  * A listing of a cluster mirror.
  */
+@InterfaceStability.Evolving
 public class ClusterMirrorListing {
     private final String mirrorName;
     private final String sourceBootstrap;

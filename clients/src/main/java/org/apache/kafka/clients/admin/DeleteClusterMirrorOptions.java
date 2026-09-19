@@ -17,8 +17,11 @@
 
 package org.apache.kafka.clients.admin;
 
+import org.apache.kafka.common.annotation.InterfaceStability;
+
 /**
  * Options for {@link Admin#deleteClusterMirror}.
  */
+@InterfaceStability.Evolving
 public class DeleteClusterMirrorOptions extends AbstractOptions<DeleteClusterMirrorOptions> {
 }

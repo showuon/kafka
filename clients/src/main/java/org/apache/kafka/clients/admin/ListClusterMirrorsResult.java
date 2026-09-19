@@ -18,6 +18,7 @@
 package org.apache.kafka.clients.admin;
 
 import org.apache.kafka.common.KafkaFuture;
+import org.apache.kafka.common.annotation.InterfaceStability;
 import org.apache.kafka.common.internals.KafkaFutureImpl;
 
 import java.util.ArrayList;
@@ -28,6 +29,7 @@ import java.util.List;
 /**
  * The result of the {@link Admin#listClusterMirrors} call.
  */
+@InterfaceStability.Evolving
 public class ListClusterMirrorsResult {
     private final KafkaFutureImpl<Collection<ClusterMirrorListing>> all;
     private final KafkaFutureImpl<Collection<ClusterMirrorListing>> valid;

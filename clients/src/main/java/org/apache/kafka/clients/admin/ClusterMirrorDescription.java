@@ -19,6 +19,7 @@ package org.apache.kafka.clients.admin;
 
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
+import org.apache.kafka.common.annotation.InterfaceStability;
 
 import java.util.Collections;
 import java.util.Map;
@@ -28,6 +29,7 @@ import java.util.Set;
 /**
  * A detailed description of a cluster mirror.
  */
+@InterfaceStability.Evolving
 public class ClusterMirrorDescription {
     private final String mirrorName;
     private final String sourceBootstrap;
