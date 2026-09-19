@@ -29,10 +29,14 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
 /**
- * Bridge between the mirror-coordinator module and core module classes
- * ({@code MirrorMetadataManager}, {@code MetadataCache}, {@code ReplicaManager}).
+ * Bridge between the {@code mirror-coordinator} module and the core module.
+ * Implemented by {@code MirrorMetadataManager} (core), which owns the KRaft
+ * metadata image, the mirror-state cache, and the source/destination admin
+ * clients. The coordinator module calls back through this interface to read
+ * and mutate mirror partition state without taking a compile-time dependency
+ * on core classes.
  */
-public interface CoreBridge {
+public interface ClusterMirrorMetadataManager {
     void initialize(
         CoordinatorWriter coordinatorWriter,
         CoordinatorReader coordinatorReader,
