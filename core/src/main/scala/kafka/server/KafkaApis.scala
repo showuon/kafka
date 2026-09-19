@@ -4867,7 +4867,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       })
       mirrorPartitions.put(topic.topicName(), parts)
     })
-    clusterMirrorCoordinator.readState(mirrorName, mirrorPartitions,
+    clusterMirrorCoordinator.readPartitionStates(mirrorName, mirrorPartitions,
       res => requestHelper.sendMaybeThrottle(request, res))
   }
 
@@ -4954,7 +4954,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       })
       mirrorState.put(topic.topicName(), topicState)
     })
-    clusterMirrorCoordinator.writeState(mirrorName, mirrorState, res => requestHelper.sendMaybeThrottle(request, res))
+    clusterMirrorCoordinator.writePartitionStates(mirrorName, mirrorState, res => requestHelper.sendMaybeThrottle(request, res))
   }
 }
 

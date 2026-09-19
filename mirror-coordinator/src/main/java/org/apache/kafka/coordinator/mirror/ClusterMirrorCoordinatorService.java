@@ -287,7 +287,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
     /**
      * Reads partition states from the local coordinator cache.
      */
-    public void readState(
+    public void readPartitionStates(
             String mirrorName,
             Map<String, Set<Integer>> partitions,
             Consumer<ReadMirrorStatesResponse> callback
@@ -335,7 +335,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
     /**
      * Writes partition states received from a remote broker.
      */
-    public void writeState(
+    public void writePartitionStates(
             String mirrorName,
             Map<String, Set<MirrorStateWrite>> mirrorStates,
             Consumer<WriteMirrorStatesResponse> callback
