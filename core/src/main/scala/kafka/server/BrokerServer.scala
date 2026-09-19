@@ -23,7 +23,6 @@ import kafka.log.LogManager
 import kafka.network.SocketServer
 import kafka.raft.KafkaRaftManager
 import kafka.server.mirror.MirrorMetadataManager
-import kafka.server.mirror.CoreBridgeImpl
 import org.apache.kafka.coordinator.mirror.{ClusterMirrorCoordinatorService, MirrorRecordSerde}
 import kafka.server.metadata._
 import kafka.server.share.{ShareCoordinatorMetadataCacheHelperImpl, SharePartitionManager}
@@ -344,18 +343,12 @@ class BrokerServer(
        */
       val defaultActionQueue = new DelayedActionQueue
 
-      // Shared scheduler for one-shot state transitions (truncation, retries, epoch bumps).
-      // Shutdown by ClusterMirrorCoordinatorService.
-      val mirrorSharedScheduler = new KafkaScheduler(1, true, "MirrorShared-")
-      mirrorSharedScheduler.startup()
-
       mirrorMetadataManager = new MirrorMetadataManager(
         clusterId,
         config,
         clientToControllerChannelManager,
         () => replicaManager,
         metadataCache,
-        mirrorSharedScheduler,
         metrics,
         time
       )
@@ -410,7 +403,7 @@ class BrokerServer(
         new KafkaScheduler(1, true, "transaction-log-manager-"),
         producerIdManagerSupplier, metrics, metadataCache, Time.SYSTEM)
 
-      clusterMirrorCoordinator = createClusterMirrorCoordinator(mirrorSharedScheduler)
+      clusterMirrorCoordinator = createClusterMirrorCoordinator()
 
       autoTopicCreationManager = new DefaultAutoTopicCreationManager(
         config, clientToControllerChannelManager, groupCoordinator,
@@ -723,7 +716,7 @@ class BrokerServer(
     }
   }
 
-  private def createClusterMirrorCoordinator(scheduler: KafkaScheduler): ClusterMirrorCoordinatorService = {
+  private def createClusterMirrorCoordinator(): ClusterMirrorCoordinatorService = {
     val time = Time.SYSTEM
     val timer = new SystemTimerReaper(
       "cluster-mirror-coordinator-reaper",
@@ -738,9 +731,7 @@ class BrokerServer(
       config.mirrorConfig.coordinatorLoadBufferSize()
     )
     val writer = new CoordinatorPartitionWriter(replicaManager)
-
     val runtimeMetrics = new ClusterMirrorCoordinatorRuntimeMetrics(metrics)
-    val bridge = new CoreBridgeImpl(mirrorMetadataManager, metadataCache)
 
     new ClusterMirrorCoordinatorService.Builder(config.brokerId, config.mirrorConfig)
       .withTime(time)
@@ -748,8 +739,7 @@ class BrokerServer(
       .withLoader(loader)
       .withWriter(writer)
       .withCoordinatorRuntimeMetrics(runtimeMetrics)
-      .withBridge(bridge)
-      .withScheduler(scheduler)
+      .withMetadataManager(mirrorMetadataManager)
       .withMetrics(metrics)
       .build()
   }
