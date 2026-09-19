@@ -329,6 +329,7 @@ class RequestQuotaTest extends BaseRequestTest {
                 )
               )
           )
+
         case ApiKeys.OFFSET_FETCH =>
           OffsetFetchRequest.Builder.forTopicNames(
             new OffsetFetchRequestData()
@@ -493,6 +494,7 @@ class RequestQuotaTest extends BaseRequestTest {
               .setHost("*")
               .setOperation(AclOperation.WRITE.code)
               .setPermissionType(AclPermissionType.DENY.code))))
+
         case ApiKeys.DELETE_ACLS =>
           new DeleteAclsRequest.Builder(new DeleteAclsRequestData().setFilters(util.List.of(
             new DeleteAclsRequestData.DeleteAclsFilter()
@@ -503,6 +505,7 @@ class RequestQuotaTest extends BaseRequestTest {
               .setHostFilter("*")
               .setOperation(AclOperation.ANY.code)
               .setPermissionType(AclPermissionType.DENY.code))))
+
         case ApiKeys.DESCRIBE_CONFIGS =>
           new DescribeConfigsRequest.Builder(new DescribeConfigsRequestData()
             .setResources(util.List.of(new DescribeConfigsRequestData.DescribeConfigsResource()
@@ -719,7 +722,10 @@ class RequestQuotaTest extends BaseRequestTest {
                   ).iterator)))
 
         case ApiKeys.SHARE_ACKNOWLEDGE =>
-          new ShareAcknowledgeRequest.Builder(new ShareAcknowledgeRequestData())
+          new ShareAcknowledgeRequest.Builder(
+            new ShareAcknowledgeRequestData()
+              .setGroupId("test-share-group")
+              .setMemberId(Uuid.randomUuid().toString))
 
         case ApiKeys.ADD_RAFT_VOTER =>
           new AddRaftVoterRequest.Builder(new AddRaftVoterRequestData())
@@ -767,7 +773,7 @@ class RequestQuotaTest extends BaseRequestTest {
           new ListClusterMirrorsRequest.Builder(new ListClusterMirrorsRequestData())
 
         case ApiKeys.CREATE_CLUSTER_MIRROR =>
-          new CreateClusterMirrorRequest.Builder(new CreateClusterMirrorRequestData())
+          new CreateClusterMirrorRequest.Builder("test-mirror", util.Map.of("bootstrap.servers", "localhost:1234"), 100)
 
         case ApiKeys.START_MIRROR_TOPICS =>
           new StartMirrorTopicsRequest.Builder(new StartMirrorTopicsRequestData())
@@ -798,6 +804,9 @@ class RequestQuotaTest extends BaseRequestTest {
 
         case ApiKeys.BUMP_LEADER_EPOCHS =>
           new BumpLeaderEpochsRequest.Builder(new BumpLeaderEpochsRequestData())
+
+        case ApiKeys.RECOVER_MIRROR_TOPICS =>
+          new RecoverMirrorTopicsRequest.Builder(new RecoverMirrorTopicsRequestData())
 
       case _ =>
           throw new IllegalArgumentException("Unsupported API key " + apiKey)
