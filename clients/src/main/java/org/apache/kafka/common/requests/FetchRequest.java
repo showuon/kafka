@@ -304,7 +304,7 @@ public class FetchRequest extends AbstractRequest {
                     .setLogStartOffset(partitionData.logStartOffset)
                     .setPartitionMaxBytes(partitionData.maxBytes);
 
-                if (version > 12) {
+                if (version >= 12) {
                     fetchPartition.setLastFetchedEpoch(partitionData.lastFetchedEpoch.orElse(RecordBatch.NO_PARTITION_LEADER_EPOCH));
                 }
 
