@@ -233,6 +233,8 @@ import org.apache.kafka.common.message.ReadShareGroupStateRequestData;
 import org.apache.kafka.common.message.ReadShareGroupStateResponseData;
 import org.apache.kafka.common.message.ReadShareGroupStateSummaryRequestData;
 import org.apache.kafka.common.message.ReadShareGroupStateSummaryResponseData;
+import org.apache.kafka.common.message.RecoverMirrorTopicsRequestData;
+import org.apache.kafka.common.message.RecoverMirrorTopicsResponseData;
 import org.apache.kafka.common.message.RemoveRaftVoterRequestData;
 import org.apache.kafka.common.message.RemoveRaftVoterResponseData;
 import org.apache.kafka.common.message.RenewDelegationTokenRequestData;
@@ -1114,6 +1116,7 @@ public class RequestResponseTest {
             case DELETE_CLUSTER_MIRROR: return createDeleteClusterMirrorRequest(version);
             case READ_MIRROR_OFFSETS: return createReadMirrorOffsetsRequest(version);
             case BUMP_LEADER_EPOCHS: return createBumpLeaderEpochsRequest(version);
+            case RECOVER_MIRROR_TOPICS: return createRecoverMirrorTopicsRequest(version);
             default: throw new IllegalArgumentException("Unknown API key " + apikey);
         }
     }
@@ -1222,6 +1225,7 @@ public class RequestResponseTest {
             case DELETE_CLUSTER_MIRROR: return createDeleteClusterMirrorResponse();
             case READ_MIRROR_OFFSETS: return createReadMirrorOffsetsResponse();
             case BUMP_LEADER_EPOCHS: return createBumpLeaderEpochsResponse();
+            case RECOVER_MIRROR_TOPICS: return createRecoverMirrorTopicsResponse();
             default: throw new IllegalArgumentException("Unknown API key " + apikey);
         }
     }
@@ -1435,6 +1439,19 @@ public class RequestResponseTest {
     public BumpLeaderEpochsResponse createBumpLeaderEpochsResponse() {
         BumpLeaderEpochsResponseData data = new BumpLeaderEpochsResponseData();
         return new BumpLeaderEpochsResponse(data);
+    }
+
+    private RecoverMirrorTopicsRequest createRecoverMirrorTopicsRequest(short version) {
+        RecoverMirrorTopicsRequestData data = new RecoverMirrorTopicsRequestData()
+                .setMirrorName("test-mirror")
+                .setTimeoutMs(100)
+                .setTopicPatterns(List.of("test.*"));
+        return new RecoverMirrorTopicsRequest.Builder(data).build(version);
+    }
+
+    private RecoverMirrorTopicsResponse createRecoverMirrorTopicsResponse() {
+        RecoverMirrorTopicsResponseData data = new RecoverMirrorTopicsResponseData();
+        return new RecoverMirrorTopicsResponse(data);
     }
 
     private GetReplicaLogInfoRequest createGetReplicaLogInfoRequest(short version) {
