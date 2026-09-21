@@ -605,7 +605,7 @@ class MirrorSourceSyncer {
             }
             var partition = topicImage.partitions().get(tp.partition());
             if (partition != null && partition.leader == nodeId) {
-                log.info("Source leader for {} discovered after initial onMetadataUpdate, transitioning to LOG_ALIGNMENT", tp);
+                log.info("Source leader for {} discovered after initial onMetadataUpdate", tp);
                 metadataManager.transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.LOG_ALIGNMENT);
             }
         });

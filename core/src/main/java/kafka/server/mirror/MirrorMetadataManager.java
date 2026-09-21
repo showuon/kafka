@@ -126,6 +126,7 @@ import scala.jdk.javaapi.CollectionConverters;
 
 import static org.apache.kafka.clients.CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG;
 import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
+import static org.apache.kafka.server.common.MirrorPartition.NON_RETRYABLE_ATTEMPT;
 
 /**
  * Reacts to KRaft metadata changes, decides mirror partition state transitions,
@@ -393,7 +394,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             return;
         }
 
-        log.info("Processing metadata update for: {}", partitionsToTransition);
+        log.info("Running metadata update for {}", partitionsToTransition);
 
         processStateTransitions(partitionsToTransition, newImage);
         maybeCompletePendingEpochBumps();
@@ -448,7 +449,8 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             if (mirrorName == null) {
                 return;
             }
-            mirrorCache.getPendingLederEpochBumps().removeIf(bump -> {
+            mirrorCache.removePendingStateTransition(tp);
+            mirrorCache.getPendingLeaderEpochBumps().removeIf(bump -> {
                 bump.partitionToEpoch().remove(tp);
                 if (bump.partitionToEpoch().isEmpty()) {
                     bump.future().complete(null);
@@ -646,20 +648,19 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                     if (ex != null) {
                         Throwable cause = (ex instanceof CompletionException && ex.getCause() != null) ? ex.getCause() : ex;
                         if (cause instanceof CoordinatorLoadInProgressException) {
-                            log.debug("Skipping transition for partition {} (shard loading).", tp);
+                            log.debug("Failed ot read remote state for partition {} (shard loading).", tp);
                         } else {
-                            log.warn("Failed to read local coordinator state for partition {}", tp, cause);
+                            log.warn("Failed to read local state for partition {}. {}", tp, cause.getMessage());
                         }
                         return;
                     }
                     data.topics().forEach(topic -> topic.partitions().forEach(partition -> {
                         if (partition.errorCode() != Errors.NONE.code()) {
-                            log.warn("Error reading local coordinator state for {}-{}: {}",
+                            log.warn("Error reading state for partition {}-{}. {}",
                                     topic.topicName(), partition.partitionIndex(), Errors.forCode(partition.errorCode()));
                             return;
                         }
                         MirrorPartitionState curState = MirrorPartitionState.fromValue(partition.state());
-                        log.debug("Local transition for {} (current: {})", tp, curState);
                         applyStateTransition(mirrorName, tp, curState, null, stopRequested, pauseRequested);
                     }));
                 }));
@@ -667,7 +668,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
     /** Completes epoch bump futures whose requested epochs are now reflected in the metadata image. */
     void maybeCompletePendingEpochBumps() {
-        mirrorCache.getPendingLederEpochBumps().removeIf(bumpLeaderEpoch -> {
+        mirrorCache.getPendingLeaderEpochBumps().removeIf(bumpLeaderEpoch -> {
             Set<TopicPartition> pendingPartitions = bumpLeaderEpoch.partitionToEpoch().entrySet().stream().filter(entry -> {
                 TopicPartition tp = entry.getKey();
                 int epoch = entry.getValue();
@@ -797,31 +798,28 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         coordinatorWriter.ifPresent(writer -> {
             for (TopicPartition tp : topicPartitions) {
                 MirrorPartitionState currentState = getPartitionState(mirrorName, tp);
+                MirrorPartitionState pendingState = mirrorCache.pendingStateTransition(tp);
+                // Avoid unnecessary state transition to the same state when the state is applying in progress.
+                // For MIRRORING, because we remove fetcher thread when becoming the leader, we need to transition to MIRRORING state again.
+                if (pendingState != MirrorPartitionState.MIRRORING && pendingState == state) {
+                    log.debug("Skipping state transition for partition {}. Reason: Already transitioning to {}.",
+                            tp, pendingState);
+                    continue;
+                }
+                mirrorCache.addPendingStateTransition(tp, state);
                 if (!MirrorPartition.isValidStateTransition(currentState, state)) {
-                    log.warn("Skipping invalid transition from {} to {} for partition {}", currentState, state, tp);
+                    log.warn("Skipping state transition for partition {}. Reason: Transition from {} to {} is invalid.",
+                            tp, currentState, state);
                     continue;
                 }
                 if (state == MirrorPartitionState.FAILED) {
                     log.info("Transitioning partition {} from {} to {} due to {}{}",
-                            topicPartitions, currentState, state, errorMessage,
-                            nonRetryable ? " ( non retryable error)" : "( retryable error)");
+                            tp, currentState, state, errorMessage,
+                            nonRetryable ? " (non-retryable error)" : " (retryable error)");
                 } else {
                     log.info("Transitioning partition {} from {} to {}", tp, currentState, state);
                 }
-                MirrorPartitionKey key = MirrorPartitionKey.of(
-                        mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
-                int leaderEpoch = getLeaderEpoch(tp);
-                int stateEpoch = MirrorPartition.orEmpty(mirrorCache.getPartition(key)).stateEpoch();
-                if (isLocalCoordinator(mirrorName, tp.topic(), tp.partition())) {
-                    writer.writePartitionState(mirrorName, tp, state, leaderEpoch, stateEpoch, errorMessage, nonRetryable)
-                            .whenComplete((v, ex) -> onLocalWriteComplete(mirrorName, tp, key, state, ex));
-                } else {
-                    Map<String, Set<MirrorStateWrite>> topicMetadata =
-                            Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), state, leaderEpoch, stateEpoch,
-                                    null, errorMessage, nonRetryable)));
-                    writeStateToRemoteCoordinator(mirrorName, topicMetadata, Set.of(),
-                            res -> onRemoteWriteComplete(mirrorName, tp, key, state, errorMessage, nonRetryable, res, remoteRetry));
-                }
+                persistState(mirrorName, tp, state, errorMessage, nonRetryable, remoteRetry);
             }
         });
     }
@@ -832,14 +830,13 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             Throwable cause = (ex instanceof CompletionException && ex.getCause() != null)
                     ? ex.getCause() : ex;
             if (cause instanceof CoordinatorLoadInProgressException) {
-                log.debug("Transition to {} deferred for partition {} (shard loading).", state, tp);
+                log.debug("Deferring state transition for {}. Reason: shard loading.", tp);
                 return;
             }
             if (cause instanceof FencedLeaderEpochException || cause instanceof FencedStateEpochException) {
-                log.debug("Transition to {} fenced for partition {} (stale epoch)", state, tp);
+                log.debug("Fencing state transition for partition {}. Reason: stale epoch.", tp);
                 return;
             }
-            log.error("Transition to {} failed for {}", state, tp, ex);
             if (state != MirrorPartitionState.FAILED) {
                 transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED, ex.getMessage());
             }
@@ -869,10 +866,10 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             } else if (par.errorCode() == Errors.FENCED_LEADER_EPOCH.code()
                     || par.errorCode() == Errors.FENCED_STATE_EPOCH.code()) {
                 if (remoteRetry) {
-                    log.warn("Transition to {} fenced for partition {} after retry, giving up.", state, tp);
+                    log.warn("Transition to {} fenced for partition {} after retry, giving up", state, tp);
                     return;
                 }
-                log.debug("Transition to {} fenced for partition {} (stale epoch), retrying", state, tp);
+                log.debug("Transition to {} fenced for partition {} due to stale epoch, retrying", state, tp);
                 readAndRetryRemoteTransition(mirrorName, tp, state, errorMessage, nonRetryable);
             } else {
                 log.error("Failed to write partition state to remote coordinator: {}",
@@ -900,11 +897,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
     /**
      * Dispatches side effects after a coordinator write commits.
-     * Each state triggers a specific action: LOG_ALIGNMENT starts truncation,
-     * EPOCH_FENCING bumps the leader epoch, MIRRORING creates fetchers,
-     * PAUSING/STOPPING removes fetchers, FAILED schedules a retry.
-     * ULE_LOG_TRUNCATION waits for all replicas (not just ISR) to converge
-     * before returning to MIRRORING
+     * Each state triggers a specific action.
      */
     private void onStateTransition(String mirrorName, TopicPartition tp, MirrorPartitionState newState) {
         switch (newState) {
@@ -1009,7 +1002,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                                     replicaManagerSupplier.get().maybeTruncateForLeaderEpoch(
                                         Map.of(tp, new EpochOffset(-1, -1)), truncateCallback);
                                 } else {
-                                    log.warn("Failed to truncate to last mirror epoch for mirror {}",
+                                    log.warn("Failed to truncate to last known position for mirror {}",
                                         mirrorName, error);
                                     transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED,
                                         error.getMessage());
@@ -1017,14 +1010,14 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                                 return;
                             }
                             if (!offsetEpochs.containsKey(tp)) {
-                                log.warn("No epoch returned for {}. Using -1.", tp);
+                                log.info("No epoch returned for {}, mirroring from scratch", tp);
                                 offsetEpochs.put(tp, new EpochOffset(-1, -1));
                             }
                             replicaManagerSupplier.get().maybeTruncateForLeaderEpoch(
                                 offsetEpochs, truncateCallback);
                         });
                 } catch (Exception e) {
-                    log.warn("Failed to truncate to last mirror epoch for mirror {}", mirrorName, e);
+                    log.warn("Failed to truncate to last known position for mirror {}", mirrorName, e);
                     transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED, e.getMessage());
                 }
             }, 0);
@@ -1037,8 +1030,8 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
         MirrorPartition mp = MirrorPartition.orEmpty(mirrorCache.getPartition(key));
         int attempt = mp.retryAttempt() != 0 ? mp.retryAttempt() : 1;
-        if (attempt == MirrorPartition.NON_RETRYABLE_ATTEMPT) {
-            log.debug("Skipping retry for partition {} (non retryable error)", tp);
+        if (attempt == NON_RETRYABLE_ATTEMPT) {
+            log.debug("Skipping retry for partition {} (non-retryable error)", tp);
             return;
         }
         if (attempt >= maxAttempts) {
@@ -1326,7 +1319,8 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                                               Map<String, Set<MirrorStateWrite>> topicMetadata,
                                               Set<String> stoppedTopics,
                                               Consumer<WriteMirrorStatesResponse> callback) {
-        log.debug("Writing states to remote coordinator: {} {} {}", mirrorName, topicMetadata, stoppedTopics);
+        log.debug("Writing states to remote coordinator for mirror [{}]. Topic metadata: {}, Stopped topics: {}",
+                mirrorName, topicMetadata, stoppedTopics);
 
         // Group partitions by coordinator node for batching
         Map<Node, Map<String, List<WriteMirrorStatesRequestData.PartitionData>>> nodeToTopicPartitions = new HashMap<>();
@@ -1567,7 +1561,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     }
 
     private Set<String> resolvePatterns(Set<String> allTopics, List<String> topicPatterns) {
-        MirrorUtils.validatePatterns(topicPatterns);
+        MirrorUtils.validateRe2jPatterns(topicPatterns);
         Pattern compiled = MirrorUtils.compilePatternList(topicPatterns);
         if (compiled == null) {
             return Set.of();
@@ -1902,6 +1896,38 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
     public void clearFailedInfo(String mirrorName, TopicPartition tp) {
         mirrorCache.clearFailedInfo(MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition()));
+    }
+
+    public void clearFailedStateAndPersist(String mirrorName, TopicPartition tp) {
+        MirrorPartition curState = mirrorCache.getPartition(MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition()));
+        MirrorPartitionState state = curState != null ? curState.state() : null;
+        if (state != MirrorPartitionState.MIRRORING) {
+            log.debug("Skipping clearing failed state for partition {}. Reason: Current state is {}.", tp, state);
+            return;
+        }
+        clearFailedInfo(mirrorName, tp);
+        persistState(mirrorName, tp, state, curState.errorMessage(), curState.retryAttempt() == NON_RETRYABLE_ATTEMPT, false);
+    }
+
+    private void persistState(String mirrorName, TopicPartition tp, MirrorPartitionState state, String errorMessage,
+                              boolean nonRetryable, boolean remoteRetry) {
+        coordinatorWriter.ifPresent(writer -> {
+            MirrorPartitionKey key = MirrorPartitionKey.of(
+                    mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
+            int stateEpoch = MirrorPartition.orEmpty(mirrorCache.getPartition(key)).stateEpoch();
+            int leaderEpoch = getLeaderEpoch(tp);
+            if (isLocalCoordinator(mirrorName, tp.topic(), tp.partition())) {
+                writer.writePartitionState(mirrorName, tp, state, leaderEpoch, stateEpoch,
+                                errorMessage, nonRetryable)
+                        .whenComplete((v, ex) -> onLocalWriteComplete(mirrorName, tp, key, state, ex));
+            } else {
+                Map<String, Set<MirrorStateWrite>> topicMetadata =
+                        Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), state, leaderEpoch, stateEpoch,
+                                null, errorMessage, nonRetryable)));
+                writeStateToRemoteCoordinator(mirrorName, topicMetadata, Set.of(),
+                        res -> onRemoteWriteComplete(mirrorName, tp, key, state, errorMessage, nonRetryable, res, remoteRetry));
+            }
+        });
     }
 
     public MirrorStateCache.SourceLeader resolveSourceLeader(String mirrorName, TopicPartition tp) {
