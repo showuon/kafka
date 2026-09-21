@@ -336,6 +336,7 @@ class ReplicaManager(val config: KafkaConfig,
   def getLog(topicPartition: TopicPartition): Option[UnifiedLog] = logManager.getLog(topicPartition)
 
   def startup(): Unit = {
+    DelayedFetchMetrics.registerMetrics()
     // start ISR expiration thread
     // A follower can lag behind leader for up to config.replicaLagTimeMaxMs x 1.5 before it is removed from ISR
     scheduler.schedule("isr-expiration", () => maybeShrinkIsr(), 0L, config.replicaLagTimeMaxMs / 2)
@@ -2266,6 +2267,7 @@ class ReplicaManager(val config: KafkaConfig,
     mirrorFetcherManager.shutdown()
     replicaAlterLogDirsManager.shutdown()
     delayedFetchPurgatory.shutdown()
+    DelayedFetchMetrics.unregisterMetrics()
     delayedRemoteFetchPurgatory.shutdown()
     delayedRemoteListOffsetsPurgatory.shutdown()
     delayedProducePurgatory.shutdown()
