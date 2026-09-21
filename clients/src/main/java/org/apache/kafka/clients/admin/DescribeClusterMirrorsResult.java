@@ -20,6 +20,7 @@ package org.apache.kafka.clients.admin;
 import org.apache.kafka.common.EpochOffset;
 import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.annotation.InterfaceStability;
 
 import java.util.Collections;
 import java.util.Map;
@@ -27,6 +28,7 @@ import java.util.Map;
 /**
  * The result of the {@link Admin#describeClusterMirrors} call.
  */
+@InterfaceStability.Evolving
 public class DescribeClusterMirrorsResult {
     private final KafkaFuture<Map<String, ClusterMirrorDescription>> future;
     private final KafkaFuture<Map<TopicPartition, EpochOffset>> lastMirrorFuture;

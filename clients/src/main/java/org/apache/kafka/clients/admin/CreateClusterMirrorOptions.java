@@ -17,8 +17,11 @@
 
 package org.apache.kafka.clients.admin;
 
+import org.apache.kafka.common.annotation.InterfaceStability;
+
 /**
  * Options for {@link Admin#createClusterMirror}.
  */
+@InterfaceStability.Evolving
 public class CreateClusterMirrorOptions extends AbstractOptions<CreateClusterMirrorOptions> {
 }

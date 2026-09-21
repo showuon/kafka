@@ -17,8 +17,11 @@
 
 package org.apache.kafka.clients.admin;
 
+import org.apache.kafka.common.annotation.InterfaceStability;
+
 /**
  * Options for {@link Admin#resumeMirrorTopics}.
  */
+@InterfaceStability.Evolving
 public class ResumeMirrorTopicsOptions extends AbstractOptions<ResumeMirrorTopicsOptions> {
 }

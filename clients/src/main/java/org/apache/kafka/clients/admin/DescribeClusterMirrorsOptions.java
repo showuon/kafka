@@ -17,9 +17,12 @@
 
 package org.apache.kafka.clients.admin;
 
+import org.apache.kafka.common.annotation.InterfaceStability;
+
 /**
  * Options for {@link Admin#describeClusterMirrors}.
  */
+@InterfaceStability.Evolving
 public class DescribeClusterMirrorsOptions extends AbstractOptions<DescribeClusterMirrorsOptions> {
     private boolean includeMirrorState = false;
     private boolean includeMirrorOffset = false;
