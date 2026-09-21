@@ -1403,7 +1403,7 @@ class PartitionTest extends AbstractPartitionTest {
       val replica = new Replica(remoteBrokerId, topicPartition, metadataCache)
       partition.updateFollowerFetchState(replica, mock(classOf[LogOffsetMetadata]), 0, initializeTimeMs, 0, defaultBrokerEpoch(remoteBrokerId))
       mock(classOf[LogReadInfo])
-    }).when(partition).fetchRecords(any(), any(), anyLong(), anyInt(), anyBoolean(), anyBoolean())
+    }).when(partition).fetchRecords(any(), any(), anyLong(), anyInt(), anyBoolean(), anyBoolean(), any())
 
     assertDoesNotThrow(() => fetchFollower(partition, replicaId = remoteBrokerId, fetchOffset = 3L))
   }

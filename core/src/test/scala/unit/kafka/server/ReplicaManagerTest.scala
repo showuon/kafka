@@ -1677,7 +1677,7 @@ class ReplicaManagerTest {
     val localId = 0
     val mockTimer = new MockTimer(time)
     val replicaManager = setupReplicaManagerWithMockedPurgatories(mockTimer, aliveBrokerIds = Seq(0, 1))
-
+    replicaManager.startup()
     try {
       val tp0 = new TopicPartition(topic, 0)
       val tidp0 = new TopicIdPartition(topicId, tp0)
@@ -3115,6 +3115,10 @@ class ReplicaManagerTest {
             brokerTopicStats
           )
         }
+      }
+
+      override def startup(): Unit = {
+        DelayedFetchMetrics.registerMetrics()
       }
     }
   }
