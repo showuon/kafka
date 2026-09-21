@@ -36,7 +36,7 @@ public record MirrorPartition(MirrorPartitionState state, int stateEpoch, EpochO
 
     /**
      * Represents the lifecycle states of a mirror partition.
-     * Values changes require an update to the JavaDoc of LeaderStateDescription.state().
+     * Values changes require an update to the javadoc of LeaderStateDescription.state().
      */
     public enum MirrorPartitionState {
         LOG_ALIGNMENT((byte) 0),

@@ -29,17 +29,16 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Thread-safe cache for mirror partition state, source leaders,
- * pending topic creations, and pending leader epoch bumps.
+ * Thread-safe cache for mirroring metadata.
  */
 public class MirrorStateCache {
     private final Map<MirrorPartitionKey, MirrorPartition> partitions = new ConcurrentHashMap<>();
     private final Map<String, Map<TopicPartition, SourceLeader>> sourceLeaders = new ConcurrentHashMap<>();
     private final Map<String, Set<String>> sourceDeletions = new ConcurrentHashMap<>();
     private final Set<Integer> loadedCoordPartitions = ConcurrentHashMap.newKeySet();
+    private final Map<TopicPartition, MirrorPartitionState> pendingStateTransitions = new ConcurrentHashMap<>();
     private final Set<String> pendingTopicCreations = ConcurrentHashMap.newKeySet();
-    private final Set<PendingLeaderEpochBump> pendingLederEpochBumps = ConcurrentHashMap.newKeySet();
-    private final Map<TopicPartition, MirrorPartitionState> inProgressPartitions = new ConcurrentHashMap<>();
+    private final Set<PendingLeaderEpochBump> pendingLeaderEpochBumps = ConcurrentHashMap.newKeySet();
 
     public static MirrorStateCache empty() {
         return new MirrorStateCache();
@@ -54,8 +53,8 @@ public class MirrorStateCache {
         sourceDeletions.clear();
         loadedCoordPartitions.clear();
         pendingTopicCreations.clear();
-        pendingLederEpochBumps.clear();
-        inProgressPartitions.clear();
+        pendingLeaderEpochBumps.clear();
+        pendingStateTransitions.clear();
     }
 
     // -- Partition cache operations --
@@ -178,17 +177,18 @@ public class MirrorStateCache {
         }
     }
 
-    // -- In-progress partition states
-    public MirrorPartitionState inProgressPartition(TopicPartition tp) {
-        return inProgressPartitions.get(tp);
+    // -- Pending state transition operations --
+
+    public MirrorPartitionState pendingStateTransition(TopicPartition tp) {
+        return pendingStateTransitions.get(tp);
     }
 
-    public void addInProgressPartition(TopicPartition tp, MirrorPartitionState state) {
-        inProgressPartitions.put(tp, state);
+    public void addPendingStateTransition(TopicPartition tp, MirrorPartitionState state) {
+        pendingStateTransitions.put(tp, state);
     }
 
-    public void removeInProgressPartition(TopicPartition tp) {
-        inProgressPartitions.remove(tp);
+    public void removePendingStateTransition(TopicPartition tp) {
+        pendingStateTransitions.remove(tp);
     }
 
     // -- Pending topic creation operations --
@@ -204,15 +204,15 @@ public class MirrorStateCache {
     // -- Pending leader epoch bump operations --
 
     public void addPendingEpochBump(PendingLeaderEpochBump bump) {
-        pendingLederEpochBumps.add(bump);
+        pendingLeaderEpochBumps.add(bump);
     }
 
-    public Set<PendingLeaderEpochBump> getPendingLederEpochBumps() {
-        return pendingLederEpochBumps;
+    public Set<PendingLeaderEpochBump> getPendingLeaderEpochBumps() {
+        return pendingLeaderEpochBumps;
     }
 
     public void clearPendingLeaderEpochBumps(Set<TopicPartition> partitions) {
-        pendingLederEpochBumps.removeIf(bump -> {
+        pendingLeaderEpochBumps.removeIf(bump -> {
             bump.partitionToEpoch().keySet().removeAll(partitions);
             if (bump.partitionToEpoch().isEmpty()) {
                 bump.future().cancel(false);

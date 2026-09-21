@@ -448,8 +448,8 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             if (mirrorName == null) {
                 return;
             }
-            mirrorCache.removeInProgressPartition(tp);
-            mirrorCache.getPendingLederEpochBumps().removeIf(bump -> {
+            mirrorCache.removePendingStateTransition(tp);
+            mirrorCache.getPendingLeaderEpochBumps().removeIf(bump -> {
                 bump.partitionToEpoch().remove(tp);
                 if (bump.partitionToEpoch().isEmpty()) {
                     bump.future().complete(null);
@@ -645,20 +645,19 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
                     if (ex != null) {
                         Throwable cause = (ex instanceof CompletionException && ex.getCause() != null) ? ex.getCause() : ex;
                         if (cause instanceof CoordinatorLoadInProgressException) {
-                            log.debug("Skipping transition for partition {} (shard loading).", tp);
+                            log.debug("Failed ot read remote state for partition {} (shard loading).", tp);
                         } else {
-                            log.warn("Failed to read local coordinator state for partition {}", tp, cause);
+                            log.warn("Failed to read local state for partition {}. {}", tp, cause.getMessage());
                         }
                         return;
                     }
                     data.topics().forEach(topic -> topic.partitions().forEach(partition -> {
                         if (partition.errorCode() != Errors.NONE.code()) {
-                            log.warn("Error reading local coordinator state for {}-{}: {}",
+                            log.warn("Error reading state for partition {}-{}. {}",
                                     topic.topicName(), partition.partitionIndex(), Errors.forCode(partition.errorCode()));
                             return;
                         }
                         MirrorPartitionState curState = MirrorPartitionState.fromValue(partition.state());
-                        log.debug("Local transition for {} (current: {})", tp, curState);
                         applyStateTransition(mirrorName, tp, curState, null, stopRequested, pauseRequested);
                     }));
                 }));
@@ -666,7 +665,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     /** Completes epoch bump futures whose requested epochs are now reflected in the metadata image. */
     void maybeCompletePendingEpochBumps() {
-        mirrorCache.getPendingLederEpochBumps().removeIf(bumpLeaderEpoch -> {
+        mirrorCache.getPendingLeaderEpochBumps().removeIf(bumpLeaderEpoch -> {
             Set<TopicPartition> pendingPartitions = bumpLeaderEpoch.partitionToEpoch().entrySet().stream().filter(entry -> {
                 TopicPartition tp = entry.getKey();
                 int epoch = entry.getValue();
@@ -794,23 +793,23 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         coordinatorWriter.ifPresent(writer -> {
             for (TopicPartition tp : topicPartitions) {
                 MirrorPartitionState currentState = getPartitionState(mirrorName, tp);
-                MirrorPartitionState inProgressState = mirrorCache.inProgressPartition(tp);
+                MirrorPartitionState pendingState = mirrorCache.pendingStateTransition(tp);
                 // Avoid unnecessary state transition to the same state when the state is applying in progress.
                 // For MIRRORING, because we remove fetcher thread when becoming the leader, we need to transition to MIRRORING state again.
-                if (inProgressState != MirrorPartitionState.MIRRORING && inProgressState == state) {
-                    log.debug("Skipping state transition for partition {} [{} -> {}]. Reason: Already transitioning to {}.",
-                            tp, currentState, state, inProgressState);
+                if (pendingState != MirrorPartitionState.MIRRORING && pendingState == state) {
+                    log.debug("Skipping state transition for partition {}. Reason: Already transitioning to {}.",
+                            tp, pendingState);
                     continue;
                 }
-                mirrorCache.addInProgressPartition(tp, state);
+                mirrorCache.addPendingStateTransition(tp, state);
                 if (!MirrorPartition.isValidStateTransition(currentState, state)) {
-                    log.warn("Skipping state transition for partition {} [{} -> {}]. Reason: Invalid state transition.",
+                    log.warn("Skipping state transition for partition {}. Reason: Transition from {} to {} is invalid.",
                             tp, currentState, state);
                     continue;
                 }
                 if (state == MirrorPartitionState.FAILED) {
                     log.info("Transitioning partition {} from {} to {} due to {}{}",
-                            topicPartitions, currentState, state, errorMessage,
+                            tp, currentState, state, errorMessage,
                             nonRetryable ? " (non-retryable error)" : " (retryable error)");
                 } else {
                     log.info("Transitioning partition {} from {} to {}", tp, currentState, state);
@@ -826,14 +825,13 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             Throwable cause = (ex instanceof CompletionException && ex.getCause() != null)
                     ? ex.getCause() : ex;
             if (cause instanceof CoordinatorLoadInProgressException) {
-                log.debug("Transition to {} deferred for partition  {} due to shard loading", state, tp);
+                log.debug("Deferring state transition for {}. Reason: shard loading.", tp);
                 return;
             }
             if (cause instanceof FencedLeaderEpochException || cause instanceof FencedStateEpochException) {
-                log.debug("Transition to {} fenced for partition {} due to stale epoch", state, tp);
+                log.debug("Fencing state transition for partition {}. Reason: stale epoch.", tp);
                 return;
             }
-            log.error("Transition to {} failed for partition {} due to {}", state, tp, ex.getMessage());
             if (state != MirrorPartitionState.FAILED) {
                 transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED, ex.getMessage());
             }
@@ -863,10 +861,10 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
             } else if (par.errorCode() == Errors.FENCED_LEADER_EPOCH.code()
                     || par.errorCode() == Errors.FENCED_STATE_EPOCH.code()) {
                 if (remoteRetry) {
-                    log.warn("Transition to {} fenced for partition {} after retry, giving up.", state, tp);
+                    log.warn("Transition to {} fenced for partition {} after retry, giving up", state, tp);
                     return;
                 }
-                log.debug("Transition to {} fenced for partition {} (stale epoch), retrying", state, tp);
+                log.debug("Transition to {} fenced for partition {} due to stale epoch, retrying", state, tp);
                 readAndRetryRemoteTransition(mirrorName, tp, state, errorMessage, nonRetryable);
             } else {
                 log.error("Failed to write partition state to remote coordinator: {}",
@@ -894,11 +892,7 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
 
     /**
      * Dispatches side effects after a coordinator write commits.
-     * Each state triggers a specific action: LOG_ALIGNMENT starts truncation,
-     * EPOCH_FENCING bumps the leader epoch, MIRRORING creates fetchers,
-     * PAUSING/STOPPING removes fetchers, FAILED schedules a retry.
-     * ULE_LOG_TRUNCATION waits for all replicas (not just ISR) to converge
-     * before returning to MIRRORING
+     * Each state triggers a specific action.
      */
     private void onStateTransition(String mirrorName, TopicPartition tp, MirrorPartitionState newState) {
         switch (newState) {
@@ -1882,14 +1876,15 @@ public class MirrorMetadataManager implements MetadataPublisher, AutoCloseable {
         mirrorCache.clearFailedInfo(MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition()));
     }
 
-    public void clearFailedInfoPersistStateForMirroring(String mirrorName, TopicPartition tp) {
+    public void clearFailedStateAndPersist(String mirrorName, TopicPartition tp) {
         MirrorPartition curState = mirrorCache.getPartition(MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition()));
-        if (MirrorPartitionState.MIRRORING != curState.state()) {
-            log.info("Skipping clearing failed information for MIRRORING state due to the state has changed to {}.", curState);
+        MirrorPartitionState state = curState != null ? curState.state() : null;
+        if (state != MirrorPartitionState.MIRRORING) {
+            log.debug("Skipping clearing failed state for partition {}. Reason: Current state is {}.", tp, state);
             return;
         }
         clearFailedInfo(mirrorName, tp);
-        persistState(mirrorName, tp, curState.state(), curState.errorMessage(), curState.retryAttempt() == NON_RETRYABLE_ATTEMPT, false);
+        persistState(mirrorName, tp, state, curState.errorMessage(), curState.retryAttempt() == NON_RETRYABLE_ATTEMPT, false);
     }
 
     private void persistState(String mirrorName, TopicPartition tp, MirrorPartitionState state, String errorMessage,
