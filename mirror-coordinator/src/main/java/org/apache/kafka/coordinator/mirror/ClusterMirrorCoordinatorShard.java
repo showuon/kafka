@@ -61,20 +61,20 @@ import java.util.Set;
  */
 public class ClusterMirrorCoordinatorShard implements CoordinatorShard<CoordinatorRecord> {
     private final Logger log;
-    private final ClusterMirrorMetadataManager metadataManager;
+    private final MetadataManagerBridge metadataManager;
     private final TopicPartition topicPartition;
     private final int numPartitions;
     private final TimelineHashMap<MirrorPartitionKey, Integer> leaderEpochMap;
     private final TimelineHashMap<MirrorPartitionKey, Integer> stateEpochMap;
 
     public static class Builder implements CoordinatorShardBuilder<ClusterMirrorCoordinatorShard, CoordinatorRecord> {
-        private final ClusterMirrorMetadataManager metadataManager;
+        private final MetadataManagerBridge metadataManager;
         private final int numPartitions;
         private LogContext logContext;
         private TopicPartition topicPartition;
         private SnapshotRegistry snapshotRegistry;
 
-        public Builder(ClusterMirrorMetadataManager metadataManager, int numPartitions) {
+        public Builder(MetadataManagerBridge metadataManager, int numPartitions) {
             this.metadataManager = metadataManager;
             this.numPartitions = numPartitions;
         }
@@ -128,7 +128,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
 
     private ClusterMirrorCoordinatorShard(
         LogContext logContext,
-        ClusterMirrorMetadataManager metadataManager,
+        MetadataManagerBridge metadataManager,
         TopicPartition topicPartition,
         int numPartitions,
         SnapshotRegistry snapshotRegistry

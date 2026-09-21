@@ -72,7 +72,7 @@ import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService.MirrorStateWrite;
-import org.apache.kafka.coordinator.mirror.ClusterMirrorMetadataManager;
+import org.apache.kafka.coordinator.mirror.MetadataManagerBridge;
 import org.apache.kafka.coordinator.mirror.MirrorPartitionKey;
 import org.apache.kafka.image.ConfigurationDelta;
 import org.apache.kafka.image.LocalReplicaChanges;
@@ -129,12 +129,12 @@ import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
 
 /**
  * Reacts to KRaft metadata changes, decides mirror partition state transitions,
- * persists them via {@link ClusterMirrorMetadataManager.CoordinatorWriter}, and executes
+ * persists them via {@link MetadataManagerBridge.CoordinatorWriter}, and executes
  * the resulting side effects (truncation, fetcher lifecycle, epoch bumps, retries).
  * Delegates periodic source cluster synchronization to {@link MirrorSourceSyncer}.
  */
 @SuppressWarnings({"ClassDataAbstractionCoupling", "ClassFanOutComplexity"})
-public class MirrorMetadataManager implements ClusterMirrorMetadataManager, MetadataPublisher, AutoCloseable {
+public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPublisher, AutoCloseable {
     // Mirror config keys that do not affect source connections (no reconnect needed)
     private static final Set<String> SKIP_RECONNECT_MIRROR_CONFIGS = Set.of(
             ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG, ClusterMirrorConfig.TOPICS_EXCLUDE_CONFIG,
@@ -166,8 +166,8 @@ public class MirrorMetadataManager implements ClusterMirrorMetadataManager, Meta
     private volatile Map<String, Admin> srcAdmins;
     private volatile Admin dstAdmin;
 
-    private Optional<ClusterMirrorMetadataManager.CoordinatorWriter> coordinatorWriter = Optional.empty();
-    private Optional<ClusterMirrorMetadataManager.CoordinatorReader> coordinatorReader = Optional.empty();
+    private Optional<MetadataManagerBridge.CoordinatorWriter> coordinatorWriter = Optional.empty();
+    private Optional<MetadataManagerBridge.CoordinatorReader> coordinatorReader = Optional.empty();
     private Optional<Function<MirrorPartitionKey, Integer>> coordPartFinder = Optional.empty();
 
     private final KafkaMetricsGroup metricsGroup;
@@ -242,8 +242,8 @@ public class MirrorMetadataManager implements ClusterMirrorMetadataManager, Meta
      * Creates the {@link MirrorSourceSyncer} and schedules periodic metadata refresh.
      */
     @Override
-    public void initialize(ClusterMirrorMetadataManager.CoordinatorWriter coordinatorWriter,
-                           ClusterMirrorMetadataManager.CoordinatorReader coordinatorReader,
+    public void initialize(MetadataManagerBridge.CoordinatorWriter coordinatorWriter,
+                           MetadataManagerBridge.CoordinatorReader coordinatorReader,
                            Function<MirrorPartitionKey, Integer> coordPartFinder) {
         if (mirrorStateSender == null) {
             this.mirrorStateSender = new MirrorStateSender(MirrorStateSender.class.getSimpleName(),
@@ -634,7 +634,7 @@ public class MirrorMetadataManager implements ClusterMirrorMetadataManager, Meta
 
     /**
      * Reads a mirror partition's current state from the local coordinator via
-     * {@link ClusterMirrorMetadataManager.CoordinatorReader}, then applies the appropriate state transition.
+     * {@link MetadataManagerBridge.CoordinatorReader}, then applies the appropriate state transition.
      * If the shard is still loading, the coordinator responds with
      * {@link CoordinatorLoadInProgressException} and the transition is skipped; it will be
      * retried once {@link #onShardLoaded} re-evaluates local leader partitions for that shard.
@@ -782,7 +782,7 @@ public class MirrorMetadataManager implements ClusterMirrorMetadataManager, Meta
 
     /**
      * Writes a state transition for each partition, routing to either the local coordinator
-     * shard (via {@link ClusterMirrorMetadataManager.CoordinatorWriter}) or a remote coordinator (via
+     * shard (via {@link MetadataManagerBridge.CoordinatorWriter}) or a remote coordinator (via
      * {@link #writeStateToRemoteCoordinator}). On successful write, dispatches side effects
      * through {@link #onStateTransition}.
      */

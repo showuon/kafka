@@ -36,7 +36,7 @@ import java.util.function.Function;
  * and mutate mirror partition state without taking a compile-time dependency
  * on core classes.
  */
-public interface ClusterMirrorMetadataManager {
+public interface MetadataManagerBridge {
     void initialize(
         CoordinatorWriter coordinatorWriter,
         CoordinatorReader coordinatorReader,

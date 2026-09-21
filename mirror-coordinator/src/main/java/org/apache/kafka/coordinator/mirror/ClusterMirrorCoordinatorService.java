@@ -72,7 +72,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
     private final CountDownLatch latch = new CountDownLatch(1);
     private final ClusterMirrorConfig config;
     private final CoordinatorRuntime<ClusterMirrorCoordinatorShard, CoordinatorRecord> runtime;
-    private final ClusterMirrorMetadataManager metadataManager;
+    private final MetadataManagerBridge metadataManager;
     private final KafkaScheduler scheduler;
     private final Metrics metrics;
 
@@ -84,7 +84,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         private Time time;
         private Timer timer;
         private CoordinatorRuntimeMetrics runtimeMetrics;
-        private ClusterMirrorMetadataManager metadataManager;
+        private MetadataManagerBridge metadataManager;
         private Metrics metrics;
 
         public Builder(int nodeId, ClusterMirrorConfig config) {
@@ -117,7 +117,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
             return this;
         }
 
-        public Builder withMetadataManager(ClusterMirrorMetadataManager metadataManager) {
+        public Builder withMetadataManager(MetadataManagerBridge metadataManager) {
             this.metadataManager = metadataManager;
             return this;
         }
@@ -163,7 +163,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         int nodeId,
         ClusterMirrorConfig config,
         CoordinatorRuntime<ClusterMirrorCoordinatorShard, CoordinatorRecord> runtime,
-        ClusterMirrorMetadataManager metadataManager,
+        MetadataManagerBridge metadataManager,
         Metrics metrics
     ) {
         String name = "[" + ClusterMirrorCoordinatorService.class.getSimpleName() + " id=" + nodeId + "] ";
@@ -186,7 +186,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         log.info("Starting up");
         try {
             metadataManager.initialize(
-                new ClusterMirrorMetadataManager.CoordinatorWriter() {
+                new MetadataManagerBridge.CoordinatorWriter() {
                     @Override
                     public CompletableFuture<Void> writePartitionState(String mirrorName, TopicPartition tp,
                             MirrorPartitionState state, int leaderEpoch, int stateEpoch,
@@ -210,7 +210,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                                 mirrorName, partitions);
                     }
                 },
-                new ClusterMirrorMetadataManager.CoordinatorReader() {
+                new MetadataManagerBridge.CoordinatorReader() {
                     @Override
                     public CompletableFuture<ReadMirrorStatesResponseData> readPartitionState(
                             String mirrorName, TopicPartition tp) {
