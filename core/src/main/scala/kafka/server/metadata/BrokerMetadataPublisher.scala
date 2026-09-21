@@ -291,8 +291,7 @@ class BrokerMetadataPublisher(
 
       if (finalizedMirrorVersion > 0) {
         try {
-          // Propagate the new image to the CoordinatorRuntime so it can
-          // pass it to loaded shards and use it during shard load completion
+          // Propagate the new image to the mirror coordinator
           mirrorCoordinator.onNewMetadataImage(new KRaftCoordinatorMetadataImage(newImage), new KRaftCoordinatorMetadataDelta(delta))
         } catch {
           case t: Throwable => metadataPublishingFaultHandler.handleFault("Error updating mirror " +
@@ -327,16 +326,16 @@ class BrokerMetadataPublisher(
             finalizedMirrorVersion = newFinalizedMirrorVersion
             info(s"Feature mirror.version has been updated to version $finalizedMirrorVersion")
             if (ClusterMirrorVersion.isEnabled(newFinalizedFeatures.finalizedFeatures())) {
-              info("Cluster mirroring feature is now enabled")
+              info("Feature mirror.version is now enabled")
               mirrorCoordinator.startup()
             } else {
-              info("Cluster mirroring feature is now disabled")
+              info("Feature mirror.version is now disabled")
               mirrorCoordinator.shutdown()
             }
           }
         } catch {
           case t: Throwable => metadataPublishingFaultHandler.handleFault("Error updating mirror coordinator " +
-            s" with mirror version feature change in $deltaName", t)
+            s" with mirror.version feature change in $deltaName", t)
         }
       }
 

@@ -23,7 +23,7 @@ import java.util.OptionalInt;
 
 /**
  * Lifecycle interface for the cluster mirror coordinator.
- * Used by BrokerMetadataPublisher and BrokerServer for leader election,
+ * Used by BrokerMetadataPublisher for leader election,
  * resignation, and metadata image updates.
  */
 public interface ClusterMirrorCoordinator {
