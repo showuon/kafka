@@ -76,6 +76,10 @@
             <allow pkg="org.apache.kafka.clients" />
         </subpackage>
 
+        <subpackage name="mirror">
+            <allow pkg="org.apache.kafka.server.mirror" />
+        </subpackage>
+
         <subpackage name="immutable">
             <allow pkg="org.apache.kafka.server.util"/>
             <!-- only the factory package can use persistent collection library-specific wrapper implementations -->

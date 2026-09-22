@@ -19,9 +19,9 @@ package kafka.server.mirror;
 import org.apache.kafka.common.EpochOffset;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.coordinator.mirror.MirrorPartitionKey;
-import org.apache.kafka.server.common.MirrorPartition;
-import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState;
+import org.apache.kafka.server.mirror.MirrorPartitionKey;
+import org.apache.kafka.server.mirror.MirrorPartitionMetadata;
+import org.apache.kafka.server.mirror.MirrorPartitionState;
 
 import java.util.Map;
 import java.util.Set;
@@ -32,10 +32,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * Thread-safe cache for mirroring metadata.
  */
 public class MirrorStateCache {
-    private final Map<MirrorPartitionKey, MirrorPartition> partitions = new ConcurrentHashMap<>();
+    private final Map<MirrorPartitionKey, MirrorPartitionMetadata> partMetadata = new ConcurrentHashMap<>();
     private final Map<String, Map<TopicPartition, SourceLeader>> sourceLeaders = new ConcurrentHashMap<>();
     private final Map<String, Set<String>> sourceDeletions = new ConcurrentHashMap<>();
-    private final Set<Integer> loadedCoordPartitions = ConcurrentHashMap.newKeySet();
     private final Map<TopicPartition, MirrorPartitionState> pendingStateTransitions = new ConcurrentHashMap<>();
     private final Set<String> pendingTopicCreations = ConcurrentHashMap.newKeySet();
     private final Set<PendingLeaderEpochBump> pendingLeaderEpochBumps = ConcurrentHashMap.newKeySet();
@@ -48,29 +47,26 @@ public class MirrorStateCache {
     }
 
     public void clear() {
-        partitions.clear();
+        partMetadata.clear();
         sourceLeaders.clear();
         sourceDeletions.clear();
-        loadedCoordPartitions.clear();
+        pendingStateTransitions.clear();
         pendingTopicCreations.clear();
         pendingLeaderEpochBumps.clear();
-        pendingStateTransitions.clear();
     }
 
-    // -- Partition cache operations --
-
-    public MirrorPartition getPartition(MirrorPartitionKey key) {
-        return partitions.get(key);
+    public MirrorPartitionMetadata getPartitionMetadata(MirrorPartitionKey key) {
+        return partMetadata.get(key);
     }
 
-    public void setPartition(MirrorPartitionKey key, MirrorPartition partition) {
-        partitions.put(key, partition);
+    public void setPartitionMetadata(MirrorPartitionKey key, MirrorPartitionMetadata meta) {
+        partMetadata.put(key, meta);
     }
 
-    public void mergePartition(MirrorPartitionKey key, byte state, int stateEpoch, EpochOffset lastMirrorPosition,
-                               String errorMessage, int retryAttempt, byte previousState) {
-        partitions.compute(key, (k, existing) -> {
-            MirrorPartition result = MirrorPartition.orEmpty(existing);
+    public void mergePartitionMetadata(MirrorPartitionKey key, byte state, int stateEpoch, EpochOffset lastMirrorPosition,
+                                       String errorMessage, int retryAttempt, byte previousState) {
+        partMetadata.compute(key, (k, existing) -> {
+            MirrorPartitionMetadata result = MirrorPartitionMetadata.orEmpty(existing);
             if (state != -1) result = result.withState(MirrorPartitionState.fromValue(state));
             if (stateEpoch >= 0) result = result.withStateEpoch(stateEpoch);
             if (lastMirrorPosition.epoch() != -1) result = result.withLastMirrorEpoch(lastMirrorPosition.epoch());
@@ -82,62 +78,56 @@ public class MirrorStateCache {
         });
     }
 
-    public void removePartition(MirrorPartitionKey key) {
-        partitions.remove(key);
+    public void removePartitionMetadata(MirrorPartitionKey key) {
+        partMetadata.remove(key);
     }
 
-    public void clearPartition(int coordPartition, int coordPartitionCount) {
-        partitions.keySet().removeIf(key ->
-            key.coordinatorPartition(coordPartitionCount) == coordPartition);
+    public void clearPartitionMetadata(int coordPartition, int numPartitions) {
+        partMetadata.keySet().removeIf(key ->
+            key.coordinatorPartition(numPartitions) == coordPartition);
     }
 
-    public long partitionStateCount(MirrorPartitionState state) {
-        return partitions.values().stream()
+    public long getPartitionStateCount(MirrorPartitionState state) {
+        return partMetadata.values().stream()
                 .filter(entry -> entry.state() == state)
                 .count();
     }
 
-    public Set<MirrorPartitionKey> partitionKeys() {
-        return partitions.keySet();
+    public Set<MirrorPartitionKey> getPartitionKeys() {
+        return partMetadata.keySet();
     }
 
     public void setLastMirrorPosition(MirrorPartitionKey key, EpochOffset lastMirrorPosition) {
-        partitions.compute(key, (k, existing) -> MirrorPartition.orEmpty(existing).withLastMirrorPosition(lastMirrorPosition));
+        partMetadata.compute(key, (k, existing) -> MirrorPartitionMetadata.orEmpty(existing).withLastMirrorPosition(lastMirrorPosition));
     }
 
     public void removeMirror(String mirrorName) {
-        partitions.keySet().removeIf(key -> key.mirrorName().equals(mirrorName));
+        partMetadata.keySet().removeIf(key -> key.mirrorName().equals(mirrorName));
         sourceDeletions.remove(mirrorName);
     }
 
-    public void updateFailedInfo(MirrorPartitionKey key, MirrorPartitionState curState,
-                                 MirrorPartitionState newState, String errorMessage, boolean nonRetryable, int maxAttempts) {
-        MirrorPartition existing = MirrorPartition.orEmpty(getPartition(key));
+    public void updateFailureDetails(MirrorPartitionKey key, MirrorPartitionState curState,
+                                     MirrorPartitionState newState, String errorMessage, boolean nonRetryable) {
         if (newState == MirrorPartitionState.FAILED) {
-            int attempt = existing.nextAttempt(nonRetryable, maxAttempts);
+            MirrorPartitionMetadata existing = MirrorPartitionMetadata.orEmpty(getPartitionMetadata(key));
+            int attempt = existing.nextAttempt(nonRetryable);
             MirrorPartitionState previousState = existing.resolvePrevState(curState);
-            partitions.compute(key, (k, e) -> MirrorPartition.orEmpty(e).withError(errorMessage, attempt, previousState));
+            partMetadata.compute(key, (k, e) -> MirrorPartitionMetadata.orEmpty(e).withError(errorMessage, attempt, previousState));
         } else if ((curState != MirrorPartitionState.FAILED && curState != newState)
                 || newState == MirrorPartitionState.STOPPED
                 || newState == MirrorPartitionState.PAUSED) {
-            // clean up the state when:
+            // Clean up the state when:
             // 1. new state is STOPPED or PAUSED state
             // 2. there is state change, but not change from/to FAILED
             // we already filter out the newState == FAILED case above, so skip the check
             // 3. For MIRRORING, it'll clean up after the first successful fetch response in MirrorFetcherThread.
-            clearFailedInfo(key);
-        } else {
-            // Update the error message to make sure it is up-to-date
-            partitions.compute(key, (k, e) -> existing.withError(errorMessage, existing.retryAttempt(), existing.prevState()));
-
+            clearFailureDetails(key);
         }
     }
 
-    public void clearFailedInfo(MirrorPartitionKey key) {
-        partitions.computeIfPresent(key, (k, existing) -> existing.clearError());
+    public void clearFailureDetails(MirrorPartitionKey key) {
+        partMetadata.computeIfPresent(key, (k, existing) -> existing.clearError());
     }
-
-    // -- Source leader operations --
 
     public Map<TopicPartition, SourceLeader> getSourceLeaders(String mirrorName) {
         return sourceLeaders.get(mirrorName);
@@ -163,8 +153,6 @@ public class MirrorStateCache {
         sourceLeaders.remove(mirrorName);
     }
 
-    // -- Source topic deletion operations --
-
     public boolean addSourceDeletion(String mirrorName, String topic) {
         return sourceDeletions.computeIfAbsent(mirrorName, k -> ConcurrentHashMap.newKeySet()).add(topic);
     }
@@ -181,8 +169,6 @@ public class MirrorStateCache {
         }
     }
 
-    // -- Pending state transition operations --
-
     public MirrorPartitionState pendingStateTransition(TopicPartition tp) {
         return pendingStateTransitions.get(tp);
     }
@@ -195,8 +181,6 @@ public class MirrorStateCache {
         pendingStateTransitions.remove(tp);
     }
 
-    // -- Pending topic creation operations --
-
     public boolean addPendingTopicCreation(String topic) {
         return pendingTopicCreations.add(topic);
     }
@@ -204,8 +188,6 @@ public class MirrorStateCache {
     public void removePendingTopicCreation(String topic) {
         pendingTopicCreations.remove(topic);
     }
-
-    // -- Pending leader epoch bump operations --
 
     public void addPendingEpochBump(PendingLeaderEpochBump bump) {
         pendingLeaderEpochBumps.add(bump);

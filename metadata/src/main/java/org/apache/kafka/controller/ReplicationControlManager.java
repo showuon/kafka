@@ -97,8 +97,8 @@ import org.apache.kafka.metadata.placement.PlacementSpec;
 import org.apache.kafka.metadata.placement.TopicAssignment;
 import org.apache.kafka.metadata.placement.UsableBroker;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
-import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState;
 import org.apache.kafka.server.common.TopicIdPartition;
+import org.apache.kafka.server.mirror.MirrorPartitionState;
 import org.apache.kafka.server.mutable.BoundedList;
 import org.apache.kafka.server.policy.CreateTopicPolicy;
 import org.apache.kafka.timeline.SnapshotRegistry;
@@ -1218,7 +1218,7 @@ public class ReplicationControlManager {
         if (topic == null) {
             throw new UnknownTopicIdException(UNKNOWN_TOPIC_ID.message());
         }
-        maybeVerifyMirrorStopped(topic);
+        isNormalTopicOrMirroringStopped(topic);
         int numPartitions = topic.parts.size();
         log.trace("Deleting topic {} with ID {} and {} partitions", topic.name, id, numPartitions);
         try {
@@ -2052,7 +2052,7 @@ public class ReplicationControlManager {
         if (topicInfo == null) {
             throw new UnknownTopicOrPartitionException();
         }
-        maybeVerifyMirrorStopped(topicInfo);
+        isNormalTopicOrMirroringStopped(topicInfo);
         if (topic.count() == topicInfo.parts.size()) {
             throw new InvalidPartitionsException("Topic already has " +
                 topicInfo.parts.size() + " partition(s).");
@@ -2138,10 +2138,11 @@ public class ReplicationControlManager {
         }
     }
 
-    private static void maybeVerifyMirrorStopped(TopicControlInfo topicInfo) {
+    private static void isNormalTopicOrMirroringStopped(TopicControlInfo topicInfo) {
         if (topicInfo.mirrorName() != null && !topicInfo.mirrorName().isBlank() &&
                 topicInfo.mirrorState() != MirrorPartitionState.STOPPED.value()) {
-            throw new InvalidMirrorStateException("Topic '" + topicInfo.name() + "' has mirror '" + topicInfo.mirrorName() + "' which is not in stopped state");
+            throw new InvalidMirrorStateException("Topic '" + topicInfo.name() + "' has mirror '"
+                    + topicInfo.mirrorName() + "' which is not in stopped state");
         }
     }
 

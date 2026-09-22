@@ -18,7 +18,7 @@ package org.apache.kafka.server.common;
 
 import java.util.Map;
 
-public enum ClusterMirrorVersion implements FeatureVersion {
+public enum MirrorVersion implements FeatureVersion {
     // Version 0: the feature is disabled by default.
     MV_0(0, MetadataVersion.MINIMUM_VERSION, Map.of()),
 
@@ -27,13 +27,13 @@ public enum ClusterMirrorVersion implements FeatureVersion {
 
     public static final String FEATURE_NAME = "mirror.version";
 
-    public static final ClusterMirrorVersion LATEST_PRODUCTION = MV_0;
+    public static final MirrorVersion LATEST_PRODUCTION = MV_0;
 
     private final short featureLevel;
     private final MetadataVersion bootstrapMetadataVersion;
     private final Map<String, Short> dependencies;
 
-    ClusterMirrorVersion(
+    MirrorVersion(
         int featureLevel,
         MetadataVersion bootstrapMetadataVersion,
         Map<String, Short> dependencies
@@ -69,10 +69,10 @@ public enum ClusterMirrorVersion implements FeatureVersion {
 
     public static boolean isEnabled(Map<String, Short> finalizedFeatures) {
         short featureLevel = finalizedFeatures.getOrDefault(FEATURE_NAME, (short) 0);
-        return ClusterMirrorVersion.fromFeatureLevel(featureLevel).isEnabled();
+        return MirrorVersion.fromFeatureLevel(featureLevel).isEnabled();
     }
 
-    public static ClusterMirrorVersion fromFeatureLevel(short version) {
+    public static MirrorVersion fromFeatureLevel(short version) {
         switch (version) {
             case 0:
                 return MV_0;

@@ -27,8 +27,8 @@ import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
- * Queue-based sender for asynchronous inter-broker requests used by {@link MirrorMetadataManager}
- * to forward mirror state updates to other coordinator brokers in the destination cluster.
+ * Queue-based sender for asynchronous inter-broker requests used to
+ * forward state updates to other coordinator in the destination cluster.
  */
 class MirrorStateSender extends InterBrokerSendThread {
     private final ConcurrentLinkedQueue<RequestAndCompletionHandler> queue = new ConcurrentLinkedQueue<>();

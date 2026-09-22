@@ -20,42 +20,45 @@ import org.apache.kafka.common.EpochOffset;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.message.ReadMirrorStatesResponseData;
-import org.apache.kafka.server.common.MirrorPartition;
-import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState;
+import org.apache.kafka.common.message.WriteMirrorStatesResponseData;
+import org.apache.kafka.server.mirror.MirrorPartitionKey;
+import org.apache.kafka.server.mirror.MirrorPartitionMetadata;
+import org.apache.kafka.server.mirror.MirrorPartitionState;
 
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
 /**
- * Bridge between the {@code mirror-coordinator} module and the core module.
- * Implemented by {@code MirrorMetadataManager} (core), which owns the KRaft
- * metadata image, the mirror-state cache, and the source/destination admin
- * clients. The coordinator module calls back through this interface to read
- * and mutate mirror partition state without taking a compile-time dependency
- * on core classes.
+ * Bridge between the coordinator (mirror-coordinator module) and metadata manager (core module).
+ * This interface defines the contract for state persistence and retrieval.
  */
 public interface MetadataManagerBridge {
-    void initialize(
-        CoordinatorWriter coordinatorWriter,
+    void onBrokerStart(
+        Function<MirrorPartitionKey, Integer> coordPartFinder,
         CoordinatorReader coordinatorReader,
-        Function<MirrorPartitionKey, Integer> coordPartFinder
+        CoordinatorWriter coordinatorWriter
     );
-
-    void closeSourceAdmins();
 
     void onShardLoaded(int coordPartition);
 
     void onShardUnloaded(int coordPartition, int coordPartitionCount);
 
-    MirrorPartition getPartition(MirrorPartitionKey key);
+    void closeSourceAdmins();
 
-    void setPartition(MirrorPartitionKey key, MirrorPartition partition);
+    Uuid getTopicId(String topicName);
 
-    void removePartition(MirrorPartitionKey key);
+    Optional<String> getTopicName(Uuid topicId);
 
-    void updateFailedInfo(
+    MirrorPartitionMetadata getPartitionMetadata(MirrorPartitionKey key);
+
+    void setPartitionMetadata(MirrorPartitionKey key, MirrorPartitionMetadata partition);
+
+    void removePartitionMetadata(MirrorPartitionKey key);
+
+    void updateFailureDetails(
         MirrorPartitionKey key,
         MirrorPartitionState curState,
         MirrorPartitionState newState,
@@ -65,9 +68,20 @@ public interface MetadataManagerBridge {
 
     void setLastMirrorPosition(String mirrorName, String topic, int partition, EpochOffset lastMirrorPosition);
 
-    Uuid getTopicId(String topicName);
-
-    Optional<String> getTopicName(Uuid topicId);
+    /**
+     * Callback for reading partition state from the {@code __mirror_state} shard
+     * via the {@code CoordinatorRuntime}. Delegating the read through the runtime
+     * (rather than reading MMM's local cache directly) ensures that a shard still
+     * loading surfaces as {@code COORDINATOR_LOAD_IN_PROGRESS} instead of returning
+     * possibly-incomplete cached state.
+     */
+    @FunctionalInterface
+    interface CoordinatorReader {
+        CompletableFuture<ReadMirrorStatesResponseData> readPartitionStates(
+                String mirrorName,
+                Map<String, Set<Integer>> partitions
+        );
+    }
 
     /**
      * Callback for writing coordinator records to the {@code __mirror_state} shard
@@ -76,39 +90,19 @@ public interface MetadataManagerBridge {
      * knows how to write it.
      */
     interface CoordinatorWriter {
-        CompletableFuture<Void> writePartitionState(
+        CompletableFuture<WriteMirrorStatesResponseData> writePartitionStates(
             String mirrorName,
-            TopicPartition tp,
-            MirrorPartitionState state,
-            int leaderEpoch,
-            int stateEpoch,
-            String errorMessage,
-            boolean nonRetryable
+            Map<String, Set<ClusterMirrorCoordinatorService.MirrorStateWrite>> states
         );
 
-        CompletableFuture<Void> writeLastMirrorPosition(
+        CompletableFuture<Void> writeLastMirrorPositions(
             String mirrorName,
-            TopicPartition tp,
-            EpochOffset lastMirrorPosition
+            Map<TopicPartition, EpochOffset> positions
         );
 
-        CompletableFuture<Void> writeTombstone(
+        CompletableFuture<Void> writeMirrorTombstones(
             String mirrorName,
             Set<TopicPartition> partitions
-        );
-    }
-
-    /**
-     * Callback for reading partition state from the {@code __mirror_state} shard
-     * via the {@code CoordinatorRuntime}. Delegating the read through the runtime
-     * (rather than reading MMM's local cache directly) ensures that a shard still
-     * loading surfaces as {@code COORDINATOR_LOAD_IN_PROGRESS} instead of returning
-     * possibly-incomplete cached state.
-     */
-    interface CoordinatorReader {
-        CompletableFuture<ReadMirrorStatesResponseData> readPartitionState(
-            String mirrorName,
-            TopicPartition tp
         );
     }
 }

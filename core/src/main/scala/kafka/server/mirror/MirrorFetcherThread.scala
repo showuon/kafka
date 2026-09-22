@@ -25,7 +25,7 @@ import org.apache.kafka.common.message.FetchResponseData
 import org.apache.kafka.common.record.Records
 import org.apache.kafka.common.requests.FetchResponse
 import org.apache.kafka.common.{Node, TopicPartition}
-import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState
+import org.apache.kafka.server.mirror.MirrorPartitionState
 import org.apache.kafka.server.common.OffsetAndEpoch
 import org.apache.kafka.server.{LeaderEndPoint, PartitionFetchState}
 import org.apache.kafka.storage.internals.log.{LogAppendInfo, LogStartOffsetIncrementReason}
@@ -35,7 +35,7 @@ import scala.collection.{Map, Set}
 import scala.jdk.CollectionConverters.SetHasAsJava
 
 /**
- * Fetcher thread for Cluster Mirroring.
+ * Cross-cluster fetcher thread.
  */
 class MirrorFetcherThread(name: String,
                           leader: LeaderEndPoint,
@@ -74,7 +74,7 @@ class MirrorFetcherThread(name: String,
   override protected def refreshSourceClusterMetadata(mirrorPartitions: Set[TopicPartition], reason: String): Unit = {
     replicaMgr.mirrorMetadataManager.foreach(_.scheduleSourceTopicStateSync(mirrorName))
     replicaMgr.mirrorMetadataManager.foreach(_.transitionTo(mirrorName, mirrorPartitions.asJava,
-      MirrorPartitionState.FAILED, reason))
+      MirrorPartitionState.FAILED, reason, false, false))
   }
 
   override protected def maybeWaitForFollowersCaughtUp(mirrorPartitions: Set[TopicPartition]): Unit = {
@@ -83,26 +83,26 @@ class MirrorFetcherThread(name: String,
     val uleDisabledPartitions = mirrorPartitions.filter(tp => !replicaMgr.getLog(tp).get.config().mirrorSupportUncleanLeaderElection).toSet
     if (uleEnabledPartitions.nonEmpty) {
       replicaMgr.mirrorMetadataManager.foreach(_.transitionTo(mirrorName, uleEnabledPartitions.asJava,
-        MirrorPartitionState.ULE_RECOVERY))
+        MirrorPartitionState.ULE_RECOVERY, null, false, false))
     }
     if (uleDisabledPartitions.nonEmpty) {
       // move the state to terminal FAILED state.
       replicaMgr.mirrorMetadataManager.foreach(_.transitionTo(mirrorName, uleDisabledPartitions.asJava,
         MirrorPartitionState.FAILED, "detected log truncation during mirroring. This implies unclean leader election " +
-          "in source cluster, but the `mirror.support.unclean.leader.election` is disabled. Move to FAILED state.", true))
+          "in source cluster, but the `mirror.support.unclean.leader.election` is disabled. Move to FAILED state.", true, false))
     }
   }
 
   override protected def handlePartitionFailed(topicPartition: TopicPartition, reason: String): Unit = {
     replicaMgr.mirrorMetadataManager.foreach(_.transitionTo(mirrorName, java.util.Set.of(topicPartition),
-      MirrorPartitionState.FAILED, reason))
+      MirrorPartitionState.FAILED, reason, false, false))
   }
 
   // Source leader epoch exceeds local epoch: transition to EPOCH_FENCING to bump the
   // local epoch before allowing further appends. If the bump fails, the coordinator
   // transitions to FAILED and the exponential backoff retry takes over.
   override protected def handleMirrorLeaderEpochExceeded(mirrorName: String, topicPartition: TopicPartition): Unit = {
-    replicaMgr.mirrorMetadataManager.foreach(_.transitionTo(mirrorName, java.util.Set.of(topicPartition), MirrorPartitionState.EPOCH_FENCING, null))
+    replicaMgr.mirrorMetadataManager.foreach(_.transitionTo(mirrorName, java.util.Set.of(topicPartition), MirrorPartitionState.EPOCH_FENCING, null, false, false))
   }
 
   // Validates batch epoch against local epoch (destination) and partition epoch (source metadata)

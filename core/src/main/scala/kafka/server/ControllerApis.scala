@@ -27,7 +27,6 @@ import kafka.raft.RaftManager
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.logger.RuntimeLoggerManager
 import kafka.server.metadata.KRaftMetadataCache
-import org.apache.kafka.server.common.ClusterMirrorVersion
 import kafka.utils.Logging
 import org.apache.kafka.clients.CommonClientConfigs
 import org.apache.kafka.clients.admin.{AlterConfigOp, EndpointType}
@@ -61,7 +60,7 @@ import org.apache.kafka.common.security.auth.SecurityProtocol
 import org.apache.kafka.network.Session
 import org.apache.kafka.server.{ApiVersionManager, DelegationTokenManager, ProcessRole}
 import org.apache.kafka.server.authorizer.Authorizer
-import org.apache.kafka.server.common.{ApiMessageAndVersion, RequestLocal}
+import org.apache.kafka.server.common.{ApiMessageAndVersion, MirrorVersion, RequestLocal}
 import org.apache.kafka.server.quota.ControllerMutationQuota
 import org.apache.kafka.server.record.BrokerCompressionType
 
@@ -1126,7 +1125,7 @@ class ControllerApis(
     val mirrorName = createRequest.data().mirrorName()
     if (!authHelper.authorize(request.context, CREATE, CLUSTER_MIRROR, mirrorName))
       throw new ClusterMirrorAuthorizationException(s"Request $request needs CREATE permission on ClusterMirror:$mirrorName.")
-    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures))
+    if (!MirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures))
       throw new UnsupportedVersionException("Cluster mirroring requires mirror.version >= 1.")
 
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
@@ -1225,7 +1224,7 @@ class ControllerApis(
     val mirrorName = startRequest.data().mirrorName()
     if (!authHelper.authorize(request.context, ALTER, CLUSTER_MIRROR, mirrorName))
       throw new ClusterMirrorAuthorizationException(s"Request $request needs ALTER permission on ClusterMirror:$mirrorName.")
-    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures))
+    if (!MirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures))
       throw new UnsupportedVersionException("Cluster mirroring requires mirror.version >= 1.")
     if (!request.isForwarded)
       throw new InvalidRequestException("This request must be sent to a broker, not directly to the controller")
@@ -1258,7 +1257,7 @@ class ControllerApis(
     val mirrorName = stopRequest.data().mirrorName()
     if (!authHelper.authorize(request.context, ALTER, CLUSTER_MIRROR, mirrorName))
       throw new ClusterMirrorAuthorizationException(s"Request $request needs ALTER permission on ClusterMirror:$mirrorName.")
-    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures))
+    if (!MirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures))
       throw new UnsupportedVersionException("Cluster mirroring requires mirror.version >= 1.")
     if (!request.isForwarded)
       throw new InvalidRequestException("This request must be sent to a broker, not directly to the controller")
@@ -1292,7 +1291,7 @@ class ControllerApis(
     val mirrorName = pauseRequest.data().mirrorName()
     if (!authHelper.authorize(request.context, ALTER, CLUSTER_MIRROR, mirrorName))
       throw new ClusterMirrorAuthorizationException(s"Request $request needs ALTER permission on ClusterMirror:$mirrorName.")
-    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures))
+    if (!MirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures))
       throw new UnsupportedVersionException("Cluster mirroring requires mirror.version >= 1.")
     if (!request.isForwarded)
       throw new InvalidRequestException("This request must be sent to a broker, not directly to the controller")
@@ -1323,7 +1322,7 @@ class ControllerApis(
     val mirrorName = resumeRequest.data().mirrorName()
     if (!authHelper.authorize(request.context, ALTER, CLUSTER_MIRROR, mirrorName))
       throw new ClusterMirrorAuthorizationException(s"Request $request needs ALTER permission on ClusterMirror:$mirrorName.")
-    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures))
+    if (!MirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures))
       throw new UnsupportedVersionException("Cluster mirroring requires mirror.version >= 1.")
     if (!request.isForwarded)
       throw new InvalidRequestException("This request must be sent to a broker, not directly to the controller")
@@ -1354,7 +1353,7 @@ class ControllerApis(
     val mirrorName = recoverRequest.data().mirrorName()
     if (!authHelper.authorize(request.context, ALTER, CLUSTER_MIRROR, mirrorName))
       throw new ClusterMirrorAuthorizationException(s"Request $request needs ALTER permission on ClusterMirror:$mirrorName.")
-    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures))
+    if (!MirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures))
       throw new UnsupportedVersionException("Cluster mirroring requires mirror.version >= 1.")
     if (!request.isForwarded)
       throw new InvalidRequestException("This request must be sent to a broker, not directly to the controller")
@@ -1384,7 +1383,7 @@ class ControllerApis(
     val mirrorName = deleteMirrorRequest.data().mirrorName()
     if (!authHelper.authorize(request.context, ALTER, CLUSTER_MIRROR, mirrorName))
       throw new ClusterMirrorAuthorizationException(s"Request $request needs ALTER permission on ClusterMirror:$mirrorName.")
-    if (!ClusterMirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures))
+    if (!MirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures))
       throw new UnsupportedVersionException("Cluster mirroring requires mirror.version >= 1.")
     if (!request.isForwarded)
       throw new InvalidRequestException("This request must be sent to a broker, not directly to the controller")
