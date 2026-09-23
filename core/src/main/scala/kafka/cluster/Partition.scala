@@ -345,7 +345,6 @@ class Partition(val topicPartition: TopicPartition,
 
   // Mutable state for truncation protocol used for Cluster Mirroring.
   // Latched by maybeCompleteTruncation and cleared by completeTruncationCallbacks.
-  @volatile private var onCaughtupCallback: Optional[Consumer[TopicPartition]] = Optional.empty()
   @volatile private var onCompleteCallback: Optional[Consumer[TopicPartition]] = Optional.empty()
   @volatile private var requireFullReplicaConvergence: Boolean = false
 
@@ -1267,7 +1266,6 @@ class Partition(val topicPartition: TopicPartition,
   def maybeCompleteReplicaConvergence(leaderLog: UnifiedLog,
                                       currentTimeMs: Long = time.milliseconds,
                                       waitForAllReplicas: Boolean = false,
-                                      onCaughtupCallback: Optional[Consumer[TopicPartition]] = Optional.empty(),
                                       onCompleteCallback: Optional[Consumer[TopicPartition]] = Optional.empty()): Boolean = {
     // Put callbacks and flags into instance state
     if (onCompleteCallback.isPresent) {
@@ -1275,9 +1273,6 @@ class Partition(val topicPartition: TopicPartition,
     }
     if (this.onCompleteCallback.isEmpty) {
       return false
-    }
-    if (onCaughtupCallback.isPresent) {
-      this.onCaughtupCallback = onCaughtupCallback
     }
     if (waitForAllReplicas) {
       requireFullReplicaConvergence = true
@@ -1303,15 +1298,6 @@ class Partition(val topicPartition: TopicPartition,
       return true
     }
 
-    // Phase 1: ISR number > min.isr or all replicas are in ISR, trigger leader log truncation.
-    // Two phases needed because truncation may land mid batch; followers
-    // cannot sync until catching up the leader.
-    if (onCaughtupCallback.isPresent) {
-      onCaughtupCallback.get().accept(topicPartition)
-      this.onCaughtupCallback = Optional.empty()
-      return false
-    }
-
     // Check replicas convergence (no relevant replica has LEO ahead of the leader).
     // Uses the maximal ISR (committed + pending, see KIP-497) so replicas about
     // to join the ISR are also required to converge before proceeding.
@@ -1333,16 +1319,12 @@ class Partition(val topicPartition: TopicPartition,
       return false
     }
 
-    // Phase 2: leader truncated and all replicas caught up to the new LEO
+    // leader truncated and all replicas caught up to the new LEO
     completeTruncationCallbacks()
     true
   }
 
   private def completeTruncationCallbacks(): Unit = {
-    onCaughtupCallback.ifPresent(callback => {
-      callback.accept(topicPartition)
-      this.onCaughtupCallback = Optional.empty()
-    })
     onCompleteCallback.ifPresent(callback => {
       callback.accept(topicPartition)
       this.onCompleteCallback = Optional.empty()
