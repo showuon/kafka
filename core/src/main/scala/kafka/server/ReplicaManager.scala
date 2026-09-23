@@ -1879,6 +1879,10 @@ class ReplicaManager(val config: KafkaConfig,
                 partition.topicPartition.partition()))
             if (entry != null) entry.state() else MirrorPartitionState.UNKNOWN
           } else MirrorPartitionState.UNKNOWN
+          val sourceLeaderEpochOpt: Optional[Integer] = if (partition.isLeader && mirrorMetadataManager.isDefined && mirrorName.isPresent)
+            Optional.of(mirrorMetadataManager.get.resolveSourceLeader(mirrorName.get(), partition.topicPartition).leaderEpoch())
+          else Optional.empty()
+
           // Try the read first, this tells us whether we need all of adjustedFetchSize for this partition
           val readInfo: LogReadInfo = partition.fetchRecords(
             fetchParams = params,
@@ -1887,7 +1891,8 @@ class ReplicaManager(val config: KafkaConfig,
             maxBytes = adjustedMaxBytes,
             minOneMessage = minOneMessage,
             updateFetchState = !readFromPurgatory,
-            mirrorState = state)
+            mirrorState = state,
+            sourceLeaderEpochOpt = sourceLeaderEpochOpt)
 
           val fetchDataInfo = checkFetchDataInfo(partition, readInfo.fetchedData)
 
