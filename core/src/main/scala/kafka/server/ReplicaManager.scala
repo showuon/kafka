@@ -1867,8 +1867,10 @@ class ReplicaManager(val config: KafkaConfig,
           val state = if (mirrorMetadataManager.isDefined && mirrorName.isPresent)
             mirrorMetadataManager.get.getPartitionState(mirrorName.get(), partition.topicPartition)
           else MirrorPartitionState.UNKNOWN
-          val sourceLeaderEpochOpt: Optional[Integer] = if (partition.isLeader && mirrorMetadataManager.isDefined && mirrorName.isPresent)
-            Optional.of(mirrorMetadataManager.get.resolveSourceLeader(mirrorName.get(), partition.topicPartition).leaderEpoch())
+          val sourceLeaderEpochOpt: Optional[Integer] = if (partition.isLeader && mirrorMetadataManager.isDefined && mirrorName.isPresent) {
+            val sourceLeader = mirrorMetadataManager.get.resolveSourceLeader(mirrorName.get(), partition.topicPartition)
+            if (sourceLeader.isPresent) Optional.of(sourceLeader.get().leaderEpoch()) else Optional.empty()
+          }
           else Optional.empty()
 
           // Try the read first, this tells us whether we need all of adjustedFetchSize for this partition
@@ -2642,13 +2644,15 @@ class ReplicaManager(val config: KafkaConfig,
             if (mirrorName != null) {
               // Get the source partition leader
               val sourceLeader = mirrorMetadataManager.get.resolveSourceLeader(mirrorName, tp)
-              val sourceLeaderNode = sourceLeader.node()
+              if (sourceLeader.isEmpty)
+                throw new SourceMetadataNotAvailableException()
+              val sourceLeaderNode = sourceLeader.get().node()
               val leaderEndpoint = new BrokerEndPoint(sourceLeaderNode.id(), sourceLeaderNode.host(), sourceLeaderNode.port())
 
               val fetchState = InitialFetchState(
                 topicId = Some(metadataCache.getTopicId(tp.topic)),
                 leader = leaderEndpoint,
-                currentLeaderEpoch = sourceLeader.leaderEpoch(),
+                currentLeaderEpoch = sourceLeader.get().leaderEpoch(),
                 initOffset = partition.localLogOrException.logEndOffset,
                 mirrorName = mirrorName
               )
@@ -2668,7 +2672,7 @@ class ReplicaManager(val config: KafkaConfig,
               maybeAddListener(tp, mirrorLagListener)
             }
           } catch {
-            case _: IllegalStateException =>
+            case _: SourceMetadataNotAvailableException =>
               pendingMetadataPartitions.add(tp)
               stateChangeLogger.info(s"Source metadata not yet available for partition $tp, will retry after refresh")
             case e: Exception =>

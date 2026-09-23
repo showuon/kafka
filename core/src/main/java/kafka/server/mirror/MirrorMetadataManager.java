@@ -1930,7 +1930,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         });
     }
 
-    public MirrorStateCache.SourceLeader resolveSourceLeader(String mirrorName, TopicPartition tp) {
+    public Optional<MirrorStateCache.SourceLeader> resolveSourceLeader(String mirrorName, TopicPartition tp) {
         return mirrorCache.resolveSourceLeader(mirrorName, tp);
     }
 
