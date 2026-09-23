@@ -1312,7 +1312,11 @@ public class UnifiedLog implements AutoCloseable {
     }
 
     public Optional<OffsetAndEpoch> endOffsetForEpoch(int leaderEpoch) {
-        Map.Entry<Integer, Long> entry = leaderEpochCache.endOffsetFor(leaderEpoch, logEndOffset());
+        return endOffsetForEpoch(leaderEpoch, Optional.empty());
+    }
+
+    public Optional<OffsetAndEpoch> endOffsetForEpoch(int leaderEpoch, Optional<Integer> sourceLeaderEpochOpt) {
+        Map.Entry<Integer, Long> entry = leaderEpochCache.endOffsetFor(leaderEpoch, logEndOffset(), sourceLeaderEpochOpt);
         int foundEpoch = entry.getKey();
         long foundOffset = entry.getValue();
         if (foundOffset == UNDEFINED_EPOCH_OFFSET) {

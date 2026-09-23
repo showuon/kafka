@@ -265,6 +265,10 @@ public final class LeaderEpochFileCache {
         }
     }
 
+    public Map.Entry<Integer, Long> endOffsetFor(int requestedEpoch, long logEndOffset) {
+        return endOffsetFor(requestedEpoch, logEndOffset, Optional.empty());
+    }
+
     /**
      * Returns the Leader Epoch and the End Offset for a requested Leader Epoch.
      * <p>
@@ -281,15 +285,25 @@ public final class LeaderEpochFileCache {
      * @param logEndOffset   the existing Log End Offset
      * @return found leader epoch and end offset
      */
-    public Map.Entry<Integer, Long> endOffsetFor(int requestedEpoch, long logEndOffset) {
+    public Map.Entry<Integer, Long> endOffsetFor(int requestedEpoch, long logEndOffset, Optional<Integer> sourceLeaderEpochOpt) {
         lock.readLock().lock();
         try {
             Map.Entry<Integer, Long> epochAndOffset;
+
+            Optional<Integer> latestEpochOpt;
+            if (sourceLeaderEpochOpt.isPresent() && latestEpoch().isPresent()) {
+                latestEpochOpt = sourceLeaderEpochOpt.get() > latestEpoch().get() ? sourceLeaderEpochOpt : latestEpoch();
+            } else if (sourceLeaderEpochOpt.isPresent()) {
+                latestEpochOpt = sourceLeaderEpochOpt;
+            } else {
+                latestEpochOpt = latestEpoch();
+            }
+
             if (requestedEpoch == UNDEFINED_EPOCH) {
                 // This may happen if a bootstrapping follower sends a request with undefined epoch or
                 // a follower is on the older message format where leader epochs are not recorded
                 epochAndOffset = new AbstractMap.SimpleImmutableEntry<>(UNDEFINED_EPOCH, UNDEFINED_EPOCH_OFFSET);
-            } else if (latestEpoch().isPresent() && latestEpoch().get() == requestedEpoch) {
+            } else if (latestEpochOpt.isPresent() && latestEpochOpt.get() == requestedEpoch) {
                 // For the leader, the latest epoch is always the current leader epoch that is still being written to.
                 // Followers should not have any reason to query for the end offset of the current epoch, but a consumer
                 // might if it is verifying its committed offset following a group rebalance. In this case, we return
@@ -297,11 +311,18 @@ public final class LeaderEpochFileCache {
                 epochAndOffset = new AbstractMap.SimpleImmutableEntry<>(requestedEpoch, logEndOffset);
             } else {
                 Map.Entry<Integer, EpochEntry> higherEntry = epochs.higherEntry(requestedEpoch);
-                if (higherEntry == null) {
+                if (higherEntry == null && sourceLeaderEpochOpt.isPresent() && sourceLeaderEpochOpt.get() <= requestedEpoch) {
                     // The requested epoch is larger than any known epoch. This case should never be hit because
                     // the latest cached epoch is always the largest.
                     epochAndOffset = new AbstractMap.SimpleImmutableEntry<>(UNDEFINED_EPOCH, UNDEFINED_EPOCH_OFFSET);
                 } else {
+                    long higherEntryStartOffset;
+                    if (higherEntry != null) {
+                        higherEntryStartOffset = higherEntry.getValue().startOffset();
+                    } else {
+                        higherEntryStartOffset = logEndOffset;
+                    }
+
                     Map.Entry<Integer, EpochEntry> floorEntry = epochs.floorEntry(requestedEpoch);
                     if (floorEntry == null) {
                         // The requested epoch is smaller than any known epoch, so we return the start offset of the first
@@ -309,11 +330,11 @@ public final class LeaderEpochFileCache {
                         // epochs in between, but the point is that the data has already been removed from the log
                         // and we want to ensure that the follower can replicate correctly beginning from the leader's
                         // start offset.
-                        epochAndOffset = new AbstractMap.SimpleImmutableEntry<>(requestedEpoch, higherEntry.getValue().startOffset());
+                        epochAndOffset = new AbstractMap.SimpleImmutableEntry<>(requestedEpoch, higherEntryStartOffset);
                     } else {
                         // We have at least one previous epoch and one subsequent epoch. The result is the first
                         // prior epoch and the starting offset of the first subsequent epoch.
-                        epochAndOffset = new AbstractMap.SimpleImmutableEntry<>(floorEntry.getValue().epoch(), higherEntry.getValue().startOffset());
+                        epochAndOffset = new AbstractMap.SimpleImmutableEntry<>(floorEntry.getValue().epoch(), higherEntryStartOffset);
                     }
                 }
             }

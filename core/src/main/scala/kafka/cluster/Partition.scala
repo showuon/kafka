@@ -1580,7 +1580,8 @@ class Partition(val topicPartition: TopicPartition,
     maxBytes: Int,
     minOneMessage: Boolean,
     updateFetchState: Boolean,
-    mirrorState: MirrorPartitionState = MirrorPartitionState.UNKNOWN
+    mirrorState: MirrorPartitionState = MirrorPartitionState.UNKNOWN,
+    sourceLeaderEpochOpt: Optional[Integer] = Optional.empty()
   ): LogReadInfo = {
     def readFromLocalLog(log: UnifiedLog): LogReadInfo = {
       readRecords(
@@ -1590,7 +1591,8 @@ class Partition(val topicPartition: TopicPartition,
         fetchPartitionData.currentLeaderEpoch,
         maxBytes,
         fetchParams.isolation,
-        minOneMessage
+        minOneMessage,
+        sourceLeaderEpochOpt
       )
     }
 
@@ -1671,7 +1673,8 @@ class Partition(val topicPartition: TopicPartition,
     currentLeaderEpoch: Optional[Integer],
     maxBytes: Int,
     fetchIsolation: FetchIsolation,
-    minOneMessage: Boolean
+    minOneMessage: Boolean,
+    sourceLeaderEpochOpt: Optional[Integer]
   ): LogReadInfo = {
     // Note we use the log end offset prior to the read. This ensures that any appends following
     // the fetch do not prevent a follower from coming into sync.
@@ -1681,7 +1684,7 @@ class Partition(val topicPartition: TopicPartition,
     val initialLastStableOffset = localLog.lastStableOffset
 
     lastFetchedEpoch.ifPresent { fetchEpoch =>
-      val epochEndOffset = lastOffsetForLeaderEpoch(currentLeaderEpoch, fetchEpoch, fetchOnlyFromLeader = false)
+      val epochEndOffset = lastOffsetForLeaderEpoch(currentLeaderEpoch, fetchEpoch, fetchOnlyFromLeader = false, sourceLeaderEpochOpt = sourceLeaderEpochOpt)
       val error = Errors.forCode(epochEndOffset.errorCode)
       if (error != Errors.NONE) {
         throw error.exception()
@@ -1886,12 +1889,13 @@ class Partition(val topicPartition: TopicPartition,
    */
   def lastOffsetForLeaderEpoch(currentLeaderEpoch: Optional[Integer],
                                leaderEpoch: Int,
-                               fetchOnlyFromLeader: Boolean): EpochEndOffset = {
+                               fetchOnlyFromLeader: Boolean,
+                               sourceLeaderEpochOpt: Optional[Integer] = Optional.empty()): EpochEndOffset = {
     inReadLock(leaderIsrUpdateLock) {
       val localLogOrError = getLocalLog(currentLeaderEpoch, fetchOnlyFromLeader)
       localLogOrError match {
         case Left(localLog) =>
-          localLog.endOffsetForEpoch(leaderEpoch).toScala match {
+          localLog.endOffsetForEpoch(leaderEpoch, sourceLeaderEpochOpt).toScala match {
             case Some(epochAndOffset) => new EpochEndOffset()
               .setPartition(partitionId)
               .setErrorCode(Errors.NONE.code)
