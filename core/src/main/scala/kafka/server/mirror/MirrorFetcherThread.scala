@@ -20,7 +20,7 @@ import kafka.cluster.Partition
 import kafka.server._
 import MirrorStateCache.SourceLeader
 import kafka.server.mirror.MirrorSourceSyncer.LEADER_EPOCH_BUMP_THRESHOLD
-import org.apache.kafka.common.errors.{MirrorLeaderEpochExceededException, MirrorPartitionStaleMetadataException}
+import org.apache.kafka.common.errors.{MirrorLeaderEpochExceededException, MirrorPartitionStaleMetadataException, SourceMetadataNotAvailableException}
 import org.apache.kafka.common.message.FetchResponseData
 import org.apache.kafka.common.record.Records
 import org.apache.kafka.common.requests.FetchResponse
@@ -69,6 +69,14 @@ class MirrorFetcherThread(name: String,
       }
     }
     replicaMgr.mirrorFetcherManager.addFetcherForPartitions(partitionAndOffsets)
+  }
+
+  override def updateSourceLeader(mirrorName: String, partition: TopicPartition, leaderNode: Optional[Node], leaderEpoch: Int): Unit = {
+    if (leaderNode.isEmpty)
+      throw new SourceMetadataNotAvailableException("cannot update source metadata because leader node is empty.")
+    replicaMgr.mirrorMetadataManager.foreach(_.updateSourceLeader(mirrorName, partition,
+      new SourceLeader(leaderNode.get(), leaderEpoch))
+    )
   }
 
   override protected def refreshSourceClusterMetadata(mirrorPartitions: Set[TopicPartition], reason: String): Unit = {
