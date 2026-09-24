@@ -33,7 +33,7 @@ import scala.collection.concurrent.TrieMap
 import scala.jdk.OptionConverters._
 
 /**
- * Manages {@link MirrorFetcherThread}s, assigning partitions from different mirrors
+ * Manages {@link MirrorFetcherThread} instances, assigning partitions from different mirrors
  * to separate threads for authentication, configuration, and load balancing isolation.
  */
 class MirrorFetcherManager(brokerConfig: KafkaConfig,
@@ -133,13 +133,15 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
   }
 
   private def createFetcherThread(fetcherId: Int, srcEndpoint: BrokerEndPoint, mirrorName: String): MirrorFetcherThread = {
-    info(s"Creating mirror fetcher thread: fetcherId = $fetcherId, srcEndpoint = $srcEndpoint, mirrorName = $mirrorName")
-    val threadName = s"MirrorFetcherThread-$fetcherId-${srcEndpoint.id}-$mirrorName"
-    val logContext = new LogContext(s"[MirrorFetcher id=${brokerConfig.brokerId}, fetcherId=$fetcherId, leaderId=${srcEndpoint.id}, mirrorName=$mirrorName] ")
-
     if (mirrorName.isEmpty) {
       throw new IllegalArgumentException("Mirror name must be provided for remote fetchers")
     }
+
+    val threadName = s"MirrorFetcherThread fetcherId=$fetcherId, srcBrokerId=${srcEndpoint.id}, " +
+      s"dstBrokerId=${brokerConfig.brokerId}, mirrorName=$mirrorName"
+    info(s"Creating $threadName")
+    val logContext = new LogContext(s"[$threadName] ")
+
     val mirrorProperties = metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName))
     info(s"Using mirror properties for $mirrorName: ${mirrorProperties.keySet()}")
     val mirrorConfig = ClusterMirrorConfig.fromProperties(mirrorProperties)
@@ -250,7 +252,7 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
         .flatMap(_.partitions)
         .toSet
       if (affectedPartitions.nonEmpty) {
-        info(s"Restarting fetcher threads for mirror '$mirrorName' " +
+        info(s"Restarting fetcher threads for mirror $mirrorName " +
           s"affecting ${affectedPartitions.size} partitions")
         removeFetcherForPartitions(affectedPartitions)
       }
@@ -267,20 +269,21 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
 
 /**
  * Three-dimensional key for grouping mirror fetcher threads.
- *
- * Multiple partitions share the same fetcher thread when they have identical keys
- * (fetcher ID, source broker, and mirror name). This key determines thread reuse.
- *
+ * <p>
+ * Multiple partitions share the same fetcher thread when they
+ * have identical keys (Fetcher ID, Source Broker, Mirror Name).
+ * <p>
  * Example with num.mirror.replica.fetchers = 2:
- *
- * | Partition  | Fetcher ID | Source Leader | Mirror Name | Key                 | Thread Reused? |
- * |------------|------------|---------------|-------------|---------------------|----------------|
- * | topic1-p0  | 0          | broker-1      | A2B         | (0, broker-1, A2B)  | New thread     |
- * | topic1-p1  | 1          | broker-1      | A2B         | (1, broker-1, A2B)  | New thread     |
- * | topic2-p0  | 0          | broker-1      | A2B         | (0, broker-1, A2B)  | Reuse          |
- * | topic2-p1  | 1          | broker-1      | A2B         | (1, broker-1, A2B)  | Reuse          |
- * | topic3-p0  | 0          | broker-2      | A2B         | (0, broker-2, A2B)  | New thread     |
- * | topic4-p0  | 0          | broker-1      | A2C         | (0, broker-1, A2C)  | New thread     |
+ * <pre>
+ * | Partition  | Fetcher ID | Source Broker | Mirror Name | Thread |
+ * |------------|------------|---------------|-------------|--------|
+ * | topic1-p0  | 0          | broker-1      | a-to-b      | New    |
+ * | topic1-p1  | 1          | broker-1      | a-to-b      | New    |
+ * | topic2-p0  | 0          | broker-1      | a-to-b      | Reuse  |
+ * | topic2-p1  | 1          | broker-1      | a-to-b      | Reuse  |
+ * | topic3-p0  | 0          | broker-2      | a-to-b      | New    |
+ * | topic4-p0  | 0          | broker-1      | a-to-c      | New    |
+ * </pre>
  */
 case class MirrorFetcherKey(fetcherId: Int, sourceBroker: BrokerEndPoint, mirrorName: String)
 

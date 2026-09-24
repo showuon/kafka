@@ -52,7 +52,7 @@ import org.apache.kafka.coordinator.transaction.{AddPartitionsToTxnConfig, Trans
 import org.apache.kafka.image.{LocalReplicaChanges, MetadataImage, TopicsDelta}
 import org.apache.kafka.metadata.LeaderConstants.NO_LEADER
 import org.apache.kafka.metadata.MetadataCache
-import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState
+import org.apache.kafka.server.mirror.MirrorPartitionState
 import org.apache.kafka.server.common.{DirectoryEventHandler, RequestLocal, StopPartition}
 import org.apache.kafka.server.log.remote.TopicPartitionLog
 import org.apache.kafka.server.config.ReplicationConfigs
@@ -1415,7 +1415,12 @@ class ReplicaManager(val config: KafkaConfig,
     def validateReadOnlyTopic(partition: Partition, records: MemoryRecords, origin: AppendOrigin): Unit = {
       val mirrorName = partition.getMirrorName()
       if (mirrorMetadataManager.isDefined && mirrorName.isPresent) {
-        val state = mirrorMetadataManager.get.getPartitionState(mirrorName.get(), partition.topicPartition)
+        val entry = mirrorMetadataManager.get.getPartitionMetadata(
+          org.apache.kafka.server.mirror.MirrorPartitionKey.of(
+            mirrorName.get(),
+            metadataCache.getTopicId(partition.topicPartition.topic()),
+            partition.topicPartition.partition()))
+        val state = if (entry != null) entry.state() else null
         val allowed = state == MirrorPartitionState.STOPPED ||
           (state == MirrorPartitionState.STOPPING &&
             (origin == AppendOrigin.COORDINATOR || origin == AppendOrigin.REPLICATION) &&
@@ -1710,11 +1715,13 @@ class ReplicaManager(val config: KafkaConfig,
     })
   }
 
-  def waitForAllReplicasCaughtUp(tp: TopicPartition, callback: Consumer[TopicPartition]): Unit = {
+  def awaitReplicaConvergence(tp: TopicPartition): CompletableFuture[Void] = {
+    val future = new CompletableFuture[Void]()
     getLog(tp).map(log => {
       val partition = getPartitionOrException(tp)
-      partition.maybeCompleteReplicaConvergence(log, waitForAllReplicas = true, onCompleteCallback = Optional.of(callback))
+      partition.maybeCompleteReplicaConvergence(log, waitForAllReplicas = true, onCompleteCallback = Optional.of(_ => future.complete(null)))
     })
+    future
   }
 
   /**
@@ -1873,9 +1880,14 @@ class ReplicaManager(val config: KafkaConfig,
         } else {
           log = partition.localLogWithEpochOrThrow(fetchInfo.currentLeaderEpoch, params.fetchOnlyLeader())
           val mirrorName = partition.getMirrorName()
-          val state = if (mirrorMetadataManager.isDefined && mirrorName.isPresent)
-            mirrorMetadataManager.get.getPartitionState(mirrorName.get(), partition.topicPartition)
-          else MirrorPartitionState.UNKNOWN
+          val state = if (mirrorMetadataManager.isDefined && mirrorName.isPresent) {
+            val entry = mirrorMetadataManager.get.getPartitionMetadata(
+              org.apache.kafka.server.mirror.MirrorPartitionKey.of(
+                mirrorName.get(),
+                metadataCache.getTopicId(partition.topicPartition.topic()),
+                partition.topicPartition.partition()))
+            if (entry != null) entry.state() else MirrorPartitionState.UNKNOWN
+          } else MirrorPartitionState.UNKNOWN
           // Try the read first, this tells us whether we need all of adjustedFetchSize for this partition
           val readInfo: LogReadInfo = partition.fetchRecords(
             fetchParams = params,
@@ -2697,13 +2709,13 @@ class ReplicaManager(val config: KafkaConfig,
     if (pendingMetadataPartitions.nonEmpty) {
       mirrorMetadataManager.foreach(_.scheduleSourceTopicStateSync(mirrorName))
       mirrorMetadataManager.foreach(_.transitionTo(mirrorName, pendingMetadataPartitions.asJava,
-        MirrorPartitionState.FAILED, "Failed to get source metadata"))
+        MirrorPartitionState.FAILED, "Failed to get source metadata", false, false))
     }
 
     if (errorPartitionAndOffsets.nonEmpty) {
       mirrorMetadataManager.foreach(_.scheduleSourceTopicStateSync(mirrorName))
       mirrorMetadataManager.foreach(_.transitionTo(mirrorName, errorPartitionAndOffsets.asJava,
-        MirrorPartitionState.FAILED, "Failed to add mirror fetcher"))
+        MirrorPartitionState.FAILED, "Failed to add mirror fetcher", false, false))
     }
   }
 

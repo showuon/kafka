@@ -63,16 +63,16 @@ import org.apache.kafka.common.test.TestKitNodes;
 import org.apache.kafka.coordinator.common.runtime.CoordinatorRecord;
 import org.apache.kafka.coordinator.group.GroupCoordinatorConfig;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig;
-import org.apache.kafka.coordinator.mirror.MirrorPartitionKey;
 import org.apache.kafka.coordinator.mirror.MirrorRecordSerde;
 import org.apache.kafka.coordinator.mirror.generated.LastMirrorEpochsKey;
 import org.apache.kafka.coordinator.mirror.generated.MirrorPartitionStateKey;
-import org.apache.kafka.server.common.MirrorPartition.MirrorPartitionState;
 import org.apache.kafka.server.config.ServerConfigs;
 import org.apache.kafka.server.config.ServerLogConfigs;
 import org.apache.kafka.server.log.remote.storage.NoOpRemoteLogMetadataManager;
 import org.apache.kafka.server.log.remote.storage.NoOpRemoteStorageManager;
 import org.apache.kafka.server.log.remote.storage.RemoteLogManagerConfig;
+import org.apache.kafka.server.mirror.MirrorPartitionKey;
+import org.apache.kafka.server.mirror.MirrorPartitionState;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -101,7 +101,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Integration test for Cluster Mirroring feature.
+ * Integration tests for Cluster Mirroring feature.
  */
 @Timeout(value = 180, unit = TimeUnit.SECONDS)
 public class ClusterMirroringIntegrationTest {
@@ -201,7 +201,8 @@ public class ClusterMirroringIntegrationTest {
         String forwardMirror = "a-to-b";
         String reverseMirror = "b-to-a";
 
-        CreateTopicsResult createTopicsResult = srcAdmin.createTopics(List.of(new NewTopic(topic, 1, (short) 1)));
+        CreateTopicsResult createTopicsResult =
+                srcAdmin.createTopics(List.of(new NewTopic(topic, 1, (short) 1)));
         createTopicsResult.all().get(30, TimeUnit.SECONDS);
         produceRecords(srcCluster, topic, 0, 10);
 
@@ -225,7 +226,8 @@ public class ClusterMirroringIntegrationTest {
         DescribeClusterMirrorsResult describeClusterMirrors = dstAdmin.describeClusterMirrors(
                 null, topicPartitions,
                 new DescribeClusterMirrorsOptions().clusterId(srcClusterId).includeMirrorState(true));
-        Map<TopicPartition, EpochOffset> lastMirrorPositions = describeClusterMirrors.lastMirrorPositions().get(30, TimeUnit.SECONDS);
+        Map<TopicPartition, EpochOffset> lastMirrorPositions =
+                describeClusterMirrors.lastMirrorPositions().get(30, TimeUnit.SECONDS);
         TopicPartition tp0 = new TopicPartition(topic, 0);
         assertEquals(1, lastMirrorPositions.size(), "Should have one lookup result");
         assertTrue(lastMirrorPositions.containsKey(tp0), "Should have partition 0");
@@ -512,7 +514,8 @@ public class ClusterMirroringIntegrationTest {
                 .getLeaderAndIsr(topic, 0).get().leader();
 
         // simulate the source cluster has unclean leader election and the log truncation happened
-        srcCluster.brokers().get(srcLeader).replicaManager().getLog(new TopicPartition(topic, 0)).get().truncateTo(20);
+        srcCluster.brokers().get(srcLeader).replicaManager()
+                .getLog(new TopicPartition(topic, 0)).get().truncateTo(20);
 
         // verify it's still in MIRRORING state because the "mirror.support.unclean.leader.election" is disabled
         waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
@@ -524,7 +527,8 @@ public class ClusterMirroringIntegrationTest {
                         AlterConfigOp.OpType.SET)))).all().get();
 
         // simulate the source cluster has unclean leader election and the log truncation happened again
-        srcCluster.brokers().get(srcLeader).replicaManager().getLog(new TopicPartition(topic, 0)).get().truncateTo(10);
+        srcCluster.brokers().get(srcLeader).replicaManager()
+                .getLog(new TopicPartition(topic, 0)).get().truncateTo(10);
 
         // When log truncation happened, we should enter ULE_RECOVERY and stay there because there's one replica is not caught up
         waitForMirrorState(dstAdmin, MIRROR_NAME, topic, MirrorPartitionState.ULE_RECOVERY.name());
@@ -627,7 +631,8 @@ public class ClusterMirroringIntegrationTest {
         // verify the dst <- src mirror is still MIRRORING
         waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "MIRRORING");
         // verify the src <- dst mirror is FAILED with the expected error message
-        waitForMirrorState(srcAdmin, OTHER_MIRROR_NAME, TOPIC_NAME, "FAILED", Optional.of("Detected mirror loop for mirror"));
+        waitForMirrorState(srcAdmin, OTHER_MIRROR_NAME, TOPIC_NAME,
+                "FAILED", Optional.of("Detected mirror loop for mirror"));
     }
 
     @Test
@@ -798,7 +803,8 @@ public class ClusterMirroringIntegrationTest {
 
         waitForCondition(() -> {
             Map<String, TopicDescription> descriptionMap = describeTopics(dstAdmin, List.of(mirrorTopic, nonMirrorTopic));
-            return descriptionMap.get(nonMirrorTopic).partitions().size() == 2 && descriptionMap.get(mirrorTopic).partitions().size() == 1;
+            return descriptionMap.get(nonMirrorTopic).partitions().size() == 2
+                    && descriptionMap.get(mirrorTopic).partitions().size() == 1;
         }, "Non mirror topic count not increased");
     }
 
@@ -890,11 +896,13 @@ public class ClusterMirroringIntegrationTest {
         waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "MIRRORING");
 
         // Attempt to delete topic
-        ExecutionException e = assertThrows(ExecutionException.class, () -> dstAdmin.deleteTopics(Set.of(TOPIC_NAME)).all().get());
+        ExecutionException e = assertThrows(ExecutionException.class,
+                () -> dstAdmin.deleteTopics(Set.of(TOPIC_NAME)).all().get(30, TimeUnit.SECONDS));
         assertEquals(InvalidMirrorStateException.class, e.getCause().getClass());
 
         // Stop mirroring and retry
-        dstAdmin.stopMirrorTopics(MIRROR_NAME, List.of(TOPIC_NAME), new StopMirrorTopicsOptions()).all().get(30, TimeUnit.SECONDS);
+        dstAdmin.stopMirrorTopics(MIRROR_NAME, List.of(TOPIC_NAME),
+                new StopMirrorTopicsOptions()).all().get(30, TimeUnit.SECONDS);
         waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "STOPPED");
 
         dstAdmin.deleteTopics(Set.of(TOPIC_NAME)).all().get();
@@ -923,7 +931,8 @@ public class ClusterMirroringIntegrationTest {
         assertEquals(InvalidMirrorStateException.class, e.getCause().getClass());
 
         // Stop mirroring and retry
-        dstAdmin.stopMirrorTopics(MIRROR_NAME, List.of(TOPIC_NAME), new StopMirrorTopicsOptions()).all().get(30, TimeUnit.SECONDS);
+        dstAdmin.stopMirrorTopics(MIRROR_NAME, List.of(TOPIC_NAME),
+                new StopMirrorTopicsOptions()).all().get(30, TimeUnit.SECONDS);
         waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "STOPPED");
 
         waitForCondition(() -> {
@@ -1218,8 +1227,8 @@ public class ClusterMirroringIntegrationTest {
         alterMirrorConfig(mirrorName, ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG, newValue);
     }
 
-    private boolean allPartitionsSatisfy(Admin admin, String mirrorName,
-                                         String topicPattern, Predicate<ClusterMirrorDescription.LeaderStateDescription> condition) throws Exception {
+    private boolean allPartitionsSatisfy(Admin admin, String mirrorName, String topicPattern,
+                                         Predicate<ClusterMirrorDescription.LeaderStateDescription> condition) throws Exception {
         var result = admin.describeClusterMirrors(
                 List.of(mirrorName), null,
                 new DescribeClusterMirrorsOptions().includeMirrorState(true).includeMirrorOffset(true));

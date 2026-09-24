@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kafka.server.common;
+package org.apache.kafka.server.mirror;
 
 import org.apache.kafka.common.EpochOffset;
 
@@ -29,90 +29,45 @@ import org.apache.kafka.common.EpochOffset;
  *                              or {@link #NON_RETRYABLE_ATTEMPT} if non-retryable
  * @param prevState             the state before entering FAILED, or null if not applicable
  */
-public record MirrorPartition(MirrorPartitionState state, int stateEpoch, EpochOffset lastMirrorPosition,
-                              String errorMessage, int retryAttempt, MirrorPartitionState prevState) {
-    public static final MirrorPartition EMPTY = new MirrorPartition(MirrorPartitionState.UNKNOWN, 0, EpochOffset.EMPTY, null, 0, null);
+public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch, EpochOffset lastMirrorPosition,
+                                      String errorMessage, int retryAttempt, MirrorPartitionState prevState) {
+    public static final MirrorPartitionMetadata EMPTY = new MirrorPartitionMetadata(MirrorPartitionState.UNKNOWN, 0, EpochOffset.EMPTY, null, 0, null);
     public static final int NON_RETRYABLE_ATTEMPT = -1;
 
-    /**
-     * Represents the lifecycle states of a mirror partition.
-     * Values changes require an update to the javadoc of LeaderStateDescription.state().
-     */
-    public enum MirrorPartitionState {
-        LOG_ALIGNMENT((byte) 0),
-        EPOCH_FENCING((byte) 1),
-        ULE_RECOVERY((byte) 2),
-        MIRRORING((byte) 3),
-        PAUSING((byte) 4),
-        PAUSED((byte) 5),
-        STOPPING((byte) 6),
-        STOPPED((byte) 7),
-        FAILED((byte) 8),
-        UNKNOWN((byte) -1);
-
-        private final byte value;
-
-        MirrorPartitionState(byte value) {
-            this.value = value;
-        }
-
-        public byte value() {
-            return value;
-        }
-
-        public static MirrorPartitionState fromValue(byte value) {
-            switch (value) {
-                case 0: return LOG_ALIGNMENT;
-                case 1: return EPOCH_FENCING;
-                case 2: return ULE_RECOVERY;
-                case 3: return MIRRORING;
-                case 4: return PAUSING;
-                case 5: return PAUSED;
-                case 6: return STOPPING;
-                case 7: return STOPPED;
-                case 8: return FAILED;
-                case -1: return UNKNOWN;
-            }
-            throw new IllegalArgumentException("Illegal mirror state: " + value);
-        }
+    public static MirrorPartitionMetadata orEmpty(MirrorPartitionMetadata mpm) {
+        return mpm != null ? mpm : EMPTY;
     }
 
-    public static MirrorPartition orEmpty(MirrorPartition mp) {
-        return mp != null ? mp : EMPTY;
-    }
-
-    /** Convenience accessor for the last mirror leader epoch. */
     public int lastMirrorEpoch() {
         return lastMirrorPosition.epoch();
     }
 
-    /** Convenience accessor for the last mirror offset. */
     public long lastMirrorOffset() {
         return lastMirrorPosition.offset();
     }
 
-    public MirrorPartition withState(MirrorPartitionState newState) {
-        return new MirrorPartition(newState, stateEpoch, lastMirrorPosition, errorMessage, retryAttempt, prevState);
+    public MirrorPartitionMetadata withState(MirrorPartitionState newState) {
+        return new MirrorPartitionMetadata(newState, stateEpoch, lastMirrorPosition, errorMessage, retryAttempt, prevState);
     }
 
-    public MirrorPartition withStateEpoch(int newStateEpoch) {
-        return new MirrorPartition(state, newStateEpoch, lastMirrorPosition, errorMessage, retryAttempt, prevState);
+    public MirrorPartitionMetadata withStateEpoch(int newStateEpoch) {
+        return new MirrorPartitionMetadata(state, newStateEpoch, lastMirrorPosition, errorMessage, retryAttempt, prevState);
     }
 
-    public MirrorPartition withLastMirrorPosition(EpochOffset newLastMirrorPosition) {
-        return new MirrorPartition(state, stateEpoch, newLastMirrorPosition, errorMessage, retryAttempt, prevState);
+    public MirrorPartitionMetadata withLastMirrorPosition(EpochOffset newLastMirrorPosition) {
+        return new MirrorPartitionMetadata(state, stateEpoch, newLastMirrorPosition, errorMessage, retryAttempt, prevState);
     }
 
-    public MirrorPartition withLastMirrorEpoch(int newEpoch) {
+    public MirrorPartitionMetadata withLastMirrorEpoch(int newEpoch) {
         return withLastMirrorPosition(new EpochOffset(newEpoch, lastMirrorPosition.offset()));
     }
 
-    public MirrorPartition withLastMirrorOffset(long newOffset) {
+    public MirrorPartitionMetadata withLastMirrorOffset(long newOffset) {
         return withLastMirrorPosition(new EpochOffset(lastMirrorPosition.epoch(), newOffset));
     }
 
-    public MirrorPartition withError(String errorMessage, int retryAttempt, MirrorPartitionState previousState) {
-        return new MirrorPartition(state, stateEpoch, lastMirrorPosition, errorMessage, retryAttempt, previousState);
+    public MirrorPartitionMetadata withError(String errorMessage, int retryAttempt, MirrorPartitionState previousState) {
+        return new MirrorPartitionMetadata(state, stateEpoch, lastMirrorPosition, errorMessage, retryAttempt, previousState);
     }
 
     @SuppressWarnings({"cyclomaticComplexity", "BooleanExpressionComplexity"})
@@ -158,8 +113,8 @@ public record MirrorPartition(MirrorPartitionState state, int stateEpoch, EpochO
         }
     }
 
-    public MirrorPartition clearError() {
-        return new MirrorPartition(state, stateEpoch, lastMirrorPosition, null, 0, null);
+    public MirrorPartitionMetadata clearError() {
+        return new MirrorPartitionMetadata(state, stateEpoch, lastMirrorPosition, null, 0, null);
     }
 
     public int nextAttempt(boolean nonRetryable, int maxAttempts) {

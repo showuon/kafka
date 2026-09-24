@@ -37,7 +37,7 @@ import org.apache.kafka.image.publisher.MetadataPublisher
 import org.apache.kafka.image.{MetadataDelta, MetadataImage, TopicDelta}
 import org.apache.kafka.metadata.publisher.AclPublisher
 import org.apache.kafka.server.common.MetadataVersion.MINIMUM_VERSION
-import org.apache.kafka.server.common.{FinalizedFeatures, ClusterMirrorVersion, RequestLocal, ShareVersion}
+import org.apache.kafka.server.common.{FinalizedFeatures, MirrorVersion, RequestLocal, ShareVersion}
 import org.apache.kafka.server.fault.FaultHandler
 import org.apache.kafka.storage.internals.log.{LogManager => JLogManager}
 
@@ -116,7 +116,7 @@ class BrokerMetadataPublisher(
   /**
    * The mirror version being used in the broker metadata.
    */
-  private var finalizedMirrorVersion: Short = FinalizedFeatures.fromKRaftVersion(MINIMUM_VERSION).finalizedFeatures().getOrDefault(ClusterMirrorVersion.FEATURE_NAME, 0.toShort)
+  private var finalizedMirrorVersion: Short = FinalizedFeatures.fromKRaftVersion(MINIMUM_VERSION).finalizedFeatures().getOrDefault(MirrorVersion.FEATURE_NAME, 0.toShort)
 
   override def name(): String = "BrokerMetadataPublisher"
 
@@ -151,9 +151,6 @@ class BrokerMetadataPublisher(
       } else if (isDebugEnabled) {
         debug(s"Publishing metadata at offset $highestOffsetAndEpoch with $metadataVersionLogMsg.")
       }
-
-      // Update the MirrorMetadataManager image early so it has the latest metadata before onMetadataUpdate runs
-      mirrorMetadataManager.updateMetadataImage(newImage)
 
       // Apply topic deltas.
       Option(delta.topicsDelta()).foreach { topicsDelta =>
@@ -321,11 +318,11 @@ class BrokerMetadataPublisher(
         }
 
         try {
-          val newFinalizedMirrorVersion = newFinalizedFeatures.finalizedFeatures().getOrDefault(ClusterMirrorVersion.FEATURE_NAME, 0.toShort)
+          val newFinalizedMirrorVersion = newFinalizedFeatures.finalizedFeatures().getOrDefault(MirrorVersion.FEATURE_NAME, 0.toShort)
           if (newFinalizedMirrorVersion != finalizedMirrorVersion) {
             finalizedMirrorVersion = newFinalizedMirrorVersion
             info(s"Feature mirror.version has been updated to version $finalizedMirrorVersion")
-            if (ClusterMirrorVersion.isEnabled(newFinalizedFeatures.finalizedFeatures())) {
+            if (MirrorVersion.isEnabled(newFinalizedFeatures.finalizedFeatures())) {
               info("Feature mirror.version is now enabled")
               mirrorCoordinator.startup()
             } else {
