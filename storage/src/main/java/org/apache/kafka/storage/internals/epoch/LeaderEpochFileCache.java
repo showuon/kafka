@@ -281,8 +281,9 @@ public final class LeaderEpochFileCache {
      * if requestedEpoch is < the first epoch cached, UNDEFINED_EPOCH_OFFSET will be returned
      * so that the follower falls back to High Water Mark.
      *
-     * @param requestedEpoch requested leader epoch
-     * @param logEndOffset   the existing Log End Offset
+     * @param requestedEpoch        requested leader epoch
+     * @param logEndOffset          the existing Log End Offset
+     * @param sourceLeaderEpochOpt  the optional source leader epoch when mirroring
      * @return found leader epoch and end offset
      */
     public Map.Entry<Integer, Long> endOffsetFor(int requestedEpoch, long logEndOffset, Optional<Integer> sourceLeaderEpochOpt) {
@@ -290,6 +291,8 @@ public final class LeaderEpochFileCache {
         try {
             Map.Entry<Integer, Long> epochAndOffset;
 
+            // Use the sourceLeaderEpoch if it is presented and greater than current known epoch
+            // It will only be presented when mirroring
             Optional<Integer> latestEpochOpt;
             if (sourceLeaderEpochOpt.isPresent() && latestEpoch().isPresent()) {
                 latestEpochOpt = sourceLeaderEpochOpt.get() > latestEpoch().get() ? sourceLeaderEpochOpt : latestEpoch();
@@ -311,15 +314,19 @@ public final class LeaderEpochFileCache {
                 epochAndOffset = new AbstractMap.SimpleImmutableEntry<>(requestedEpoch, logEndOffset);
             } else {
                 Map.Entry<Integer, EpochEntry> higherEntry = epochs.higherEntry(requestedEpoch);
-                if (higherEntry == null && sourceLeaderEpochOpt.isPresent() && sourceLeaderEpochOpt.get() <= requestedEpoch) {
+                boolean emptyOrLowerSourceLeaderEpoch = sourceLeaderEpochOpt.isEmpty() ||
+                        sourceLeaderEpochOpt.get() <= requestedEpoch;
+                if (higherEntry == null && emptyOrLowerSourceLeaderEpoch) {
                     // The requested epoch is larger than any known epoch. This case should never be hit because
                     // the latest cached epoch is always the largest.
+                    // For the mirror's case, the requested epoch is also larger than sourceLeaderEpoch, which should not happen, either
                     epochAndOffset = new AbstractMap.SimpleImmutableEntry<>(UNDEFINED_EPOCH, UNDEFINED_EPOCH_OFFSET);
                 } else {
                     long higherEntryStartOffset;
                     if (higherEntry != null) {
                         higherEntryStartOffset = higherEntry.getValue().startOffset();
                     } else {
+                        // set the start offset for the epoch entry because it is treated as the latest epoch
                         higherEntryStartOffset = logEndOffset;
                     }
 
