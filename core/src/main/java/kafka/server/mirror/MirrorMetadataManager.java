@@ -681,7 +681,10 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         boolean pauseRequested = desiredState == MirrorPartitionState.PAUSED;
 
         if (currentState == MirrorPartitionState.FAILED) {
-            transitionTo(mirrorName, Set.of(topicPartition), MirrorPartitionState.FAILED, null, false, false);
+            MirrorPartitionKey key = MirrorPartitionKey.of(
+                    mirrorName, metadataCache.getTopicId(topicPartition.topic()), topicPartition.partition());
+            MirrorPartitionMetadata mpm = MirrorPartitionMetadata.orEmpty(mirrorCache.getPartitionMetadata(key));
+            transitionTo(mirrorName, Set.of(topicPartition), MirrorPartitionState.FAILED, mpm.errorMessage(), mpm.retryAttempt() == NON_RETRYABLE_ATTEMPT, false);
         } else if (stopRequested) {
             if (currentState != MirrorPartitionState.STOPPED) {
                 transitionTo(mirrorName, Set.of(topicPartition), MirrorPartitionState.STOPPING, null, false, false);
@@ -827,7 +830,8 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         res.data().topics().forEach(topic -> topic.partitions().forEach(par -> {
             if (par.errorCode() == Errors.NONE.code()) {
                 MirrorPartitionState currentState = MirrorPartitionMetadata.orEmpty(mirrorCache.getPartitionMetadata(key)).state();
-                mirrorCache.updateFailureDetails(key, currentState, state, errorMessage, nonRetryable);
+                mirrorCache.updateFailureDetails(key, currentState, state, errorMessage,
+                        nonRetryable, brokerConfig.mirrorConfig().failedRetryMaxAttempts());
                 mirrorCache.setPartitionMetadata(key,
                         MirrorPartitionMetadata.orEmpty(mirrorCache.getPartitionMetadata(key))
                                 .withState(state)
@@ -1969,7 +1973,8 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     @Override
     public void updateFailureDetails(MirrorPartitionKey key, MirrorPartitionState currentState,
                                      MirrorPartitionState newState, String errorMessage, boolean nonRetryable) {
-        mirrorCache.updateFailureDetails(key, currentState, newState, errorMessage, nonRetryable);
+        mirrorCache.updateFailureDetails(key, currentState, newState, errorMessage,
+                nonRetryable, brokerConfig.mirrorConfig().failedRetryMaxAttempts());
     }
 
     public void clearFailureDetails(String mirrorName, TopicPartition tp) {
