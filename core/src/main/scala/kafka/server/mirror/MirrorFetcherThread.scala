@@ -183,7 +183,7 @@ class MirrorFetcherThread(name: String,
     log.maybeIncrementLogStartOffset(leaderLogStartOffset, LogStartOffsetIncrementReason.LeaderOffsetIncremented)
 
     // Update mirroring lag
-    replicaMgr.updateMirrorOffsetInfo(mirrorName, topicPartition, partitionData.highWatermark, log.highWatermark)
+    replicaMgr.updateMirrorOffsetInfo(mirrorName, topicPartition, log.highWatermark, partitionData.highWatermark)
 
     // Account for replication quota
     if (quota.isThrottled(topicPartition))

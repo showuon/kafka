@@ -116,7 +116,7 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
         addPartitionsToFetcherThread(fetcherThread, initialFetchOffsets)
 
         // Initialize lag information for newly added partitions
-        initialFetchOffsets.foreach { case (topicPartition, initialState) =>
+        initialFetchOffsets.foreach { case (topicPartition, _) =>
           val lagKey = MirrorTopicPartition(remoteMirrorFetcherKey.mirrorName, topicPartition)
           // Initialize with 0 values until first fetch updates it
           val destinationOffset = replicaManager.getPartition(topicPartition) match {
