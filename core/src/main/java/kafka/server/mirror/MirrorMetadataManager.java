@@ -750,7 +750,10 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         }
 
         if (curState == MirrorPartitionState.FAILED) {
-            transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED);
+            MirrorPartitionKey key = MirrorPartitionKey.of(
+                    mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
+            MirrorPartition mp = MirrorPartition.orEmpty(mirrorCache.getPartition(key));
+            transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED, mp.errorMessage(), mp.retryAttempt() == NON_RETRYABLE_ATTEMPT);
         } else if (stopRequested) {
             if (curState != MirrorPartitionState.STOPPED) {
                 transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.STOPPING);
@@ -1074,8 +1077,9 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
     private void updateLocalFailedState(MirrorPartitionKey key, MirrorPartitionState newState,
                                         String errorMessage, boolean nonRetryable) {
+        int maxAttempts = brokerConfig.mirrorConfig().failedRetryMaxAttempts();
         MirrorPartitionState curState = MirrorPartition.orEmpty(mirrorCache.getPartition(key)).state();
-        mirrorCache.updateFailedInfo(key, curState, newState, errorMessage, nonRetryable);
+        mirrorCache.updateFailedInfo(key, curState, newState, errorMessage, nonRetryable, maxAttempts);
     }
 
     private Map<TopicPartition, Integer> getLatestLocalEpoch(TopicPartition tp) {
@@ -1891,7 +1895,8 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     @Override
     public void updateFailedInfo(MirrorPartitionKey key, MirrorPartitionState currentState,
                                  MirrorPartitionState newState, String errorMessage, boolean nonRetryable) {
-        mirrorCache.updateFailedInfo(key, currentState, newState, errorMessage, nonRetryable);
+        int maxAttempts = brokerConfig.mirrorConfig().failedRetryMaxAttempts();
+        mirrorCache.updateFailedInfo(key, currentState, newState, errorMessage, nonRetryable, maxAttempts);
     }
 
     public void clearFailedInfo(String mirrorName, TopicPartition tp) {

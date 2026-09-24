@@ -162,11 +162,11 @@ public record MirrorPartition(MirrorPartitionState state, int stateEpoch, EpochO
         return new MirrorPartition(state, stateEpoch, lastMirrorPosition, null, 0, null);
     }
 
-    public int nextAttempt(boolean nonRetryable) {
+    public int nextAttempt(boolean nonRetryable, int maxAttempts) {
         if (nonRetryable || retryAttempt == NON_RETRYABLE_ATTEMPT) {
             return NON_RETRYABLE_ATTEMPT;
         }
-        return retryAttempt != 0 ? retryAttempt + 1 : 1;
+        return retryAttempt != 0 ? Math.min(maxAttempts, retryAttempt + 1) : 1;
     }
 
     public MirrorPartitionState resolvePrevState(MirrorPartitionState currState) {
