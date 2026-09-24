@@ -359,15 +359,15 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             return;
         }
 
-        Set<TopicPartition> ptt = collectPartitionsToTransition(delta, newImage);
+        Set<TopicPartition> partitionsToTransition = collectPartitionsToTransition(delta, newImage);
 
-        if (ptt.isEmpty()) {
+        if (partitionsToTransition.isEmpty()) {
             return;
         }
 
-        log.info("Cluster metadata updated for partitions {}", ptt);
+        log.info("Cluster metadata updated for partitions {}", partitionsToTransition);
 
-        processStateTransitions(ptt, newImage);
+        processStateTransitions(partitionsToTransition, newImage);
         maybeCompletePendingEpochBumps();
     }
 
