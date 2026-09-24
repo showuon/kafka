@@ -214,7 +214,7 @@ public class MirrorStateCache {
     }
 
     /** Cached source cluster leader node and epoch for a mirror partition. */
-    public record SourceLeader(Node node, int leaderEpoch) { }
+    public record SourceLeader(Optional<Node> node, int leaderEpoch) { }
 
     /** Pending leader epoch bump request with the future that completes when the bump is observed in metadata. */
     public record PendingLeaderEpochBump(CompletableFuture<Void> future, Map<TopicPartition, Integer> partitionToEpoch) { }
