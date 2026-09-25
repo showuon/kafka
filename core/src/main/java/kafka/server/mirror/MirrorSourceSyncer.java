@@ -108,6 +108,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 import scala.Option;
@@ -136,8 +137,8 @@ class MirrorSourceSyncer {
     private final MetadataCache metadataCache;
     private final KafkaScheduler syncScheduler;
 
-    private final ConcurrentHashMap<String, CompletableFuture<Optional<List<SourceTopicState>>>> ongoingSyncs = new ConcurrentHashMap<>();
-    
+    private final ConcurrentHashMap<String, CompletableFuture<List<SourceTopicState>>> ongoingSyncs = new ConcurrentHashMap<>();
+
     private final KafkaMetricsGroup metricsGroup;
     private final Meter metadataRefreshError;
     private final Meter topicConfigSyncError;
@@ -380,16 +381,22 @@ class MirrorSourceSyncer {
      * Fetches topics metadata from the source cluster.
      * Runs on every broker to keep them in sync.
      */
-    Optional<List<SourceTopicState>> syncSourceTopicMetadata(String mirrorName) {
-        var future = new CompletableFuture<Optional<List<SourceTopicState>>>();
+    List<SourceTopicState> syncSourceTopicMetadata(String mirrorName) {
+        var future = new CompletableFuture<List<SourceTopicState>>();
         var existing = ongoingSyncs.putIfAbsent(mirrorName, future);
         if (existing != null) {
             log.info("Source topic state sync already in progress for mirror {}, waiting for result", mirrorName);
             try {
-                return existing.join();
-            } catch (CompletionException e) {
+                return existing.get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
+            } catch (ExecutionException e) {
                 log.warn("In-progress source topic state sync failed for mirror {}", mirrorName, e.getCause());
-                return Optional.empty();
+                return List.of();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return List.of();
+            } catch (TimeoutException e) {
+                log.warn("Timed out waiting for in-progress source topic state sync for mirror {}", mirrorName);
+                return List.of();
             }
         }
         try {
@@ -404,12 +411,12 @@ class MirrorSourceSyncer {
         }
     }
 
-    private Optional<List<SourceTopicState>> doSyncSourceTopicMetadata(String mirrorName) {
+    private List<SourceTopicState> doSyncSourceTopicMetadata(String mirrorName) {
         log.info("Syncing source topic state for mirror {}", mirrorName);
         Set<String> topics = metadataManager.getMirrorTopics(mirrorName,
                 EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED, MirrorPartitionState.STOPPED));
         if (topics.isEmpty()) {
-            return Optional.empty();
+            return List.of();
         }
 
         Admin srcAdmin = metadataManager.getOrCreateSourceAdmin(mirrorName);
@@ -438,11 +445,11 @@ class MirrorSourceSyncer {
             }
 
             processSourceTopicState(mirrorName, result);
-            return Optional.of(result);
+            return result;
         } catch (Exception e) {
             log.warn("Failed to sync source topic state for mirror {}", mirrorName, e);
             metadataRefreshError.mark();
-            return Optional.empty();
+            return List.of();
         }
     }
 
@@ -644,8 +651,8 @@ class MirrorSourceSyncer {
      * Syncs topic configurations, consumer/share group offsets, ACLs, and topic patterns
      * from the source cluster. Runs only on the coordinator broker for each mirror.
      */
-    private void syncSourceConfigsAndOffsets(String mirrorName, Optional<List<SourceTopicState>> sourceTopicStates) {
-        if (!isLocalCoordinatorFor(mirrorName)) {
+    private void syncSourceConfigsAndOffsets(String mirrorName, List<SourceTopicState> sourceTopicStates) {
+        if (!isLocalCoordinator(mirrorName)) {
             return;
         }
 
@@ -1167,7 +1174,7 @@ class MirrorSourceSyncer {
     CompletableFuture<Void> scheduleBumpLeaderEpoch(String mirrorName, TopicPartition tp) {
         CompletableFuture<Void> future = new CompletableFuture<>();
         syncScheduler.scheduleOnce("bump-leader-epoch-" + tp, () -> {
-            Optional<List<SourceTopicState>> sourceTopicStates = syncSourceTopicMetadata(mirrorName);
+            List<SourceTopicState> sourceTopicStates = syncSourceTopicState(mirrorName);
             maybeBumpLeaderEpochs(mirrorName, sourceTopicStates, Set.of(tp))
                     .whenComplete((v, ex) -> {
                         if (ex != null) {
@@ -1180,12 +1187,11 @@ class MirrorSourceSyncer {
         return future;
     }
 
-    private CompletableFuture<Void> maybeBumpLeaderEpochs(String mirrorName, Optional<List<SourceTopicState>> sourceTopicStates, Set<TopicPartition> topicPartitions) {
-        return sourceTopicStates
-                .map(topicStates -> sendBumpLeaderEpochs(buildSourceEpochBumpTargets(mirrorName, topicStates, topicPartitions))
+    private CompletableFuture<Void> maybeBumpLeaderEpochs(String mirrorName, List<SourceTopicState> sourceTopicStates, Set<TopicPartition> topicPartitions) {
+        return sendBumpLeaderEpochs(buildSourceEpochBumpTargets(mirrorName, sourceTopicStates, topicPartitions))
                 .whenComplete((v, ex) -> {
                     if (ex != null) log.warn("Failed to bump leader epoch for mirror {}", mirrorName, ex);
-                })).orElseGet(() -> CompletableFuture.completedFuture(null));
+                });
     }
 
     /** Sends an AlterPartition request to bump leader epochs on the destination. */
