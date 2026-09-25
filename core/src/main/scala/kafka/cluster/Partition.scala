@@ -1310,7 +1310,7 @@ class Partition(val topicPartition: TopicPartition,
       val isAhead = replicaState.logEndOffsetMetadata.messageOffset > leaderLogEndOffset.messageOffset && isRelevant
       debug(s"Truncation check for replica ${replica.brokerId}: replicaLEO=${replicaState.logEndOffsetMetadata}, leaderLEO=$leaderLogEndOffset")
       if (isAhead) {
-        warn  (s"Truncation not complete: replica ${replica.brokerId} LEO ${replicaState.logEndOffsetMetadata.messageOffset}" +
+        warn(s"Truncation not complete: replica ${replica.brokerId} LEO ${replicaState.logEndOffsetMetadata.messageOffset}" +
           s" exceeds leader LEO ${leaderLogEndOffset.messageOffset}")
       }
       isAhead
