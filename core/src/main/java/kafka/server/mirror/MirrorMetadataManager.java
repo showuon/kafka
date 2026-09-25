@@ -792,33 +792,31 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     public void transitionTo(String mirrorName, Set<TopicPartition> topicPartitions,
                               MirrorPartitionState state, String errorMessage,
                               boolean nonRetryable) {
-        coordinatorWriter.ifPresent(writer -> {
-            for (TopicPartition tp : topicPartitions) {
-                MirrorPartitionState currentState = getPartitionState(mirrorName, tp);
-                MirrorPartitionState pendingState = mirrorCache.pendingStateTransition(tp);
-                // Avoid unnecessary state transition to the same state when the state is applying in progress.
-                // For MIRRORING, because we remove fetcher thread when becoming the leader, we need to transition to MIRRORING state again.
-                if (pendingState != MirrorPartitionState.MIRRORING && pendingState == state) {
-                    log.debug("Skipping state transition for partition {}. Reason: Already transitioning to {}.",
-                            tp, pendingState);
-                    continue;
-                }
-                mirrorCache.addPendingStateTransition(tp, state);
-                if (!MirrorPartition.isValidStateTransition(currentState, state)) {
-                    log.warn("Skipping state transition for partition {}. Reason: Transition from {} to {} is invalid.",
-                            tp, currentState, state);
-                    continue;
-                }
-                if (state == MirrorPartitionState.FAILED) {
-                    log.info("Transitioning partition {} from {} to {} due to {}{}",
-                            tp, currentState, state, errorMessage,
-                            nonRetryable ? " (non-retryable error)" : " (retryable error)");
-                } else {
-                    log.info("Transitioning partition {} from {} to {}", tp, currentState, state);
-                }
-                persistState(mirrorName, tp, state, errorMessage, nonRetryable);
+        for (TopicPartition tp : topicPartitions) {
+            MirrorPartitionState currentState = getPartitionState(mirrorName, tp);
+            MirrorPartitionState pendingState = mirrorCache.pendingStateTransition(tp);
+            // Avoid unnecessary state transition to the same state when the state is applying in progress.
+            // For MIRRORING, because we remove fetcher thread when becoming the leader, we need to transition to MIRRORING state again.
+            if (pendingState != MirrorPartitionState.MIRRORING && pendingState == state) {
+                log.debug("Skipping state transition for partition {}. Reason: Already transitioning to {}.",
+                        tp, pendingState);
+                continue;
             }
-        });
+            mirrorCache.addPendingStateTransition(tp, state);
+            if (!MirrorPartition.isValidStateTransition(currentState, state)) {
+                log.warn("Skipping state transition for partition {}. Reason: Transition from {} to {} is invalid.",
+                        tp, currentState, state);
+                continue;
+            }
+            if (state == MirrorPartitionState.FAILED) {
+                log.info("Transitioning partition {} from {} to {} due to {}{}",
+                        tp, currentState, state, errorMessage,
+                        nonRetryable ? " (non-retryable error)" : " (retryable error)");
+            } else {
+                log.info("Transitioning partition {} from {} to {}", tp, currentState, state);
+            }
+            persistState(mirrorName, tp, state, errorMessage, nonRetryable);
+        }
     }
 
     private void onLocalWriteComplete(String mirrorName, TopicPartition tp,
@@ -892,7 +890,8 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 res.data().topics().forEach(topic -> topic.partitions().forEach(partition -> {
                     if (partition.errorCode() == Errors.NONE.code()) {
                         if (mirrorCache.pendingStateTransition(tp) != state) {
-                            // the partition is already moving to the other state, skipping this transition
+                            log.debug("the partition {} is already moving to the other state {}, skipping this transition {}",
+                                    tp, mirrorCache.pendingStateTransition(tp), state);
                             return;
                         }
                         MirrorPartitionKey key = MirrorPartitionKey.of(
@@ -900,7 +899,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                         mirrorCache.mergePartition(key, partition.state(), partition.stateEpoch(),
                                 new EpochOffset(partition.lastMirrorEpoch(), partition.lastMirrorOffset()),
                                 partition.errorMessage(), partition.retryAttempt(), partition.previousState());
-                        transitionTo(mirrorName, Set.of(tp), state, errorMessage, nonRetryable);
+                        persistState(mirrorName, tp, state, errorMessage, nonRetryable);
                     }
                 }));
 
