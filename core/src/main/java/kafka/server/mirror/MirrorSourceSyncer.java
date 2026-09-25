@@ -102,7 +102,6 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -405,7 +404,7 @@ class MirrorSourceSyncer {
             return result;
         } catch (Exception e) {
             future.completeExceptionally(e);
-            throw e;
+            return List.of();
         } finally {
             ongoingSyncs.remove(mirrorName, future);
         }
