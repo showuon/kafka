@@ -74,7 +74,7 @@ class MirrorFetcherThread(name: String,
   override def updateSourceLeader(mirrorName: String, partition: TopicPartition, leaderNode: Optional[Node], leaderEpoch: Int): Unit = {
     replicaMgr.mirrorMetadataManager.foreach( mmm => {
       val curLeader = mmm.resolveSourceLeader(mirrorName, partition, false)
-      // When the leader election is in process, the leader node might be empty, so use the provided node when available.
+      // When the leader election is in process, the leader node might be empty, so only use the provided node when available.
       val node: Optional[Node] = if (leaderNode.isPresent)
         leaderNode
       else if (curLeader.isPresent)
