@@ -198,7 +198,11 @@ class MirrorFetcherThread(name: String,
   }
 
   override def leaderEpochFromSource(tp: TopicPartition): Option[Int] = {
-    replicaMgr.mirrorMetadataManager.map(mmm => mmm.resolveSourceLeader(mirrorName, tp).leaderEpoch())
+    replicaMgr.mirrorMetadataManager.flatMap(mmm => {
+      val sourceLeader = mmm.resolveSourceLeader(mirrorName, tp)
+      if (sourceLeader.isPresent) Some(sourceLeader.get().leaderEpoch())
+      else None
+    })
   }
 
   // Returns the mirror partition lag
