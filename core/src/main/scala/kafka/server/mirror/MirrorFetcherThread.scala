@@ -77,7 +77,7 @@ class MirrorFetcherThread(name: String,
       // When the leader election is in process, the leader node might be empty, so only use the provided node when available.
       val node: Optional[Node] = if (leaderNode.isPresent)
         leaderNode
-      else if (curLeader.isPresent)
+      else if (curLeader.isPresent && curLeader.get().node().isPresent)
         curLeader.get().node()
       else
         Optional.empty()
