@@ -1880,7 +1880,8 @@ class ReplicaManager(val config: KafkaConfig,
             if (entry != null) entry.state() else MirrorPartitionState.UNKNOWN
           } else MirrorPartitionState.UNKNOWN
           val sourceLeaderEpochOpt: Optional[Integer] = if (partition.isLeader && mirrorMetadataManager.isDefined && mirrorName.isPresent) {
-            val sourceLeader = mirrorMetadataManager.get.resolveSourceLeader(mirrorName.get(), partition.topicPartition)
+            // aggressively refresh the source cluster metadata if we can't get the source leader metadata
+            val sourceLeader = mirrorMetadataManager.get.resolveSourceLeader(mirrorName.get(), partition.topicPartition, true)
             if (sourceLeader.isPresent) Optional.of(sourceLeader.get().leaderEpoch()) else Optional.empty()
           }
           else Optional.empty()
@@ -1919,7 +1920,8 @@ class ReplicaManager(val config: KafkaConfig,
                  _: FencedLeaderEpochException |
                  _: ReplicaNotAvailableException |
                  _: KafkaStorageException |
-                 _: InconsistentTopicIdException) =>
+                 _: InconsistentTopicIdException |
+                 _: SourceMetadataNotAvailableException) =>
           createLogReadResult(e)
         case e: OffsetOutOfRangeException =>
           handleOffsetOutOfRangeError(tp, params, fetchInfo, adjustedMaxBytes, minOneMessage, log, fetchTimeMs, e)
@@ -2655,7 +2657,7 @@ class ReplicaManager(val config: KafkaConfig,
           try {
             if (mirrorName != null) {
               // Get the source partition leader
-              val sourceLeader = mirrorMetadataManager.get.resolveSourceLeader(mirrorName, tp)
+              val sourceLeader = mirrorMetadataManager.get.resolveSourceLeader(mirrorName, tp, false)
               if (sourceLeader.isEmpty || sourceLeader.get().node().isEmpty)
                 throw new SourceMetadataNotAvailableException()
               val sourceLeaderNode = sourceLeader.get().node().get()

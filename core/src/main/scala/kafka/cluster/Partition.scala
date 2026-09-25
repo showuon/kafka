@@ -1691,8 +1691,12 @@ class Partition(val topicPartition: TopicPartition,
       }
 
       if (epochEndOffset.endOffset == UNDEFINED_EPOCH_OFFSET || epochEndOffset.leaderEpoch == UNDEFINED_EPOCH) {
-        throw new OffsetOutOfRangeException("Could not determine the end offset of the last fetched epoch " +
-          s"$lastFetchedEpoch from the request")
+        if (getMirrorName().isPresent && isLeader && sourceLeaderEpochOpt.isEmpty)
+          throw new SourceMetadataNotAvailableException("Could not determine the end offset of the last fetched epoch " +
+            s"$lastFetchedEpoch from the request due to the source cluster metadata is not available. Refreshing the source cluster metadata.")
+        else
+          throw new OffsetOutOfRangeException("Could not determine the end offset of the last fetched epoch " +
+            s"$lastFetchedEpoch from the request")
       }
 
       // If fetch offset is less than log start, fail with OffsetOutOfRangeException, regardless of whether epochs are diverging
