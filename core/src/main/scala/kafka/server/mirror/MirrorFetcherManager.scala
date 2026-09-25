@@ -24,7 +24,6 @@ import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.utils.{LogContext, Time}
 import org.apache.kafka.metadata.MetadataCache
 import org.apache.kafka.server.{LeaderEndPoint, PartitionFetchState}
-import org.apache.kafka.server.common.MetadataVersion
 import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig
 import org.apache.kafka.server.network.BrokerEndPoint
 
@@ -41,7 +40,6 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
                            metrics: Metrics,
                            time: Time,
                            quotaManager: ReplicationQuotaManager,
-                           metadataVersionSupplier: () => MetadataVersion,
                            brokerEpochSupplier: () => Long,
                            metadataCache: MetadataCache)
     extends AbstractFetcherManager[MirrorFetcherThread](
@@ -149,7 +147,7 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
     val sender = new MirrorSourceSender(srcEndpoint, mirrorConfig, metrics, time, srcEndpoint.id, clientId, logContext)
     val fetchSessionHandler = new FetchSessionHandler(logContext, srcEndpoint.id)
     val endpoint: LeaderEndPoint = new RemoteLeaderEndPoint(logContext.logPrefix, sender, fetchSessionHandler, brokerConfig,
-      replicaManager, quotaManager, metadataVersionSupplier, brokerEpochSupplier, isClusterMirror = true,
+      replicaManager, quotaManager, () => metadataCache.metadataVersion(), brokerEpochSupplier, isClusterMirror = true,
       mirrorConfig = Some(mirrorConfig))
     val mirrorFetchBackoffMs = mirrorConfig.fetchBackoffMs().toInt
     new MirrorFetcherThread(threadName, endpoint, failedPartitions, replicaManager,

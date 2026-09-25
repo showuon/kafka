@@ -408,7 +408,9 @@ class PartitionLockTest extends Logging {
         mockTime.milliseconds(),
         maxBytes,
         minOneMessage = true,
-        updateFetchState = true
+        updateFetchState = true,
+        mirrorState = org.apache.kafka.server.mirror.MirrorPartitionState.UNKNOWN,
+        sourceLeaderEpochOpt = java.util.Optional.empty()
       )
 
       assertTrue(!logReadInfo.divergingEpoch.isPresent)

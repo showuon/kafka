@@ -1420,14 +1420,14 @@ class ReplicaManager(val config: KafkaConfig,
             mirrorName.get(),
             metadataCache.getTopicId(partition.topicPartition.topic()),
             partition.topicPartition.partition()))
-        val state = if (entry != null) entry.state() else null
-        val allowed = state == MirrorPartitionState.STOPPED ||
-          (state == MirrorPartitionState.STOPPING &&
+        val entryState = if (entry != null) entry.state() else null
+        val allowed = entryState == MirrorPartitionState.STOPPED ||
+          (entryState == MirrorPartitionState.STOPPING &&
             (origin == AppendOrigin.COORDINATOR || origin == AppendOrigin.REPLICATION) &&
             records.batches().asScala.exists(b => ControlRecordType.isMirrorPidResetBatch(b) || ControlRecordType.isAbortTxnBatch(b)))
         if (!allowed) {
           throw new ReadOnlyTopicException("Cannot append to read-only partition %s on broker %d (mirrorName=%s)"
-            .format(partition.topicPartition, localBrokerId, mirrorName))
+            .format(partition.topicPartition, localBrokerId, mirrorName.get()))
         }
       }
     }
@@ -2311,7 +2311,7 @@ class ReplicaManager(val config: KafkaConfig,
   }
 
   private def createMirrorFetcherManager(metrics: Metrics, time: Time, quotaManager: ReplicationQuotaManager) = {
-    new MirrorFetcherManager(config, this, metrics, time, quotaManager, () => metadataCache.metadataVersion(), brokerEpochSupplier, metadataCache)
+    new MirrorFetcherManager(config, this, metrics, time, quotaManager, brokerEpochSupplier, metadataCache)
   }
 
   protected def createReplicaAlterLogDirsManager(quotaManager: ReplicationQuotaManager, brokerTopicStats: BrokerTopicStats) = {
@@ -2391,7 +2391,6 @@ class ReplicaManager(val config: KafkaConfig,
           stateChangeLogger.info(s"Creating new partition $tp with topic id " + s"$topicId." +
             s"A topic with the same name but different id exists but it resides in an offline log " +
             s"directory.")
-          // get mirrorName from metadata (applies to both read-only leaders and their followers)
           val partition = Partition(new TopicIdPartition(topicId, tp), time, this)
           allPartitions.put(tp, HostedPartition.Online(partition))
           Some(partition, true)
@@ -2651,34 +2650,32 @@ class ReplicaManager(val config: KafkaConfig,
       getPartition(tp) match {
         case HostedPartition.Online(partition) =>
           try {
-            if (mirrorName != null) {
-              // Get the source partition leader
-              val sourceLeader = mirrorMetadataManager.get.resolveSourceLeader(mirrorName, tp)
-              val sourceLeaderNode = sourceLeader.node()
-              val leaderEndpoint = new BrokerEndPoint(sourceLeaderNode.id(), sourceLeaderNode.host(), sourceLeaderNode.port())
+            // Get the source partition leader
+            val sourceLeader = mirrorMetadataManager.get.resolveSourceLeader(mirrorName, tp)
+            val sourceLeaderNode = sourceLeader.node()
+            val leaderEndpoint = new BrokerEndPoint(sourceLeaderNode.id(), sourceLeaderNode.host(), sourceLeaderNode.port())
 
-              val fetchState = InitialFetchState(
-                topicId = Some(metadataCache.getTopicId(tp.topic)),
-                leader = leaderEndpoint,
-                currentLeaderEpoch = sourceLeader.leaderEpoch(),
-                initOffset = partition.localLogOrException.logEndOffset,
-                mirrorName = mirrorName
-              )
-              partitionAndOffsets.put(tp, fetchState)
+            val fetchState = InitialFetchState(
+              topicId = Some(metadataCache.getTopicId(tp.topic)),
+              leader = leaderEndpoint,
+              currentLeaderEpoch = sourceLeader.leaderEpoch(),
+              initOffset = partition.localLogOrException.logEndOffset,
+              mirrorName = mirrorName
+            )
+            partitionAndOffsets.put(tp, fetchState)
 
-              // Register listener to update mirror lag when HW advances
-              val mirrorLagListener = new PartitionListener {
-                override def onHighWatermarkUpdated(partition: TopicPartition, offset: Long): Unit = {
-                  // Update mirror lag with the new HW
-                  // Keep the existing source offset, it will be updated by the next mirror fetch
-                  val mirrorOffsetInfo = mirrorFetcherManager.getMirrorOffsetInfo(mirrorName).get(tp)
-                  mirrorOffsetInfo.foreach { info =>
-                    updateMirrorOffsetInfo(mirrorName, tp, info.sourceOffset, offset)
-                  }
+            // Register listener to update mirror lag when HW advances
+            val mirrorLagListener = new PartitionListener {
+              override def onHighWatermarkUpdated(partition: TopicPartition, offset: Long): Unit = {
+                // Update mirror lag with the new HW
+                // Keep the existing source offset, it will be updated by the next mirror fetch
+                val mirrorOffsetInfo = mirrorFetcherManager.getMirrorOffsetInfo(mirrorName).get(tp)
+                mirrorOffsetInfo.foreach { info =>
+                  updateMirrorOffsetInfo(mirrorName, tp, info.sourceOffset, offset)
                 }
               }
-              maybeAddListener(tp, mirrorLagListener)
             }
+            maybeAddListener(tp, mirrorLagListener)
           } catch {
             case _: IllegalStateException =>
               pendingMetadataPartitions.add(tp)

@@ -33,6 +33,7 @@ import org.apache.kafka.common.{DirectoryId, IsolationLevel, TopicPartition, Uui
 import org.apache.kafka.metadata.MetadataCache
 import org.apache.kafka.server.config.ReplicationConfigs
 import org.apache.kafka.server.replica.Replica
+import org.apache.kafka.server.mirror.MirrorPartitionState
 import org.apache.kafka.metadata.LeaderRecoveryState
 import org.junit.jupiter.api.Assertions._
 import org.junit.jupiter.api.Test
@@ -1401,9 +1402,9 @@ class PartitionTest extends AbstractPartitionTest {
       // simulate topic is deleted at the moment
       partition.delete()
       val replica = new Replica(remoteBrokerId, topicPartition, metadataCache)
-      partition.updateFollowerFetchState(replica, mock(classOf[LogOffsetMetadata]), 0, initializeTimeMs, 0, defaultBrokerEpoch(remoteBrokerId))
+      partition.updateFollowerFetchState(replica, mock(classOf[LogOffsetMetadata]), 0, initializeTimeMs, 0, defaultBrokerEpoch(remoteBrokerId), MirrorPartitionState.UNKNOWN)
       mock(classOf[LogReadInfo])
-    }).when(partition).fetchRecords(any(), any(), anyLong(), anyInt(), anyBoolean(), anyBoolean(), any())
+    }).when(partition).fetchRecords(any(), any(), anyLong(), anyInt(), anyBoolean(), anyBoolean(), any(), any())
 
     assertDoesNotThrow(() => fetchFollower(partition, replicaId = remoteBrokerId, fetchOffset = 3L))
   }
@@ -3438,9 +3439,9 @@ class PartitionTest extends AbstractPartitionTest {
     false,
     LogOffsetsListener.NO_OP_OFFSETS_LISTENER) {
 
-    override def appendAsFollower(records: MemoryRecords, epoch: Int, isMirrorLeader: Boolean): LogAppendInfo = {
+    override def appendAsFollower(records: MemoryRecords, epoch: Int): LogAppendInfo = {
       appendSemaphore.acquire()
-      val appendInfo = super.appendAsFollower(records, epoch, isMirrorLeader)
+      val appendInfo = super.appendAsFollower(records, epoch)
       appendInfo
     }
   }
@@ -3504,7 +3505,9 @@ class PartitionTest extends AbstractPartitionTest {
       fetchTimeMs,
       maxBytes,
       minOneMessage = true,
-      updateFetchState = false
+      updateFetchState = false,
+      mirrorState = MirrorPartitionState.UNKNOWN,
+      sourceLeaderEpochOpt = java.util.Optional.empty()
     )
   }
 
@@ -3541,7 +3544,9 @@ class PartitionTest extends AbstractPartitionTest {
       fetchTimeMs,
       maxBytes,
       minOneMessage = true,
-      updateFetchState = true
+      updateFetchState = true,
+      mirrorState = MirrorPartitionState.UNKNOWN,
+      sourceLeaderEpochOpt = java.util.Optional.empty()
     )
   }
 

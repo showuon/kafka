@@ -1064,20 +1064,15 @@ public class UnifiedLog implements AutoCloseable {
                 VerificationGuard.SENTINEL, false, recordVersion.value);
     }
 
-    public LogAppendInfo appendAsFollower(MemoryRecords records, int leaderEpoch) {
-        return appendAsFollower(records, leaderEpoch, false);
-    }
-
     /**
      * Append this message set to the active segment of the local log without assigning offsets or Partition Leader Epochs
      *
      * @param records The records to append
      * @param leaderEpoch the epoch of the replica appending
-     * @param isMirrorLeader true if this is a mirror leader appending from a source cluster
      * @throws KafkaStorageException If the append fails due to an I/O error.
      * @return Information about the appended messages including the first and last offset.
      */
-    public LogAppendInfo appendAsFollower(MemoryRecords records, int leaderEpoch, boolean isMirrorLeader) {
+    public LogAppendInfo appendAsFollower(MemoryRecords records, int leaderEpoch) {
         return append(records,
                       AppendOrigin.REPLICATION,
                       false,
@@ -1085,19 +1080,7 @@ public class UnifiedLog implements AutoCloseable {
                       Optional.empty(),
                       VerificationGuard.SENTINEL,
                       true,
-                      RecordBatch.CURRENT_MAGIC_VALUE,
-                      isMirrorLeader);
-    }
-
-    private LogAppendInfo append(MemoryRecords records,
-                                 AppendOrigin origin,
-                                 boolean validateAndAssignOffsets,
-                                 int leaderEpoch,
-                                 Optional<RequestLocal> requestLocal,
-                                 VerificationGuard verificationGuard,
-                                 boolean ignoreRecordSize,
-                                 byte toMagic) {
-        return append(records, origin, validateAndAssignOffsets, leaderEpoch, requestLocal, verificationGuard, ignoreRecordSize, toMagic, false);
+                      RecordBatch.CURRENT_MAGIC_VALUE);
     }
 
     /**
@@ -1113,7 +1096,6 @@ public class UnifiedLog implements AutoCloseable {
      * @param requestLocal The request local instance if validateAndAssignOffsets is true
      * @param ignoreRecordSize True to skip validation of record size
      * @param toMagic Current Magic value
-     * @param isMirrorLeader true if this is a mirror leader appending from a source cluster
      * @throws KafkaStorageException If the append fails due to an I/O error.
      * @throws OffsetsOutOfOrderException If out of order offsets found in 'records'
      * @throws UnexpectedAppendOffsetException If the first or last offset in append is less than next offset
@@ -1126,8 +1108,7 @@ public class UnifiedLog implements AutoCloseable {
                                  Optional<RequestLocal> requestLocal,
                                  VerificationGuard verificationGuard,
                                  boolean ignoreRecordSize,
-                                 byte toMagic,
-                                 boolean isMirrorLeader) {
+                                 byte toMagic) {
         // We want to ensure the partition metadata file is written to the log dir before any log data is written to disk.
         // This will ensure that any log data can be recovered with the correct topic ID in the case of failure.
         maybeFlushMetadataFile();
