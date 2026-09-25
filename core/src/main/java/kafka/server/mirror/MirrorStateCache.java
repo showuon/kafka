@@ -24,6 +24,7 @@ import org.apache.kafka.server.mirror.MirrorPartitionMetadata;
 import org.apache.kafka.server.mirror.MirrorPartitionState;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -138,16 +139,15 @@ public class MirrorStateCache {
         return sourceLeaders.get(mirrorName);
     }
 
-    public SourceLeader resolveSourceLeader(String mirrorName, TopicPartition tp) {
+    public Optional<SourceLeader> resolveSourceLeader(String mirrorName, TopicPartition tp) {
         var partitionLeaders = sourceLeaders.get(mirrorName);
         if (partitionLeaders != null) {
             SourceLeader leader = partitionLeaders.get(tp);
             if (leader != null) {
-                return leader;
+                return Optional.of(leader);
             }
         }
-        throw new IllegalStateException("No source cluster metadata available " +
-                "for mirror " + mirrorName + " partition:" + tp);
+        return Optional.empty();
     }
 
     public void updateSourceLeader(String mirrorName, TopicPartition tp, SourceLeader leader) {
