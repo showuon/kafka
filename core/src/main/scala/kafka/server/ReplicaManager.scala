@@ -1695,22 +1695,13 @@ class ReplicaManager(val config: KafkaConfig,
           // (they are not from the source).
           Math.min(endOffsetForEpoch.get().offset(), lastMirrorOffset)
         } else 0L
-        val onCaughtupCallback: Optional[Consumer[TopicPartition]] =
-          if (log.logEndOffset() <= offsetToTruncate && log.leaderEpochCache().latestEpoch().orElse(0) <= offsetEpoch.epoch()) {
-            // Skip the onCaughtupCallback because the local LEO is below the offsetToTruncate, and the leader epoch is <= last mirror epoch.
-            // That means the log is converged already.
-            Optional.empty()
-          } else {
-            Optional.of((tp: TopicPartition) => {
-              log.truncateTo(offsetToTruncate)
-            })
-          }
+        log.truncateTo(offsetToTruncate)
         val partition = getPartitionOrException(tp)
         val mirrorUncleanLeaderElection = metadataCache.config(new ConfigResource(ConfigResource.Type.TOPIC, tp.topic()))
           .get(TopicConfig.MIRROR_SUPPORT_UNCLEAN_LEADER_ELECTION_CONFIG).asInstanceOf[String]
         val waitForAllReplicas = mirrorUncleanLeaderElection != null && mirrorUncleanLeaderElection.toBoolean
 
-        partition.maybeCompleteReplicaConvergence(log, waitForAllReplicas = waitForAllReplicas, onCompleteCallback = Optional.of(callback), onCaughtupCallback = onCaughtupCallback)
+        partition.maybeCompleteReplicaConvergence(log, waitForAllReplicas = waitForAllReplicas, onCompleteCallback = Optional.of(callback))
       })
     })
   }
@@ -1888,6 +1879,10 @@ class ReplicaManager(val config: KafkaConfig,
                 partition.topicPartition.partition()))
             if (entry != null) entry.state() else MirrorPartitionState.UNKNOWN
           } else MirrorPartitionState.UNKNOWN
+          val sourceLeaderEpochOpt: Optional[Integer] = if (partition.isLeader && mirrorMetadataManager.isDefined && mirrorName.isPresent)
+            Optional.of(mirrorMetadataManager.get.resolveSourceLeader(mirrorName.get(), partition.topicPartition).leaderEpoch())
+          else Optional.empty()
+
           // Try the read first, this tells us whether we need all of adjustedFetchSize for this partition
           val readInfo: LogReadInfo = partition.fetchRecords(
             fetchParams = params,
@@ -1896,7 +1891,8 @@ class ReplicaManager(val config: KafkaConfig,
             maxBytes = adjustedMaxBytes,
             minOneMessage = minOneMessage,
             updateFetchState = !readFromPurgatory,
-            mirrorState = state)
+            mirrorState = state,
+            sourceLeaderEpochOpt = sourceLeaderEpochOpt)
 
           val fetchDataInfo = checkFetchDataInfo(partition, readInfo.fetchedData)
 

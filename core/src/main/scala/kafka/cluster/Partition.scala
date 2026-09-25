@@ -345,7 +345,6 @@ class Partition(val topicPartition: TopicPartition,
 
   // Mutable state for truncation protocol used for Cluster Mirroring.
   // Latched by maybeCompleteTruncation and cleared by completeTruncationCallbacks.
-  @volatile private var onCaughtupCallback: Optional[Consumer[TopicPartition]] = Optional.empty()
   @volatile private var onCompleteCallback: Optional[Consumer[TopicPartition]] = Optional.empty()
   @volatile private var requireFullReplicaConvergence: Boolean = false
 
@@ -1267,7 +1266,6 @@ class Partition(val topicPartition: TopicPartition,
   def maybeCompleteReplicaConvergence(leaderLog: UnifiedLog,
                                       currentTimeMs: Long = time.milliseconds,
                                       waitForAllReplicas: Boolean = false,
-                                      onCaughtupCallback: Optional[Consumer[TopicPartition]] = Optional.empty(),
                                       onCompleteCallback: Optional[Consumer[TopicPartition]] = Optional.empty()): Boolean = {
     // Put callbacks and flags into instance state
     if (onCompleteCallback.isPresent) {
@@ -1275,9 +1273,6 @@ class Partition(val topicPartition: TopicPartition,
     }
     if (this.onCompleteCallback.isEmpty) {
       return false
-    }
-    if (onCaughtupCallback.isPresent) {
-      this.onCaughtupCallback = onCaughtupCallback
     }
     if (waitForAllReplicas) {
       requireFullReplicaConvergence = true
@@ -1303,15 +1298,6 @@ class Partition(val topicPartition: TopicPartition,
       return true
     }
 
-    // Phase 1: ISR number > min.isr or all replicas are in ISR, trigger leader log truncation.
-    // Two phases needed because truncation may land mid batch; followers
-    // cannot sync until catching up the leader.
-    if (onCaughtupCallback.isPresent) {
-      onCaughtupCallback.get().accept(topicPartition)
-      this.onCaughtupCallback = Optional.empty()
-      return false
-    }
-
     // Check replicas convergence (no relevant replica has LEO ahead of the leader).
     // Uses the maximal ISR (committed + pending, see KIP-497) so replicas about
     // to join the ISR are also required to converge before proceeding.
@@ -1333,16 +1319,12 @@ class Partition(val topicPartition: TopicPartition,
       return false
     }
 
-    // Phase 2: leader truncated and all replicas caught up to the new LEO
+    // leader truncated and all replicas caught up to the new LEO
     completeTruncationCallbacks()
     true
   }
 
   private def completeTruncationCallbacks(): Unit = {
-    onCaughtupCallback.ifPresent(callback => {
-      callback.accept(topicPartition)
-      this.onCaughtupCallback = Optional.empty()
-    })
     onCompleteCallback.ifPresent(callback => {
       callback.accept(topicPartition)
       this.onCompleteCallback = Optional.empty()
@@ -1598,7 +1580,8 @@ class Partition(val topicPartition: TopicPartition,
     maxBytes: Int,
     minOneMessage: Boolean,
     updateFetchState: Boolean,
-    mirrorState: MirrorPartitionState = MirrorPartitionState.UNKNOWN
+    mirrorState: MirrorPartitionState = MirrorPartitionState.UNKNOWN,
+    sourceLeaderEpochOpt: Optional[Integer] = Optional.empty()
   ): LogReadInfo = {
     def readFromLocalLog(log: UnifiedLog): LogReadInfo = {
       readRecords(
@@ -1608,7 +1591,8 @@ class Partition(val topicPartition: TopicPartition,
         fetchPartitionData.currentLeaderEpoch,
         maxBytes,
         fetchParams.isolation,
-        minOneMessage
+        minOneMessage,
+        sourceLeaderEpochOpt
       )
     }
 
@@ -1689,7 +1673,8 @@ class Partition(val topicPartition: TopicPartition,
     currentLeaderEpoch: Optional[Integer],
     maxBytes: Int,
     fetchIsolation: FetchIsolation,
-    minOneMessage: Boolean
+    minOneMessage: Boolean,
+    sourceLeaderEpochOpt: Optional[Integer]
   ): LogReadInfo = {
     // Note we use the log end offset prior to the read. This ensures that any appends following
     // the fetch do not prevent a follower from coming into sync.
@@ -1699,7 +1684,7 @@ class Partition(val topicPartition: TopicPartition,
     val initialLastStableOffset = localLog.lastStableOffset
 
     lastFetchedEpoch.ifPresent { fetchEpoch =>
-      val epochEndOffset = lastOffsetForLeaderEpoch(currentLeaderEpoch, fetchEpoch, fetchOnlyFromLeader = false)
+      val epochEndOffset = lastOffsetForLeaderEpoch(currentLeaderEpoch, fetchEpoch, fetchOnlyFromLeader = false, sourceLeaderEpochOpt = sourceLeaderEpochOpt)
       val error = Errors.forCode(epochEndOffset.errorCode)
       if (error != Errors.NONE) {
         throw error.exception()
@@ -1895,6 +1880,12 @@ class Partition(val topicPartition: TopicPartition,
    * @param currentLeaderEpoch The expected epoch of the current leader (if known)
    * @param leaderEpoch Requested leader epoch
    * @param fetchOnlyFromLeader Whether or not to require servicing only from the leader
+   * @param sourceLeaderEpochOpt The current leader epoch in source cluster. This is only used in cluster mirroring because
+   *                             the mirror leader is acting as a follower to fetch data from the source cluster. It won't
+   *                             assign the current local leader epoch into leader epoch cache when becoming the leader.
+   *                             Instead, it updates the leader epoch cache when receiving logs from the source cluster like other followers.
+   *                             Here, we provide the current source leader epoch as the highest leader epoch entry in the cache,
+   *                             so that we can do the end offset query as usual.
    *
    * @return The requested leader epoch and the end offset of this leader epoch, or if the requested
    *         leader epoch is unknown, the leader epoch less than the requested leader epoch and the end offset
@@ -1904,12 +1895,13 @@ class Partition(val topicPartition: TopicPartition,
    */
   def lastOffsetForLeaderEpoch(currentLeaderEpoch: Optional[Integer],
                                leaderEpoch: Int,
-                               fetchOnlyFromLeader: Boolean): EpochEndOffset = {
+                               fetchOnlyFromLeader: Boolean,
+                               sourceLeaderEpochOpt: Optional[Integer] = Optional.empty()): EpochEndOffset = {
     inReadLock(leaderIsrUpdateLock) {
       val localLogOrError = getLocalLog(currentLeaderEpoch, fetchOnlyFromLeader)
       localLogOrError match {
         case Left(localLog) =>
-          localLog.endOffsetForEpoch(leaderEpoch).toScala match {
+          localLog.endOffsetForEpoch(leaderEpoch, sourceLeaderEpochOpt).toScala match {
             case Some(epochAndOffset) => new EpochEndOffset()
               .setPartition(partitionId)
               .setErrorCode(Errors.NONE.code)
