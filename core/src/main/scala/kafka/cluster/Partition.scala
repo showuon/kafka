@@ -927,7 +927,7 @@ class Partition(val topicPartition: TopicPartition,
     followerFetchTimeMs: Long,
     leaderEndOffset: Long,
     brokerEpoch: Long,
-    mirrorState: MirrorPartitionState = MirrorPartitionState.UNKNOWN
+    mirrorState: MirrorPartitionState
   ): Unit = {
     // No need to calculate low watermark if there is no delayed DeleteRecordsRequest
     val oldLeaderLW = if (delayedOperations.numDelayedDelete > 0) lowWatermarkIfLeader else -1L
@@ -1287,7 +1287,7 @@ class Partition(val topicPartition: TopicPartition,
 
     // Guard: partition must meet minimum ISR requirement
     if (isUnderMinIsr) {
-      trace(s"Not completing truncation because partition is under min ISR (ISR=${partitionState.isr})")
+      warn(s"Not completing truncation because partition is under min ISR (ISR=${partitionState.isr})")
       return false
     }
 
@@ -1310,7 +1310,7 @@ class Partition(val topicPartition: TopicPartition,
       val isAhead = replicaState.logEndOffsetMetadata.messageOffset > leaderLogEndOffset.messageOffset && isRelevant
       debug(s"Truncation check for replica ${replica.brokerId}: replicaLEO=${replicaState.logEndOffsetMetadata}, leaderLEO=$leaderLogEndOffset")
       if (isAhead) {
-        info(s"Truncation not complete: replica ${replica.brokerId} LEO ${replicaState.logEndOffsetMetadata.messageOffset}" +
+        warn  (s"Truncation not complete: replica ${replica.brokerId} LEO ${replicaState.logEndOffsetMetadata.messageOffset}" +
           s" exceeds leader LEO ${leaderLogEndOffset.messageOffset}")
       }
       isAhead
@@ -1469,8 +1469,7 @@ class Partition(val topicPartition: TopicPartition,
   private def doAppendRecordsToFollowerOrFutureReplica(
     records: MemoryRecords,
     isFuture: Boolean,
-    partitionLeaderEpoch: Int,
-    isMirrorLeader: Boolean
+    partitionLeaderEpoch: Int
   ): Option[LogAppendInfo] = {
     if (isFuture) {
       // The read lock is needed to handle race condition if request handler thread tries to
@@ -1478,13 +1477,13 @@ class Partition(val topicPartition: TopicPartition,
       inReadLock(leaderIsrUpdateLock) {
         // Note the replica may be undefined if it is removed by a non-ReplicaAlterLogDirsThread before
         // this method is called
-        futureLog.map { _.appendAsFollower(records, partitionLeaderEpoch, isMirrorLeader) }
+        futureLog.map { _.appendAsFollower(records, partitionLeaderEpoch) }
       }
     } else {
       // The lock is needed to prevent the follower replica from being updated while ReplicaAlterDirThread
       // is executing maybeReplaceCurrentWithFutureReplica() to replace follower replica with the future replica.
       futureLogLock.synchronized {
-        Some(localLogOrException.appendAsFollower(records, partitionLeaderEpoch, isMirrorLeader))
+        Some(localLogOrException.appendAsFollower(records, partitionLeaderEpoch))
       }
     }
   }
@@ -1492,11 +1491,10 @@ class Partition(val topicPartition: TopicPartition,
   def appendRecordsToFollowerOrFutureReplica(
     records: MemoryRecords,
     isFuture: Boolean,
-    partitionLeaderEpoch: Int,
-    isMirrorLeader: Boolean = false
+    partitionLeaderEpoch: Int
   ): Option[LogAppendInfo] = {
     try {
-      doAppendRecordsToFollowerOrFutureReplica(records, isFuture, partitionLeaderEpoch, isMirrorLeader)
+      doAppendRecordsToFollowerOrFutureReplica(records, isFuture, partitionLeaderEpoch)
     } catch {
       case e: UnexpectedAppendOffsetException =>
         val log = if (isFuture) futureLocalLogOrException else localLogOrException
@@ -1514,7 +1512,7 @@ class Partition(val topicPartition: TopicPartition,
           info(s"Unexpected offset in append to $topicPartition. First offset ${e.firstOffset} is less than log start offset ${log.logStartOffset}." +
                s" Since this is the first record to be appended to the $replicaName's log, will start the log from offset ${e.firstOffset}.")
           truncateFullyAndStartAt(e.firstOffset, isFuture)
-          doAppendRecordsToFollowerOrFutureReplica(records, isFuture, partitionLeaderEpoch, isMirrorLeader)
+          doAppendRecordsToFollowerOrFutureReplica(records, isFuture, partitionLeaderEpoch)
         } else
           throw e
     }
@@ -1580,8 +1578,8 @@ class Partition(val topicPartition: TopicPartition,
     maxBytes: Int,
     minOneMessage: Boolean,
     updateFetchState: Boolean,
-    mirrorState: MirrorPartitionState = MirrorPartitionState.UNKNOWN,
-    sourceLeaderEpochOpt: Optional[Integer] = Optional.empty()
+    mirrorState: MirrorPartitionState,
+    sourceLeaderEpochOpt: Optional[Integer]
   ): LogReadInfo = {
     def readFromLocalLog(log: UnifiedLog): LogReadInfo = {
       readRecords(

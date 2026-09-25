@@ -396,7 +396,7 @@ class ReplicaFetcherThreadTest {
 
     when(partition.localLogOrException).thenReturn(log)
     when(partition.getMirrorName()).thenReturn(Optional.empty())
-    when(partition.appendRecordsToFollowerOrFutureReplica(any(), any(), any(), any())).thenReturn(None)
+    when(partition.appendRecordsToFollowerOrFutureReplica(any(), any(), any())).thenReturn(None)
 
     val logContext = new LogContext(s"[ReplicaFetcher replicaId=${config.brokerId}, leaderId=${brokerEndPoint.id}, fetcherId=0] ")
 
@@ -476,7 +476,7 @@ class ReplicaFetcherThreadTest {
     when(replicaManager.brokerTopicStats).thenReturn(mock(classOf[BrokerTopicStats]))
 
     when(partition.localLogOrException).thenReturn(log)
-    when(partition.appendRecordsToFollowerOrFutureReplica(any(), any(), any(), any())).thenReturn(Some(new LogAppendInfo(
+    when(partition.appendRecordsToFollowerOrFutureReplica(any(), any(), any())).thenReturn(Some(new LogAppendInfo(
       -1,
       0,
       Optional.empty,
@@ -696,7 +696,7 @@ class ReplicaFetcherThreadTest {
     val partition: Partition = mock(classOf[Partition])
     when(partition.getMirrorName()).thenReturn(Optional.empty())
     when(partition.localLogOrException).thenReturn(log)
-    when(partition.appendRecordsToFollowerOrFutureReplica(any[MemoryRecords], any[Boolean], any[Int], any[Boolean])).thenReturn(appendInfo)
+    when(partition.appendRecordsToFollowerOrFutureReplica(any[MemoryRecords], any[Boolean], any[Int])).thenReturn(appendInfo)
 
     // Capture the argument at the time of invocation.
     val completeDelayedFetchRequestsArgument = mutable.Buffer.empty[TopicPartition]

@@ -165,7 +165,7 @@ class MirrorFetcherThread(name: String,
     validateLeaderEpoch(topicPartition, partition, records, partitionLeaderEpoch)
 
     // Append batches from the source cluster to the destination partition's log.
-    val logAppendInfo = partition.appendRecordsToFollowerOrFutureReplica(records, isFuture = false, partitionLeaderEpoch, isMirrorLeader = true)
+    val logAppendInfo = partition.appendRecordsToFollowerOrFutureReplica(records, isFuture = false, partitionLeaderEpoch)
 
     if (logTrace)
       trace("Mirror follower has replica log end offset %d after appending %d bytes of messages for partition %s"
@@ -201,8 +201,7 @@ class MirrorFetcherThread(name: String,
     replicaMgr.mirrorMetadataManager.map(mmm => mmm.resolveSourceLeader(mirrorName, tp).leaderEpoch())
   }
 
-  // Returns the mirror partition lag
-  // TODO: Since we already record the lag in stats, maybe we don't cache the logInfo in mirrorFetcherManager anymore.
+  // Returns the mirror partition lag computed from cached source/destination offsets
   override def getPartitionLag(topicPartition: TopicPartition, leaderHW: Long, nextOffset: Long, mirrorName: String): Long = {
     replicaMgr.mirrorFetcherManager.getMirrorOffsetInfo(mirrorName).get(topicPartition).map { info =>
       Math.max(0, info.sourceOffset - info.destinationOffset)
