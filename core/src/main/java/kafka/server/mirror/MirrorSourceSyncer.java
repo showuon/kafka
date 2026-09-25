@@ -652,7 +652,7 @@ class MirrorSourceSyncer {
      * from the source cluster. Runs only on the coordinator broker for each mirror.
      */
     private void syncSourceConfigsAndOffsets(String mirrorName, List<SourceTopicState> sourceTopicStates) {
-        if (!isLocalCoordinator(mirrorName)) {
+        if (!isLocalCoordinatorFor(mirrorName)) {
             return;
         }
 
@@ -1174,7 +1174,7 @@ class MirrorSourceSyncer {
     CompletableFuture<Void> scheduleBumpLeaderEpoch(String mirrorName, TopicPartition tp) {
         CompletableFuture<Void> future = new CompletableFuture<>();
         syncScheduler.scheduleOnce("bump-leader-epoch-" + tp, () -> {
-            List<SourceTopicState> sourceTopicStates = syncSourceTopicState(mirrorName);
+            List<SourceTopicState> sourceTopicStates = syncSourceTopicMetadata(mirrorName);
             maybeBumpLeaderEpochs(mirrorName, sourceTopicStates, Set.of(tp))
                     .whenComplete((v, ex) -> {
                         if (ex != null) {
