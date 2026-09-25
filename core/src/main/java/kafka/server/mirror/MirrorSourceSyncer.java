@@ -107,6 +107,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CompletionException;
 import java.util.stream.Collectors;
 
 import scala.Option;
@@ -135,6 +136,8 @@ class MirrorSourceSyncer {
     private final MetadataCache metadataCache;
     private final KafkaScheduler syncScheduler;
 
+    private final ConcurrentHashMap<String, CompletableFuture<Optional<List<SourceTopicState>>>> ongoingSyncs = new ConcurrentHashMap<>();
+    
     private final KafkaMetricsGroup metricsGroup;
     private final Meter metadataRefreshError;
     private final Meter topicConfigSyncError;
@@ -378,7 +381,31 @@ class MirrorSourceSyncer {
      * Runs on every broker to keep them in sync.
      */
     Optional<List<SourceTopicState>> syncSourceTopicMetadata(String mirrorName) {
-        log.info("Syncing source topic metadata for mirror {}", mirrorName);
+        var future = new CompletableFuture<Optional<List<SourceTopicState>>>();
+        var existing = ongoingSyncs.putIfAbsent(mirrorName, future);
+        if (existing != null) {
+            log.info("Source topic state sync already in progress for mirror {}, waiting for result", mirrorName);
+            try {
+                return existing.join();
+            } catch (CompletionException e) {
+                log.warn("In-progress source topic state sync failed for mirror {}", mirrorName, e.getCause());
+                return Optional.empty();
+            }
+        }
+        try {
+            var result = doSyncSourceTopicMetadata(mirrorName);
+            future.complete(result);
+            return result;
+        } catch (Exception e) {
+            future.completeExceptionally(e);
+            throw e;
+        } finally {
+            ongoingSyncs.remove(mirrorName, future);
+        }
+    }
+
+    private Optional<List<SourceTopicState>> doSyncSourceTopicMetadata(String mirrorName) {
+        log.info("Syncing source topic state for mirror {}", mirrorName);
         Set<String> topics = metadataManager.getMirrorTopics(mirrorName,
                 EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED, MirrorPartitionState.STOPPED));
         if (topics.isEmpty()) {
