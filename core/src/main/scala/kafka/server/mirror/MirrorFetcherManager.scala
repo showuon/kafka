@@ -135,14 +135,12 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
       throw new IllegalArgumentException("Mirror name must be provided for remote fetchers")
     }
 
-    val threadName = s"MirrorFetcherThread fetcherId=$fetcherId, srcBrokerId=${srcEndpoint.id}, " +
-      s"dstBrokerId=${brokerConfig.brokerId}, mirrorName=$mirrorName"
+    val threadName = s"MirrorFetcherThread fetcherId=$fetcherId, srcEndpoint=$srcEndpoint, mirrorName=$mirrorName"
     info(s"Creating $threadName")
     val logContext = new LogContext(s"[$threadName] ")
 
     val mirrorProperties = metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName))
-    info(s"Using mirror properties for $mirrorName: ${mirrorProperties.keySet()}")
-    val mirrorConfig = ClusterMirrorConfig.fromProperties(mirrorProperties)
+    val mirrorConfig = ClusterMirrorConfig.fromProperties(mirrorProperties, true)
     val clientId = s"fetcherId-$fetcherId-mirrorName-$mirrorName"
     val sender = new MirrorSourceSender(srcEndpoint, mirrorConfig, metrics, time, srcEndpoint.id, clientId, logContext)
     val fetchSessionHandler = new FetchSessionHandler(logContext, srcEndpoint.id)
