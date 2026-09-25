@@ -17,27 +17,24 @@
 package org.apache.kafka.common.errors;
 
 /**
- * This mirror configuration is not available.
- * This exception is used when cluster mirroring that the metadata is not propagated to the broker yet.
- * This exception is retriable because the broker will eventually get the metadata update.
+ * Source metadata is not available during cluster mirroring.
+ * Thrown when the source cluster metadata has not yet been retrieved, allowing graceful backoff and retry.
  */
-public class MirrorConfigNotAvailableException extends InvalidMetadataException {
-
+public class SourceMetadataNotAvailableException extends InvalidMetadataException {
     private static final long serialVersionUID = 1L;
 
-    public MirrorConfigNotAvailableException() {
+    public SourceMetadataNotAvailableException() {
     }
 
-    public MirrorConfigNotAvailableException(String message) {
+    public SourceMetadataNotAvailableException(String message) {
         super(message);
     }
 
-    public MirrorConfigNotAvailableException(Throwable throwable) {
+    public SourceMetadataNotAvailableException(Throwable throwable) {
         super(throwable);
     }
 
-    public MirrorConfigNotAvailableException(String message, Throwable throwable) {
+    public SourceMetadataNotAvailableException(String message, Throwable throwable) {
         super(message, throwable);
     }
-
 }

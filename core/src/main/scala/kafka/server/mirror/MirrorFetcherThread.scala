@@ -65,10 +65,31 @@ class MirrorFetcherThread(name: String,
     replicaMgr.mirrorMetadataManager.foreach { mmm =>
       partitionAndOffsets.foreach { case (tp, state) =>
         mmm.updateSourceLeader(mirrorName, tp,
-          new SourceLeader(new Node(state.leader.id(), state.leader.host(), state.leader.port()), state.currentLeaderEpoch))
+          new SourceLeader(Optional.of(new Node(state.leader.id(), state.leader.host(), state.leader.port())), state.currentLeaderEpoch))
       }
     }
     replicaMgr.mirrorFetcherManager.addFetcherForPartitions(partitionAndOffsets)
+  }
+
+  override def updateSourceLeader(mirrorName: String, partition: TopicPartition, leaderNode: Optional[Node], leaderEpoch: Int): Unit = {
+    replicaMgr.mirrorMetadataManager.foreach( mmm => {
+      val curLeader = mmm.resolveSourceLeader(mirrorName, partition, false)
+      // When the leader election is in process, the leader node might be empty, so only use the provided node when available.
+      val node: Optional[Node] = if (leaderNode.isPresent)
+        leaderNode
+      else if (curLeader.isPresent && curLeader.get().node().isPresent)
+        curLeader.get().node()
+      else
+        Optional.empty()
+
+      // Use the highest leader epoch known
+      val epoch = if (curLeader.isPresent && curLeader.get().leaderEpoch() > leaderEpoch)
+        curLeader.get().leaderEpoch()
+      else
+        leaderEpoch
+
+      mmm.updateSourceLeader(mirrorName, partition, new SourceLeader(node, epoch))
+      })
   }
 
   override protected def refreshSourceClusterMetadata(mirrorPartitions: Set[TopicPartition], reason: String): Unit = {
@@ -198,7 +219,11 @@ class MirrorFetcherThread(name: String,
   }
 
   override def leaderEpochFromSource(tp: TopicPartition): Option[Int] = {
-    replicaMgr.mirrorMetadataManager.map(mmm => mmm.resolveSourceLeader(mirrorName, tp).leaderEpoch())
+    replicaMgr.mirrorMetadataManager.flatMap(mmm => {
+      val sourceLeader = mmm.resolveSourceLeader(mirrorName, tp, false)
+      if (sourceLeader.isPresent) Some(sourceLeader.get().leaderEpoch())
+      else None
+    })
   }
 
   // Returns the mirror partition lag

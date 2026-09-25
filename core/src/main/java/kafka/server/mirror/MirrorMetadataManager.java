@@ -1987,8 +1987,12 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         mirrorCache.setLastMirrorPosition(key, lastMirrorPosition);
     }
 
-    public MirrorStateCache.SourceLeader resolveSourceLeader(String mirrorName, TopicPartition tp) {
-        return mirrorCache.resolveSourceLeader(mirrorName, tp);
+    public Optional<MirrorStateCache.SourceLeader> resolveSourceLeader(String mirrorName, TopicPartition tp, boolean scheduleTopicSync) {
+        var result = mirrorCache.resolveSourceLeader(mirrorName, tp);
+        if (scheduleTopicSync && result.isEmpty()) {
+            scheduleSourceTopicStateSync(mirrorName);
+        }
+        return result;
     }
 
     public void updateSourceLeader(String mirrorName, TopicPartition tp, MirrorStateCache.SourceLeader leader) {

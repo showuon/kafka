@@ -30,7 +30,7 @@ import org.apache.kafka.common.record.{FileRecords, MemoryRecords, Records}
 import org.apache.kafka.common.requests.OffsetsForLeaderEpochResponse.{UNDEFINED_EPOCH, UNDEFINED_EPOCH_OFFSET}
 import org.apache.kafka.common.requests._
 import org.apache.kafka.common.utils.Time
-import org.apache.kafka.common.{ClientIdAndBroker, InvalidRecordException, TopicPartition, Uuid}
+import org.apache.kafka.common.{ClientIdAndBroker, InvalidRecordException, Node, TopicPartition, Uuid}
 import org.apache.kafka.server.common.OffsetAndEpoch
 import org.apache.kafka.server.LeaderEndPoint
 import org.apache.kafka.server.ResultWithPartitions
@@ -114,6 +114,8 @@ abstract class AbstractFetcherThread(name: String,
     // do nothing
     Map.empty
   }
+
+  protected def updateSourceLeader(mirrorName: String, partition: TopicPartition, leaderNode: Optional[Node], leaderEpoch: Int): Unit = { }
 
   protected def addFetcherForPartitions(partitionAndOffsets: Map[TopicPartition, InitialFetchState]): Unit = {}
 
@@ -322,6 +324,10 @@ abstract class AbstractFetcherThread(name: String,
             if (newCurrentLeaderEpoch > -1) {
               info(s"Discovered new fetch epoch for mirror partition $topicPartition, " +
                 s"currentLeaderEpoch: ${currentFetchState.currentLeaderEpoch} -> $newCurrentLeaderEpoch")
+              val leaderNode: Optional[Node] = if (leader.lastSeenEndpoints().isEmpty) Optional.empty()
+              else Optional.of(leader.lastSeenEndpoints().get(partitionData.currentLeader().leaderId()))
+
+              updateSourceLeader(currentFetchState.mirrorName(), topicPartition, leaderNode, newCurrentLeaderEpoch)
               newStates.put(topicPartition, new PartitionFetchState(currentFetchState.topicId, currentFetchState.fetchOffset(), currentFetchState.lag,
                 newCurrentLeaderEpoch, currentFetchState.delay, currentFetchState.state(), currentFetchState.lastFetchedEpoch(),
                 currentFetchState.dueMs(), currentFetchState.mirrorName()))
@@ -349,8 +355,8 @@ abstract class AbstractFetcherThread(name: String,
           .foreach { case (topicPartition, currentFetchState) =>
             partitionToData.get(topicPartition) match {
               case Some(partitionData) =>
-                val leaderNode = if (leader.lastSeenEndpoints().isEmpty) Optional.empty()
-                else Optional.of(leader.lastSeenEndpoints().get(partitionData.currentLeader().leaderId()))
+                val leaderNode: Optional[Node] = if (leader.lastSeenEndpoints().isEmpty) Optional.empty()
+                else Optional.ofNullable(leader.lastSeenEndpoints().get(partitionData.currentLeader().leaderId()))
                 // If leader node change, we need to update it.
                 // Note: we can't compare the node id because it might be different from the original node id (ex: replied as consumer id -1).
                 if (leaderNode.isPresent && (!leaderNode.get().host.equals(leader.brokerEndPoint().host()) ||
@@ -358,6 +364,7 @@ abstract class AbstractFetcherThread(name: String,
                   val brokerEndpoint = new BrokerEndPoint(leaderNode.get.id(), leaderNode.get.host, leaderNode.get.port)
                   newStates += topicPartition -> InitialFetchState(currentFetchState.topicId().toScala, brokerEndpoint,
                     partitionData.currentLeader().leaderEpoch(), currentFetchState.fetchOffset(), currentFetchState.mirrorName())
+                  updateSourceLeader(currentFetchState.mirrorName(), topicPartition, leaderNode, partitionData.currentLeader().leaderEpoch())
                 }
               case _ =>
             }
