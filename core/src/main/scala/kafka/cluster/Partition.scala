@@ -572,6 +572,10 @@ class Partition(val topicPartition: TopicPartition,
    */
   def isLeader: Boolean = leaderReplicaIdOpt.contains(localBrokerId)
 
+  private def shouldThrowSourceMetadataException(sourceEpochOpt: Optional[Int]): Boolean = {
+    getMirrorName().isPresent && isLeader && sourceEpochOpt.isEmpty
+  }
+
   def leaderIdIfLocal: Option[Int] = {
     leaderReplicaIdOpt.filter(_ == localBrokerId)
   }
@@ -1691,7 +1695,7 @@ class Partition(val topicPartition: TopicPartition,
       }
 
       if (epochEndOffset.endOffset == UNDEFINED_EPOCH_OFFSET || epochEndOffset.leaderEpoch == UNDEFINED_EPOCH) {
-        if (getMirrorName().isPresent && isLeader && sourceLeaderEpochOpt.isEmpty)
+        if (shouldThrowSourceMetadataException(sourceLeaderEpochOpt))
           throw new SourceMetadataNotAvailableException("Could not determine the end offset of the last fetched epoch " +
             s"$lastFetchedEpoch from the request due to the source cluster metadata is not available. Refreshing the source cluster metadata.")
         else

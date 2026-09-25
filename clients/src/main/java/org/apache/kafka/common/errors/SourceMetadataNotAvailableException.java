@@ -17,11 +17,10 @@
 package org.apache.kafka.common.errors;
 
 /**
- * This source metadata in mirror is not available.
- * This exception is used when cluster mirroring that the metadata is not retrieved yet.
+ * Source metadata is not available during cluster mirroring.
+ * Thrown when the source cluster metadata has not yet been retrieved, allowing graceful backoff and retry.
  */
 public class SourceMetadataNotAvailableException extends InvalidMetadataException {
-
     private static final long serialVersionUID = 1L;
 
     public SourceMetadataNotAvailableException() {
@@ -38,5 +37,4 @@ public class SourceMetadataNotAvailableException extends InvalidMetadataExceptio
     public SourceMetadataNotAvailableException(String message, Throwable throwable) {
         super(message, throwable);
     }
-
 }

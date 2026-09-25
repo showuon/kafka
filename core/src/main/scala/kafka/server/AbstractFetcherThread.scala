@@ -356,7 +356,7 @@ abstract class AbstractFetcherThread(name: String,
             partitionToData.get(topicPartition) match {
               case Some(partitionData) =>
                 val leaderNode: Optional[Node] = if (leader.lastSeenEndpoints().isEmpty) Optional.empty()
-                else Optional.of(leader.lastSeenEndpoints().get(partitionData.currentLeader().leaderId()))
+                else Optional.ofNullable(leader.lastSeenEndpoints().get(partitionData.currentLeader().leaderId()))
                 // If leader node change, we need to update it.
                 // Note: we can't compare the node id because it might be different from the original node id (ex: replied as consumer id -1).
                 if (leaderNode.isPresent && (!leaderNode.get().host.equals(leader.brokerEndPoint().host()) ||
