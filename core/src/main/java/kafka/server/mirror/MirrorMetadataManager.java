@@ -892,10 +892,6 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         }
     }
 
-    // When a write is fenced, the local cache epoch is stale relative to the coordinator.
-    // Re-read the partition state to refresh the cached epoch, then retry the write with
-    // the updated epoch. Routes to the local coordinator reader or a remote coordinator
-    // depending on which broker leads the __mirror_state partition for this partition.
     private void readAndRetryTransition(String mirrorName, TopicPartition tp,
                                         MirrorPartitionState state,
                                         String errorMessage, boolean nonRetryable) {
