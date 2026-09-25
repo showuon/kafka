@@ -146,6 +146,8 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     private static final Set<String> WATCHED_TOPIC_CONFIGS = Set.of(
             TopicConfig.REMOTE_LOG_STORAGE_ENABLE_CONFIG);
 
+    private static final long COORDINATOR_LOAD_RETRY_BACKOFF_MS = 1000L;
+
     private final Logger log;
     private volatile boolean isInitialized = false;
     private final String clusterId;
@@ -788,13 +790,8 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
      * through {@link #onStateTransition}.
      */
     public void transitionTo(String mirrorName, Set<TopicPartition> topicPartitions,
-                             MirrorPartitionState state, String errorMessage, boolean nonRetryable) {
-        transitionTo(mirrorName, topicPartitions, state, errorMessage, nonRetryable, false);
-    }
-
-    private void transitionTo(String mirrorName, Set<TopicPartition> topicPartitions,
                               MirrorPartitionState state, String errorMessage,
-                              boolean nonRetryable, boolean remoteRetry) {
+                              boolean nonRetryable) {
         coordinatorWriter.ifPresent(writer -> {
             for (TopicPartition tp : topicPartitions) {
                 MirrorPartitionState currentState = getPartitionState(mirrorName, tp);
@@ -819,22 +816,30 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 } else {
                     log.info("Transitioning partition {} from {} to {}", tp, currentState, state);
                 }
-                persistState(mirrorName, tp, state, errorMessage, nonRetryable, remoteRetry);
+                persistState(mirrorName, tp, state, errorMessage, nonRetryable);
             }
         });
     }
 
     private void onLocalWriteComplete(String mirrorName, TopicPartition tp,
-                                      MirrorPartitionKey key, MirrorPartitionState state, Throwable ex) {
+                                      MirrorPartitionKey key, MirrorPartitionState state,
+                                      String errorMessage, boolean nonRetryable,
+                                      Throwable ex) {
         if (ex != null) {
             Throwable cause = (ex instanceof CompletionException && ex.getCause() != null)
                     ? ex.getCause() : ex;
             if (cause instanceof CoordinatorLoadInProgressException) {
-                log.debug("Deferring state transition for {}. Reason: shard loading.", tp);
+                log.debug("Could not persist the partition {} state into controller because the controller is loading. Retrying in {} ms.", tp,
+                        COORDINATOR_LOAD_RETRY_BACKOFF_MS);
+                scheduler.scheduleOnce("write-retry-" + tp,
+                        () -> persistState(mirrorName, tp, state, errorMessage, nonRetryable),
+                        COORDINATOR_LOAD_RETRY_BACKOFF_MS);
                 return;
             }
             if (cause instanceof FencedLeaderEpochException || cause instanceof FencedStateEpochException) {
-                log.debug("Fencing state transition for partition {}. Reason: stale epoch.", tp);
+                log.info("Transition to {} fenced for partition {} due to stale epoch, reading and retrying.",
+                        state, tp);
+                readAndRetryTransition(mirrorName, tp, state, errorMessage, nonRetryable);
                 return;
             }
             if (state != MirrorPartitionState.FAILED) {
@@ -847,14 +852,10 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         }
     }
 
-    // When a remote write is fenced, the local cache epoch is stale relative to the
-    // coordinator. Another broker (the coordinator leader) may have advanced the epoch
-    // via a local write. Re-reading from the coordinator refreshes the cache, and the
-    // retry uses the current epoch.
     private void onRemoteWriteComplete(String mirrorName, TopicPartition tp,
                                        MirrorPartitionKey key, MirrorPartitionState state,
                                        String errorMessage, boolean nonRetryable,
-                                       WriteMirrorStatesResponse res, boolean remoteRetry) {
+                                       WriteMirrorStatesResponse res) {
         res.data().topics().forEach(topic -> topic.partitions().forEach(par -> {
             if (par.errorCode() == Errors.NONE.code()) {
                 updateLocalFailedState(key, state, errorMessage, nonRetryable);
@@ -865,12 +866,14 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 onStateTransition(mirrorName, tp, state);
             } else if (par.errorCode() == Errors.FENCED_LEADER_EPOCH.code()
                     || par.errorCode() == Errors.FENCED_STATE_EPOCH.code()) {
-                if (remoteRetry) {
-                    log.warn("Transition to {} fenced for partition {} after retry, giving up", state, tp);
-                    return;
-                }
                 log.debug("Transition to {} fenced for partition {} due to stale epoch, retrying", state, tp);
-                readAndRetryRemoteTransition(mirrorName, tp, state, errorMessage, nonRetryable);
+                readAndRetryTransition(mirrorName, tp, state, errorMessage, nonRetryable);
+            } else if (par.errorCode() == Errors.COORDINATOR_LOAD_IN_PROGRESS.code()) {
+                log.debug("Could not persist the partition {} state into controller because the controller is loading. Retrying in {} ms.", tp,
+                        COORDINATOR_LOAD_RETRY_BACKOFF_MS);
+                scheduler.scheduleOnce("write-retry-" + tp,
+                        () -> persistState(mirrorName, tp, state, errorMessage, nonRetryable),
+                        COORDINATOR_LOAD_RETRY_BACKOFF_MS);
             } else {
                 log.error("Failed to write partition state to remote coordinator: {}",
                         par.errorCode());
@@ -878,21 +881,38 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         }));
     }
 
-    private void readAndRetryRemoteTransition(String mirrorName, TopicPartition tp,
+    // When a write is fenced, the local cache epoch is stale relative to the coordinator.
+    // Re-read the partition state to refresh the cached epoch, then retry the write with
+    // the updated epoch. Routes to the local coordinator reader or a remote coordinator
+    // depending on which broker leads the __mirror_state partition for this partition.
+    private void readAndRetryTransition(String mirrorName, TopicPartition tp,
                                               MirrorPartitionState state,
                                               String errorMessage, boolean nonRetryable) {
-        Map<String, Set<Integer>> partitions = Map.of(tp.topic(), Set.of(tp.partition()));
-        readStateFromRemoteCoordinator(mirrorName, partitions, res ->
+        Consumer<ReadMirrorStatesResponse> onReadComplete = res ->
                 res.data().topics().forEach(topic -> topic.partitions().forEach(partition -> {
                     if (partition.errorCode() == Errors.NONE.code()) {
+                        if (mirrorCache.pendingStateTransition(tp) != state) {
+                            // the partition is already moving to the other state, skipping this transition
+                            return;
+                        }
                         MirrorPartitionKey key = MirrorPartitionKey.of(
                                 mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
                         mirrorCache.mergePartition(key, partition.state(), partition.stateEpoch(),
                                 new EpochOffset(partition.lastMirrorEpoch(), partition.lastMirrorOffset()),
                                 partition.errorMessage(), partition.retryAttempt(), partition.previousState());
-                        transitionTo(mirrorName, Set.of(tp), state, errorMessage, nonRetryable, true);
+                        transitionTo(mirrorName, Set.of(tp), state, errorMessage, nonRetryable);
                     }
-                })));
+                }));
+
+        if (isLocalCoordinator(mirrorName, tp.topic(), tp.partition())) {
+            coordinatorReader.ifPresent(reader ->
+                    reader.readPartitionState(mirrorName, tp).whenComplete((data, ex) -> {
+                        onReadComplete.accept(new ReadMirrorStatesResponse(data));
+                    }));
+        } else {
+            Map<String, Set<Integer>> partitions = Map.of(tp.topic(), Set.of(tp.partition()));
+            readStateFromRemoteCoordinator(mirrorName, partitions, onReadComplete);
+        }
     }
 
     /**
@@ -1906,11 +1926,11 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             return;
         }
         clearFailedInfo(mirrorName, tp);
-        persistState(mirrorName, tp, state, curState.errorMessage(), curState.retryAttempt() == NON_RETRYABLE_ATTEMPT, false);
+        persistState(mirrorName, tp, state, curState.errorMessage(), curState.retryAttempt() == NON_RETRYABLE_ATTEMPT);
     }
 
     private void persistState(String mirrorName, TopicPartition tp, MirrorPartitionState state, String errorMessage,
-                              boolean nonRetryable, boolean remoteRetry) {
+                              boolean nonRetryable) {
         coordinatorWriter.ifPresent(writer -> {
             MirrorPartitionKey key = MirrorPartitionKey.of(
                     mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
@@ -1919,13 +1939,14 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             if (isLocalCoordinator(mirrorName, tp.topic(), tp.partition())) {
                 writer.writePartitionState(mirrorName, tp, state, leaderEpoch, stateEpoch,
                                 errorMessage, nonRetryable)
-                        .whenComplete((v, ex) -> onLocalWriteComplete(mirrorName, tp, key, state, ex));
+                        .whenComplete((v, ex) -> onLocalWriteComplete(mirrorName, tp, key, state,
+                                errorMessage, nonRetryable, ex));
             } else {
                 Map<String, Set<MirrorStateWrite>> topicMetadata =
                         Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), state, leaderEpoch, stateEpoch,
                                 null, errorMessage, nonRetryable)));
                 writeStateToRemoteCoordinator(mirrorName, topicMetadata, Set.of(),
-                        res -> onRemoteWriteComplete(mirrorName, tp, key, state, errorMessage, nonRetryable, res, remoteRetry));
+                        res -> onRemoteWriteComplete(mirrorName, tp, key, state, errorMessage, nonRetryable, res));
             }
         });
     }
