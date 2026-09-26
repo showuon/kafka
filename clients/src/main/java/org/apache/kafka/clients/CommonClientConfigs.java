@@ -249,7 +249,7 @@ public class CommonClientConfigs {
 
     // Cluster Mirroring
     public static final String SOURCE_CLUSTER_ID_CONFIG = "source.cluster.id";
-    public static final String SOURCE_CLUSTER_ID_DOC = "The mirror source cluster ID. Automatically recovered from the source cluster if not present.";
+    public static final String SOURCE_CLUSTER_ID_DOC = "The source cluster ID. Automatically recovered from the source cluster if not present.";
 
     /**
      * Postprocess the configuration so that exponential backoff is disabled when reconnect backoff
