@@ -295,7 +295,7 @@ class MirrorSourceSyncer {
                             }
                         }
                         if (!mirrorLeaderPartitions.isEmpty()) {
-                            metadataManager.transitionTo(mirrorName, mirrorLeaderPartitions, MirrorPartitionState.FAILED, errMsg, true, false);
+                            metadataManager.transitionTo(mirrorName, mirrorLeaderPartitions, MirrorPartitionState.FAILED, errMsg, true);
                         }
                     }
                 }
@@ -601,7 +601,7 @@ class MirrorSourceSyncer {
                     if (topicImage != null) {
                         topicImage.partitions().forEach((partitionId, partition) ->
                                 metadataManager.transitionTo(mirrorName, Set.of(new TopicPartition(name, partitionId)),
-                                        MirrorPartitionState.FAILED, "The source topic is deleted", true, false));
+                                        MirrorPartitionState.FAILED, "The source topic is deleted", true));
                     }
                 } else {
                     log.debug("Topic {} not found in source cluster {}, pending deletion confirmation on next sync", name, mirrorName);
@@ -641,7 +641,7 @@ class MirrorSourceSyncer {
             var partition = topicImage.partitions().get(tp.partition());
             if (partition != null && partition.leader == nodeId) {
                 log.info("Source leader for {} discovered after initial onMetadataUpdate", tp);
-                metadataManager.transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.LOG_ALIGNMENT, null, false, false);
+                metadataManager.transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.LOG_ALIGNMENT, null, false);
             }
         });
     }
