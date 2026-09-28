@@ -495,6 +495,8 @@ abstract class AbstractFetcherThread(name: String,
     val startNs = time.nanoseconds()
     try {
       responseData = leader.fetch(fetchRequest).asScala
+      if (fetchRequest.fetchData().containsKey(new TopicPartition("my-topic", 0)))
+        info("!!! fetch response:" + responseData)
     } catch {
       case t: Throwable =>
         fetchException = Some(t)

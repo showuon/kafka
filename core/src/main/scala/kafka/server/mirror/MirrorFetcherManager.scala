@@ -234,11 +234,13 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
   }
 
   def updateMirrorOffsetInfo(mirrorName: String, topicPartition: TopicPartition, sourceOffset: Long, destinationOffset: Long): Unit = {
+    info("!!! updateMirrorOffsetInfo:" + sourceOffset + ";;" + destinationOffset)
     val key = MirrorTopicPartition(mirrorName, topicPartition)
     mirrorOffsetInfoMap.put(key, MirrorOffsetInfo(sourceOffset, destinationOffset, time.milliseconds()))
   }
 
   def getMirrorOffsetInfo(mirrorName: String): Map[TopicPartition, MirrorOffsetInfo] = {
+    info("!!! getMirrorOffsetInfo:" + mirrorFetcherThreadMap)
     mirrorOffsetInfoMap.collect {
       case (key, info) if key.mirrorName == mirrorName => key.topicPartition -> info
     }.toMap
