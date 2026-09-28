@@ -20,7 +20,7 @@ import kafka.cluster.Partition
 import kafka.server._
 import MirrorStateCache.SourceLeader
 import kafka.server.mirror.MirrorSourceSyncer.LEADER_EPOCH_BUMP_THRESHOLD
-import org.apache.kafka.common.errors.{MirrorLeaderEpochExceededException, MirrorPartitionStaleMetadataException, SourceMetadataNotAvailableException}
+import org.apache.kafka.common.errors.{MirrorLeaderEpochExceededException, MirrorPartitionStaleMetadataException}
 import org.apache.kafka.common.message.FetchResponseData
 import org.apache.kafka.common.record.Records
 import org.apache.kafka.common.requests.FetchResponse
@@ -65,18 +65,31 @@ class MirrorFetcherThread(name: String,
     replicaMgr.mirrorMetadataManager.foreach { mmm =>
       partitionAndOffsets.foreach { case (tp, state) =>
         mmm.updateSourceLeader(mirrorName, tp,
-          new SourceLeader(new Node(state.leader.id(), state.leader.host(), state.leader.port()), state.currentLeaderEpoch))
+          new SourceLeader(Optional.of(new Node(state.leader.id(), state.leader.host(), state.leader.port())), state.currentLeaderEpoch))
       }
     }
     replicaMgr.mirrorFetcherManager.addFetcherForPartitions(partitionAndOffsets)
   }
 
   override def updateSourceLeader(mirrorName: String, partition: TopicPartition, leaderNode: Optional[Node], leaderEpoch: Int): Unit = {
-    if (leaderNode.isEmpty)
-      throw new SourceMetadataNotAvailableException("cannot update source metadata because leader node is empty.")
-    replicaMgr.mirrorMetadataManager.foreach(_.updateSourceLeader(mirrorName, partition,
-      new SourceLeader(leaderNode.get(), leaderEpoch))
-    )
+    replicaMgr.mirrorMetadataManager.foreach( mmm => {
+      val curLeader = mmm.resolveSourceLeader(mirrorName, partition)
+      // When the leader election is in process, the leader node might be empty, so use the provided node when available.
+      val node: Optional[Node] = if (leaderNode.isPresent)
+        leaderNode
+      else if (curLeader.isPresent)
+        curLeader.get().node()
+      else
+        Optional.empty()
+
+      // Use the highest leader epoch known
+      val epoch = if (curLeader.isPresent && curLeader.get().leaderEpoch() > leaderEpoch)
+        curLeader.get().leaderEpoch()
+      else
+        leaderEpoch
+
+      mmm.updateSourceLeader(mirrorName, partition, new SourceLeader(node, epoch))
+      })
   }
 
   override protected def refreshSourceClusterMetadata(mirrorPartitions: Set[TopicPartition], reason: String): Unit = {

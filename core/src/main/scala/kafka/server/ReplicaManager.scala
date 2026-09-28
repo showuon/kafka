@@ -2654,9 +2654,9 @@ class ReplicaManager(val config: KafkaConfig,
           try {
             // Get the source partition leader
             val sourceLeader = mirrorMetadataManager.get.resolveSourceLeader(mirrorName, tp)
-            if (sourceLeader.isEmpty)
+            if (sourceLeader.isEmpty || sourceLeader.get().node().isEmpty)
               throw new SourceMetadataNotAvailableException()
-            val sourceLeaderNode = sourceLeader.get().node()
+            val sourceLeaderNode = sourceLeader.get().node().get()
             val leaderEndpoint = new BrokerEndPoint(sourceLeaderNode.id(), sourceLeaderNode.host(), sourceLeaderNode.port())
 
             val fetchState = InitialFetchState(
