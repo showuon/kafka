@@ -56,6 +56,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static org.apache.kafka.server.mirror.MirrorPartitionMetadata.NON_RETRYABLE_ATTEMPT;
+
 /**
  * The shard (state machine) for the cluster mirror coordinator.
  * One instance per __mirror_state partition, managed by the CoordinatorRuntime.
@@ -324,6 +326,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
             int leaderEpoch, int expectedStateEpoch, String errorMessage, boolean nonRetryable
     ) {
         MirrorPartitionKey pk = MirrorPartitionKey.of(mirrorName, metadataManager.getTopicId(tp.topic()), tp.partition());
+        MirrorPartitionMetadata partitionMetadata = MirrorPartitionMetadata.orEmpty(metadataManager.getPartitionMetadata(pk));
         if (leaderEpoch != -1 && leaderEpochMap.containsKey(pk) && leaderEpochMap.get(pk) > leaderEpoch) {
             log.info("Write fenced for partition {}: leader epoch {} < current {}", tp, leaderEpoch, leaderEpochMap.get(pk));
             throw Errors.FENCED_LEADER_EPOCH.exception();
@@ -333,17 +336,25 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
             log.info("Write fenced for {}: current epoch {} > expected {}", tp, currentStateEpoch, expectedStateEpoch);
             throw Errors.FENCED_STATE_EPOCH.exception();
         }
-        MirrorPartitionState currentState = MirrorPartitionMetadata.orEmpty(metadataManager.getPartitionMetadata(pk)).state();
+        MirrorPartitionState currentState = partitionMetadata.state();
         if (!MirrorPartitionMetadata.isValidStateTransition(currentState, state)) {
             log.warn("Skipping invalid transition from {} to {} for partition {}", currentState, state, tp);
             return new CoordinatorResult<>(List.of(), null);
         }
-        log.debug("Transitioning partition {} from {} to {}", tp, currentState, state);
 
-        metadataManager.updateFailureDetails(pk, currentState, state, errorMessage, nonRetryable);
-        maybeUpdateLeaderEpochMap(pk, leaderEpoch);
-        int newEpoch = currentStateEpoch + 1;
-        stateEpochMap.put(pk, newEpoch);
+        // luke
+        int currentLeaderEpoch = leaderEpochMap.getOrDefault(pk, leaderEpoch);
+        int newEpoch = currentStateEpoch;
+        if (currentState == state && currentStateEpoch == expectedStateEpoch && currentLeaderEpoch == leaderEpoch
+        && nonRetryable == (partitionMetadata.retryAttempt() == NON_RETRYABLE_ATTEMPT) && errorMessage != null && errorMessage.equals(partitionMetadata.errorMessage())) {
+            log.info("!!! Skipping to write the same partition state to partition: {}", tp);
+
+        } else {
+            metadataManager.updateFailureDetails(pk, currentState, state, errorMessage, nonRetryable);
+            maybeUpdateLeaderEpochMap(pk, leaderEpoch);
+            newEpoch = currentStateEpoch + 1;
+            stateEpochMap.put(pk, newEpoch);
+        }
 
         MirrorPartitionMetadata mp = MirrorPartitionMetadata.orEmpty(metadataManager.getPartitionMetadata(pk));
         var key = new MirrorPartitionStateKey()
@@ -359,6 +370,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                 .setErrorMessage(mp.errorMessage());
         CoordinatorRecord record = CoordinatorRecord.record(key,
                 new ApiMessageAndVersion(val, MirrorPartitionStateValue.HIGHEST_SUPPORTED_VERSION));
+        log.debug("writing partition state {} from {} to {} for the metadata {}", tp, currentState, state, record);
         return new CoordinatorResult<>(List.of(record), null);
     }
 
