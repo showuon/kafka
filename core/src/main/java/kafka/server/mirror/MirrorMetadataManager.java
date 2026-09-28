@@ -1160,7 +1160,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     /** Writes mirror partition states to local coordinator, batching all writes. */
     private CompletableFuture<WriteMirrorStatesResponseData> writeStateToLocalCoordinator(
             String mirrorName, Map<String, Set<MirrorStateWrite>> stateWrites) {
-        log.debug("Writing states to local coordinator for mirror {}", mirrorName);
+        log.info("!!! Writing states to local coordinator for mirror {} for states {}", mirrorName, stateWrites);
 
         if (coordinatorWriter.isEmpty()) {
             return CompletableFuture.completedFuture(new WriteMirrorStatesResponseData());
@@ -1920,6 +1920,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             }
         }
 
+        log.info("!!! executeRecoveryWrites for mirrorName={}, topics={}", mirrorName, localWrites);
         CompletableFuture<Void> localWriteFuture = localWrites.isEmpty() ?
                 CompletableFuture.completedFuture(null) :
                 coordinatorWriter.get().writePartitionStates(mirrorName, localWrites)
