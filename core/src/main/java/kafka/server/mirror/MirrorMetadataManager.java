@@ -804,15 +804,15 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         if (ex != null) {
             Throwable cause = (ex instanceof CompletionException && ex.getCause() != null) ? ex.getCause() : ex;
             if (cause instanceof CoordinatorLoadInProgressException) {
-                log.debug("Could not persist the partition {} state into controller because the controller is loading. " +
-                        "Retrying in {} ms.", tp, COORDINATOR_LOAD_RETRY_BACKOFF_MS);
+                log.debug("Failed to persist partition {}. Reason: The controller is loading. " +
+                        "Retrying in {} ms.", tp, mirrorName,  COORDINATOR_LOAD_RETRY_BACKOFF_MS);
                 scheduler.scheduleOnce("write-retry-" + tp,
                         () -> persistState(mirrorName, tp, state, errorMessage, nonRetryable),
                         COORDINATOR_LOAD_RETRY_BACKOFF_MS);
                 return;
             }
             if (cause instanceof FencedLeaderEpochException || cause instanceof FencedStateEpochException) {
-                log.info("Transition to {} fenced for partition {} due to stale epoch, reading and retrying.",
+                log.debug("Failed to transition to {} for partition {}. Reason: stale epoch. Retrying.",
                         state, tp);
                 readAndRetryTransition(mirrorName, tp, state, errorMessage, nonRetryable);
                 return;
@@ -847,11 +847,11 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 onStateTransition(mirrorName, tp, state);
             } else if (par.errorCode() == Errors.FENCED_LEADER_EPOCH.code()
                     || par.errorCode() == Errors.FENCED_STATE_EPOCH.code()) {
-                log.debug("Transition to {} fenced for partition {} due to stale epoch, retrying", state, tp);
+                log.debug("Failed to transition to {} for partition {}. Reason: stale epoch. Retrying.", state, tp);
                 readAndRetryTransition(mirrorName, tp, state, errorMessage, nonRetryable);
             } else if (par.errorCode() == Errors.COORDINATOR_LOAD_IN_PROGRESS.code()) {
-                log.debug("Could not persist the partition {} state into controller because the controller is loading. " +
-                                "Retrying in {} ms.", tp, COORDINATOR_LOAD_RETRY_BACKOFF_MS);
+                log.debug("Failed to persist partition {}. Reason: The controller is loading. " +
+                        "Retrying in {} ms.", tp, COORDINATOR_LOAD_RETRY_BACKOFF_MS);
                 scheduler.scheduleOnce("write-retry-" + tp,
                         () -> persistState(mirrorName, tp, state, errorMessage, nonRetryable),
                         COORDINATOR_LOAD_RETRY_BACKOFF_MS);
