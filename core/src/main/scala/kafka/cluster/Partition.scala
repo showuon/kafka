@@ -572,7 +572,7 @@ class Partition(val topicPartition: TopicPartition,
    */
   def isLeader: Boolean = leaderReplicaIdOpt.contains(localBrokerId)
 
-  private def shouldThrowSourceMetadataException(sourceEpochOpt: Optional[Int]): Boolean = {
+  private def shouldThrowSourceMetadataException(sourceEpochOpt: Optional[Integer]): Boolean = {
     getMirrorName().isPresent && isLeader && sourceEpochOpt.isEmpty
   }
 
