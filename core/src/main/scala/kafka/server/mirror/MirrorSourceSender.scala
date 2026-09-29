@@ -49,7 +49,7 @@ class MirrorSourceSender(sourceBroker: BrokerEndPoint,
     val channelBuilder = ChannelBuilders.clientChannelBuilder(
       SecurityProtocol.forName(mirrorConfig.securityProtocol()),
       JaasContext.Type.CLIENT,
-      mirrorConfig.getConfig(),
+      mirrorConfig,
       null,
       mirrorConfig.saslMechanism(),
       time,

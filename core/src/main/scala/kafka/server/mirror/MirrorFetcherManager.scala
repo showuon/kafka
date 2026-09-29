@@ -116,7 +116,7 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
         addPartitionsToFetcherThread(fetcherThread, initialFetchOffsets)
 
         // Initialize lag information for newly added partitions
-        initialFetchOffsets.foreach { case (topicPartition, initialState) =>
+        initialFetchOffsets.foreach { case (topicPartition, _) =>
           val lagKey = MirrorTopicPartition(remoteMirrorFetcherKey.mirrorName, topicPartition)
           // Initialize with 0 values until first fetch updates it
           val destinationOffset = replicaManager.getPartition(topicPartition) match {
@@ -135,16 +135,13 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
       throw new IllegalArgumentException("Mirror name must be provided for remote fetchers")
     }
 
-    val threadName = s"MirrorFetcherThread fetcherId=$fetcherId, srcBrokerId=${srcEndpoint.id}, " +
-      s"dstBrokerId=${brokerConfig.brokerId}, mirrorName=$mirrorName"
-    info(s"Creating $threadName")
-    val logContext = new LogContext(s"[$threadName] ")
+    val threadName = s"mirror-fetcher-$fetcherId-$mirrorName"
+    val logContext = new LogContext(s"[MirrorFetcherThread fetcherId=$fetcherId, srcEndpoint=$srcEndpoint, mirrorName=$mirrorName] ")
 
+    info(s"Creating $threadName")
     val mirrorProperties = metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName))
-    info(s"Using mirror properties for $mirrorName: ${mirrorProperties.keySet()}")
-    val mirrorConfig = ClusterMirrorConfig.fromProperties(mirrorProperties)
-    val clientId = s"fetcherId-$fetcherId-mirrorName-$mirrorName"
-    val sender = new MirrorSourceSender(srcEndpoint, mirrorConfig, metrics, time, srcEndpoint.id, clientId, logContext)
+    val mirrorConfig = ClusterMirrorConfig.fromProperties(mirrorProperties, true)
+    val sender = new MirrorSourceSender(srcEndpoint, mirrorConfig, metrics, time, srcEndpoint.id, threadName, logContext)
     val fetchSessionHandler = new FetchSessionHandler(logContext, srcEndpoint.id)
     val endpoint: LeaderEndPoint = new RemoteLeaderEndPoint(logContext.logPrefix, sender, fetchSessionHandler, brokerConfig,
       replicaManager, quotaManager, () => metadataCache.metadataVersion(), brokerEpochSupplier, isClusterMirror = true,
