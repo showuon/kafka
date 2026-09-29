@@ -19,55 +19,72 @@ package org.apache.kafka.server.mirror;
 import org.apache.kafka.common.EpochOffset;
 
 /**
- * Immutable snapshot of a mirror partition.
+ * Immutable snapshot of mirror partition metadata.
  *
  * @param state                 the current lifecycle state, or null if unknown
  * @param stateEpoch            monotonically increasing epoch incremented on every state transition
- * @param lastMirrorPosition    the last mirrored epoch and offset, or {@link EpochOffset#EMPTY} if not yet recorded
+ * @param lastPosition    the last mirrored epoch and offset, or {@link EpochOffset#EMPTY} if not yet recorded
  * @param errorMessage          the failure reason when in FAILED state, or null otherwise
  * @param retryAttempt          the retry count in FAILED state, 0 if not failed,
  *                              or {@link #NON_RETRYABLE_ATTEMPT} if non-retryable
  * @param prevState             the state before entering FAILED, or null if not applicable
  */
-public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch, EpochOffset lastMirrorPosition,
+public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch, EpochOffset lastPosition,
                                       String errorMessage, int retryAttempt, MirrorPartitionState prevState) {
     public static final MirrorPartitionMetadata EMPTY = new MirrorPartitionMetadata(MirrorPartitionState.UNKNOWN, 0, EpochOffset.EMPTY, null, 0, null);
     public static final int NON_RETRYABLE_ATTEMPT = -1;
 
+    public static class Builder {
+        private final MirrorPartitionMetadata existing;
+        private MirrorPartitionState state;
+        private Integer stateEpoch;
+        private EpochOffset lastPosition;
+        private String errorMessage;
+        private Integer retryAttempt;
+        private MirrorPartitionState prevState;
+
+        public Builder(MirrorPartitionMetadata existing) {
+            this.existing = orEmpty(existing);
+        }
+
+        public Builder withState(MirrorPartitionState state) {
+            this.state = state;
+            return this;
+        }
+
+        public Builder withStateEpoch(int stateEpoch) {
+            this.stateEpoch = stateEpoch;
+            return this;
+        }
+
+        public Builder withLastPosition(EpochOffset lastPosition) {
+            this.lastPosition = lastPosition;
+            return this;
+        }
+
+        public Builder withError(String errorMessage, int retryAttempt, MirrorPartitionState prevState) {
+            this.errorMessage = errorMessage;
+            this.retryAttempt = retryAttempt;
+            this.prevState = prevState;
+            return this;
+        }
+
+        public MirrorPartitionMetadata build() {
+            // Use existing values where builder hasn't set anything
+            MirrorPartitionState resultState = state != null ? state : existing.state;
+            int resultStateEpoch = stateEpoch != null ? stateEpoch : existing.stateEpoch;
+            EpochOffset resultLastPosition = lastPosition != null ? lastPosition : existing.lastPosition;
+            String resultErrorMessage = errorMessage != null ? errorMessage : existing.errorMessage;
+            int resultRetryAttempt = retryAttempt != null ? retryAttempt : existing.retryAttempt;
+            MirrorPartitionState resultPrevState = prevState != null ? prevState : existing.prevState;
+
+            return new MirrorPartitionMetadata(resultState, resultStateEpoch, resultLastPosition,
+                    resultErrorMessage, resultRetryAttempt, resultPrevState);
+        }
+    }
+
     public static MirrorPartitionMetadata orEmpty(MirrorPartitionMetadata mpm) {
         return mpm != null ? mpm : EMPTY;
-    }
-
-    public int lastMirrorEpoch() {
-        return lastMirrorPosition.epoch();
-    }
-
-    public long lastMirrorOffset() {
-        return lastMirrorPosition.offset();
-    }
-
-    public MirrorPartitionMetadata withState(MirrorPartitionState newState) {
-        return new MirrorPartitionMetadata(newState, stateEpoch, lastMirrorPosition, errorMessage, retryAttempt, prevState);
-    }
-
-    public MirrorPartitionMetadata withStateEpoch(int newStateEpoch) {
-        return new MirrorPartitionMetadata(state, newStateEpoch, lastMirrorPosition, errorMessage, retryAttempt, prevState);
-    }
-
-    public MirrorPartitionMetadata withLastMirrorPosition(EpochOffset newLastMirrorPosition) {
-        return new MirrorPartitionMetadata(state, stateEpoch, newLastMirrorPosition, errorMessage, retryAttempt, prevState);
-    }
-
-    public MirrorPartitionMetadata withLastMirrorEpoch(int newEpoch) {
-        return withLastMirrorPosition(new EpochOffset(newEpoch, lastMirrorPosition.offset()));
-    }
-
-    public MirrorPartitionMetadata withLastMirrorOffset(long newOffset) {
-        return withLastMirrorPosition(new EpochOffset(lastMirrorPosition.epoch(), newOffset));
-    }
-
-    public MirrorPartitionMetadata withError(String errorMessage, int retryAttempt, MirrorPartitionState previousState) {
-        return new MirrorPartitionMetadata(state, stateEpoch, lastMirrorPosition, errorMessage, retryAttempt, previousState);
     }
 
     @SuppressWarnings({"cyclomaticComplexity", "BooleanExpressionComplexity"})
@@ -81,9 +98,7 @@ public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch
                         || source == MirrorPartitionState.UNKNOWN
                         || source == MirrorPartitionState.STOPPED
                         || source == MirrorPartitionState.FAILED;
-            case EPOCH_FENCING:
-                return source == MirrorPartitionState.MIRRORING;
-            case ULE_RECOVERY:
+            case EPOCH_FENCING, ULE_RECOVERY, PAUSING:
                 return source == MirrorPartitionState.MIRRORING;
             case MIRRORING:
                 return source == MirrorPartitionState.LOG_ALIGNMENT
@@ -92,8 +107,6 @@ public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch
                         || source == MirrorPartitionState.ULE_RECOVERY
                         || source == MirrorPartitionState.FAILED
                         || source == MirrorPartitionState.MIRRORING;
-            case PAUSING:
-                return source == MirrorPartitionState.MIRRORING;
             case PAUSED:
                 return source == MirrorPartitionState.PAUSING;
             case STOPPING:
@@ -111,10 +124,6 @@ public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch
             default:
                 return false;
         }
-    }
-
-    public MirrorPartitionMetadata clearError() {
-        return new MirrorPartitionMetadata(state, stateEpoch, lastMirrorPosition, null, 0, null);
     }
 
     public int nextAttempt(boolean nonRetryable, int maxAttempts) {

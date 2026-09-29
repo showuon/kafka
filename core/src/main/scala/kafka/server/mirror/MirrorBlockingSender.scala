@@ -35,13 +35,13 @@ import scala.jdk.CollectionConverters._
 /**
  * BlockingSend implementation for {@link MirrorFetcherThread}.
  */
-class MirrorSourceSender(sourceBroker: BrokerEndPoint,
-                         mirrorConfig: ClusterMirrorConfig,
-                         metrics: Metrics,
-                         time: Time,
-                         fetcherId: Int,
-                         clientId: String,
-                         logContext: LogContext) extends BlockingSend {
+class MirrorBlockingSender(sourceBroker: BrokerEndPoint,
+                           mirrorConfig: ClusterMirrorConfig,
+                           metrics: Metrics,
+                           time: Time,
+                           fetcherId: Int,
+                           clientId: String,
+                           logContext: LogContext) extends BlockingSend {
   private val sourceNode = new Node(sourceBroker.id, sourceBroker.host, sourceBroker.port)
   private val socketTimeout: Int = mirrorConfig.socketTimeoutMs()
 

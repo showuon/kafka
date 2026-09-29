@@ -35,6 +35,7 @@ import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.coordinator.group.GroupConfigManager;
 import org.apache.kafka.coordinator.group.GroupCoordinator;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService;
+import org.apache.kafka.coordinator.mirror.MirrorMetadataCache;
 import org.apache.kafka.coordinator.share.ShareCoordinator;
 import org.apache.kafka.metadata.ConfigRepository;
 import org.apache.kafka.metadata.MetadataCache;
@@ -75,6 +76,7 @@ public class KafkaApisBuilder {
     private ShareCoordinator shareCoordinator = null;
     private ClusterMirrorCoordinatorService mirrorCoordinator = null;
     private MirrorMetadataManager mirrorMetadataManager = null;
+    private MirrorMetadataCache mirrorMetadataCache = null;
     private GroupConfigManager groupConfigManager = null;
     private Supplier<Long> brokerEpochSupplier = () -> -1L;
 
@@ -208,6 +210,11 @@ public class KafkaApisBuilder {
         return this;
     }
 
+    public KafkaApisBuilder setMirrorMetadataCache(MirrorMetadataCache mirrorMetadataCache) {
+        this.mirrorMetadataCache = mirrorMetadataCache;
+        return this;
+    }
+
     @SuppressWarnings({"CyclomaticComplexity"})
     public KafkaApis build() {
         if (requestChannel == null) throw new RuntimeException("you must set requestChannel");
@@ -230,6 +237,7 @@ public class KafkaApisBuilder {
         if (groupConfigManager == null) throw new RuntimeException("You must set groupConfigManager");
         if (mirrorCoordinator == null) throw new RuntimeException("You must set topicMirrorLinkCoordinator");
         if (mirrorMetadataManager == null) throw new RuntimeException("You must set mirrorMetadataManager");
+        if (mirrorMetadataCache == null) throw new RuntimeException("You must set mirrorMetadataCache");
 
         return new KafkaApis(requestChannel,
                              forwardingManager,
@@ -239,6 +247,7 @@ public class KafkaApisBuilder {
                              shareCoordinator,
                              mirrorCoordinator,
                              mirrorMetadataManager,
+                             mirrorMetadataCache,
                              autoTopicCreationManager,
                              brokerId,
                              config,

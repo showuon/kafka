@@ -17,18 +17,14 @@
 package kafka.server.mirror;
 
 import kafka.server.KafkaConfig;
-import kafka.server.mirror.MirrorStateCache.PendingLeaderEpochBump;
-import kafka.server.mirror.MirrorStateCache.SourceLeader;
+import kafka.server.ReplicaManager;
 
 import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AlterConfigOp;
-import org.apache.kafka.clients.admin.ClusterMirrorDescription;
 import org.apache.kafka.clients.admin.ClusterMirrorListing;
 import org.apache.kafka.clients.admin.Config;
 import org.apache.kafka.clients.admin.ConfigEntry;
-import org.apache.kafka.clients.admin.DescribeClusterMirrorsOptions;
-import org.apache.kafka.clients.admin.DescribeClusterMirrorsResult;
 import org.apache.kafka.clients.admin.GroupListing;
 import org.apache.kafka.clients.admin.ListClusterMirrorsOptions;
 import org.apache.kafka.clients.admin.ListConsumerGroupOffsetsSpec;
@@ -40,9 +36,7 @@ import org.apache.kafka.clients.admin.StartMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.StopMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
-import org.apache.kafka.common.EpochOffset;
 import org.apache.kafka.common.KafkaFuture;
-import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.acl.AclBinding;
@@ -53,7 +47,6 @@ import org.apache.kafka.common.errors.SecurityDisabledException;
 import org.apache.kafka.common.errors.UnknownMemberIdException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
-import org.apache.kafka.common.message.BumpLeaderEpochsRequestData;
 import org.apache.kafka.common.message.CreateAclsRequestData;
 import org.apache.kafka.common.message.CreatePartitionsRequestData;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
@@ -62,7 +55,6 @@ import org.apache.kafka.common.message.IncrementalAlterConfigsRequestData;
 import org.apache.kafka.common.message.StartMirrorTopicsRequestData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractResponse;
-import org.apache.kafka.common.requests.BumpLeaderEpochsRequest;
 import org.apache.kafka.common.requests.CreateAclsRequest;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
@@ -73,14 +65,14 @@ import org.apache.kafka.common.resource.ResourceType;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig;
+import org.apache.kafka.coordinator.mirror.MirrorMetadataCache;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.image.TopicImage;
-import org.apache.kafka.metadata.MetadataCache;
 import org.apache.kafka.metadata.authorizer.StandardAcl;
 import org.apache.kafka.server.common.ControllerRequestCompletionHandler;
 import org.apache.kafka.server.common.NodeToControllerChannelManager;
 import org.apache.kafka.server.metrics.KafkaMetricsGroup;
-import org.apache.kafka.server.mirror.MirrorPartitionKey;
+import org.apache.kafka.server.mirror.MirrorPartition;
 import org.apache.kafka.server.mirror.MirrorPartitionState;
 import org.apache.kafka.server.util.KafkaScheduler;
 import org.apache.kafka.server.util.MirrorUtils;
@@ -102,41 +94,42 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import scala.Option;
 
+import static kafka.server.mirror.MirrorMetadataManager.SourcePartitionState;
+import static kafka.server.mirror.MirrorMetadataManager.SourceTopicState;
 import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
 
 /**
- * Periodically syncs source cluster state (topic metadata, configs, group offsets, ACLs)
- * on every broker, and runs coordinator-only operations (topic creation, partition scaling,
- * pattern discovery) on the broker that leads the mirror's {@code __mirror_state} partition.
+ * Periodically syncs source cluster metadata on every broker.
  */
 @SuppressWarnings({"ClassDataAbstractionCoupling", "ClassFanOutComplexity"})
 class MirrorSourceSyncer {
-    static final int LEADER_EPOCH_BUMP_THRESHOLD = 3;
-    static final int LEADER_EPOCH_BUMP_INCREMENT = 10;
-
     private final Logger log;
     private final KafkaConfig brokerConfig;
+    private final String clusterId;
     private final int nodeId;
 
     private volatile ScheduledFuture<?> syncTaskSchedule;
+    private volatile MetadataImage metadataImage = MetadataImage.EMPTY;
 
     private final MirrorMetadataManager metadataManager;
+    private final Supplier<ReplicaManager> replicaManagerSupplier;
     private final NodeToControllerChannelManager controllerClient;
-    private final MirrorStateCache mirrorCache;
-    private final MetadataCache metadataCache;
+    private final MirrorMetadataCache mirrorCache;
     private final KafkaScheduler syncScheduler;
 
     private final ConcurrentHashMap<String, CompletableFuture<List<SourceTopicState>>> ongoingSyncs = new ConcurrentHashMap<>();
+    private final Set<String> pendingTopicCreations = ConcurrentHashMap.newKeySet();
+    private final Map<String, Set<String>> sourceDeletions = new ConcurrentHashMap<>();
 
     private final KafkaMetricsGroup metricsGroup;
     private final Meter metadataRefreshError;
@@ -147,10 +140,11 @@ class MirrorSourceSyncer {
 
     MirrorSourceSyncer(
         KafkaConfig brokerConfig,
+        String clusterId,
         MirrorMetadataManager metadataManager,
+        Supplier<ReplicaManager> replicaManagerSupplier,
         NodeToControllerChannelManager controllerClient,
-        MetadataCache metadataCache,
-        MirrorStateCache mirrorCache,
+        MirrorMetadataCache mirrorCache,
         KafkaMetricsGroup metricsGroup,
         Meter metadataRefreshError,
         Meter topicConfigSyncError,
@@ -159,14 +153,15 @@ class MirrorSourceSyncer {
         Meter aclSyncError
     ) {
         this.brokerConfig = brokerConfig;
+        this.clusterId = clusterId;
         this.nodeId = brokerConfig.nodeId();
         String name = "[" + MirrorSourceSyncer.class.getSimpleName() + " brokerId=" + nodeId + "] ";
         this.log = new LogContext(name).logger(MirrorSourceSyncer.class);
 
         this.metadataManager = metadataManager;
+        this.replicaManagerSupplier = replicaManagerSupplier;
         this.controllerClient = controllerClient;
         this.mirrorCache = mirrorCache;
-        this.metadataCache = metadataCache;
 
         this.syncScheduler = new KafkaScheduler(1, true, "mirror-syncer-");
         this.syncScheduler.startup();
@@ -179,9 +174,15 @@ class MirrorSourceSyncer {
         this.aclSyncError = aclSyncError;
     }
 
+    void updateMetadataImage(MetadataImage newImage) {
+        this.metadataImage = newImage;
+    }
+
     void close() {
         try {
             syncScheduler.shutdown();
+            pendingTopicCreations.clear();
+            sourceDeletions.clear();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("Interrupted while shutting down sync scheduler", e);
@@ -194,7 +195,7 @@ class MirrorSourceSyncer {
      * by a single broker per mirror.
      */
     boolean isLocalCoordinatorFor(String mirrorName) {
-        MetadataImage image = metadataManager.metadataImage();
+        MetadataImage image = metadataImage;
         if (image.topics().getTopic(MIRROR_STATE_TOPIC_NAME) != null) {
             int partition = Utils.abs(mirrorName.hashCode())
                 % brokerConfig.mirrorConfig().stateTopicNumPartitions();
@@ -222,7 +223,7 @@ class MirrorSourceSyncer {
 
     private void updateMirrorTopicMetrics(String mirrorName) {
         metricsGroup.newGauge("MirrorTopicCount",
-                () -> metadataManager.getMirrorTopics(mirrorName, EnumSet.of(MirrorPartitionState.MIRRORING)).size(),
+                () -> mirrorCache.getMirrorTopics(mirrorName, EnumSet.of(MirrorPartitionState.MIRRORING)).size(),
                 Map.of("mirrorName", mirrorName));
     }
 
@@ -234,7 +235,7 @@ class MirrorSourceSyncer {
     private void runSourceClusterSync() {
         retryPendingTombstoneWrites();
 
-        Set<String> mirrors = metadataManager.getMirrorNames();
+        Set<String> mirrors = mirrorCache.getMirrorNames();
         if (mirrors.isEmpty()) {
             return;
         }
@@ -254,14 +255,14 @@ class MirrorSourceSyncer {
     }
 
     private void retryPendingTombstoneWrites() {
-        Set<String> configuredMirrors = metadataManager.getMirrorNames();
-        Set<String> staleMirrors = mirrorCache.getPartitionKeys().stream()
-                .map(MirrorPartitionKey::mirrorName)
+        Set<String> configuredMirrors = mirrorCache.getMirrorNames();
+        Set<String> staleMirrors = mirrorCache.getMirrorPartitions().stream()
+                .map(MirrorPartition::mirrorName)
                 .filter(name -> !configuredMirrors.contains(name))
                 .collect(Collectors.toSet());
         for (String mirrorName : staleMirrors) {
             log.info("Found stale partition states for deleted mirror {}. Writing tombstones.", mirrorName);
-            metadataManager.tombstoneMirror(mirrorName);
+            metadataManager.writeTombstoneRecords(mirrorName);
             metricsGroup.removeMetric("MirrorTopicCount", Map.of("mirrorName", mirrorName));
         }
     }
@@ -272,7 +273,7 @@ class MirrorSourceSyncer {
             var clusterResult = srcAdmin.describeCluster();
             String newClusterId = clusterResult.clusterId().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
             if (newClusterId != null && !newClusterId.isEmpty()) {
-                String previousClusterId = metadataManager.getSourceClusterId(mirrorName);
+                String previousClusterId = mirrorCache.getSourceClusterId(mirrorName);
                 if (previousClusterId != null && !previousClusterId.equals(newClusterId)) {
                     String errMsg = "Source cluster ID changed for mirror " + mirrorName
                             + ": expected " + previousClusterId + ", got " + newClusterId
@@ -280,12 +281,12 @@ class MirrorSourceSyncer {
                             + "Moving all partitions to non-retryable failed state.";
                     log.error(errMsg);
 
-                    Set<String> mirrorTopics = metadataManager.getMirrorTopics(mirrorName,
+                    Set<String> mirrorTopics = mirrorCache.getMirrorTopics(mirrorName,
                             EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED, MirrorPartitionState.STOPPED));
                     if (!mirrorTopics.isEmpty()) {
                         Set<TopicPartition> mirrorLeaderPartitions = new HashSet<>();
                         for (String topic : mirrorTopics) {
-                            TopicImage topicImage = metadataManager.metadataImage().topics().getTopic(topic);
+                            TopicImage topicImage = metadataImage.topics().getTopic(topic);
                             if (topicImage != null) {
                                 topicImage.partitions().forEach((partitionId, partition) -> {
                                     if (partition.leader == nodeId) {
@@ -359,7 +360,7 @@ class MirrorSourceSyncer {
         }
         String topicName = topicPartition.topic();
         for (ClusterMirrorListing sourceMirror : sourceMirrors) {
-            if (!metadataManager.clusterId().equals(sourceMirror.sourceClusterId())) {
+            if (!clusterId.equals(sourceMirror.sourceClusterId())) {
                 continue;
             }
             if (sourceMirror.topicNames().contains(topicName)) {
@@ -412,7 +413,7 @@ class MirrorSourceSyncer {
 
     private List<SourceTopicState> doSyncSourceTopicMetadata(String mirrorName) {
         log.info("Syncing source topic state for mirror {}", mirrorName);
-        Set<String> topics = metadataManager.getMirrorTopics(mirrorName,
+        Set<String> topics = mirrorCache.getMirrorTopics(mirrorName,
                 EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED, MirrorPartitionState.STOPPED));
         if (topics.isEmpty()) {
             return List.of();
@@ -461,8 +462,8 @@ class MirrorSourceSyncer {
 
             ti.partitions().forEach(pi -> {
                 if (pi.leader() != null) {
-                    mirrorCache.updateSourceLeader(mirrorName, pi.topicPartition(),
-                            new SourceLeader(pi.leader(), pi.leaderEpoch().orElse(0)));
+                    mirrorCache.updateSourceClusterLeader(mirrorName, pi.topicPartition(),
+                            new MirrorMetadataCache.SourceClusterLeader(pi.leader(), pi.leaderEpoch().orElse(0)));
                 }
             });
 
@@ -470,8 +471,8 @@ class MirrorSourceSyncer {
             // Name-based lookup cannot detect topic delete-and-recreate on the source. If this
             // happens, the operator must stop mirroring and delete the destination topic manually.
             TopicImage destTopic = !ti.topicId().equals(Uuid.ZERO_UUID)
-                    ? metadataManager.metadataImage().topics().getTopic(ti.topicId())
-                    : metadataManager.metadataImage().topics().getTopic(ti.topic());
+                    ? metadataImage.topics().getTopic(ti.topicId())
+                    : metadataImage.topics().getTopic(ti.topic());
 
             if (destTopic != null && destTopic.partitions().size() < sourcePartitionCount) {
                 createPartitionsTopics.add(new CreatePartitionsRequestData.CreatePartitionsTopic()
@@ -480,9 +481,9 @@ class MirrorSourceSyncer {
                         .setAssignments(null)
                 );
             } else if (destTopic == null &&
-                    metadataManager.metadataImage().topics().getTopic(ti.topic()) == null &&
+                    metadataImage.topics().getTopic(ti.topic()) == null &&
                     ti.exists() && sourcePartitionCount > 0) {
-                if (mirrorCache.addPendingTopicCreation(ti.topic())) {
+                if (pendingTopicCreations.add(ti.topic())) {
                     creatableTopics.add(new CreateTopicsRequestData.CreatableTopic()
                             .setName(ti.topic())
                             .setNumPartitions(sourcePartitionCount)
@@ -491,11 +492,11 @@ class MirrorSourceSyncer {
                                     ti.topicId().equals(Uuid.ZERO_UUID) ? Uuid.randomUuid() : ti.topicId())));
                 }
             } else if (destTopic == null &&
-                    metadataManager.metadataImage().topics().getTopic(ti.topic()) != null &&
+                    metadataImage.topics().getTopic(ti.topic()) != null &&
                     ti.exists()) {
                 log.error("Topic {} exists on destination cluster with ID {} but source cluster has ID {}. "
                                 + "Delete the topic on destination and let auto-creation recreate it with the correct ID.",
-                        ti.topic(), metadataManager.metadataImage().topics().getTopic(ti.topic()).id(), ti.topicId());
+                        ti.topic(), metadataImage.topics().getTopic(ti.topic()).id(), ti.topicId());
             }
         });
 
@@ -525,14 +526,14 @@ class MirrorSourceSyncer {
         ControllerRequestCompletionHandler requestCompletionHandler = new ControllerRequestCompletionHandler() {
             @Override
             public void onTimeout() {
-                topicNames.forEach(mirrorCache::removePendingTopicCreation);
+                topicNames.forEach(name -> pendingTopicCreations.remove(name));
                 log.warn("Create mirror topics timed out for {}", topicNames);
                 metadataRefreshError.mark();
             }
 
             @Override
             public void onComplete(ClientResponse response) {
-                topicNames.forEach(mirrorCache::removePendingTopicCreation);
+                topicNames.forEach(name -> pendingTopicCreations.remove(name));
                 if (response.versionMismatch() != null || response.authenticationException() != null || response.wasDisconnected()) {
                     metadataRefreshError.mark();
                     return;
@@ -590,14 +591,15 @@ class MirrorSourceSyncer {
             return;
         }
 
-        Set<String> allTopics = metadataManager.getMirrorTopics(mirrorName,
+        Set<String> allTopics = mirrorCache.getMirrorTopics(mirrorName,
                 EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED, MirrorPartitionState.STOPPED));
         allTopics.forEach(name -> {
             if (deletedSourceTopicNames.contains(name)) {
-                if (mirrorCache.isSourceDeletion(mirrorName, name)) {
+                Set<String> topics = sourceDeletions.get(mirrorName);
+                if (topics != null && topics.contains(name)) {
                     log.info("Detected topic {} deleted in source cluster {}, marking partitions as failed (non retryable)", name, mirrorName);
-                    mirrorCache.removeSourceDeletion(mirrorName, name);
-                    TopicImage topicImage = metadataManager.metadataImage().topics().getTopic(name);
+                    topics.remove(name);
+                    TopicImage topicImage = metadataImage.topics().getTopic(name);
                     if (topicImage != null) {
                         topicImage.partitions().forEach((partitionId, partition) ->
                                 metadataManager.transitionTo(mirrorName, Set.of(new TopicPartition(name, partitionId)),
@@ -605,10 +607,13 @@ class MirrorSourceSyncer {
                     }
                 } else {
                     log.debug("Topic {} not found in source cluster {}, pending deletion confirmation on next sync", name, mirrorName);
-                    mirrorCache.addSourceDeletion(mirrorName, name);
+                    sourceDeletions.computeIfAbsent(mirrorName, k -> ConcurrentHashMap.newKeySet()).add(name);
                 }
             } else {
-                mirrorCache.removeSourceDeletion(mirrorName, name);
+                Set<String> topics = sourceDeletions.get(mirrorName);
+                if (topics != null) {
+                    topics.remove(name);
+                }
             }
         });
     }
@@ -619,17 +624,17 @@ class MirrorSourceSyncer {
      * on destination metadata changes, it will not retry on its own.
      */
     private void maybeStartMissedPartitions(String mirrorName) {
-        var partitionLeaders = mirrorCache.getSourceLeaders(mirrorName);
+        var partitionLeaders = mirrorCache.getSourceClusterLeaders(mirrorName);
         if (partitionLeaders == null) {
             return;
         }
         partitionLeaders.keySet().forEach(tp -> {
-            var key = MirrorPartitionKey.of(mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
+            var key = MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
             var cachedEntry = mirrorCache.getPartitionMetadata(key);
             if (cachedEntry != null && cachedEntry.state() != null && cachedEntry.state() != MirrorPartitionState.UNKNOWN) {
                 return;
             }
-            TopicImage topicImage = metadataManager.metadataImage().topics().getTopic(tp.topic());
+            TopicImage topicImage = metadataImage.topics().getTopic(tp.topic());
             if (topicImage == null) {
                 return;
             }
@@ -658,12 +663,12 @@ class MirrorSourceSyncer {
         try {
             log.info("Syncing source configs and offsets for mirror {}", mirrorName);
             ClusterMirrorConfig mirrorConfig = ClusterMirrorConfig.fromProperties(
-                    metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName)));
+                    mirrorCache.getResourceConfig(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName)));
             syncTopicConfigs(mirrorName, mirrorConfig);
             syncGroupOffsets(mirrorName, mirrorConfig);
             syncAcls(mirrorName, mirrorConfig);
-            if (!metadataManager.getMirrorTopics(mirrorName, EnumSet.of(MirrorPartitionState.MIRRORING)).isEmpty()) {
-                maybeBumpLeaderEpochs(mirrorName, sourceTopicStates, Set.of());
+            if (!mirrorCache.getMirrorTopics(mirrorName, EnumSet.of(MirrorPartitionState.MIRRORING)).isEmpty()) {
+                metadataManager.maybeBumpLeaderEpochs(mirrorName, sourceTopicStates, Set.of());
             }
             discoverTopicsByPattern(mirrorName, mirrorConfig);
             enforceExcludePatterns(mirrorName, mirrorConfig);
@@ -676,7 +681,7 @@ class MirrorSourceSyncer {
     private void syncTopicConfigs(String mirrorName, ClusterMirrorConfig mirrorConfig) {
         Admin srcAdmin = metadataManager.getOrCreateSourceAdmin(mirrorName);
 
-        Set<String> topics = metadataManager.getMirrorTopics(mirrorName, EnumSet.of(MirrorPartitionState.MIRRORING));
+        Set<String> topics = mirrorCache.getMirrorTopics(mirrorName, EnumSet.of(MirrorPartitionState.MIRRORING));
         log.debug("Describing topic configs for topics {}", topics);
 
         Collection<ConfigResource> resources = topics.stream()
@@ -701,7 +706,7 @@ class MirrorSourceSyncer {
 
         sourceConfigs.forEach((resource, config) -> {
             if (resource.type() == ConfigResource.Type.TOPIC) {
-                Properties props = metadataCache.topicConfig(resource.name());
+                Properties props = mirrorCache.getTopicConfig(resource.name());
                 Map<String, String> conChange = new HashMap<>();
 
                 config.entries().forEach(entry -> {
@@ -761,7 +766,7 @@ class MirrorSourceSyncer {
     private void syncGroupOffsets(String mirrorName, ClusterMirrorConfig mirrorConfig) {
         Admin srcAdmin = metadataManager.getOrCreateSourceAdmin(mirrorName);
 
-        Set<String> mirrorTopics = metadataManager.getMirrorTopics(mirrorName, EnumSet.of(MirrorPartitionState.MIRRORING));
+        Set<String> mirrorTopics = mirrorCache.getMirrorTopics(mirrorName, EnumSet.of(MirrorPartitionState.MIRRORING));
         if (mirrorTopics.isEmpty()) {
             return;
         }
@@ -841,11 +846,11 @@ class MirrorSourceSyncer {
                     log.debug("Committing consumer group offsets for group {} on destination, partitions={}", groupId, filtered.keySet());
                     metadataManager.getOrCreateDestAdmin().alterConsumerGroupOffsets(groupId, filtered)
                         .all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
-                } catch (Exception e) {
-                    if (e instanceof ExecutionException && e.getCause() instanceof UnknownMemberIdException) {
-                        log.debug("Skipped consumer group offset sync for active group {} in mirror {}", groupId, mirrorName);
+                } catch (Exception ex) {
+                    if (ex instanceof ExecutionException && ex.getCause() instanceof UnknownMemberIdException) {
+                        log.debug("Skipped consumer group offset sync for active group {}", groupId);
                     } else {
-                        log.warn("Failed to commit consumer group offsets for group {} in mirror {}", groupId, mirrorName, e);
+                        log.warn("Failed to commit consumer group offsets for group {}", groupId, ex);
                         consumerGroupOffsetSyncError.mark();
                     }
                 }
@@ -916,11 +921,11 @@ class MirrorSourceSyncer {
                 try {
                     log.debug("Committing share group offsets for group {} on destination, partitions={}", groupId, filtered.keySet());
                     metadataManager.getOrCreateDestAdmin().alterShareGroupOffsets(groupId, filtered).all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
-                } catch (Exception e) {
-                    if (e instanceof ExecutionException && e.getCause() instanceof GroupNotEmptyException) {
-                        log.error("Skipped share group offset sync for active group {} in mirror {}", groupId, mirrorName);
+                } catch (Exception ex) {
+                    if (ex instanceof ExecutionException && ex.getCause() instanceof GroupNotEmptyException) {
+                        log.error("Skipped share group offset sync for active group {}", groupId);
                     } else {
-                        log.warn("Failed to commit share group offsets for group {} in mirror {}", groupId, mirrorName, e);
+                        log.warn("Failed to commit share group offsets for group {}", groupId, ex);
                         shareGroupOffsetSyncError.mark();
                     }
                 }
@@ -953,7 +958,7 @@ class MirrorSourceSyncer {
         Map<TopicPartition, OffsetSpec> latestSpecs = new HashMap<>();
 
         for (TopicPartition tp : partitions) {
-            Option<UnifiedLog> localLog = metadataManager.replicaManagerSupplier().get().getLog(tp);
+            Option<UnifiedLog> localLog = replicaManagerSupplier.get().getLog(tp);
             if (localLog.isDefined()) {
                 UnifiedLog ulog = localLog.get();
                 long startOffset = ulog.logStartOffset();
@@ -1021,7 +1026,7 @@ class MirrorSourceSyncer {
     private SourceAclChanges detectAclChanges(List<AclBinding> sourceAcls) {
         var addACLsList = new ArrayList<AclBinding>();
         var deleteACLsList = new ArrayList<AclBinding>();
-        var current = metadataManager.metadataImage().acls().acls().values();
+        var current = metadataImage.acls().acls().values();
 
         sourceAcls.forEach(acl -> {
             if (current.stream().map(StandardAcl::toBinding).noneMatch(a -> a.equals(acl))) {
@@ -1029,7 +1034,7 @@ class MirrorSourceSyncer {
             }
         });
 
-        metadataManager.metadataImage().acls().acls().values().forEach(acl -> {
+        metadataImage.acls().acls().values().forEach(acl -> {
             if (acl.resourceType() != ResourceType.CLUSTER_MIRROR && !sourceAcls.contains(acl.toBinding())) {
                 deleteACLsList.add(acl.toBinding());
             }
@@ -1084,7 +1089,7 @@ class MirrorSourceSyncer {
 
         Admin srcAdmin = metadataManager.getOrCreateSourceAdmin(mirrorName);
 
-        Set<String> configuredTopics = metadataManager.getMirrorTopics(mirrorName,
+        Set<String> configuredTopics = mirrorCache.getMirrorTopics(mirrorName,
                 EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED, MirrorPartitionState.STOPPED));
         final Pattern topicsExcludePattern = mirrorConfig.topicsExcludePattern();
 
@@ -1148,7 +1153,7 @@ class MirrorSourceSyncer {
         Pattern excludePattern = mirrorConfig.topicsExcludePattern();
         if (excludePattern == null) return;
 
-        Set<String> activeTopics = metadataManager.getMirrorTopics(mirrorName, EnumSet.of(MirrorPartitionState.MIRRORING));
+        Set<String> activeTopics = mirrorCache.getMirrorTopics(mirrorName, EnumSet.of(MirrorPartitionState.MIRRORING));
         Set<String> excludedTopics = activeTopics.stream()
                 .filter(topic -> excludePattern.matcher(topic).matches())
                 .collect(Collectors.toSet());
@@ -1169,117 +1174,6 @@ class MirrorSourceSyncer {
         }
     }
 
-    /** Schedules a source topic state sync followed by a leader epoch bump request. */
-    CompletableFuture<Void> scheduleBumpLeaderEpoch(String mirrorName, TopicPartition tp) {
-        CompletableFuture<Void> future = new CompletableFuture<>();
-        syncScheduler.scheduleOnce("bump-leader-epoch-" + tp, () -> {
-            List<SourceTopicState> sourceTopicStates = syncSourceTopicMetadata(mirrorName);
-            maybeBumpLeaderEpochs(mirrorName, sourceTopicStates, Set.of(tp))
-                    .whenComplete((v, ex) -> {
-                        if (ex != null) {
-                            future.completeExceptionally(ex);
-                        } else {
-                            future.complete(null);
-                        }
-                    });
-        });
-        return future;
-    }
-
-    private CompletableFuture<Void> maybeBumpLeaderEpochs(String mirrorName, List<SourceTopicState> sourceTopicStates, Set<TopicPartition> topicPartitions) {
-        return sendBumpLeaderEpochs(buildSourceEpochBumpTargets(mirrorName, sourceTopicStates, topicPartitions))
-                .whenComplete((v, ex) -> {
-                    if (ex != null) log.warn("Failed to bump leader epoch for mirror {}", mirrorName, ex);
-                });
-    }
-
-    /** Sends an AlterPartition request to bump leader epochs on the destination. */
-    CompletableFuture<Void> sendBumpLeaderEpochs(Map<TopicPartition, Integer> partitionMinEpochs) {
-        if (partitionMinEpochs.isEmpty()) {
-            return CompletableFuture.completedFuture(null);
-        }
-
-        log.info("Sending bump leader epoch request: {}", partitionMinEpochs);
-        CompletableFuture<Void> future = new CompletableFuture<>();
-
-        List<BumpLeaderEpochsRequestData.TopicState> topicStates = new ArrayList<>();
-        Map<String, Set<Integer>> partitions = new HashMap<>();
-        partitionMinEpochs.keySet().forEach(
-                tp -> partitions.computeIfAbsent(tp.topic(), key -> new HashSet<>()).add(tp.partition()));
-        partitions.forEach((topic, parts) -> {
-            BumpLeaderEpochsRequestData.TopicState topicState = new BumpLeaderEpochsRequestData.TopicState();
-            List<BumpLeaderEpochsRequestData.LeaderEpochState> topicLeaderEpoch = new ArrayList<>();
-            parts.forEach(partitionId -> {
-                TopicPartition tp = new TopicPartition(topic, partitionId);
-                topicLeaderEpoch.add(new BumpLeaderEpochsRequestData.LeaderEpochState()
-                        .setMinLeaderEpoch(partitionMinEpochs.get(tp)).setPartitionIndex(partitionId));
-            });
-            topicState.setTopicName(topic).setPartitions(topicLeaderEpoch);
-            topicStates.add(topicState);
-        });
-
-        mirrorCache.addPendingEpochBump(new PendingLeaderEpochBump(future, new ConcurrentHashMap<>(partitionMinEpochs)));
-        metadataManager.maybeCompletePendingEpochBumps();
-
-        controllerClient.sendRequest(new BumpLeaderEpochsRequest.Builder(
-                new BumpLeaderEpochsRequestData().setTopics(topicStates)
-        ), new ControllerRequestCompletionHandler() {
-            @Override
-            public void onComplete(ClientResponse response) {
-                log.debug("Bump leader epoch response: {}", response);
-            }
-
-            @Override
-            public void onTimeout() {
-                log.warn("BumpLeaderEpoch request timed out");
-            }
-        });
-        return future;
-    }
-
-    private Map<TopicPartition, Integer> buildSourceEpochBumpTargets(String mirrorName, List<SourceTopicState> sourceTopicStates, Set<TopicPartition> topicPartitions) {
-        Set<String> mirrorTopics = topicPartitions.isEmpty()
-                ? metadataManager.getMirrorTopics(mirrorName, EnumSet.of(MirrorPartitionState.MIRRORING))
-                : Set.of();
-        Map<TopicPartition, Integer> leaderEpochFromMetadata = new HashMap<>();
-        for (SourceTopicState ts : sourceTopicStates) {
-            if (!ts.exists()) {
-                continue;
-            }
-            if (!mirrorTopics.isEmpty() && !mirrorTopics.contains(ts.topic())) {
-                continue;
-            }
-            collectEpochBumpTargets(ts, topicPartitions, leaderEpochFromMetadata);
-        }
-        if (!leaderEpochFromMetadata.isEmpty()) {
-            log.info("Bumping leader epoch for partitions {}", leaderEpochFromMetadata);
-        }
-        return leaderEpochFromMetadata;
-    }
-
-    private void collectEpochBumpTargets(SourceTopicState topicInfo,
-                                         Set<TopicPartition> topicPartitions,
-                                         Map<TopicPartition, Integer> leaderEpochFromMetadata) {
-        for (SourcePartitionState ps : topicInfo.partitions()) {
-            TopicPartition tp = ps.topicPartition();
-            if (!topicPartitions.isEmpty() && !topicPartitions.contains(tp)) {
-                continue;
-            }
-            if (ps.leaderEpoch().isEmpty()) {
-                continue;
-            }
-            TopicImage topicImage = metadataManager.metadataImage().topics().getTopic(tp.topic());
-            if (topicImage == null || topicImage.partitions().get(tp.partition()) == null) {
-                continue;
-            }
-            int epoch = ps.leaderEpoch().get();
-            int localEpoch = topicImage.partitions().get(tp.partition()).leaderEpoch;
-            if (epoch > localEpoch - LEADER_EPOCH_BUMP_THRESHOLD) {
-                int newEpoch = Math.addExact(epoch, LEADER_EPOCH_BUMP_INCREMENT);
-                leaderEpochFromMetadata.put(tp, newEpoch);
-            }
-        }
-    }
 
     /**
      * Pre-populates sourceLeaders for discovered topics so that when onMetadataUpdate fires
@@ -1291,78 +1185,10 @@ class MirrorSourceSyncer {
     private void cacheSourceLeaders(String mirrorName, Collection<TopicDescription> descriptions) {
         descriptions.forEach(td -> td.partitions().forEach(pi -> {
             if (pi.leader() != null) {
-                mirrorCache.updateSourceLeader(mirrorName, new TopicPartition(td.name(), pi.partition()),
-                        new SourceLeader(pi.leader(), pi.leaderEpoch().orElse(0)));
+                mirrorCache.updateSourceClusterLeader(mirrorName, new TopicPartition(td.name(), pi.partition()),
+                        new MirrorMetadataCache.SourceClusterLeader(pi.leader(), pi.leaderEpoch().orElse(0)));
             }
         }));
-    }
-
-    /**
-     * Validates that all partitions about to be mirrored are in STOPPED state on the source cluster,
-     * for any source mirror that was previously mirroring from this local cluster. This prevents
-     * starting replication while the reverse direction is still active.
-     *
-     * @param sourceDescription described mirrors from the source cluster
-     * @param sourceMirrors listed mirrors from the source cluster
-     * @param tp partitions about to start mirroring
-     * @throws IllegalStateException if any partition is not STOPPED
-     */
-    private void validateSourcePartitionIsStopped(
-            Map<String, ClusterMirrorDescription> sourceDescription,
-            Collection<ClusterMirrorListing> sourceMirrors,
-            TopicPartition tp) {
-        List<String> localClusterSourceMirrors = sourceMirrors.stream()
-                .filter(sm -> sm.sourceClusterId().equals(metadataManager.clusterId()))
-                .map(ClusterMirrorListing::mirrorName)
-                .toList();
-
-        for (String mirrorName : localClusterSourceMirrors) {
-            ClusterMirrorDescription desc = sourceDescription.get(mirrorName);
-            if (desc == null) {
-                continue;
-            }
-            Set<ClusterMirrorDescription.LeaderStateDescription> leaderStates = desc.leaderStates().get(tp.topic());
-            if (leaderStates == null) {
-                continue;
-            }
-            boolean notStopped = leaderStates.stream()
-                    .anyMatch(lsd -> lsd.topicPartition().equals(tp)
-                            && !MirrorPartitionState.STOPPED.name().equals(lsd.state()));
-            if (notStopped) {
-                log.error("Source mirror(s) {} mirroring from this cluster ({}) have not stopped for partition {}",
-                        localClusterSourceMirrors, metadataManager.clusterId(), tp);
-                throw new IllegalStateException("Source mirror(s) " + localClusterSourceMirrors
-                        + " mirroring from this cluster (" + metadataManager.clusterId() + ") have not stopped for partition " + tp);
-            }
-        }
-    }
-
-    /** Looks up last mirror epochs from the source cluster for failback truncation. */
-    CompletionStage<Map<TopicPartition, EpochOffset>> sendLastMirrorEpochLookup(
-            String mirrorName, TopicPartition tp, Collection<ClusterMirrorListing> sourceMirrors) {
-        Admin admin = metadataManager.getOrCreateSourceAdmin(mirrorName);
-        log.info("Last mirror epoch lookup request for mirror {}: topic={} partition={}", mirrorName, tp.topic(), tp.partition());
-
-        // Use Topics filter to specify which partitions to look up.
-        // LME is retrieved from the mirror coordinator along with mirror state.
-        Map<String, List<Integer>> topicPartitions = Map.of(tp.topic(), List.of(tp.partition()));
-        DescribeClusterMirrorsOptions options = new DescribeClusterMirrorsOptions()
-                .clusterId(metadataManager.clusterId())
-                .includeMirrorState(true);
-        DescribeClusterMirrorsResult result = admin.describeClusterMirrors(null, topicPartitions, options);
-
-        var describeFuture = result.allDescriptions().toCompletionStage().toCompletableFuture();
-        var lastMirrorPositionFuture = result.lastMirrorPositions().toCompletionStage().toCompletableFuture();
-        return describeFuture.thenApply(desc -> {
-            validateSourcePartitionIsStopped(desc, sourceMirrors, tp);
-            return null;
-        })
-            .thenCompose(__ -> lastMirrorPositionFuture)
-            .thenApply(lastMirrorPositions -> {
-                log.info("Last mirror epoch lookup response for mirror {}: {}", mirrorName, lastMirrorPositions);
-                return lastMirrorPositions;
-            })
-            .orTimeout(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
     }
 
     record TimeoutHandler(Logger log, Meter errorMeter) implements ControllerRequestCompletionHandler {
@@ -1393,8 +1219,6 @@ class MirrorSourceSyncer {
         }
     }
 
-    record SourceTopicState(String topic, Uuid topicId, boolean exists, List<SourcePartitionState> partitions) { }
-    record SourcePartitionState(TopicPartition topicPartition, Node leader, Optional<Integer> leaderEpoch) { }
     record SourceAclChanges(List<AclBinding> aclsToAdd, List<AclBinding> aclsToDelete) { }
     record PartitionLogInfo(long logStartOffset, int logStartEpoch, long logEndOffset, int logEndEpoch) { }
 }

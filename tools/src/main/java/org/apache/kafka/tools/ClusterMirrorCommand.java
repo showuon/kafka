@@ -20,7 +20,6 @@ import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.ClusterMirrorDescription;
 import org.apache.kafka.clients.admin.ClusterMirrorListing;
-import org.apache.kafka.clients.admin.Config;
 import org.apache.kafka.clients.admin.CreateClusterMirrorOptions;
 import org.apache.kafka.clients.admin.CreateClusterMirrorResult;
 import org.apache.kafka.clients.admin.DeleteClusterMirrorOptions;
@@ -244,25 +243,6 @@ public abstract class ClusterMirrorCommand {
         private static Admin createAdminClient(Optional<String> bootstrapServer, Properties commandConfig) {
             bootstrapServer.ifPresent(s -> commandConfig.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, s));
             return Admin.create(commandConfig);
-        }
-
-        private Config describeMirrorConfig(String mirrorName) throws Exception {
-            ConfigResource mirrorConfigResource = new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName);
-            var configResult = adminClient.describeConfigs(List.of(mirrorConfigResource)).all().get();
-            var mirrorConfigEntries = configResult.get(mirrorConfigResource);
-
-            if (mirrorConfigEntries == null || mirrorConfigEntries.entries().isEmpty()) {
-                throw new RuntimeException("Mirror '" + mirrorName + "' not found or has no configuration");
-            }
-            return mirrorConfigEntries;
-        }
-
-        private static Properties toProperties(Config config) {
-            Properties props = new Properties();
-            for (var entry : config.entries()) {
-                props.put(entry.name(), entry.value());
-            }
-            return props;
         }
 
         private List<PartitionInfo> collectPartitionInfos(Map<String, ClusterMirrorDescription> descriptions) {

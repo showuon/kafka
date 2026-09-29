@@ -22,6 +22,7 @@ import kafka.network.RequestChannel
 import kafka.server.QuotaFactory.{QuotaManagers, UNBOUNDED_QUOTA}
 import kafka.server.handlers.DescribeTopicPartitionsRequestHandler
 import kafka.server.mirror.MirrorMetadataManager
+import org.apache.kafka.coordinator.mirror.MirrorMetadataCache
 import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService
 import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService.MirrorStateWrite
 import org.apache.kafka.server.mirror.MirrorPartitionState
@@ -101,6 +102,7 @@ class KafkaApis(val requestChannel: RequestChannel,
                 val shareCoordinator: ShareCoordinator,
                 val clusterMirrorCoordinator: ClusterMirrorCoordinatorService,
                 val mirrorMetadataManager: MirrorMetadataManager,
+                val mirrorMetadataCache: MirrorMetadataCache,
                 val autoTopicCreationManager: AutoTopicCreationManager,
                 val brokerId: Int,
                 val config: KafkaConfig,
@@ -4554,24 +4556,24 @@ class KafkaApis(val requestChannel: RequestChannel,
     }
 
     val mirrors = new util.ArrayList[ListClusterMirrorsResponseData.ListedMirror]()
-    mirrorMetadataManager.getMirrorNames().asScala
+    mirrorMetadataCache.getMirrorNames().asScala
       .filter(mirrorName => authHelper.authorize(request.context, DESCRIBE, CLUSTER_MIRROR, mirrorName, logIfDenied = false))
       .filter(mirrorName => mirrorNameFilter == null || mirrorNameFilter.contains(mirrorName))
       .filter(mirrorName => {
         if (sourceClusterIdFilter == null) true
         else {
-          val sid = mirrorMetadataManager.getSourceClusterId(mirrorName)
+          val sid = mirrorMetadataCache.getSourceClusterId(mirrorName)
           sourceClusterIdFilter.contains(if (sid != null) sid else "")
         }
       })
       .foreach(mirrorName => {
-        val sourceClusterId = mirrorMetadataManager.getSourceClusterId(mirrorName)
+        val sourceClusterId = mirrorMetadataCache.getSourceClusterId(mirrorName)
         val listedMirror = new ListClusterMirrorsResponseData.ListedMirror()
           .setMirrorName(mirrorName)
-          .setSourceBootstrap(if (mirrorMetadataManager.getSourceBootstrap(mirrorName) != null)
-            mirrorMetadataManager.getSourceBootstrap(mirrorName) else "")
+          .setSourceBootstrap(if (mirrorMetadataCache.getSourceClusterBootstrap(mirrorName) != null)
+            mirrorMetadataCache.getSourceClusterBootstrap(mirrorName) else "")
           .setSourceClusterId(if (sourceClusterId != null) sourceClusterId else "")
-          .setTopicNames(new util.ArrayList[String](mirrorMetadataManager.getMirrorTopics(mirrorName, topicStates)))
+          .setTopicNames(new util.ArrayList[String](mirrorMetadataCache.getMirrorTopics(mirrorName, topicStates)))
         mirrors.add(listedMirror)
       })
     responseData.setMirrors(mirrors)
@@ -4595,7 +4597,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     // Phase 1: Resolve mirror names
     val describeAll = requestData.mirrorNames == null
     val requestedMirrors = if (describeAll) {
-      mirrorMetadataManager.getMirrorNames().asScala.toSeq
+      mirrorMetadataCache.getMirrorNames().asScala.toSeq
     } else {
       requestData.mirrorNames.asScala.toSeq
     }
@@ -4621,8 +4623,8 @@ class KafkaApis(val requestChannel: RequestChannel,
       } else {
         val describedMirror = new DescribeClusterMirrorsResponseData.DescribedMirror()
           .setMirrorName(mirrorName)
-          .setSourceBootstrap(mirrorMetadataManager.getSourceBootstrap(mirrorName))
-          .setSourceClusterId(mirrorMetadataManager.getSourceClusterId(mirrorName))
+          .setSourceBootstrap(mirrorMetadataCache.getSourceClusterBootstrap(mirrorName))
+          .setSourceClusterId(mirrorMetadataCache.getSourceClusterId(mirrorName))
           .setErrorCode(Errors.NONE.code)
 
         if (requestData.includeAuthorizedOperations) {
@@ -4648,7 +4650,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     // Callers wanting all LMEs should describe all mirrors (mirrorNames=null).
     val lmeMatchingNames: Set[String] = if (requestClusterId != null && includeMirrorState) {
       authorizedMirrors.filter(m =>
-        Option(mirrorMetadataManager.getSourceClusterId(m.name)).contains(requestClusterId)
+        Option(mirrorMetadataCache.getSourceClusterId(m.name)).contains(requestClusterId)
       ).map(_.name).toSet
     } else {
       Set.empty
@@ -4702,7 +4704,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       mirrorName: String,
       topics: java.lang.Iterable[DescribeClusterMirrorsRequestData.TopicMetadata]
   ): util.Map[String, util.Set[Integer]] = {
-    val allPartitions = mirrorMetadataManager.getMetadataPartitions(mirrorName)
+    val allPartitions = mirrorMetadataCache.getTopicPartitionsMapping(mirrorName)
     if (topics == null) {
       return allPartitions
     }
@@ -4850,7 +4852,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     val readMirrorStatesRequest = request.body[ReadMirrorStatesRequest]
     val mirrorName = readMirrorStatesRequest.data().mirrorName()
 
-    if (!mirrorMetadataManager.getMirrorNames().contains(mirrorName)) {
+    if (!mirrorMetadataCache.getMirrorNames().contains(mirrorName)) {
       requestHelper.sendMaybeThrottle(request, new ReadMirrorStatesResponse(new ReadMirrorStatesResponseData()
         .setErrorCode(Errors.UNKNOWN_CLUSTER_MIRROR.code).setErrorMessage(Errors.UNKNOWN_CLUSTER_MIRROR.message)))
       return
@@ -4893,7 +4895,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     val readOffsetsRequest = request.body[ReadMirrorOffsetsRequest]
     val mirrorName = readOffsetsRequest.data().mirrorName()
 
-    if (!mirrorMetadataManager.getMirrorNames().contains(mirrorName)) {
+    if (!mirrorMetadataCache.getMirrorNames().contains(mirrorName)) {
       requestHelper.sendMaybeThrottle(request, new ReadMirrorOffsetsResponse(new ReadMirrorOffsetsResponseData()
         .setErrorCode(Errors.UNKNOWN_CLUSTER_MIRROR.code).setErrorMessage(Errors.UNKNOWN_CLUSTER_MIRROR.message)))
       return
@@ -4942,7 +4944,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     val writeMirrorStatesRequest = request.body[WriteMirrorStatesRequest]
     val mirrorName = writeMirrorStatesRequest.data().mirrorName()
 
-    if (!mirrorMetadataManager.getMirrorNames().contains(mirrorName)) {
+    if (!mirrorMetadataCache.getMirrorNames().contains(mirrorName)) {
       requestHelper.sendMaybeThrottle(request, new WriteMirrorStatesResponse(new WriteMirrorStatesResponseData()
         .setErrorCode(Errors.UNKNOWN_CLUSTER_MIRROR.code).setErrorMessage(Errors.UNKNOWN_CLUSTER_MIRROR.message)))
       return

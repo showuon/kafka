@@ -27,13 +27,13 @@ import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
- * Queue-based sender for asynchronous inter-broker requests used to
- * forward state updates to other coordinator in the destination cluster.
+ * A queue-based sender that handles asynchronous inter-broker RPC requests
+ * not supported by the Admin API. Used by {@link MirrorMetadataManager}.
  */
-class MirrorStateSender extends InterBrokerSendThread {
+class MirrorInterBrokerSender extends InterBrokerSendThread {
     private final ConcurrentLinkedQueue<RequestAndCompletionHandler> queue = new ConcurrentLinkedQueue<>();
 
-    MirrorStateSender(String name, KafkaClient networkClient, int requestTimeoutMs, Time time) {
+    MirrorInterBrokerSender(String name, KafkaClient networkClient, int requestTimeoutMs, Time time) {
         super(name, networkClient, requestTimeoutMs, time);
     }
 

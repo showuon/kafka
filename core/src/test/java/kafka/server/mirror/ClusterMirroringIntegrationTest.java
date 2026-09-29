@@ -71,7 +71,7 @@ import org.apache.kafka.server.config.ServerLogConfigs;
 import org.apache.kafka.server.log.remote.storage.NoOpRemoteLogMetadataManager;
 import org.apache.kafka.server.log.remote.storage.NoOpRemoteStorageManager;
 import org.apache.kafka.server.log.remote.storage.RemoteLogManagerConfig;
-import org.apache.kafka.server.mirror.MirrorPartitionKey;
+import org.apache.kafka.server.mirror.MirrorPartition;
 import org.apache.kafka.server.mirror.MirrorPartitionState;
 
 import org.junit.jupiter.api.AfterEach;
@@ -587,7 +587,7 @@ public class ClusterMirroringIntegrationTest {
         // MirrorPartitionStateKey and LastMirrorEpochsKey types
         // 1. Get the partition index hosting the metadata for the mirror topic partition
         int partId = dstCluster.brokers().get(0).clusterMirrorCoordinator()
-                .partitionFor(new MirrorPartitionKey(MIRROR_NAME, topicId, 0));
+                .partitionFor(new MirrorPartition(MIRROR_NAME, topicId, 0));
         // 2. Get the partition leader
         int leaderMirrorStatePartition = dstCluster.brokers().get(0).metadataCache()
                 .getLeaderAndIsr(MIRROR_STATE_TOPIC_NAME, partId).get().leader();

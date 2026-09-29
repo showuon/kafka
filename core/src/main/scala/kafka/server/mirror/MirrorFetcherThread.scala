@@ -18,13 +18,14 @@ package kafka.server.mirror
 
 import kafka.cluster.Partition
 import kafka.server._
-import MirrorStateCache.SourceLeader
-import kafka.server.mirror.MirrorSourceSyncer.LEADER_EPOCH_BUMP_THRESHOLD
+import org.apache.kafka.coordinator.mirror.MirrorMetadataCache
+import kafka.server.mirror.MirrorMetadataManager.LEADER_EPOCH_BUMP_THRESHOLD
 import org.apache.kafka.common.errors.{MirrorLeaderEpochExceededException, MirrorPartitionStaleMetadataException}
 import org.apache.kafka.common.message.FetchResponseData
 import org.apache.kafka.common.record.Records
 import org.apache.kafka.common.requests.FetchResponse
 import org.apache.kafka.common.{Node, TopicPartition}
+import org.apache.kafka.coordinator.mirror.MirrorMetadataCache.SourceClusterLeader
 import org.apache.kafka.server.mirror.MirrorPartitionState
 import org.apache.kafka.server.common.OffsetAndEpoch
 import org.apache.kafka.server.{LeaderEndPoint, PartitionFetchState}
@@ -44,7 +45,8 @@ class MirrorFetcherThread(name: String,
                           quota: ReplicaQuota,
                           logPrefix: String,
                           mirrorName: String,
-                          mirrorFetchBackoffMs: Int)
+                          mirrorFetchBackoffMs: Int,
+                          mirrorCache: Option[MirrorMetadataCache] = None)
   extends AbstractFetcherThread(name = name,
                                 clientId = name,
                                 leader = leader,
@@ -62,18 +64,18 @@ class MirrorFetcherThread(name: String,
 
   // Uses leader info from fetch response to update cache and create new fetchers directly
   override protected def addFetcherForPartitions(partitionAndOffsets: Map[TopicPartition, InitialFetchState]): Unit = {
-    replicaMgr.mirrorMetadataManager.foreach { mmm =>
+    mirrorCache.foreach { cache =>
       partitionAndOffsets.foreach { case (tp, state) =>
-        mmm.updateSourceLeader(mirrorName, tp,
-          new SourceLeader(new Node(state.leader.id(), state.leader.host(), state.leader.port()), state.currentLeaderEpoch))
+        cache.updateSourceClusterLeader(mirrorName, tp,
+          new SourceClusterLeader(new Node(state.leader.id(), state.leader.host(), state.leader.port()), state.currentLeaderEpoch))
       }
     }
     replicaMgr.mirrorFetcherManager.addFetcherForPartitions(partitionAndOffsets)
   }
 
   override protected def refreshSourceClusterMetadata(mirrorPartitions: Set[TopicPartition], reason: String): Unit = {
-    replicaMgr.mirrorMetadataManager.foreach(_.scheduleSourceTopicStateSync(mirrorName))
-    replicaMgr.mirrorMetadataManager.foreach(_.transitionTo(mirrorName, mirrorPartitions.asJava,
+    replicaMgr.mirrorManager.foreach(_.scheduleSourceTopicStateSync(mirrorName))
+    replicaMgr.mirrorManager.foreach(_.transitionTo(mirrorName, mirrorPartitions.asJava,
       MirrorPartitionState.FAILED, reason, false))
   }
 
@@ -82,19 +84,19 @@ class MirrorFetcherThread(name: String,
     val uleEnabledPartitions = mirrorPartitions.filter(tp => replicaMgr.getLog(tp).get.config().mirrorSupportUncleanLeaderElection).toSet
     val uleDisabledPartitions = mirrorPartitions.filter(tp => !replicaMgr.getLog(tp).get.config().mirrorSupportUncleanLeaderElection).toSet
     if (uleEnabledPartitions.nonEmpty) {
-      replicaMgr.mirrorMetadataManager.foreach(_.transitionTo(mirrorName, uleEnabledPartitions.asJava,
+      replicaMgr.mirrorManager.foreach(_.transitionTo(mirrorName, uleEnabledPartitions.asJava,
         MirrorPartitionState.ULE_RECOVERY, null, false))
     }
     if (uleDisabledPartitions.nonEmpty) {
       // move the state to terminal FAILED state.
-      replicaMgr.mirrorMetadataManager.foreach(_.transitionTo(mirrorName, uleDisabledPartitions.asJava,
-        MirrorPartitionState.FAILED, "detected log truncation during mirroring. This implies unclean leader election " +
-          "in source cluster, but the `mirror.support.unclean.leader.election` is disabled. Move to FAILED state.", true))
+      replicaMgr.mirrorManager.foreach(_.transitionTo(mirrorName, uleDisabledPartitions.asJava,
+        MirrorPartitionState.FAILED, "Detected log truncation during mirroring. This implies unclean leader election " +
+          "in source cluster, but mirror.support.unclean.leader.election is disabled. Moving to FAILED state.", true))
     }
   }
 
   override protected def handlePartitionFailed(topicPartition: TopicPartition, reason: String): Unit = {
-    replicaMgr.mirrorMetadataManager.foreach(_.transitionTo(mirrorName, java.util.Set.of(topicPartition),
+    replicaMgr.mirrorManager.foreach(_.transitionTo(mirrorName, java.util.Set.of(topicPartition),
       MirrorPartitionState.FAILED, reason, false))
   }
 
@@ -102,7 +104,7 @@ class MirrorFetcherThread(name: String,
   // local epoch before allowing further appends. If the bump fails, the coordinator
   // transitions to FAILED and the exponential backoff retry takes over.
   override protected def handleMirrorLeaderEpochExceeded(mirrorName: String, topicPartition: TopicPartition): Unit = {
-    replicaMgr.mirrorMetadataManager.foreach(_.transitionTo(mirrorName, java.util.Set.of(topicPartition), MirrorPartitionState.EPOCH_FENCING, null, false))
+    replicaMgr.mirrorManager.foreach(_.transitionTo(mirrorName, java.util.Set.of(topicPartition), MirrorPartitionState.EPOCH_FENCING, null, false))
   }
 
   // Validates batch epoch against local epoch (destination) and partition epoch (source metadata)
@@ -117,7 +119,7 @@ class MirrorFetcherThread(name: String,
       throw new MirrorLeaderEpochExceededException(s"Rejecting the batch because the batch leader " +
         s"epoch $highestBatchLeaderEpoch is higher than local leader epoch $localLeaderEpoch")
     } else {
-      replicaMgr.mirrorMetadataManager.foreach { mmm =>
+      replicaMgr.mirrorManager.foreach { mmm =>
         mmm.clearFailedStateAndPersist(mirrorName, topicPartition)
 
         if (highestBatchLeaderEpoch > localLeaderEpoch - LEADER_EPOCH_BUMP_THRESHOLD) {
@@ -198,12 +200,12 @@ class MirrorFetcherThread(name: String,
   }
 
   override def leaderEpochFromSource(tp: TopicPartition): Option[Int] = {
-    replicaMgr.mirrorMetadataManager.map(mmm => mmm.resolveSourceLeader(mirrorName, tp).leaderEpoch())
+    mirrorCache.map(cache => cache.getSourceClusterLeader(mirrorName, tp).leaderEpoch())
   }
 
   // Returns the mirror partition lag computed from cached source/destination offsets
   override def getPartitionLag(topicPartition: TopicPartition, leaderHW: Long, nextOffset: Long, mirrorName: String): Long = {
-    replicaMgr.mirrorFetcherManager.getMirrorOffsetInfo(mirrorName).get(topicPartition).map { info =>
+    replicaMgr.mirrorFetcherManager.getOffsetInfo(mirrorName).get(topicPartition).map { info =>
       Math.max(0, info.sourceOffset - info.destinationOffset)
     }.getOrElse(0L)
   }
