@@ -199,7 +199,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                     || state == MirrorPartitionState.STOPPED
                     || state == MirrorPartitionState.PAUSED) {
                 // Clear error state
-                builder.withError(null, 0, null);
+                builder.clearError();
             }
             mirrorCache.updatePartitionMetadata(mp, builder.build());
         } else {
@@ -228,7 +228,8 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
         MirrorPartition mp = MirrorPartition.of(key.mirrorName(), key.topicId(), key.partition());
         if (value != null) {
             LastMirrorEpochsValue epochsValue = (LastMirrorEpochsValue) value.message();
-            mirrorCache.updatePartitionMetadata(mp, new MirrorPartitionMetadata.Builder(mirrorCache.getPartitionMetadata(mp))
+            MirrorPartitionMetadata existing = mirrorCache.getPartitionMetadata(mp);
+            mirrorCache.updatePartitionMetadata(mp, new MirrorPartitionMetadata.Builder(existing)
                     .withLastPosition(new EpochOffset(epochsValue.lastMirrorEpoch(), epochsValue.lastMirrorOffset()))
                     .build());
         } else {
@@ -364,11 +365,12 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                 || state == MirrorPartitionState.STOPPED
                 || state == MirrorPartitionState.PAUSED) {
             // Clear error state when transitioning away from FAILED or reaching terminal/pause states
-            mirrorCache.updatePartitionMetadata(mp, new MirrorPartitionMetadata.Builder(mirrorCache.getPartitionMetadata(mp))
-                    .withError(null, 0, null) // clear error state
+            MirrorPartitionMetadata existing = mirrorCache.getPartitionMetadata(mp);
+            mirrorCache.updatePartitionMetadata(mp, new MirrorPartitionMetadata.Builder(existing)
+                    .clearError()
                     .build());
         } else {
-            // Preserve existing error state
+            // Update the error message to make sure it is up-to-date
             MirrorPartitionMetadata existing = mirrorCache.getPartitionMetadata(mp);
             mirrorCache.updatePartitionMetadata(mp, new MirrorPartitionMetadata.Builder(existing)
                     .withError(errorMessage, existing.retryAttempt(), existing.prevState())

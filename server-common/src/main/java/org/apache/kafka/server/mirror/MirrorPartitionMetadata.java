@@ -21,18 +21,22 @@ import org.apache.kafka.common.EpochOffset;
 /**
  * Immutable snapshot of mirror partition metadata.
  *
- * @param state                 the current lifecycle state, or null if unknown
- * @param stateEpoch            monotonically increasing epoch incremented on every state transition
- * @param lastPosition    the last mirrored epoch and offset, or {@link EpochOffset#EMPTY} if not yet recorded
- * @param errorMessage          the failure reason when in FAILED state, or null otherwise
- * @param retryAttempt          the retry count in FAILED state, 0 if not failed,
- *                              or {@link #NON_RETRYABLE_ATTEMPT} if non-retryable
- * @param prevState             the state before entering FAILED, or null if not applicable
+ * @param state          the current lifecycle state, or null if unknown
+ * @param stateEpoch     monotonically increasing epoch incremented on every state transition
+ * @param lastPosition   the last mirrored epoch and offset, or {@link EpochOffset#EMPTY} if not yet recorded
+ * @param errorMessage   the failure reason when in FAILED state, or null otherwise
+ * @param retryAttempt   the retry count in FAILED state, 0 if not failed,
+ *                       or {@link #NON_RETRYABLE_ATTEMPT} if non-retryable
+ * @param prevState      the state before entering FAILED, or null if not applicable
  */
 public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch, EpochOffset lastPosition,
                                       String errorMessage, int retryAttempt, MirrorPartitionState prevState) {
     public static final MirrorPartitionMetadata EMPTY = new MirrorPartitionMetadata(MirrorPartitionState.UNKNOWN, 0, EpochOffset.EMPTY, null, 0, null);
     public static final int NON_RETRYABLE_ATTEMPT = -1;
+
+    public static MirrorPartitionMetadata orEmpty(MirrorPartitionMetadata mpm) {
+        return mpm != null ? mpm : EMPTY;
+    }
 
     public static class Builder {
         private final MirrorPartitionMetadata existing;
@@ -42,6 +46,11 @@ public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch
         private String errorMessage;
         private Integer retryAttempt;
         private MirrorPartitionState prevState;
+        private boolean errorSet;
+
+        public Builder() {
+            this.existing = EMPTY;
+        }
 
         public Builder(MirrorPartitionMetadata existing) {
             this.existing = orEmpty(existing);
@@ -66,25 +75,29 @@ public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch
             this.errorMessage = errorMessage;
             this.retryAttempt = retryAttempt;
             this.prevState = prevState;
+            this.errorSet = true;
+            return this;
+        }
+
+        public Builder clearError() {
+            this.errorMessage = null;
+            this.retryAttempt = 0;
+            this.prevState = null;
+            this.errorSet = true;
             return this;
         }
 
         public MirrorPartitionMetadata build() {
-            // Use existing values where builder hasn't set anything
             MirrorPartitionState resultState = state != null ? state : existing.state;
             int resultStateEpoch = stateEpoch != null ? stateEpoch : existing.stateEpoch;
             EpochOffset resultLastPosition = lastPosition != null ? lastPosition : existing.lastPosition;
-            String resultErrorMessage = errorMessage != null ? errorMessage : existing.errorMessage;
-            int resultRetryAttempt = retryAttempt != null ? retryAttempt : existing.retryAttempt;
-            MirrorPartitionState resultPrevState = prevState != null ? prevState : existing.prevState;
+            String resultErrorMessage = errorSet ? errorMessage : existing.errorMessage;
+            int resultRetryAttempt = errorSet ? retryAttempt : existing.retryAttempt;
+            MirrorPartitionState resultPrevState = errorSet ? prevState : existing.prevState;
 
             return new MirrorPartitionMetadata(resultState, resultStateEpoch, resultLastPosition,
                     resultErrorMessage, resultRetryAttempt, resultPrevState);
         }
-    }
-
-    public static MirrorPartitionMetadata orEmpty(MirrorPartitionMetadata mpm) {
-        return mpm != null ? mpm : EMPTY;
     }
 
     @SuppressWarnings({"cyclomaticComplexity", "BooleanExpressionComplexity"})
