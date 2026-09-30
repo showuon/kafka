@@ -18,6 +18,8 @@ package org.apache.kafka.server.mirror;
 
 import org.apache.kafka.common.EpochOffset;
 
+import java.util.Optional;
+
 /**
  * Immutable snapshot of mirror partition metadata.
  *
@@ -43,10 +45,9 @@ public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch
         private MirrorPartitionState state;
         private Integer stateEpoch;
         private EpochOffset lastPosition;
-        private String errorMessage;
-        private Integer retryAttempt;
-        private MirrorPartitionState prevState;
-        private boolean errorSet;
+        private Optional<String> errorMessage = Optional.empty();
+        private Optional<Integer> retryAttempt = Optional.empty();
+        private Optional<MirrorPartitionState> prevState = Optional.empty();
 
         public Builder() {
             this.existing = EMPTY;
@@ -71,19 +72,18 @@ public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch
             return this;
         }
 
-        public Builder withError(String errorMessage, int retryAttempt, MirrorPartitionState prevState) {
-            this.errorMessage = errorMessage;
-            this.retryAttempt = retryAttempt;
-            this.prevState = prevState;
-            this.errorSet = true;
+        public Builder withErrorMessage(String errorMessage) {
+            this.errorMessage = Optional.ofNullable(errorMessage);
             return this;
         }
 
-        public Builder clearError() {
-            this.errorMessage = null;
-            this.retryAttempt = 0;
-            this.prevState = null;
-            this.errorSet = true;
+        public Builder withRetryAttempt(int retryAttempt) {
+            this.retryAttempt = Optional.of(retryAttempt);
+            return this;
+        }
+
+        public Builder withPrevState(MirrorPartitionState prevState) {
+            this.prevState = Optional.ofNullable(prevState);
             return this;
         }
 
@@ -91,9 +91,9 @@ public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch
             MirrorPartitionState resultState = state != null ? state : existing.state;
             int resultStateEpoch = stateEpoch != null ? stateEpoch : existing.stateEpoch;
             EpochOffset resultLastPosition = lastPosition != null ? lastPosition : existing.lastPosition;
-            String resultErrorMessage = errorSet ? errorMessage : existing.errorMessage;
-            int resultRetryAttempt = errorSet ? retryAttempt : existing.retryAttempt;
-            MirrorPartitionState resultPrevState = errorSet ? prevState : existing.prevState;
+            String resultErrorMessage = errorMessage.isPresent() ? errorMessage.get() : existing.errorMessage;
+            int resultRetryAttempt = retryAttempt.isPresent() ? retryAttempt.get() : existing.retryAttempt;
+            MirrorPartitionState resultPrevState = prevState.isPresent() ? prevState.get() : existing.prevState;
 
             return new MirrorPartitionMetadata(resultState, resultStateEpoch, resultLastPosition,
                     resultErrorMessage, resultRetryAttempt, resultPrevState);

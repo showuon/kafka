@@ -327,19 +327,20 @@ class MirrorSourceSyncer {
                     .all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
         } catch (ExecutionException e) {
             if (e.getCause() instanceof UnsupportedVersionException) {
-                log.info("Source cluster does not support listClusterMirrors for mirror {}. Skipping mirror loop check.", mirrorName);
+                log.info("Source cluster does not support listClusterMirrors for mirror {}. " +
+                        "Skipping mirror loop check.", mirrorName);
                 return List.of();
             }
             Throwable cause = e.getCause() != null ? e.getCause() : e;
             throw new IllegalStateException("Failed to list cluster mirrors from source for mirror "
-                    + mirrorName + ": " + cause.getMessage(), cause);
+                    + mirrorName, cause);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Failed to list cluster mirrors from source for mirror "
-                    + mirrorName + ": " + e.getMessage(), e);
+                    + mirrorName, e);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to list cluster mirrors from source for mirror "
-                    + mirrorName + ": " + e.getMessage(), e);
+                    + mirrorName, e);
         }
     }
 
