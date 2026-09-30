@@ -544,6 +544,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
         mirrorCache.removeMirror(mirrorName);
         mirrorCache.clearPendingLeaderEpochBumps(states.keySet());
+        mirrorCache.clearTopicsCache(states.keySet());
 
         if (coordPartitionToMirrorPartitions.isEmpty()) {
             states.keySet().forEach(tp ->

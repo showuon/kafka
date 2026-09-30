@@ -23,6 +23,7 @@ import org.apache.kafka.server.mirror.MirrorPartitionKey;
 import org.apache.kafka.server.mirror.MirrorPartitionMetadata;
 import org.apache.kafka.server.mirror.MirrorPartitionState;
 
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -104,6 +105,7 @@ public class MirrorStateCache {
     public void removeMirror(String mirrorName) {
         partMetadata.keySet().removeIf(key -> key.mirrorName().equals(mirrorName));
         sourceDeletions.remove(mirrorName);
+        sourceLeaders.remove(mirrorName);
     }
 
     public void updateFailureDetails(MirrorPartitionKey key, MirrorPartitionState curState,
@@ -210,6 +212,17 @@ public class MirrorStateCache {
                 return true;
             }
             return false;
+        });
+    }
+
+    public void clearTopicsCache(Set<TopicPartition> partitions) {
+        Set<String> topicsToClear = new HashSet<>();
+        for (TopicPartition tp : partitions) {
+            pendingStateTransitions.remove(tp);
+            topicsToClear.add(tp.topic());
+        }
+        topicsToClear.forEach(topic -> {
+            pendingTopicCreations.remove(topic);
         });
     }
 
