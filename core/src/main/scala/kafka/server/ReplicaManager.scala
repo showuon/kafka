@@ -23,7 +23,7 @@ import kafka.log.LogManager
 import kafka.server.HostedPartition.Online
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.ReplicaManager.{AtMinIsrPartitionCountMetricName, FailedIsrUpdatesPerSecMetricName, IsrExpandsPerSecMetricName, IsrShrinksPerSecMetricName, LeaderCountMetricName, OfflineReplicaCountMetricName, PartitionCountMetricName, PartitionsWithLateTransactionsCountMetricName, ProducerIdCountMetricName, ReassigningPartitionsMetricName, UnderMinIsrPartitionCountMetricName, UnderReplicatedPartitionsMetricName, createLogReadResult, isListOffsetsTimestampUnsupported}
-import kafka.server.mirror.{MirrorFetcherManager, MirrorMetadataManager, OffsetInfo}
+import kafka.server.mirror.{MirrorFetcherManager, MirrorMetadataManager, MirrorOffsetInfo}
 import org.apache.kafka.coordinator.mirror.MirrorMetadataCache
 import kafka.server.share.DelayedShareFetch
 import kafka.utils._
@@ -1428,8 +1428,8 @@ class ReplicaManager(val config: KafkaConfig,
             (origin == AppendOrigin.COORDINATOR || origin == AppendOrigin.REPLICATION) &&
             records.batches().asScala.exists(b => ControlRecordType.isMirrorPidResetBatch(b) || ControlRecordType.isAbortTxnBatch(b)))
         if (!allowed) {
-          throw new ReadOnlyTopicException("Cannot append to read-only partition %s on broker %d (mirrorName=%s)"
-            .format(partition.topicPartition, localBrokerId, mirrorName.get()))
+          throw new ReadOnlyTopicException(s"Cannot append to mirror partition ${partition.topicPartition} in " +
+            s"state $entryState on broker $localBrokerId for mirror ${mirrorName.get()}")
         }
       }
     }
@@ -2636,12 +2636,12 @@ class ReplicaManager(val config: KafkaConfig,
    * Creates and starts MirrorFetcherThreads for partitions that became read-only leaders.
    *
    * @param mirrorLeaders Map of partitions to their metadata for partitions that became
-   *                        read-only leaders on this broker
+   *                      read-only leaders on this broker
    */
   def maybeCreateMirrorFetchers(mirrorName: String, mirrorLeaders: java.util.Set[TopicPartition]): Unit = {
     if (mirrorLeaders.isEmpty) return
 
-    stateChangeLogger.info(s"Starting fetchers for ${mirrorLeaders.size} mirror partition(s).")
+    stateChangeLogger.info(s"Creating mirror fetchers for mirror $mirrorName: ${mirrorLeaders.size} partitions")
     val partitionAndOffsets = new mutable.HashMap[TopicPartition, InitialFetchState]
     val pendingMetadataPartitions = new mutable.HashSet[TopicPartition]
     val errorPartitionAndOffsets = new mutable.HashSet[TopicPartition]
@@ -2678,23 +2678,23 @@ class ReplicaManager(val config: KafkaConfig,
           } catch {
             case _: IllegalStateException =>
               pendingMetadataPartitions.add(tp)
-              stateChangeLogger.info(s"Source metadata not available for mirror partition $tp, will retry after refresh")
+              stateChangeLogger.info(s"Deferring fetcher setup for mirror partition $tp: source metadata not yet available")
             case e: Exception =>
               errorPartitionAndOffsets.add(tp)
-              stateChangeLogger.error(s"Error creating fetcher for mirror partition $tp", e)
+              stateChangeLogger.error(s"Failed to create fetcher for mirror partition $tp", e)
           }
         case _ =>
-          stateChangeLogger.warn(s"Skipping fetcher setup for offline mirror partition $tp")
+          stateChangeLogger.warn(s"Skipping fetcher setup for offline mirror partition $tp; will retry when partition becomes online")
       }
     }
 
     if (partitionAndOffsets.nonEmpty) {
       try {
         mirrorFetcherManager.addFetcherForPartitions(partitionAndOffsets)
-        stateChangeLogger.info(s"Started fetchers for ${partitionAndOffsets.size} mirror partitions")
+        stateChangeLogger.info(s"Successfully created mirror fetchers for ${partitionAndOffsets.size} partitions")
       } catch {
         case e: Exception =>
-          stateChangeLogger.error(s"Error adding fetcher for mirror partitions ${partitionAndOffsets.keySet}", e)
+          stateChangeLogger.error(s"Failed to create mirror fetchers for partitions: ${partitionAndOffsets.keySet}", e)
       }
     }
 
@@ -2743,6 +2743,6 @@ class ReplicaManager(val config: KafkaConfig,
    * @param mirrorName mirror name
    * @return offset info
    */
-  def getMirrorOffsetInfo(mirrorName: String): Map[TopicPartition, OffsetInfo] =
+  def getMirrorOffsetInfo(mirrorName: String): Map[TopicPartition, MirrorOffsetInfo] =
     mirrorFetcherManager.getOffsetInfo(mirrorName)
 }

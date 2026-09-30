@@ -43,13 +43,10 @@ abstract class AbstractFetcherManager[T <: AbstractFetcherThread](val name: Stri
 
   private val tags = Map("clientId" -> clientId).asJava
 
-  metricsGroup.newGauge("MaxLag", () => maxLag, tags)
-
-  metricsGroup.newGauge("MinFetchRate", () => minFetchRate, tags)
-
-  metricsGroup.newGauge("FailedPartitionsCount", () => failedPartitions.size, tags)
-
   metricsGroup.newGauge("DeadThreadCount", () => deadThreadCount, tags)
+  metricsGroup.newGauge("FailedPartitionsCount", () => failedPartitions.size, tags)
+  metricsGroup.newGauge("MinFetchRate", () => minFetchRate, tags)
+  metricsGroup.newGauge("MaxLag", () => maxLag, tags)
 
   private[server] def minFetchRate: Double = {
     // current min fetch rate across all fetchers/topics/partitions

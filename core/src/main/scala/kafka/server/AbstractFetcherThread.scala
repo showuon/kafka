@@ -121,6 +121,8 @@ abstract class AbstractFetcherThread(name: String,
 
   protected def maybeWaitForFollowersCaughtUp(mirrorPartitions: Set[TopicPartition]): Unit = {}
 
+  protected def handlePartitionFailed(topicPartition: TopicPartition, reason: String): Unit = {}
+
   protected def handleMirrorLeaderEpochExceeded(mirrorName: String, topicPartition: TopicPartition): Unit = {}
 
   protected def leaderEpochFromSource(tp: TopicPartition): Option[Int] = {
@@ -326,8 +328,8 @@ abstract class AbstractFetcherThread(name: String,
                 newCurrentLeaderEpoch, currentFetchState.delay, currentFetchState.state(), currentFetchState.lastFetchedEpoch(),
                 currentFetchState.dueMs(), currentFetchState.mirrorName()))
             } else {
-              // the returned leaderEpoch is < 0, which means the source cluster doesn't support fetch API v9
-              // need to refresh source cluster metadata and retry
+              // The returned leaderEpoch is < 0, which means the source cluster doesn't support fetch API v9
+              // so we need to refresh source cluster metadata and retry
               partitionsToBeRemoved.add(topicPartition)
             }
           case None => newStates.put(topicPartition, currentFetchState)
@@ -707,8 +709,6 @@ abstract class AbstractFetcherThread(name: String,
     markPartitionRemoved(topicPartition)
     handlePartitionFailed(topicPartition, reason)
   }
-
-  protected def handlePartitionFailed(topicPartition: TopicPartition, reason: String): Unit = {}
 
   /**
    * Returns initial partition fetch state based on current state and the provided initialFetchState.
