@@ -454,6 +454,7 @@ class MirrorSourceSyncer {
     }
 
     private void processSourceTopicState(String mirrorName, List<SourceTopicState> sourceTopicStates) {
+        log.info("!!! Processing source topic state: {}", sourceTopicStates);
         var creatableTopics = new ArrayList<CreateTopicsRequestData.CreatableTopic>();
         var createPartitionsTopics = new CreatePartitionsRequestData.CreatePartitionsTopicCollection();
 

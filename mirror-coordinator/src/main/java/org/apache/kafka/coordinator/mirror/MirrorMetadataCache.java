@@ -220,6 +220,7 @@ public class MirrorMetadataCache {
 
     public void updateSourceClusterLeader(String mirrorName, TopicPartition tp, SourceClusterLeader leader) {
         sourceLeaders.computeIfAbsent(mirrorName, k -> new ConcurrentHashMap<>()).put(tp, leader);
+        System.out.println("!!! updateSourceClusterLeader:" + tp + ";;" + leader + ";;" + sourceLeaders);
     }
 
     public void removeSourceClusterLeaders(String mirrorName) {
