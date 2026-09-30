@@ -40,7 +40,6 @@ public class MirrorStateCache {
     private final Map<TopicPartition, MirrorPartitionState> pendingStateTransitions = new ConcurrentHashMap<>();
     private final Set<String> pendingTopicCreations = ConcurrentHashMap.newKeySet();
     private final Set<PendingLeaderEpochBump> pendingLeaderEpochBumps = ConcurrentHashMap.newKeySet();
-    private final ConcurrentHashMap<String, CompletableFuture<List<MirrorSourceSyncer.SourceTopicState>>> ongoingSyncs = new ConcurrentHashMap<>();
 
     public static MirrorStateCache empty() {
         return new MirrorStateCache();
@@ -56,15 +55,6 @@ public class MirrorStateCache {
         pendingStateTransitions.clear();
         pendingTopicCreations.clear();
         pendingLeaderEpochBumps.clear();
-        ongoingSyncs.clear();
-    }
-
-    public CompletableFuture<List<MirrorSourceSyncer.SourceTopicState>> putOngoingSyncs(String mirrorName, CompletableFuture<List<MirrorSourceSyncer.SourceTopicState>> future) {
-        return ongoingSyncs.putIfAbsent(mirrorName, future);
-    }
-
-    public void removeOngoingSyncs(String mirrorName, CompletableFuture<List<MirrorSourceSyncer.SourceTopicState>> future) {
-        ongoingSyncs.remove(mirrorName, future);
     }
 
     public MirrorPartitionMetadata getPartitionMetadata(MirrorPartitionKey key) {
@@ -116,7 +106,6 @@ public class MirrorStateCache {
     public void removeMirror(String mirrorName) {
         partMetadata.keySet().removeIf(key -> key.mirrorName().equals(mirrorName));
         sourceDeletions.remove(mirrorName);
-        ongoingSyncs.remove(mirrorName);
         sourceLeaders.remove(mirrorName);
     }
 

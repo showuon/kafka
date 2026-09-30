@@ -137,6 +137,8 @@ class MirrorSourceSyncer {
     private final MetadataCache metadataCache;
     private final KafkaScheduler syncScheduler;
 
+    private final ConcurrentHashMap<String, CompletableFuture<List<MirrorSourceSyncer.SourceTopicState>>> ongoingSyncs = new ConcurrentHashMap<>();
+
     private final KafkaMetricsGroup metricsGroup;
     private final Meter metadataRefreshError;
     private final Meter topicConfigSyncError;
@@ -180,6 +182,7 @@ class MirrorSourceSyncer {
 
     void close() {
         try {
+            ongoingSyncs.clear();
             syncScheduler.shutdown();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -291,7 +294,8 @@ class MirrorSourceSyncer {
                                         MirrorPartitionKey key = new MirrorPartitionKey(mirrorName, topicImage.id(),  partitionId);
                                         MirrorPartitionMetadata mpm = MirrorPartitionMetadata.orEmpty(mirrorCache.getPartitionMetadata(key));
                                         if (mpm.state() == MirrorPartitionState.FAILED && mpm.retryAttempt() == MirrorPartitionMetadata.NON_RETRYABLE_ATTEMPT)
-                                            log.debug("The partition is already in non-retryable FAILED state due to {}. Skipping it.", mpm.errorMessage());
+                                            log.debug("Skipping transition to FAILED state for partition {}-{} . Reason: Already in this state due to: {}.",
+                                                    topic, partitionId, mpm.errorMessage());
                                         else
                                             mirrorLeaderPartitions.add(new TopicPartition(topic, partitionId));
 
@@ -387,7 +391,7 @@ class MirrorSourceSyncer {
      */
     List<SourceTopicState> syncSourceTopicMetadata(String mirrorName) {
         var future = new CompletableFuture<List<SourceTopicState>>();
-        var existing = mirrorCache.putOngoingSyncs(mirrorName, future);
+        var existing = ongoingSyncs.putIfAbsent(mirrorName, future);
         if (existing != null) {
             log.info("Source topic state sync already in progress for mirror {}, waiting for result", mirrorName);
             try {
@@ -411,7 +415,7 @@ class MirrorSourceSyncer {
             future.completeExceptionally(e);
             return List.of();
         } finally {
-            mirrorCache.removeOngoingSyncs(mirrorName, future);
+            ongoingSyncs.remove(mirrorName, future);
         }
     }
 
@@ -609,7 +613,7 @@ class MirrorSourceSyncer {
                                 MirrorPartitionKey key = new MirrorPartitionKey(mirrorName, topicImage.id(), partitionId);
                                 MirrorPartitionMetadata mpm = MirrorPartitionMetadata.orEmpty(mirrorCache.getPartitionMetadata(key));
                                 if (mpm.state() == MirrorPartitionState.FAILED && mpm.retryAttempt() == MirrorPartitionMetadata.NON_RETRYABLE_ATTEMPT)
-                                    log.debug("The partition is already in non-retryable FAILED state due to {}. Skipping it.", mpm.errorMessage());
+                                    log.debug("Skipping transition to FAILED state for partition {}. Already in this state due to: {}", name, partition, mpm.errorMessage());
                                 else {
                                     log.info("Detected topic {} deleted in source cluster {}, marking partitions as failed (non retryable).", name, mirrorName);
                                     metadataManager.transitionTo(mirrorName, Set.of(new TopicPartition(name, partitionId)),
