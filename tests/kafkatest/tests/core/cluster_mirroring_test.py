@@ -312,7 +312,7 @@ class ClusterMirroringTest(MirrorUtils, Test):
 
         self.logger.info("Verify LME lookup found a valid epoch (direct failback)")
         log_path = "%s/info/server.log" % self.source_kafka.OPERATIONAL_LOG_DIR
-        pattern = "Last mirror epoch lookup response for mirror b-to-a"
+        pattern = "Received LME lookup response for mirror=b-to-a"
         found = False
         for node in self.source_kafka.nodes:
             for line in node.account.ssh_capture(

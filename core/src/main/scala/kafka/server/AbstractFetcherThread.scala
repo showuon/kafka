@@ -121,6 +121,8 @@ abstract class AbstractFetcherThread(name: String,
 
   protected def maybeWaitForFollowersCaughtUp(mirrorPartitions: Set[TopicPartition]): Unit = {}
 
+  protected def handlePartitionFailed(topicPartition: TopicPartition, reason: String): Unit = {}
+
   protected def handleMirrorLeaderEpochExceeded(mirrorName: String, topicPartition: TopicPartition): Unit = {}
 
   protected def leaderEpochFromSource(tp: TopicPartition): Option[Int] = {
@@ -306,7 +308,7 @@ abstract class AbstractFetcherThread(name: String,
   }
 
   /**
-   * This method updates the currentLeaderEpoch in the fetch state to match the source cluster's
+   * Updates the currentLeaderEpoch in the fetch state to match the source cluster's
    * current leader epoch, enabling proper epoch validation when fetching from the source.
    */
   private def updateMirrorFetchEpoch(partitionToData: Map[TopicPartition, PartitionData]): Unit = inLock(partitionMapLock) {
@@ -326,8 +328,8 @@ abstract class AbstractFetcherThread(name: String,
                 newCurrentLeaderEpoch, currentFetchState.delay, currentFetchState.state(), currentFetchState.lastFetchedEpoch(),
                 currentFetchState.dueMs(), currentFetchState.mirrorName()))
             } else {
-              // the returned leaderEpoch is < 0, which means the source cluster doesn't support fetch API v9
-              // need to refresh source cluster metadata and retry
+              // The returned leaderEpoch is < 0, which means the source cluster doesn't support fetch API v9
+              // so we need to refresh source cluster metadata and retry
               partitionsToBeRemoved.add(topicPartition)
             }
           case None => newStates.put(topicPartition, currentFetchState)
@@ -341,9 +343,9 @@ abstract class AbstractFetcherThread(name: String,
   }
 
   /** Reassigns mirror partitions to new fetcher threads after source leader change. */
-  private def maybeCreateMirrorFetchers(partitionToData: Map[TopicPartition, PartitionData]): Unit = {
+  private def reassignMirrorPartitionsOnLeaderChange(partitionToData: Map[TopicPartition, PartitionData]): Unit = {
     var newStates: Map[TopicPartition, InitialFetchState] = scala.collection.mutable.Map.empty[TopicPartition, InitialFetchState]
-      // snapshot under lock to avoid ConcurrentModificationException from concurrent addFetcherForPartitions
+      // Snapshot under lock to avoid ConcurrentModificationException from concurrent addFetcherForPartitions
       inLock(partitionMapLock) {
         partitionStates.partitionStateMap.asScala
           .foreach { case (topicPartition, currentFetchState) =>
@@ -369,7 +371,7 @@ abstract class AbstractFetcherThread(name: String,
     } else if (partitionToData.nonEmpty && leader.lastSeenEndpoints().isEmpty) {
       // Old source without nodeEndpoints in Fetch response, so we need to rediscover via metadata
       val stalePartitions = partitionToData.keySet
-      warn(s"No endpoint info to redirect mirror partitions $stalePartitions, refreshing source metadata")
+      warn(s"No endpoint info to reassign mirror partitions $stalePartitions, refreshing source metadata")
       stalePartitions.foreach(markPartitionRemoved)
       removeFetcherForPartitions(stalePartitions)
       refreshSourceClusterMetadata(stalePartitions, "No endpoint info in fetch response")
@@ -671,7 +673,7 @@ abstract class AbstractFetcherThread(name: String,
     if (mirrorPartitionsWithNewEpoch.nonEmpty)
       updateMirrorFetchEpoch(mirrorPartitionsWithNewEpoch)
     if (mirrorPartitionsWithNewLeader.nonEmpty && isRunning)
-      maybeCreateMirrorFetchers(mirrorPartitionsWithNewLeader)
+      reassignMirrorPartitionsOnLeaderChange(mirrorPartitionsWithNewLeader)
     if (partitionsWithError.nonEmpty) {
       handlePartitionsWithErrors(partitionsWithError, "processFetchRequest", fetchException)
     }
@@ -707,8 +709,6 @@ abstract class AbstractFetcherThread(name: String,
     markPartitionRemoved(topicPartition)
     handlePartitionFailed(topicPartition, reason)
   }
-
-  protected def handlePartitionFailed(topicPartition: TopicPartition, reason: String): Unit = {}
 
   /**
    * Returns initial partition fetch state based on current state and the provided initialFetchState.

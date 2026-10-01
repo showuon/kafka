@@ -130,6 +130,7 @@ public class ReplicaManagerBuilder {
                              Option.empty(),
                              DirectoryEventHandler.NOOP,
                              new DelayedActionQueue(),
+                             Option.empty(),
                              Option.empty());
     }
 }

@@ -24,6 +24,7 @@ import kafka.server.HostedPartition.Online
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.ReplicaManager.{AtMinIsrPartitionCountMetricName, FailedIsrUpdatesPerSecMetricName, IsrExpandsPerSecMetricName, IsrShrinksPerSecMetricName, LeaderCountMetricName, OfflineReplicaCountMetricName, PartitionCountMetricName, PartitionsWithLateTransactionsCountMetricName, ProducerIdCountMetricName, ReassigningPartitionsMetricName, UnderMinIsrPartitionCountMetricName, UnderReplicatedPartitionsMetricName, createLogReadResult, isListOffsetsTimestampUnsupported}
 import kafka.server.mirror.{MirrorFetcherManager, MirrorMetadataManager, MirrorOffsetInfo}
+import org.apache.kafka.coordinator.mirror.MirrorMetadataCache
 import kafka.server.share.DelayedShareFetch
 import kafka.utils._
 import org.apache.kafka.common.config.{ConfigResource, TopicConfig}
@@ -232,7 +233,8 @@ class ReplicaManager(val config: KafkaConfig,
                      addPartitionsToTxnManager: Option[AddPartitionsToTxnManager] = None,
                      val directoryEventHandler: DirectoryEventHandler = DirectoryEventHandler.NOOP,
                      val defaultActionQueue: ActionQueue = new DelayedActionQueue,
-                     val mirrorMetadataManager: Option[MirrorMetadataManager] = None
+                     val mirrorCache: Option[MirrorMetadataCache] = None,
+                     val mirrorManager: Option[MirrorMetadataManager] = None
                      ) extends Logging {
   private val metricsGroup = new KafkaMetricsGroup(this.getClass)
   private val addPartitionsToTxnConfig = new AddPartitionsToTxnConfig(config)
@@ -1414,9 +1416,9 @@ class ReplicaManager(val config: KafkaConfig,
 
     def validateReadOnlyTopic(partition: Partition, records: MemoryRecords, origin: AppendOrigin): Unit = {
       val mirrorName = partition.getMirrorName()
-      if (mirrorMetadataManager.isDefined && mirrorName.isPresent) {
-        val entry = mirrorMetadataManager.get.getPartitionMetadata(
-          org.apache.kafka.server.mirror.MirrorPartitionKey.of(
+      if (mirrorCache.isDefined && mirrorName.isPresent) {
+        val entry = mirrorCache.get.getPartitionMetadata(
+          org.apache.kafka.server.mirror.MirrorPartition.of(
             mirrorName.get(),
             metadataCache.getTopicId(partition.topicPartition.topic()),
             partition.topicPartition.partition()))
@@ -1426,8 +1428,8 @@ class ReplicaManager(val config: KafkaConfig,
             (origin == AppendOrigin.COORDINATOR || origin == AppendOrigin.REPLICATION) &&
             records.batches().asScala.exists(b => ControlRecordType.isMirrorPidResetBatch(b) || ControlRecordType.isAbortTxnBatch(b)))
         if (!allowed) {
-          throw new ReadOnlyTopicException("Cannot append to read-only partition %s on broker %d (mirrorName=%s)"
-            .format(partition.topicPartition, localBrokerId, mirrorName.get()))
+          throw new ReadOnlyTopicException(s"Cannot append to mirror partition ${partition.topicPartition} in " +
+            s"state $entryState on broker $localBrokerId for mirror ${mirrorName.get()}")
         }
       }
     }
@@ -1871,16 +1873,16 @@ class ReplicaManager(val config: KafkaConfig,
         } else {
           log = partition.localLogWithEpochOrThrow(fetchInfo.currentLeaderEpoch, params.fetchOnlyLeader())
           val mirrorName = partition.getMirrorName()
-          val state = if (mirrorMetadataManager.isDefined && mirrorName.isPresent) {
-            val entry = mirrorMetadataManager.get.getPartitionMetadata(
-              org.apache.kafka.server.mirror.MirrorPartitionKey.of(
+          val state = if (mirrorCache.isDefined && mirrorName.isPresent) {
+            val entry = mirrorCache.get.getPartitionMetadata(
+              org.apache.kafka.server.mirror.MirrorPartition.of(
                 mirrorName.get(),
-                metadataCache.getTopicId(partition.topicPartition.topic()),
+                mirrorCache.get.getTopicId(partition.topicPartition.topic()),
                 partition.topicPartition.partition()))
             if (entry != null) entry.state() else MirrorPartitionState.UNKNOWN
           } else MirrorPartitionState.UNKNOWN
-          val sourceLeaderEpochOpt: Optional[Integer] = if (partition.isLeader && mirrorMetadataManager.isDefined && mirrorName.isPresent)
-            Optional.of(mirrorMetadataManager.get.resolveSourceLeader(mirrorName.get(), partition.topicPartition).leaderEpoch())
+          val sourceLeaderEpochOpt: Optional[Integer] = if (partition.isLeader && mirrorCache.isDefined && mirrorName.isPresent)
+            Optional.of(mirrorCache.get.getSourceClusterLeader(mirrorName.get(), partition.topicPartition).leaderEpoch())
           else Optional.empty()
 
           // Try the read first, this tells us whether we need all of adjustedFetchSize for this partition
@@ -2311,7 +2313,7 @@ class ReplicaManager(val config: KafkaConfig,
   }
 
   private def createMirrorFetcherManager(metrics: Metrics, time: Time, quotaManager: ReplicationQuotaManager) = {
-    new MirrorFetcherManager(config, this, metrics, time, quotaManager, brokerEpochSupplier, metadataCache)
+    new MirrorFetcherManager(config, this, metrics, time, quotaManager, brokerEpochSupplier, metadataCache, mirrorCache)
   }
 
   protected def createReplicaAlterLogDirsManager(quotaManager: ReplicationQuotaManager, brokerTopicStats: BrokerTopicStats) = {
@@ -2633,15 +2635,13 @@ class ReplicaManager(val config: KafkaConfig,
   /**
    * Creates and starts MirrorFetcherThreads for partitions that became read-only leaders.
    *
-   * TODO: we should handle the error cases like in applyLocalFollowersDelta
-   *
    * @param mirrorLeaders Map of partitions to their metadata for partitions that became
-   *                        read-only leaders on this broker
+   *                      read-only leaders on this broker
    */
   def maybeCreateMirrorFetchers(mirrorName: String, mirrorLeaders: java.util.Set[TopicPartition]): Unit = {
     if (mirrorLeaders.isEmpty) return
 
-    stateChangeLogger.info(s"Starting mirror fetchers for ${mirrorLeaders.size} read-only leader partition(s).")
+    stateChangeLogger.info(s"Creating mirror fetchers for mirror $mirrorName: ${mirrorLeaders.size} partitions")
     val partitionAndOffsets = new mutable.HashMap[TopicPartition, InitialFetchState]
     val pendingMetadataPartitions = new mutable.HashSet[TopicPartition]
     val errorPartitionAndOffsets = new mutable.HashSet[TopicPartition]
@@ -2650,8 +2650,7 @@ class ReplicaManager(val config: KafkaConfig,
       getPartition(tp) match {
         case HostedPartition.Online(partition) =>
           try {
-            // Get the source partition leader
-            val sourceLeader = mirrorMetadataManager.get.resolveSourceLeader(mirrorName, tp)
+            val sourceLeader = mirrorCache.get.getSourceClusterLeader(mirrorName, tp)
             val sourceLeaderNode = sourceLeader.node()
             val leaderEndpoint = new BrokerEndPoint(sourceLeaderNode.id(), sourceLeaderNode.host(), sourceLeaderNode.port())
 
@@ -2669,7 +2668,7 @@ class ReplicaManager(val config: KafkaConfig,
               override def onHighWatermarkUpdated(partition: TopicPartition, offset: Long): Unit = {
                 // Update mirror lag with the new HW
                 // Keep the existing source offset, it will be updated by the next mirror fetch
-                val mirrorOffsetInfo = mirrorFetcherManager.getMirrorOffsetInfo(mirrorName).get(tp)
+                val mirrorOffsetInfo = mirrorFetcherManager.getOffsetInfo(mirrorName).get(tp)
                 mirrorOffsetInfo.foreach { info =>
                   updateMirrorOffsetInfo(mirrorName, tp, info.sourceOffset, offset)
                 }
@@ -2679,36 +2678,36 @@ class ReplicaManager(val config: KafkaConfig,
           } catch {
             case _: IllegalStateException =>
               pendingMetadataPartitions.add(tp)
-              stateChangeLogger.info(s"Source metadata not yet available for partition $tp, will retry after refresh")
+              stateChangeLogger.info(s"Deferring fetcher setup for mirror partition $tp: source metadata not yet available")
             case e: Exception =>
               errorPartitionAndOffsets.add(tp)
-              stateChangeLogger.error(s"Error setting up mirror fetcher for partition $tp: ${e.getMessage}")
+              stateChangeLogger.error(s"Failed to create fetcher for mirror partition $tp", e)
           }
         case _ =>
-          stateChangeLogger.warn(s"Skipping mirror fetcher setup for offline partition $tp")
+          stateChangeLogger.warn(s"Skipping fetcher setup for offline mirror partition $tp; will retry when partition becomes online")
       }
     }
 
     if (partitionAndOffsets.nonEmpty) {
       try {
         mirrorFetcherManager.addFetcherForPartitions(partitionAndOffsets)
-        stateChangeLogger.info(s"Started mirror fetchers for ${partitionAndOffsets.size} read-only leader partitions")
+        stateChangeLogger.info(s"Successfully created mirror fetchers for ${partitionAndOffsets.size} partitions")
       } catch {
         case e: Exception =>
-          stateChangeLogger.error(s"Error adding mirror fetcher for partitions ${partitionAndOffsets.keySet}", e)
+          stateChangeLogger.error(s"Failed to create mirror fetchers for partitions: ${partitionAndOffsets.keySet}", e)
       }
     }
 
     if (pendingMetadataPartitions.nonEmpty) {
-      mirrorMetadataManager.foreach(_.scheduleSourceTopicStateSync(mirrorName))
-      mirrorMetadataManager.foreach(_.transitionTo(mirrorName, pendingMetadataPartitions.asJava,
+      mirrorManager.foreach(_.scheduleSourceTopicStateSync(mirrorName))
+      mirrorManager.foreach(_.transitionTo(mirrorName, pendingMetadataPartitions.asJava,
         MirrorPartitionState.FAILED, "Failed to get source metadata", false))
     }
 
     if (errorPartitionAndOffsets.nonEmpty) {
-      mirrorMetadataManager.foreach(_.scheduleSourceTopicStateSync(mirrorName))
-      mirrorMetadataManager.foreach(_.transitionTo(mirrorName, errorPartitionAndOffsets.asJava,
-        MirrorPartitionState.FAILED, "Failed to add mirror fetcher", false))
+      mirrorManager.foreach(_.scheduleSourceTopicStateSync(mirrorName))
+      mirrorManager.foreach(_.transitionTo(mirrorName, errorPartitionAndOffsets.asJava,
+        MirrorPartitionState.FAILED, "Failed to create fetcher", false))
     }
   }
 
@@ -2735,7 +2734,7 @@ class ReplicaManager(val config: KafkaConfig,
    * @param destinationOffset destination HW
    */
   def updateMirrorOffsetInfo(mirrorName: String, topicPartition: TopicPartition, sourceOffset: Long, destinationOffset: Long): Unit =
-    mirrorFetcherManager.updateMirrorOffsetInfo(mirrorName, topicPartition, sourceOffset, destinationOffset)
+    mirrorFetcherManager.updateOffsetInfo(mirrorName, topicPartition, sourceOffset, destinationOffset)
 
   /**
    * Get mirror partition offset info.
@@ -2745,5 +2744,5 @@ class ReplicaManager(val config: KafkaConfig,
    * @return offset info
    */
   def getMirrorOffsetInfo(mirrorName: String): Map[TopicPartition, MirrorOffsetInfo] =
-    mirrorFetcherManager.getMirrorOffsetInfo(mirrorName)
+    mirrorFetcherManager.getOffsetInfo(mirrorName)
 }

@@ -1602,6 +1602,7 @@ project(':mirror-coordinator') {
         implementation libs.metrics
         implementation libs.re2j
         implementation project(':clients')
+        implementation project(':metadata')
         implementation project(':server-common')
         implementation project(':coordinator-common')
         implementation libs.slf4jApi

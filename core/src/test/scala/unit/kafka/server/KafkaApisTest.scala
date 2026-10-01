@@ -23,6 +23,7 @@ import kafka.network.RequestChannel
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.metadata.KRaftMetadataCache
 import kafka.server.mirror.MirrorMetadataManager
+import org.apache.kafka.coordinator.mirror.MirrorMetadataCache
 import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService
 import kafka.server.share.SharePartitionManager
 import kafka.utils.{CoreUtils, Logging, TestUtils}
@@ -201,6 +202,7 @@ class KafkaApisTest extends Logging {
       shareCoordinator = shareCoordinator,
       clusterMirrorCoordinator = mirrorCoordinator,
       mirrorMetadataManager = mirrorMetadataManager,
+      mirrorMetadataCache = MirrorMetadataCache.empty(metadataCache),
       autoTopicCreationManager = autoTopicCreationManager,
       brokerId = brokerId,
       config = config,

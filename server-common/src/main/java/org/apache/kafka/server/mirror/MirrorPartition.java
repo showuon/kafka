@@ -23,8 +23,7 @@ import java.util.Arrays;
 import java.util.Objects;
 
 /**
- * This key is used to uniquely identify a mirror partition in the coordinator.
- * The composite key format is {@code mirrorName:topicId:partition}.
+ * Uniquely identify a mirror partition by mirrorName, topicId, partition.
  *
  * <p>Mirror names must be non-empty, at most 249 characters, contain only ASCII
  * alphanumerics, '.', '_' and '-', and cannot be "." or "..".
@@ -36,18 +35,18 @@ import java.util.Objects;
  * @param topicId the topic ID
  * @param partition the partition index
  */
-public record MirrorPartitionKey(String mirrorName, Uuid topicId, int partition) {
+public record MirrorPartition(String mirrorName, Uuid topicId, int partition) {
     private static final int MAX_NAME_LENGTH = 249;
 
-    public MirrorPartitionKey(String mirrorName, Uuid topicId, int partition) {
+    public MirrorPartition(String mirrorName, Uuid topicId, int partition) {
         this.mirrorName = Objects.requireNonNull(mirrorName, "Mirror name cannot be null");
         validateMirrorName(mirrorName);
         this.topicId = Objects.requireNonNull(topicId, "topicId cannot be null");
         this.partition = Objects.requireNonNull(partition, "partition cannot be null");
     }
 
-    public static MirrorPartitionKey of(String mirrorName, Uuid topicId, int partition) {
-        return new MirrorPartitionKey(mirrorName, topicId, partition);
+    public static MirrorPartition of(String mirrorName, Uuid topicId, int partition) {
+        return new MirrorPartition(mirrorName, topicId, partition);
     }
 
     private static void validateMirrorName(String name) {
@@ -80,14 +79,14 @@ public record MirrorPartitionKey(String mirrorName, Uuid topicId, int partition)
     }
 
     /**
-     * Returns a {@link MirrorPartitionKey} parsed from a string of format {@code mirrorName:topicId:partition}.
+     * Returns a {@link MirrorPartition} parsed from a string of format {@code mirrorName:topicId:partition}.
      * The key is parsed right-to-left to correctly handle mirror names that may contain colons.
      *
      * @param key the string to parse
-     * @return the parsed {@link MirrorPartitionKey}
+     * @return the parsed {@link MirrorPartition}
      * @throws IllegalArgumentException if the key is empty or has invalid format
      */
-    public static MirrorPartitionKey getInstance(String key) {
+    public static MirrorPartition getInstance(String key) {
         Objects.requireNonNull(key, "Key cannot be null");
         if (key.isEmpty()) {
             throw new IllegalArgumentException("Mirror key cannot be empty");
@@ -121,7 +120,7 @@ public record MirrorPartitionKey(String mirrorName, Uuid topicId, int partition)
             throw new IllegalArgumentException("Invalid partition: " + partitionStr, e);
         }
 
-        return new MirrorPartitionKey(mirrorName, topicId, partition);
+        return new MirrorPartition(mirrorName, topicId, partition);
     }
 
     /**
@@ -151,7 +150,7 @@ public record MirrorPartitionKey(String mirrorName, Uuid topicId, int partition)
     }
 
     /**
-     * Validates whether the string argument has a valid {@link MirrorPartitionKey} format.
+     * Validates whether the string argument has a valid {@link MirrorPartition} format.
      *
      * @param key the string to validate
      * @throws IllegalArgumentException if the key is empty or has invalid format
