@@ -31,14 +31,14 @@ from kafkatest.version import (
     V_3_0_0,
 )
 
-ZK_ACL_AUTHORIZER_OLD = "kafka.security.auth.SimpleAclAuthorizer"
-ZK_ACL_AUTHORIZER_NEW = "kafka.security.authorizer.AclAuthorizer"
 
+class ClusterMirroringCompSecureTest(MirrorUtils, Test):
+    """Compatibility tests for Cluster Mirroring with SASL_SSL setup across different Kafka versions."""
 
-class ClusterMirroringCompSaslSslTest(MirrorUtils, Test):
-    """Tests for KIP-1279 Cluster Mirroring ACLs sync across different Kafka versions."""
+    ZK_ACL_AUTHORIZER_OLD = "kafka.security.auth.SimpleAclAuthorizer"
+    ZK_ACL_AUTHORIZER_NEW = "kafka.security.authorizer.AclAuthorizer"
 
-    DEST_SERVER_PROPS = [
+    DST_SERVER_PROPS = [
         ["auto.create.topics.enable", "false"],
         ["default.replication.factor", "2"],
         ["min.insync.replicas", "1"],
@@ -55,7 +55,7 @@ class ClusterMirroringCompSaslSslTest(MirrorUtils, Test):
         ["mirror.failed.retry.max.backoff.ms", "5000"],
     ]
 
-    SOURCE_SERVER_PROPS = [
+    SRC_SERVER_PROPS = [
         ["default.replication.factor", "2"],
         ["min.insync.replicas", "1"],
         ["offsets.topic.replication.factor", "2"],
@@ -65,7 +65,71 @@ class ClusterMirroringCompSaslSslTest(MirrorUtils, Test):
     ]
 
     def __init__(self, test_context):
-        super(ClusterMirroringCompSaslSslTest, self).__init__(test_context)
+        super(ClusterMirroringCompSecureTest, self).__init__(test_context)
+
+    def setup_source(self, source_version, metadata_quorum):
+        # Separate client node with matching CLI version for the older source cluster.
+        self.source_client = ClientService(self.test_context, version=source_version)
+        self.source_client.start()
+        self.source_client_node = self.source_client.nodes[0]
+        if metadata_quorum == quorum.zk:
+            self.zk = ZookeeperService(self.test_context, num_nodes=1)
+            self.zk.start()
+            self.source_kafka = KafkaService(
+                self.test_context, num_nodes=2, zk=self.zk,
+                version=source_version,
+                security_protocol=SecurityConfig.SASL_SSL,
+                interbroker_security_protocol=SecurityConfig.SASL_SSL,
+                client_sasl_mechanism=SecurityConfig.SASL_MECHANISM_PLAIN,
+                interbroker_sasl_mechanism=SecurityConfig.SASL_MECHANISM_PLAIN,
+                authorizer_class_name=ZK_ACL_AUTHORIZER_OLD if source_version < V_3_0_0 else ZK_ACL_AUTHORIZER_NEW,
+                server_prop_overrides=self.SRC_SERVER_PROPS,
+            )
+            self._original_metadata_quorum = self.test_context.injected_args.get("metadata_quorum")
+            self.test_context.injected_args["metadata_quorum"] = quorum.isolated_kraft
+        else:
+            self.source_kafka = KafkaService(
+                self.test_context, num_nodes=2, zk=None,
+                version=source_version,
+                security_protocol=SecurityConfig.SASL_SSL,
+                interbroker_security_protocol=SecurityConfig.SASL_SSL,
+                client_sasl_mechanism=SecurityConfig.SASL_MECHANISM_PLAIN,
+                interbroker_sasl_mechanism=SecurityConfig.SASL_MECHANISM_PLAIN,
+                authorizer_class_name=KafkaService.KRAFT_ACL_AUTHORIZER,
+                controller_num_nodes_override=1,
+                server_prop_overrides=self.SRC_SERVER_PROPS,
+            )
+        self.source_kafka.start()
+        self.source_client.setup_security(self.source_kafka.security_config)
+
+    def setup_dest(self):
+        # Separate client node with DEV_BRANCH CLI for the destination cluster.
+        self.dest_client = ClientService(self.test_context)
+        self.dest_client.start()
+        self.dest_client_node = self.dest_client.nodes[0]
+        self.dest_kafka = KafkaService(
+            self.test_context, num_nodes=2, zk=None,
+            security_protocol=SecurityConfig.SASL_SSL,
+            interbroker_security_protocol=SecurityConfig.SASL_SSL,
+            client_sasl_mechanism=SecurityConfig.SASL_MECHANISM_PLAIN,
+            interbroker_sasl_mechanism=SecurityConfig.SASL_MECHANISM_PLAIN,
+            authorizer_class_name=KafkaService.KRAFT_ACL_AUTHORIZER,
+            use_cluster_mirroring=True,
+            controller_num_nodes_override=1,
+            server_prop_overrides=self.DST_SERVER_PROPS,
+        )
+        self.dest_kafka.start()
+        self.dest_client.setup_security(self.dest_kafka.security_config)
+        self.logger.info(
+            "Changing metadata.version on %s to %s", self.dest_kafka, CLUSTER_MIRRORING_METADATA_VERSION
+        )
+        self.dest_kafka.upgrade_metadata_version(CLUSTER_MIRRORING_METADATA_VERSION)
+        self.logger.info(
+            "Changing mirror.version on %s to %s", self.dest_kafka, CLUSTER_MIRRORING_VERSION
+        )
+        self.dest_kafka.run_features_command(
+            "upgrade", "mirror.version", CLUSTER_MIRRORING_VERSION
+        )
 
     def teardown(self):
         if hasattr(self, "_original_metadata_quorum"):
@@ -86,72 +150,7 @@ class ClusterMirroringCompSaslSslTest(MirrorUtils, Test):
         if hasattr(self, "zk"):
             self.zk.stop()
 
-    def setup_source(self, source_version, metadata_quorum):
-        # Separate client node with matching CLI version for the older source cluster.
-        self.source_client = ClientService(self.test_context, version=source_version)
-        self.source_client.start()
-        self.source_client_node = self.source_client.nodes[0]
-        if metadata_quorum == quorum.zk:
-            self.zk = ZookeeperService(self.test_context, num_nodes=1)
-            self.zk.start()
-            self.source_kafka = KafkaService(
-                self.test_context, num_nodes=2, zk=self.zk,
-                version=source_version,
-                security_protocol=SecurityConfig.SASL_SSL,
-                interbroker_security_protocol=SecurityConfig.SASL_SSL,
-                client_sasl_mechanism=SecurityConfig.SASL_MECHANISM_PLAIN,
-                interbroker_sasl_mechanism=SecurityConfig.SASL_MECHANISM_PLAIN,
-                authorizer_class_name=ZK_ACL_AUTHORIZER_OLD if source_version < V_3_0_0 else ZK_ACL_AUTHORIZER_NEW,
-                server_prop_overrides=self.SOURCE_SERVER_PROPS,
-            )
-            self._original_metadata_quorum = self.test_context.injected_args.get("metadata_quorum")
-            self.test_context.injected_args["metadata_quorum"] = quorum.isolated_kraft
-        else:
-            self.source_kafka = KafkaService(
-                self.test_context, num_nodes=2, zk=None,
-                version=source_version,
-                security_protocol=SecurityConfig.SASL_SSL,
-                interbroker_security_protocol=SecurityConfig.SASL_SSL,
-                client_sasl_mechanism=SecurityConfig.SASL_MECHANISM_PLAIN,
-                interbroker_sasl_mechanism=SecurityConfig.SASL_MECHANISM_PLAIN,
-                authorizer_class_name=KafkaService.KRAFT_ACL_AUTHORIZER,
-                controller_num_nodes_override=1,
-                server_prop_overrides=self.SOURCE_SERVER_PROPS,
-            )
-        self.source_kafka.start()
-        self.source_client.setup_security(self.source_kafka.security_config)
-
-    def setup_dest(self):
-        # Separate client node with DEV_BRANCH CLI for the destination cluster.
-        self.dest_client = ClientService(self.test_context)
-        self.dest_client.start()
-        self.dest_client_node = self.dest_client.nodes[0]
-        self.dest_kafka = KafkaService(
-            self.test_context, num_nodes=2, zk=None,
-            security_protocol=SecurityConfig.SASL_SSL,
-            interbroker_security_protocol=SecurityConfig.SASL_SSL,
-            client_sasl_mechanism=SecurityConfig.SASL_MECHANISM_PLAIN,
-            interbroker_sasl_mechanism=SecurityConfig.SASL_MECHANISM_PLAIN,
-            authorizer_class_name=KafkaService.KRAFT_ACL_AUTHORIZER,
-            use_cluster_mirroring=True,
-            controller_num_nodes_override=1,
-            server_prop_overrides=self.DEST_SERVER_PROPS,
-        )
-        self.dest_kafka.start()
-        self.dest_client.setup_security(self.dest_kafka.security_config)
-        self.logger.info(
-            "Changing metadata.version on %s to %s", self.dest_kafka, CLUSTER_MIRRORING_METADATA_VERSION
-        )
-        self.dest_kafka.upgrade_metadata_version(CLUSTER_MIRRORING_METADATA_VERSION)
-        self.logger.info(
-            "Changing mirror.version on %s to %s", self.dest_kafka, CLUSTER_MIRRORING_VERSION
-        )
-        self.dest_kafka.run_features_command(
-            "upgrade", "mirror.version", CLUSTER_MIRRORING_VERSION
-        )
-
-    @staticmethod
-    def create_mirror_config(source_kafka):
+    def create_mirror_config(self, source_kafka):
         mirror_cfg = MirrorConfig(
             source_kafka.bootstrap_servers(source_kafka.security_protocol),
             security_config=source_kafka.security_config,
@@ -161,8 +160,7 @@ class ClusterMirroringCompSaslSslTest(MirrorUtils, Test):
             'username="kafka" password="kafka-secret";'
         return mirror_cfg
 
-    @staticmethod
-    def run_acl_cmd(kafka, args, client_node):
+    def run_acl_cmd(self, kafka, args, client_node):
         if kafka.zk is not None:
             cmd = "%s --authorizer-properties zookeeper.connect=%s %s" % (
                 kafka.path.script("kafka-acls.sh", client_node),
@@ -171,8 +169,7 @@ class ClusterMirroringCompSaslSslTest(MirrorUtils, Test):
             cmd = "%s %s" % (kafka.kafka_acls_cmd_with_optional_security_settings(client_node), args)
         return kafka.run_cli_tool(client_node, cmd)
 
-    @staticmethod
-    def produce_as_client(logger, kafka, client_node, topic, num_messages):
+    def produce_as_client(self, kafka, client_node, topic, num_messages):
         client_env = "KAFKA_OPTS='-D%s -D%s' " % (
             KafkaService.JAAS_CONF_PROPERTY, KafkaService.KRB5_CONF)
         client_props = str(kafka.security_config.client_config(
@@ -188,10 +185,9 @@ class ClusterMirroringCompSaslSslTest(MirrorUtils, Test):
         output = ""
         for line in client_node.account.ssh_capture(cmd, allow_fail=False):
             output += line
-        logger.debug("Producer output for %s:\n%s", topic, output.strip())
+        self.logger.debug("Producer output for %s:\n%s", topic, output.strip())
 
-    @staticmethod
-    def consume_as_client(logger, kafka, client_node, topic, group=None,
+    def consume_as_client(self, kafka, client_node, topic, group=None,
                           max_messages=None, expected_count=None,
                           timeout_ms=30000, wait_timeout_sec=240):
         client_env = "KAFKA_OPTS='-D%s -D%s' " % (
@@ -213,7 +209,7 @@ class ClusterMirroringCompSaslSslTest(MirrorUtils, Test):
             for line in client_node.account.ssh_capture(cmd, allow_fail=True):
                 if line.strip():
                     count[0] += 1
-            logger.debug("Consumed %d messages from %s so far (expected %s)",
+            self.logger.debug("Consumed %d messages from %s so far (expected %s)",
                          count[0], topic, expected_count)
             return expected_count is None or count[0] >= expected_count
 
@@ -224,14 +220,13 @@ class ClusterMirroringCompSaslSslTest(MirrorUtils, Test):
             try_consume()
         return count[0]
 
-    @staticmethod
-    def list_acls(kafka, client_node):
-        return ClusterMirroringCompSaslSslTest.run_acl_cmd(kafka, "--list", client_node)
+    def list_acls(self, kafka, client_node):
+        return self.run_acl_cmd(kafka, "--list", client_node)
 
     def wait_for_acl_condition(self, kafka, mirror_name, condition, err_msg, client_node):
-        MirrorUtils.wait_for_metadata_refresh(self.logger, kafka, client_node, mirror_name)
+        self.wait_for_metadata_refresh(kafka, client_node, mirror_name)
         def check():
-            dest_acls = ClusterMirroringCompSaslSslTest.list_acls(kafka, client_node)
+            dest_acls = self.list_acls(kafka, client_node)
             self.logger.debug("Destination ACLs:\n%s" % dest_acls)
             return condition(dest_acls)
         wait_until(check, timeout_sec=120, backoff_sec=2, err_msg=err_msg)
@@ -241,7 +236,7 @@ class ClusterMirroringCompSaslSslTest(MirrorUtils, Test):
     @parametrize(source_version=str(LATEST_2_1), metadata_quorum=quorum.zk)
     @parametrize(source_version=str(LATEST_3_9), metadata_quorum=quorum.zk)
     @parametrize(source_version=str(LATEST_4_0), metadata_quorum=quorum.isolated_kraft)
-    def test_mirroring(self, source_version, metadata_quorum):
+    def test_acl_sync_and_filtering(self, source_version, metadata_quorum):
         """Verify ACL sync and filtering across different Kafka versions with SASL_SSL."""
         self.setup_source(KafkaVersion(source_version), metadata_quorum)
         self.setup_dest()
@@ -252,30 +247,30 @@ class ClusterMirroringCompSaslSslTest(MirrorUtils, Test):
             "new-topic": {"partitions": 2, "replication-factor": 2},
         }
 
-        self.logger.info("Creating topics on source cluster")
+        self.logger.info("Create topics on source cluster")
         for t, cfg in topics.items():
             self.source_kafka.create_topic({"topic": t, **cfg})
 
-        self.logger.info("Granting ACLs on source cluster")
-        ClusterMirroringCompSaslSslTest.run_acl_cmd(self.source_kafka,
+        self.logger.info("Grant ACLs on source cluster")
+        self.run_acl_cmd(self.source_kafka,
                          "--add --allow-principal User:client --operation READ --topic my-topic-a",
                          self.source_client_node)
-        ClusterMirroringCompSaslSslTest.run_acl_cmd(self.source_kafka,
+        self.run_acl_cmd(self.source_kafka,
                          "--add --allow-principal User:client --operation WRITE --topic my-topic-a",
                          self.source_client_node)
-        ClusterMirroringCompSaslSslTest.run_acl_cmd(self.source_kafka,
+        self.run_acl_cmd(self.source_kafka,
                          "--add --allow-principal User:client --operation READ --group my-group",
                          self.source_client_node)
-        ClusterMirroringCompSaslSslTest.run_acl_cmd(self.source_kafka,
+        self.run_acl_cmd(self.source_kafka,
                          "--add --allow-principal User:other-client --operation READ --topic new-topic",
                          self.source_client_node)
 
-        self.logger.info("Producing 10 messages to my-topic-a as client user")
-        ClusterMirroringCompSaslSslTest.produce_as_client(self.logger, self.source_kafka,
-                                                       self.source_client_node, "my-topic-a", 10)
+        self.logger.info("Produce 10 messages to my-topic-a as client user")
+        self.produce_as_client(self.source_kafka,
+                               self.source_client_node, "my-topic-a", 10)
 
-        self.logger.info("Creating and starting cluster mirror with ACL include filter")
-        mirror_cfg = ClusterMirroringCompSaslSslTest.create_mirror_config(self.source_kafka)
+        self.logger.info("Start cluster mirror with ACL include filter")
+        mirror_cfg = self.create_mirror_config(self.source_kafka)
         mirror_cfg.properties["acls.include"] = "TOPIC;my-topic-.*,GROUP;my-group"
         wait_until(
             lambda: self.dest_kafka.create_cluster_mirror(
@@ -291,37 +286,37 @@ class ClusterMirroringCompSaslSslTest(MirrorUtils, Test):
                 err_msg="Failed to start mirror topics for %s" % regex,
             )
         self.logger.info("Waiting for all partitions to reach MIRRORING with zero lag")
-        MirrorUtils.wait_mirror_lag_zero(self.logger,
+        self.wait_mirror_lag_zero(
             self.dest_kafka, self.dest_client_node, "my-mirror", topics=list(topics.keys()))
 
-        self.logger.info("Consuming 10 messages from my-topic-a on destination as client user")
-        count = ClusterMirroringCompSaslSslTest.consume_as_client(self.logger, self.dest_kafka,
-                                                               self.dest_client_node, "my-topic-a", "my-group",
-                                                               max_messages=10, expected_count=10)
+        self.logger.info("Consume 10 messages from my-topic-a on destination as client user")
+        count = self.consume_as_client(self.dest_kafka,
+                                       self.dest_client_node, "my-topic-a", "my-group",
+                                       max_messages=10, expected_count=10)
         assert count >= 10, "Expected 10 messages on my-topic-a, got %d" % count
 
-        self.logger.info("Verifying ACL filtering: my-topic-a ACL synced, new-topic ACL filtered out")
+        self.logger.info("Verify ACL filtering: my-topic-a ACL synced, new-topic ACL filtered out")
         self.wait_for_acl_condition(
             self.dest_kafka, "my-mirror",
             lambda acls: "User:client" in acls and "my-topic-a" in acls,
             "Client READ ACL on my-topic-a should be synced (matches include rule)",
             self.dest_client_node)
 
-        dest_acls = ClusterMirroringCompSaslSslTest.list_acls(self.dest_kafka, self.dest_client_node)
+        dest_acls = self.list_acls(self.dest_kafka, self.dest_client_node)
         assert "User:other-client" not in dest_acls and "new-topic" not in dest_acls, \
             "Other-client READ ACL on new-topic should not be synced (filtered out)"
 
-        self.logger.info("Removing my-topic-a ACLs from source cluster")
-        ClusterMirroringCompSaslSslTest.run_acl_cmd(self.source_kafka,
+        self.logger.info("Remove my-topic-a ACLs from source cluster")
+        self.run_acl_cmd(self.source_kafka,
                          "--remove --allow-principal User:client --operation READ "
                          "--topic my-topic-a --force",
                          self.source_client_node)
-        ClusterMirroringCompSaslSslTest.run_acl_cmd(self.source_kafka,
+        self.run_acl_cmd(self.source_kafka,
                          "--remove --allow-principal User:client --operation WRITE "
                          "--topic my-topic-a --force",
                          self.source_client_node)
 
-        self.logger.info("Verifying ACL removal propagated to destination")
+        self.logger.info("Verify ACL removal propagated to destination")
         self.wait_for_acl_condition(
             self.dest_kafka, "my-mirror",
             lambda acls: "my-topic-a" not in acls,

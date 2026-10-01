@@ -30,9 +30,9 @@ from kafkatest.version import (
 
 
 class ClusterMirroringCompTest(MirrorUtils, Test):
-    """Tests for KIP-1279 Cluster Mirroring across different Kafka versions."""
+    """Compatibility tests for Cluster Mirroring across different Kafka versions."""
 
-    DEST_SERVER_PROPS = [
+    DST_SERVER_PROPS = [
         ["auto.create.topics.enable", "false"],
         ["default.replication.factor", "2"],
         ["min.insync.replicas", "1"],
@@ -48,7 +48,7 @@ class ClusterMirroringCompTest(MirrorUtils, Test):
         ["mirror.failed.retry.max.backoff.ms", "5000"],
     ]
 
-    SOURCE_SERVER_PROPS = [
+    SRC_SERVER_PROPS = [
         ["default.replication.factor", "2"],
         ["min.insync.replicas", "1"],
         ["offsets.topic.replication.factor", "2"],
@@ -58,6 +58,53 @@ class ClusterMirroringCompTest(MirrorUtils, Test):
 
     def __init__(self, test_context):
         super(ClusterMirroringCompTest, self).__init__(test_context)
+
+    def setup_source(self, source_version, metadata_quorum):
+        # Separate client node with matching CLI version for the older source cluster.
+        self.source_client = ClientService(self.test_context, version=source_version)
+        self.source_client.start()
+        self.source_client_node = self.source_client.nodes[0]
+        if metadata_quorum == quorum.zk:
+            self.zk = ZookeeperService(self.test_context, num_nodes=1)
+            self.zk.start()
+            self.source_kafka = KafkaService(
+                self.test_context, num_nodes=2, zk=self.zk,
+                version=source_version,
+                server_prop_overrides=self.SRC_SERVER_PROPS,
+            )
+            self._original_metadata_quorum = self.test_context.injected_args.get("metadata_quorum")
+            self.test_context.injected_args["metadata_quorum"] = quorum.isolated_kraft
+        else:
+            self.source_kafka = KafkaService(
+                self.test_context, num_nodes=2, zk=None,
+                version=source_version,
+                controller_num_nodes_override=1,
+                server_prop_overrides=self.SRC_SERVER_PROPS,
+            )
+        self.source_kafka.start()
+
+    def setup_dest(self):
+        # Separate client node with DEV_BRANCH CLI for the destination cluster.
+        self.dest_client = ClientService(self.test_context)
+        self.dest_client.start()
+        self.dest_client_node = self.dest_client.nodes[0]
+        self.dest_kafka = KafkaService(
+            self.test_context, num_nodes=2, zk=None,
+            use_cluster_mirroring=True,
+            controller_num_nodes_override=1,
+            server_prop_overrides=self.DST_SERVER_PROPS,
+        )
+        self.dest_kafka.start()
+        self.logger.info(
+            "Changing metadata.version on %s to %s", self.dest_kafka, CLUSTER_MIRRORING_METADATA_VERSION
+        )
+        self.dest_kafka.upgrade_metadata_version(CLUSTER_MIRRORING_METADATA_VERSION)
+        self.logger.info(
+            "Changing mirror.version on %s to %s", self.dest_kafka, CLUSTER_MIRRORING_VERSION
+        )
+        self.dest_kafka.run_features_command(
+            "upgrade", "mirror.version", CLUSTER_MIRRORING_VERSION
+        )
 
     def teardown(self):
         if hasattr(self, "_original_metadata_quorum"):
@@ -78,60 +125,12 @@ class ClusterMirroringCompTest(MirrorUtils, Test):
         if hasattr(self, "zk"):
             self.zk.stop()
 
-    def setup_source(self, source_version, metadata_quorum):
-        # Separate client node with matching CLI version for the older source cluster.
-        self.source_client = ClientService(self.test_context, version=source_version)
-        self.source_client.start()
-        self.source_client_node = self.source_client.nodes[0]
-        if metadata_quorum == quorum.zk:
-            self.zk = ZookeeperService(self.test_context, num_nodes=1)
-            self.zk.start()
-            self.source_kafka = KafkaService(
-                self.test_context, num_nodes=2, zk=self.zk,
-                version=source_version,
-                server_prop_overrides=self.SOURCE_SERVER_PROPS,
-            )
-            self._original_metadata_quorum = self.test_context.injected_args.get("metadata_quorum")
-            self.test_context.injected_args["metadata_quorum"] = quorum.isolated_kraft
-        else:
-            self.source_kafka = KafkaService(
-                self.test_context, num_nodes=2, zk=None,
-                version=source_version,
-                controller_num_nodes_override=1,
-                server_prop_overrides=self.SOURCE_SERVER_PROPS,
-            )
-        self.source_kafka.start()
-
-    def setup_dest(self):
-        # Separate client node with DEV_BRANCH CLI for the destination cluster.
-        self.dest_client = ClientService(self.test_context)
-        self.dest_client.start()
-        self.dest_client_node = self.dest_client.nodes[0]
-        self.dest_kafka = KafkaService(
-            self.test_context, num_nodes=2, zk=None,
-            use_cluster_mirroring=True,
-            controller_num_nodes_override=1,
-            server_prop_overrides=self.DEST_SERVER_PROPS,
-        )
-        self.dest_kafka.start()
-        self.logger.info(
-            "Changing metadata.version on %s to %s", self.dest_kafka, CLUSTER_MIRRORING_METADATA_VERSION
-        )
-        self.dest_kafka.upgrade_metadata_version(CLUSTER_MIRRORING_METADATA_VERSION)
-        self.logger.info(
-            "Changing mirror.version on %s to %s", self.dest_kafka, CLUSTER_MIRRORING_VERSION
-        )
-        self.dest_kafka.run_features_command(
-            "upgrade", "mirror.version", CLUSTER_MIRRORING_VERSION
-        )
-
-
     @cluster(num_nodes=8)
     @parametrize(source_version=str(LATEST_2_1), metadata_quorum=quorum.zk)
     @parametrize(source_version=str(LATEST_3_9), metadata_quorum=quorum.zk)
     @parametrize(source_version=str(LATEST_4_0), metadata_quorum=quorum.isolated_kraft)
-    def test_mirroring(self, source_version, metadata_quorum):
-        """Verify migration with data, consumer groups, and topic config sync."""
+    def test_mirror_and_sync(self, source_version, metadata_quorum):
+        """Verify data mirroring and metadata sync."""
         self.setup_source(KafkaVersion(source_version), metadata_quorum)
         self.setup_dest()
 
@@ -141,25 +140,25 @@ class ClusterMirroringCompTest(MirrorUtils, Test):
             "new-topic": {"partitions": 2, "replication-factor": 2},
         }
 
-        self.logger.info("Creating topics on source cluster")
+        self.logger.info("Create topics on source cluster")
         for t, cfg in topics.items():
             self.source_kafka.create_topic({"topic": t, **cfg})
 
         self.logger.info("Restart source cluster to bump the partitions leader epoch")
         self.source_kafka.restart_cluster(clean_shutdown=True)
 
-        self.logger.info("Producing %d messages to each source topic", 100)
+        self.logger.info("Produce %d messages to each source topic", 100)
         for t in topics:
-            MirrorUtils.produce_messages(self.logger, self.source_kafka, self.source_client_node, t, 100)
+            self.produce_messages(self.source_kafka, self.source_client_node, t, 100)
 
-        self.logger.info("Creating consumer group on source by consuming my-topic-a")
-        MirrorUtils.consume_messages(self.logger, self.source_kafka, self.source_client_node,
+        self.logger.info("Create consumer group on source by consuming my-topic-a")
+        self.consume_messages(self.source_kafka, self.source_client_node,
                              "my-topic-a", "my-group", max_messages=100)
 
-        self.logger.info("Setting dynamic topic config on source")
+        self.logger.info("Set dynamic topic config on source")
         self.source_kafka.alter_topic_config("my-topic-a", "retention.ms=100002", node=self.source_client_node)
 
-        self.logger.info("Creating and starting cluster mirror")
+        self.logger.info("Start cluster mirror on the destination cluster")
         mirror_cfg = MirrorConfig(self.source_kafka.bootstrap_servers())
 
         wait_until(
@@ -175,46 +174,46 @@ class ClusterMirroringCompTest(MirrorUtils, Test):
                 timeout_sec=60, backoff_sec=2,
                 err_msg="Failed to start mirror topics for %s" % regex,
             )
-        self.logger.info("Waiting for all partitions to reach MIRRORING with zero lag")
-        MirrorUtils.wait_mirror_lag_zero(self.logger,
+        self.logger.info("Wait for all partitions to reach MIRRORING with zero lag")
+        self.wait_mirror_lag_zero(
             self.dest_kafka, self.dest_client_node, "my-mirror", topics=list(topics.keys()))
-        MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.dest_client_node, "my-mirror")
+        self.wait_for_metadata_refresh(self.dest_kafka, self.dest_client_node, "my-mirror")
 
-        self.logger.info("Verifying consumer group offset sync")
+        self.logger.info("Verify consumer group offset sync")
         wait_until(
-            lambda: "my-topic-a" in MirrorUtils.describe_consumer_group(
+            lambda: "my-topic-a" in self.describe_consumer_group(
                 self.dest_kafka, "my-group", self.dest_client_node),
             timeout_sec=120, backoff_sec=2,
             err_msg="Expected my-topic-a offset to be synced on destination",
         )
 
-        self.logger.info("Verifying topic config sync")
+        self.logger.info("Verify topic config sync")
         dest_topic_desc = self.dest_kafka.describe_topic("my-topic-a", node=self.dest_client_node)
         assert "retention.ms=100002" in dest_topic_desc, \
             "Expected retention.ms=100002 synced to destination, got: %s" % dest_topic_desc
 
-        self.logger.info("Shutting down the leader of one topic, and send more messages to make sure the mirror can still work.")
+        self.logger.info("Shutdown the leader of one topic, and send more messages to make sure the mirror can still work.")
         leader_node = self.source_kafka.leader("my-topic-b", 0)
         self.source_kafka.stop_node(leader_node, clean_shutdown=False)
 
-        self.logger.info("Producing %d more messages to each source topic", 100)
+        self.logger.info("Produce %d more messages to each source topic", 100)
         for t in topics:
-            MirrorUtils.produce_messages(self.logger, self.source_kafka, self.source_client_node, t, 100)
+            self.produce_messages(self.source_kafka, self.source_client_node, t, 100)
 
-        self.logger.info("Waiting for all partitions to reach MIRRORING with zero lag after one source node down")
-        MirrorUtils.wait_mirror_lag_zero(self.logger, self.dest_kafka, self.dest_client_node, "my-mirror", topics=list(topics.keys()))
+        self.logger.info("Wait for all partitions to reach MIRRORING with zero lag after one source node down")
+        self.wait_mirror_lag_zero(self.dest_kafka, self.dest_client_node, "my-mirror", topics=list(topics.keys()))
 
-        self.logger.info("Stopping mirroring (failover)")
+        self.logger.info("Stop mirroring (failover)")
         for regex in ["my-topic.*", "new-topic"]:
             self.dest_kafka.stop_cluster_mirror_topics(
                 self.dest_client_node, "my-mirror", regex)
-        MirrorUtils.wait_mirror_state(self.logger,
+        self.wait_mirror_state(
             self.dest_kafka, self.dest_client_node, "my-mirror",
             list(topics.keys()), "STOPPED")
 
         self.logger.info("Verifying destination messages after failover")
         for topic in topics:
-            count = MirrorUtils.consume_messages(self.logger, self.dest_kafka, self.dest_client_node, topic,
+            count = self.consume_messages(self.dest_kafka, self.dest_client_node, topic,
                                          max_messages=100, expected_count=100)
             assert count >= 100, "Expected %d messages on %s, got %d" % (100, topic, count)
 
@@ -223,7 +222,7 @@ class ClusterMirroringCompTest(MirrorUtils, Test):
     @parametrize(source_version=str(LATEST_3_9), metadata_quorum=quorum.zk)
     @parametrize(source_version=str(LATEST_4_0), metadata_quorum=quorum.isolated_kraft)
     def test_migration_ule(self, source_version, metadata_quorum):
-        """Verify migration with unclean leader elections."""
+        """Verify cluster migration with unclean leader elections."""
         self.logger.info("Create source topic with ULE support enabled")
         topics = {"my-topic": {"partitions": 1, "replication-factor": 2}}
 
@@ -243,28 +242,14 @@ class ClusterMirroringCompTest(MirrorUtils, Test):
         self.source_kafka.restart_cluster(clean_shutdown=True)
 
         self.logger.info("Send 1 message via source broker 0")
-        MirrorUtils.produce_messages(self.logger, self.source_kafka, self.source_client_node, "my-topic", 1,
-                             bootstrap_servers=MirrorUtils.broker_bootstrap(src_broker0))
+        self.produce_messages(self.source_kafka, self.source_client_node, "my-topic", 1,
+                             bootstrap_servers=self.broker_bootstrap(src_broker0))
 
-        self.logger.info("Start cluster mirror on destination")
+        self.logger.info("Start cluster mirror on destination cluster")
         mirror_cfg = MirrorConfig(self.source_kafka.bootstrap_servers())
 
-        wait_until(
-            lambda: self.dest_kafka.create_cluster_mirror(
-                self.dest_client_node, "my-mirror", mirror_cfg),
-            timeout_sec=60, backoff_sec=2,
-            err_msg="Failed to create cluster mirror",
-        )
-        wait_until(
-            lambda: "Started" in self.dest_kafka.start_cluster_mirror_topics(
-                self.dest_client_node, "my-mirror", "my-topic"),
-            timeout_sec=60, backoff_sec=2,
-            err_msg="Failed to start mirror topics",
-        )
-        MirrorUtils.wait_mirror_state(
-            self.logger, self.dest_kafka, self.dest_client_node, "my-mirror", ["my-topic"], "MIRRORING",
-            err_msg="Mirror did not reach MIRRORING state",
-        )
+        self.create_and_start_mirror(
+            self.dest_kafka, self.dest_client_node, "my-mirror", mirror_cfg, "my-topic")
 
         dest_broker0 = self.dest_kafka.nodes[0]
         enable_ule_support_cmd = "%s --entity-type topics --entity-name %s --alter --add-config mirror.support.unclean.leader.election=true" % \
@@ -275,22 +260,22 @@ class ClusterMirroringCompTest(MirrorUtils, Test):
         self.source_kafka.stop_node(src_broker0)
 
         self.logger.info("Send 1 message via source broker 1")
-        MirrorUtils.produce_messages(self.logger, self.source_kafka, self.source_client_node, "my-topic", 1,
-                             bootstrap_servers=MirrorUtils.broker_bootstrap(src_broker1))
-        MirrorUtils.wait_for_log_convergence(self.logger, self.source_kafka, self.dest_kafka, topics)
+        self.produce_messages(self.source_kafka, self.source_client_node, "my-topic", 1,
+                             bootstrap_servers=self.broker_bootstrap(src_broker1))
+        self.wait_for_log_convergence(self.source_kafka, self.dest_kafka, topics)
 
         self.logger.info("ULE 1: stop broker 1, start broker 0 (stale), elect it as leader")
         self.source_kafka.stop_node(src_broker1)
         self.source_kafka.start_node(src_broker0)
 
         self.logger.info("Send 2 messages via source broker 0")
-        MirrorUtils.produce_messages(self.logger, self.source_kafka, self.source_client_node, "my-topic", 2,
-                             bootstrap_servers=MirrorUtils.broker_bootstrap(src_broker0))
-        MirrorUtils.wait_for_log_convergence(self.logger, self.source_kafka, self.dest_kafka, topics)
+        self.produce_messages(self.source_kafka, self.source_client_node, "my-topic", 2,
+                             bootstrap_servers=self.broker_bootstrap(src_broker0))
+        self.wait_for_log_convergence(self.source_kafka, self.dest_kafka, topics)
 
         self.logger.info("Failover: stop mirror so destination topic becomes writable")
         self.dest_kafka.stop_cluster_mirror_topics(self.dest_client_node, "my-mirror", "my-topic")
-        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.dest_client_node, "my-mirror", ["my-topic"], "STOPPED")
+        self.wait_mirror_state(self.dest_kafka, self.dest_client_node, "my-mirror", ["my-topic"], "STOPPED")
 
     @cluster(num_nodes=8)
     @parametrize(source_version=str(LATEST_2_1), metadata_quorum=quorum.zk)
@@ -303,26 +288,15 @@ class ClusterMirroringCompTest(MirrorUtils, Test):
 
         self.source_kafka.create_topic({"topic": "my-topic", "partitions": 1, "replication-factor": 2})
 
-        self.logger.info("Start cluster mirror on destination")
+        self.logger.info("Start cluster mirror on destination cluster")
         mirror_cfg = MirrorConfig(self.source_kafka.bootstrap_servers())
 
-        wait_until(
-            lambda: self.dest_kafka.create_cluster_mirror(
-                self.dest_client_node, "my-mirror", mirror_cfg),
-            timeout_sec=120, backoff_sec=2,
-            err_msg="Failed to create cluster mirror",
-        )
-        wait_until(
-            lambda: "Started" in self.dest_kafka.start_cluster_mirror_topics(
-                self.dest_client_node, "my-mirror", "my-topic"),
-            timeout_sec=120, backoff_sec=2,
-            err_msg="Failed to start mirror topics",
-        )
-        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.dest_client_node, "my-mirror", ["my-topic"], "MIRRORING")
+        self.create_and_start_mirror(
+            self.dest_kafka, self.dest_client_node, "my-mirror", mirror_cfg, "my-topic")
 
         self.logger.info("Delete topic on source and wait for metadata sync")
         self.source_kafka.delete_topic("my-topic")
-        MirrorUtils.wait_for_metadata_refresh(self.logger, self.dest_kafka, self.dest_client_node, "my-mirror")
+        self.wait_for_metadata_refresh(self.dest_kafka, self.dest_client_node, "my-mirror")
 
         self.logger.info("Verify mirror partitions transitioned to FAILED")
-        MirrorUtils.wait_mirror_state(self.logger, self.dest_kafka, self.dest_client_node, "my-mirror", ["my-topic"], "FAILED")
+        self.wait_mirror_state(self.dest_kafka, self.dest_client_node, "my-mirror", ["my-topic"], "FAILED")
