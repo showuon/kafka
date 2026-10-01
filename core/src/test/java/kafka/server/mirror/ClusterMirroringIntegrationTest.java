@@ -913,83 +913,6 @@ public class ClusterMirroringIntegrationTest {
         }
     }
 
-    private void produceRecords(KafkaClusterTestKit cluster, String topic,
-                                int startIndex, int count) {
-        Properties props = new Properties();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, cluster.bootstrapServers());
-        props.put(ProducerConfig.ACKS_CONFIG, "all");
-        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-
-        try (KafkaProducer<String, String> producer = new KafkaProducer<>(props)) {
-            for (int i = startIndex; i < startIndex + count; i++) {
-                producer.send(new ProducerRecord<>(topic, "key-" + i, "value-" + i));
-            }
-            producer.flush();
-        }
-    }
-
-    private List<ConsumerRecord<String, String>> consumeRecords(
-            KafkaClusterTestKit cluster, String topic, int expectedRecords) throws Exception {
-        return consumeRecords(cluster, topic, expectedRecords, null);
-    }
-
-    private List<ConsumerRecord<String, String>> consumeRecords(
-            KafkaClusterTestKit cluster, String topic, int expectedRecords,
-            String groupId) throws Exception {
-        boolean commitOffsets = groupId != null;
-        Properties props = new Properties();
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, cluster.bootstrapServers());
-        props.put(ConsumerConfig.GROUP_ID_CONFIG, commitOffsets ? groupId : "test-" + System.currentTimeMillis());
-        props.put(ConsumerConfig.GROUP_PROTOCOL_CONFIG, "consumer");
-        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
-        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-
-        List<ConsumerRecord<String, String>> allRecords = new ArrayList<>();
-        long deadline = System.currentTimeMillis() + 30_000;
-        while (allRecords.size() < expectedRecords && System.currentTimeMillis() < deadline) {
-            try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props)) {
-                consumer.subscribe(List.of(topic));
-                allRecords.clear();
-                long pollDeadline = System.currentTimeMillis() + 5_000;
-                while (allRecords.size() < expectedRecords && System.currentTimeMillis() < pollDeadline) {
-                    ConsumerRecords<String, String> batch = consumer.poll(Duration.ofMillis(500));
-                    batch.forEach(allRecords::add);
-                }
-                if (commitOffsets && allRecords.size() >= expectedRecords) {
-                    consumer.commitSync();
-                }
-            } catch (Exception e) {
-                if (commitOffsets && allRecords.size() >= expectedRecords) {
-                    throw e;
-                }
-            }
-            if (allRecords.size() < expectedRecords) {
-                TimeUnit.MILLISECONDS.sleep(1_000);
-            }
-        }
-        assertEquals(expectedRecords, allRecords.size(),
-                "Expected to consume " + expectedRecords + " records from " + topic);
-        return allRecords;
-    }
-
-    private Map<String, TopicDescription> describeTopics(
-            Admin admin, List<String> topics) throws Exception {
-        long deadline = System.currentTimeMillis() + 30_000;
-        while (true) {
-            try {
-                return admin.describeTopics(topics).allTopicNames().get(5, TimeUnit.SECONDS);
-            } catch (Exception e) {
-                if (System.currentTimeMillis() >= deadline) {
-                    throw e;
-                }
-                TimeUnit.MILLISECONDS.sleep(500);
-            }
-        }
-    }
-
     @Test
     void testListClusterMirrorsFilters() throws Exception {
         String topicA = "list-filter-a";
@@ -1104,6 +1027,74 @@ public class ClusterMirroringIntegrationTest {
                 closeable.close();
             } catch (Exception e) {
                 // Ignore
+            }
+        }
+    }
+    
+    private void produceRecords(KafkaClusterTestKit cluster, String topic,
+                                int startIndex, int count) {
+        Properties props = new Properties();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, cluster.bootstrapServers());
+        props.put(ProducerConfig.ACKS_CONFIG, "all");
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+
+        try (KafkaProducer<String, String> producer = new KafkaProducer<>(props)) {
+            for (int i = startIndex; i < startIndex + count; i++) {
+                producer.send(new ProducerRecord<>(topic, "key-" + i, "value-" + i));
+            }
+            producer.flush();
+        }
+    }
+
+    private List<ConsumerRecord<String, String>> consumeRecords(
+            KafkaClusterTestKit cluster, String topic, int expectedRecords) throws Exception {
+        return consumeRecords(cluster, topic, expectedRecords, null);
+    }
+
+    private List<ConsumerRecord<String, String>> consumeRecords(
+            KafkaClusterTestKit cluster, String topic, int expectedRecords,
+            String groupId) throws Exception {
+        boolean commitOffsets = groupId != null;
+        Properties props = new Properties();
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, cluster.bootstrapServers());
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, commitOffsets ? groupId : "test-" + System.currentTimeMillis());
+        props.put(ConsumerConfig.GROUP_PROTOCOL_CONFIG, "consumer");
+        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+
+        List<ConsumerRecord<String, String>> allRecords = new ArrayList<>();
+        try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props)) {
+            consumer.subscribe(List.of(topic));
+            // When expectedRecords == 0, poll briefly to verify no records exist
+            long deadline = System.currentTimeMillis() + (expectedRecords > 0 ? 30_000 : 5_000);
+            while (System.currentTimeMillis() < deadline) {
+                ConsumerRecords<String, String> batch = consumer.poll(Duration.ofMillis(500));
+                batch.forEach(allRecords::add);
+                if (expectedRecords > 0 && allRecords.size() >= expectedRecords) break;
+            }
+            if (commitOffsets && allRecords.size() >= expectedRecords) {
+                consumer.commitSync();
+            }
+        }
+        assertEquals(expectedRecords, allRecords.size(),
+                "Expected to consume " + expectedRecords + " records from " + topic);
+        return allRecords;
+    }
+
+    private Map<String, TopicDescription> describeTopics(
+            Admin admin, List<String> topics) throws Exception {
+        long deadline = System.currentTimeMillis() + 30_000;
+        while (true) {
+            try {
+                return admin.describeTopics(topics).allTopicNames().get(5, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                if (System.currentTimeMillis() >= deadline) {
+                    throw e;
+                }
+                TimeUnit.MILLISECONDS.sleep(500);
             }
         }
     }

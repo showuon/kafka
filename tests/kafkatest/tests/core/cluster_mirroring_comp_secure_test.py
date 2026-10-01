@@ -189,23 +189,24 @@ class ClusterMirroringCompSecureTest(MirrorUtils, Test):
 
     def consume_as_client(self, kafka, client_node, topic, group=None,
                           max_messages=None, expected_count=None,
-                          timeout_ms=30000, wait_timeout_sec=240):
+                          timeout_sec=240):
         client_env = "KAFKA_OPTS='-D%s -D%s' " % (
             KafkaService.JAAS_CONF_PROPERTY, KafkaService.KRB5_CONF)
         client_props = str(kafka.security_config.client_config(
             use_inter_broker_mechanism_for_client=False))
         cmd = "%s%s --bootstrap-server %s --topic %s --from-beginning" \
-              " --max-messages %d --timeout-ms %d" % (
+              " --max-messages %d --timeout-ms 5000" % (
                   client_env,
                   kafka.path.script("kafka-console-consumer.sh", client_node),
                   kafka.bootstrap_servers(kafka.security_protocol),
-                  topic, max_messages, timeout_ms)
+                  topic, max_messages)
         if group is not None:
             cmd += " --group %s" % group
         cmd += " --consumer.config <(echo '%s') 2>/dev/null" % client_props
 
         count = [0]
         def try_consume():
+            count[0] = 0
             for line in client_node.account.ssh_capture(cmd, allow_fail=True):
                 if line.strip():
                     count[0] += 1
@@ -214,7 +215,7 @@ class ClusterMirroringCompSecureTest(MirrorUtils, Test):
             return expected_count is None or count[0] >= expected_count
 
         if expected_count is not None:
-            wait_until(try_consume, timeout_sec=wait_timeout_sec, backoff_sec=5,
+            wait_until(try_consume, timeout_sec=timeout_sec, backoff_sec=5,
                        err_msg="Expected %d messages on %s, got %d" % (expected_count, topic, count[0]))
         else:
             try_consume()

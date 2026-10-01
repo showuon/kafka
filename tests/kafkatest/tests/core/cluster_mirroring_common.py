@@ -120,15 +120,14 @@ class MirrorUtils:
 
     def consume_messages(self, kafka, client_node, topic, group=None,
                          max_messages=None, expected_count=None,
-                         timeout_ms=30000, wait_timeout_sec=240,
-                         isolation_level=None,
+                         timeout_sec=240, isolation_level=None,
                          from_beginning=True):
         env_prefix, cmd_suffix = kafka._cmd_security_opts(client_node)
-        cmd = "%s%s --bootstrap-server %s --topic %s --timeout-ms %d" % (
+        cmd = "%s%s --bootstrap-server %s --topic %s --timeout-ms 5000" % (
             env_prefix,
             kafka.path.script("kafka-console-consumer.sh", client_node),
             kafka.bootstrap_servers(kafka.security_protocol),
-            topic, timeout_ms)
+            topic)
         if from_beginning:
             cmd += " --from-beginning"
         if max_messages is not None:
@@ -143,6 +142,7 @@ class MirrorUtils:
 
         count = [0]
         def try_consume():
+            count[0] = 0
             for line in client_node.account.ssh_capture(cmd, allow_fail=True):
                 if line.strip():
                     count[0] += 1
@@ -153,7 +153,7 @@ class MirrorUtils:
         # When expected_count is set, retry consumption because the high watermark on
         # destination replicas may not have advanced yet when mirror lag reaches zero.
         if expected_count is not None:
-            deadline = time.time() + wait_timeout_sec
+            deadline = time.time() + timeout_sec
             try_consume()
             while count[0] < expected_count and time.time() < deadline:
                 time.sleep(5)

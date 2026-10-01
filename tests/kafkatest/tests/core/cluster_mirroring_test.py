@@ -110,17 +110,18 @@ class ClusterMirroringTest(MirrorUtils, Test):
 
     def consume_share_messages(self, kafka, client_node, topic, group,
                                max_messages=None, expected_count=None,
-                               timeout_ms=20000, wait_timeout_sec=120):
-        cmd = "%s --bootstrap-server %s --topic %s --group %s --timeout-ms %d" % (
+                               timeout_sec=120):
+        cmd = "%s --bootstrap-server %s --topic %s --group %s --timeout-ms 5000" % (
             kafka.path.script("kafka-console-share-consumer.sh", client_node),
             kafka.bootstrap_servers(kafka.security_protocol),
-            topic, group, timeout_ms)
+            topic, group)
         if max_messages is not None:
             cmd += " --max-messages %d" % max_messages
         cmd += " 2>/dev/null"
 
         count = [0]
         def try_consume():
+            count[0] = 0
             for line in client_node.account.ssh_capture(cmd, allow_fail=True):
                 if line.strip():
                     count[0] += 1
@@ -129,7 +130,7 @@ class ClusterMirroringTest(MirrorUtils, Test):
             return expected_count is None or count[0] >= expected_count
 
         if expected_count is not None:
-            deadline = time.time() + wait_timeout_sec
+            deadline = time.time() + timeout_sec
             try_consume()
             while count[0] < expected_count:
                 if time.time() >= deadline:
@@ -300,7 +301,7 @@ class ClusterMirroringTest(MirrorUtils, Test):
 
         self.logger.info("Consume from source (non-mirrored data should be truncated)")
         count = self.consume_messages(self.source_kafka, self.client_node, "my-topic",
-                                     max_messages=8, timeout_ms=5000, expected_count=7)
+                                     max_messages=8, expected_count=7)
         assert count >= 7, "Expected 7 messages on my-topic, got %d" % count
 
     @cluster(num_nodes=7)
@@ -325,7 +326,7 @@ class ClusterMirroringTest(MirrorUtils, Test):
 
         self.logger.info("Consume from destination while paused (expect 3, the 4th is not mirrored yet)")
         count = self.consume_messages(self.dest_kafka, self.client_node, "my-topic",
-                                     max_messages=4, timeout_ms=5000, expected_count=3)
+                                     max_messages=4, expected_count=3)
         assert count == 3, "Expected 3 messages on destination while paused, got %d" % count
 
         self.logger.info("Produce to destination while paused (should fail)")
@@ -457,14 +458,14 @@ class ClusterMirroringTest(MirrorUtils, Test):
         self.produce_messages(self.source_kafka, self.client_node, "orders-eu", 3)
         self.wait_for_metadata_refresh(self.dest_kafka, self.client_node, "my-mirror")
 
-        count_eu = self.consume_messages(self.dest_kafka, self.client_node, "orders-eu", timeout_ms=5000)
+        count_eu = self.consume_messages(self.dest_kafka, self.client_node, "orders-eu")
         assert count_eu == 3, \
             "Expected 3 messages for orders-eu after stop (not 6), got %d" % count_eu
 
         self.logger.info("Verify orders-eu is not re-discovered after two more metadata refresh cycles")
         self.wait_for_metadata_refresh(self.dest_kafka, self.client_node, "my-mirror")
 
-        count_eu = self.consume_messages(self.dest_kafka, self.client_node, "orders-eu", timeout_ms=5000)
+        count_eu = self.consume_messages(self.dest_kafka, self.client_node, "orders-eu")
         assert count_eu == 3, \
             "Expected orders-eu to remain at 3 messages (not re-discovered), got %d" % count_eu
 
@@ -1031,7 +1032,7 @@ class ClusterMirroringTest(MirrorUtils, Test):
         self.logger.info("Restart consumer (triggers OffsetFetch and refreshCommittedOffsets)")
         # Without the epoch bump fix, this would hang because source LE > local LE
         count = self.consume_messages(self.dest_kafka, self.client_node, "my-topic", "my-group",
-                                     max_messages=2, expected_count=2, timeout_ms=20000, from_beginning=False)
+                                     max_messages=2, expected_count=2, from_beginning=False)
         assert count >= 2, "Expected 2 messages on my-topic after restart, got %d" % count
 
     @cluster(num_nodes=7)
