@@ -215,7 +215,7 @@ public class MirrorMetadataCache {
             }
         }
         throw new IllegalStateException("No source cluster metadata available " +
-                "for mirror " + mirrorName + " partition:" + tp);
+                "for mirror " + mirrorName + " partition " + tp);
     }
 
     public void updateSourceClusterLeader(String mirrorName, TopicPartition tp, SourceClusterLeader leader) {
