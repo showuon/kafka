@@ -147,12 +147,12 @@ public class KafkaScheduler implements Scheduler {
             if (isStarted()) {
                 Runnable runnable = () -> {
                     try {
-                        log.trace("Beginning execution of scheduled task '{}'.", name);
+                        log.debug("Beginning execution of scheduled task '{}'.", name);
                         task.run();
                     } catch (Throwable t) {
                         log.error("Uncaught exception in scheduled task '{}'", name, t);
                     } finally {
-                        log.trace("Completed execution of scheduled task '{}'.", name);
+                        log.debug("Completed execution of scheduled task '{}'.", name);
                     }
                 };
                 if (periodMs > 0)

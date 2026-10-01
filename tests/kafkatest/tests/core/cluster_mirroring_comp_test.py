@@ -24,6 +24,10 @@ from kafkatest.version import (
     CLUSTER_MIRRORING_VERSION,
     KafkaVersion,
     LATEST_2_1,
+    LATEST_2_2,
+    LATEST_2_3,
+    LATEST_3_7,
+    LATEST_3_8,
     LATEST_3_9,
     LATEST_4_0,
 )
@@ -128,8 +132,11 @@ class ClusterMirroringCompTest(MirrorUtils, Test):
 
     @cluster(num_nodes=8)
     @parametrize(source_version=str(LATEST_2_1), metadata_quorum=quorum.zk)
+    @parametrize(source_version=str(LATEST_2_2), metadata_quorum=quorum.zk)
+    @parametrize(source_version=str(LATEST_2_3), metadata_quorum=quorum.zk)
+    @parametrize(source_version=str(LATEST_3_7), metadata_quorum=quorum.zk)
+    @parametrize(source_version=str(LATEST_3_8), metadata_quorum=quorum.zk)
     @parametrize(source_version=str(LATEST_3_9), metadata_quorum=quorum.zk)
-    @parametrize(source_version=str(LATEST_4_0), metadata_quorum=quorum.isolated_kraft)
     def test_mirroring(self, source_version, metadata_quorum):
         """Verify migration with data, consumer groups, and topic config sync."""
         self.setup_source(KafkaVersion(source_version), metadata_quorum)
