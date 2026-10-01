@@ -120,7 +120,7 @@ class MirrorUtils:
 
     def consume_messages(self, kafka, client_node, topic, group=None,
                          max_messages=None, expected_count=None,
-                         timeout_sec=240, isolation_level=None,
+                         timeout_sec=120, isolation_level=None,
                          from_beginning=True):
         env_prefix, cmd_suffix = kafka._cmd_security_opts(client_node)
         cmd = "%s%s --bootstrap-server %s --topic %s --timeout-ms 5000" % (
@@ -167,13 +167,13 @@ class MirrorUtils:
         """Create a cluster mirror, start a topic, and wait for zero lag."""
         wait_until(
             lambda: kafka.create_cluster_mirror(client_node, mirror_name, mirror_cfg),
-            timeout_sec=120, backoff_sec=2,
+            timeout_sec=60, backoff_sec=2,
             err_msg="Failed to create cluster mirror",
         )
         wait_until(
             lambda: "Started" in kafka.start_cluster_mirror_topics(
                 client_node, mirror_name, topic),
-            timeout_sec=120, backoff_sec=2,
+            timeout_sec=60, backoff_sec=2,
             err_msg="Failed to start mirror topics",
         )
         self.wait_mirror_lag_zero(kafka, client_node, mirror_name, [topic])
@@ -288,7 +288,7 @@ class MirrorUtils:
 
         wait_until(
             check,
-            timeout_sec=180,
+            timeout_sec=120,
             backoff_sec=5,
             err_msg="Log segments did not converge between source and destination",
         )

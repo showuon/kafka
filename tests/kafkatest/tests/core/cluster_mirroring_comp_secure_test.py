@@ -189,7 +189,7 @@ class ClusterMirroringCompSecureTest(MirrorUtils, Test):
 
     def consume_as_client(self, kafka, client_node, topic, group=None,
                           max_messages=None, expected_count=None,
-                          timeout_sec=240):
+                          timeout_sec=120):
         client_env = "KAFKA_OPTS='-D%s -D%s' " % (
             KafkaService.JAAS_CONF_PROPERTY, KafkaService.KRB5_CONF)
         client_props = str(kafka.security_config.client_config(
@@ -276,14 +276,14 @@ class ClusterMirroringCompSecureTest(MirrorUtils, Test):
         wait_until(
             lambda: self.dest_kafka.create_cluster_mirror(
                 self.dest_client_node, "my-mirror", mirror_cfg),
-            timeout_sec=120, backoff_sec=2,
+            timeout_sec=60, backoff_sec=2,
             err_msg="Failed to create cluster mirror",
         )
         for regex in ["my-topic.*", "new-topic"]:
             wait_until(
                 lambda r=regex: "Started" in self.dest_kafka.start_cluster_mirror_topics(
                     self.dest_client_node, "my-mirror", r),
-                timeout_sec=120, backoff_sec=2,
+                timeout_sec=60, backoff_sec=2,
                 err_msg="Failed to start mirror topics for %s" % regex,
             )
         self.logger.info("Waiting for all partitions to reach MIRRORING with zero lag")
