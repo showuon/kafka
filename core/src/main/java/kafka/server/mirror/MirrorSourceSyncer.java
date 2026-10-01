@@ -378,6 +378,8 @@ class MirrorSourceSyncer {
     void scheduleSourceTopicStateSync(String mirrorName) {
         if (pendingMetadataRefresh.add(mirrorName)) {
             syncScheduler.scheduleOnce("source-topic-metadata-sync", () -> syncSourceTopicMetadata(mirrorName));
+        } else {
+            log.info("skipping scheduling source-topic-metadata-sync for mirror {}", mirrorName);
         }
     }
 
