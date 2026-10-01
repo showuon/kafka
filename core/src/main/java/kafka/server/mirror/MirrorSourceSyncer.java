@@ -119,6 +119,7 @@ class MirrorSourceSyncer {
     private final int nodeId;
 
     private volatile ScheduledFuture<?> syncTaskSchedule;
+    private final Set<String> pendingMetadataRefresh = ConcurrentHashMap.newKeySet();
     private volatile MetadataImage metadataImage = MetadataImage.EMPTY;
 
     private final MirrorMetadataManager metadataManager;
@@ -375,7 +376,9 @@ class MirrorSourceSyncer {
 
     /** Schedules an immediate one-shot source topic state sync for the given mirror. */
     void scheduleSourceTopicStateSync(String mirrorName) {
-        syncScheduler.scheduleOnce("source-topic-metadata-sync", () -> syncSourceTopicMetadata(mirrorName));
+        if (pendingMetadataRefresh.add(mirrorName)) {
+            syncScheduler.scheduleOnce("source-topic-metadata-sync", () -> syncSourceTopicMetadata(mirrorName));
+        }
     }
 
     /**
@@ -383,6 +386,7 @@ class MirrorSourceSyncer {
      * Runs on every broker to keep them in sync.
      */
     List<SourceTopicState> syncSourceTopicMetadata(String mirrorName) {
+        pendingMetadataRefresh.remove(mirrorName);
         var future = new CompletableFuture<List<SourceTopicState>>();
         var existing = ongoingSyncs.putIfAbsent(mirrorName, future);
         if (existing != null) {
