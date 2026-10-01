@@ -994,14 +994,14 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                             return;
                         }
                         MirrorPartition mp = MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
-                        MirrorPartitionMetadata existing = mirrorCache.getPartitionMetadata(mp);
                         mirrorCache.updatePartitionMetadata(mp,
-                                new MirrorPartitionMetadata.Builder(existing)
+                                new MirrorPartitionMetadata.Builder()
                                         .withState(MirrorPartitionState.fromValue(partition.state()))
                                         .withStateEpoch(partition.stateEpoch())
                                         .withLastPosition(new EpochOffset(partition.lastMirrorEpoch(), partition.lastMirrorOffset()))
-                                        .withError(partition.errorMessage(), partition.retryAttempt(),
-                                                MirrorPartitionState.fromValue(partition.previousState()))
+                                        .withErrorMessage(partition.errorMessage())
+                                        .withRetryAttempt(partition.retryAttempt())
+                                        .withPrevState(MirrorPartitionState.fromValue(partition.previousState()))
                                         .build());
                         persistState(mirrorName, tp, state, errorMessage, nonRetryable);
                     }
@@ -1418,15 +1418,15 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                                 topic.partitions().forEach(partition -> {
                                     MirrorPartition mp = MirrorPartition.of(
                                             mirrorName, mirrorCache.getTopicId(topic.topicName()), partition.partitionIndex());
-                                    MirrorPartitionMetadata existing = mirrorCache.getPartitionMetadata(mp);
                                     mirrorCache.updatePartitionMetadata(mp,
-                                            new MirrorPartitionMetadata.Builder(existing)
+                                            new MirrorPartitionMetadata.Builder()
                                                     .withState(MirrorPartitionState.fromValue(partition.state()))
                                                     .withStateEpoch(partition.stateEpoch())
                                                     .withLastPosition(new EpochOffset(partition.lastMirrorEpoch(),
                                                             partition.lastMirrorOffset()))
-                                                    .withError(partition.errorMessage(), partition.retryAttempt(),
-                                                            MirrorPartitionState.fromValue(partition.previousState()))
+                                                    .withErrorMessage(partition.errorMessage())
+                                                    .withRetryAttempt(partition.retryAttempt())
+                                                    .withPrevState(MirrorPartitionState.fromValue(partition.previousState()))
                                                     .build());
                                 }));
 
@@ -1865,9 +1865,13 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         }
 
         MirrorPartition mp = MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
-        mirrorCache.updatePartitionMetadata(mp, new MirrorPartitionMetadata.Builder(mirrorCache.getPartitionMetadata(mp))
-                .withError(null, 0, null) // Clear error state
-                .build());
+        MirrorPartitionMetadata existing = mirrorCache.getPartitionMetadata(mp);
+        mirrorCache.updatePartitionMetadata(mp,
+                new MirrorPartitionMetadata.Builder(existing)
+                    .withErrorMessage(null)
+                    .withRetryAttempt(0)
+                    .withPrevState(null)
+                    .build());
 
         int stateEpoch = mirrorCache.getPartitionMetadata(mp).stateEpoch();
         int leaderEpoch = mirrorCache.getLeaderEpoch(tp);

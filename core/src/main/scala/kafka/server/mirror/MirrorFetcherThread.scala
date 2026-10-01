@@ -36,7 +36,8 @@ import scala.collection.{Map, Set}
 import scala.jdk.CollectionConverters.SetHasAsJava
 
 /**
- * Cross-cluster fetcher thread.
+ * Fetcher thread for replicating data across cluster mirrors. Extends AbstractFetcherThread
+ * with mirror-specific handling for leader epochs, metadata refresh, and partition state transitions.
  */
 class MirrorFetcherThread(name: String,
                           leader: LeaderEndPoint,
@@ -73,6 +74,93 @@ class MirrorFetcherThread(name: String,
     replicaMgr.mirrorFetcherManager.addFetcherForPartitions(partitionAndOffsets)
   }
 
+  // Processes fetched data
+  override def processPartitionData(topicPartition: TopicPartition,
+                                    fetchOffset: Long,
+                                    partitionLeaderEpoch: Int,
+                                    partitionData: FetchResponseData.PartitionData): Option[LogAppendInfo] = {
+    val logTrace = isTraceEnabled
+    val partition = replicaMgr.getPartitionOrException(topicPartition)
+    val log = partition.localLogOrException
+    val records = toMemoryRecords(FetchResponse.recordsOrFail(partitionData))
+
+    if (fetchOffset != log.logEndOffset)
+      throw new IllegalStateException("Offset mismatch for partition %s: fetched offset = %d, log end offset = %d.".format(
+        topicPartition, fetchOffset, log.logEndOffset))
+
+    if (logTrace)
+      trace(s"Appending records for partition $topicPartition: log end offset=${log.logEndOffset}, " +
+        s"record bytes=${records.sizeInBytes}, leader high watermark=${partitionData.highWatermark}")
+
+    validateLeaderEpoch(topicPartition, partition, records, partitionLeaderEpoch)
+
+    // Append batches from the source cluster to the destination partition's log.
+    val logAppendInfo = partition.appendRecordsToFollowerOrFutureReplica(records, isFuture = false, partitionLeaderEpoch)
+
+    if (logTrace)
+      trace(s"Appended records for partition $topicPartition: log end offset=${log.logEndOffset}, record bytes=${records.sizeInBytes}")
+
+    val leaderLogStartOffset = partitionData.logStartOffset
+
+    // This works as producer write with acks=1. The leader node will append data into log without HW incremented.
+    // The leader's HW will be incremented only when all ISR (at least minISR) are caught up.
+    if (!partition.maybeIncrementLeaderHWWithLock(log)) {
+      trace(s"Could not update replica high watermark for partition $topicPartition (leader high watermark=${partitionData.highWatermark})")
+    }
+
+    log.maybeIncrementLogStartOffset(leaderLogStartOffset, LogStartOffsetIncrementReason.LeaderOffsetIncremented)
+
+    // Update mirroring lag
+    replicaMgr.updateMirrorOffsetInfo(mirrorName, topicPartition, partitionData.highWatermark, log.highWatermark)
+
+    // Account for replication quota
+    if (quota.isThrottled(topicPartition))
+      quota.record(records.sizeInBytes)
+
+    if (partition.isReassigning && partition.isAddingLocalReplica)
+      brokerTopicStats.updateReassignmentBytesIn(records.sizeInBytes)
+
+    brokerTopicStats.updateReplicationBytesIn(records.sizeInBytes)
+
+    logAppendInfo
+  }
+
+
+  // Validates batch epoch against local epoch (destination) and partition epoch (source metadata)
+  private def validateLeaderEpoch(topicPartition: TopicPartition, partition: Partition, records: Records, partitionLeaderEpoch: Int): Unit = {
+    val localLeaderEpoch = partition.getLeaderEpoch
+    val highestBatchLeaderEpoch = if (records.lastBatch().isPresent)
+      records.lastBatch().get().partitionLeaderEpoch() else -1
+    log.trace(s"Validating leader epoch for partition $topicPartition: batch epoch=$highestBatchLeaderEpoch, " +
+      s"local epoch=$localLeaderEpoch, partition leader epoch=$partitionLeaderEpoch")
+    if (highestBatchLeaderEpoch > localLeaderEpoch) {
+      // React by fencing this partition when source records are already ahead of the local leader epoch.
+      // The exception will mark this partition as failed and transition mirror state to EPOCH_FENCING.
+      throw new MirrorLeaderEpochExceededException(s"Batch epoch $highestBatchLeaderEpoch " +
+        s"exceeds local epoch $localLeaderEpoch for partition $topicPartition")
+    } else {
+      replicaMgr.mirrorManager.foreach { mmm =>
+        mmm.clearFailedStateAndPersist(mirrorName, topicPartition)
+
+        if (highestBatchLeaderEpoch > localLeaderEpoch - LEADER_EPOCH_BUMP_THRESHOLD) {
+          mmm.scheduleBumpLeaderEpoch(partition.getMirrorName().get(), topicPartition)
+            .whenComplete { (_, ex) =>
+              if (ex != null) log.warn(s"Failed to bump leader epoch for partition $topicPartition", ex)
+            }
+        }
+      }
+    }
+
+    if (highestBatchLeaderEpoch > partitionLeaderEpoch) {
+      // In old version, the leader epoch will be incremented "when follower is down". When this happens, the leader
+      // will still serve the fetch request with "currentLeaderEpoch=X", even though the leader's leader epoch is "X+1".
+      // With the fix of KAFKA-18723, the follower node will reject the batches and endlessly re-fetch.
+      // Fix it by throwing exception and handle it by refresh the source cluster metadata.
+      throw new MirrorPartitionStaleMetadataException(s"Batch epoch $highestBatchLeaderEpoch exceeds partition " +
+        s"leader epoch $partitionLeaderEpoch for partition $topicPartition; refreshing source metadata")
+    }
+  }
+
   override protected def refreshSourceClusterMetadata(mirrorPartitions: Set[TopicPartition], reason: String): Unit = {
     replicaMgr.mirrorManager.foreach(_.scheduleSourceTopicStateSync(mirrorName))
     replicaMgr.mirrorManager.foreach(_.transitionTo(mirrorName, mirrorPartitions.asJava,
@@ -107,98 +195,6 @@ class MirrorFetcherThread(name: String,
     replicaMgr.mirrorManager.foreach(_.transitionTo(mirrorName, java.util.Set.of(topicPartition), MirrorPartitionState.EPOCH_FENCING, null, false))
   }
 
-  // Validates batch epoch against local epoch (destination) and partition epoch (source metadata)
-  private def validateLeaderEpoch(topicPartition: TopicPartition, partition: Partition, records: Records, partitionLeaderEpoch: Int): Unit = {
-    val localLeaderEpoch = partition.getLeaderEpoch
-    val highestBatchLeaderEpoch = if (records.lastBatch().isPresent)
-      records.lastBatch().get().partitionLeaderEpoch() else -1
-    log.trace(s"Current highestBatchLeaderEpoch: $highestBatchLeaderEpoch, localLeaderEpoch: $localLeaderEpoch, partition: $topicPartition, partitionLE: $partitionLeaderEpoch")
-    if (highestBatchLeaderEpoch > localLeaderEpoch) {
-      // React by fencing this partition when source records are already ahead of the local leader epoch.
-      // The exception will mark this partition as failed and transition mirror state to EPOCH_FENCING.
-      throw new MirrorLeaderEpochExceededException(s"Rejecting the batch because the batch leader " +
-        s"epoch $highestBatchLeaderEpoch is higher than local leader epoch $localLeaderEpoch")
-    } else {
-      replicaMgr.mirrorManager.foreach { mmm =>
-        mmm.clearFailedStateAndPersist(mirrorName, topicPartition)
-
-        if (highestBatchLeaderEpoch > localLeaderEpoch - LEADER_EPOCH_BUMP_THRESHOLD) {
-          // When source batch is close to the local epoch (within LEADER_EPOCH_BUMP_THRESHOLD),
-          // schedule a proactive local epoch bump while still allowing the current batch to append.
-          mmm.scheduleBumpLeaderEpoch(partition.getMirrorName().get(), topicPartition)
-            .whenComplete { (_, ex) =>
-              if (ex != null) log.warn(s"Proactive epoch bump failed for $topicPartition", ex)
-            }
-        }
-      }
-    }
-
-    if (highestBatchLeaderEpoch > partitionLeaderEpoch) {
-      // In old version, the leader epoch will be incremented "when follower is down". When this happens, the leader
-      // will still serve the fetch request with "currentLeaderEpoch=X", even though the leader's leader epoch is "X+1".
-      // With the fix of KAFKA-18723, the follower node will reject the batches and endlessly re-fetch.
-      // Fix it by throwing exception and handle it by refresh the source cluster metadata.
-      throw new MirrorPartitionStaleMetadataException(s"Rejecting the batch because the batch leader " +
-        s"epoch $highestBatchLeaderEpoch is higher than previously known leader epoch $partitionLeaderEpoch. " +
-        s"Will refresh the source cluster metadata and retry.")
-    }
-  }
-
-  // Processes fetched data
-  override def processPartitionData(
-    topicPartition: TopicPartition,
-    fetchOffset: Long,
-    partitionLeaderEpoch: Int,
-    partitionData: FetchResponseData.PartitionData
-  ): Option[LogAppendInfo] = {
-    val logTrace = isTraceEnabled
-    val partition = replicaMgr.getPartitionOrException(topicPartition)
-    val log = partition.localLogOrException
-    val records = toMemoryRecords(FetchResponse.recordsOrFail(partitionData))
-
-    if (fetchOffset != log.logEndOffset)
-      throw new IllegalStateException("Offset mismatch for partition %s: fetched offset = %d, log end offset = %d.".format(
-        topicPartition, fetchOffset, log.logEndOffset))
-
-    if (logTrace)
-      trace("Mirror follower has replica log end offset %d for partition %s. Received %d bytes of messages and leader hw %d"
-        .format(log.logEndOffset, topicPartition, records.sizeInBytes, partitionData.highWatermark))
-
-    validateLeaderEpoch(topicPartition, partition, records, partitionLeaderEpoch)
-
-    // Append batches from the source cluster to the destination partition's log.
-    val logAppendInfo = partition.appendRecordsToFollowerOrFutureReplica(records, isFuture = false, partitionLeaderEpoch)
-
-    if (logTrace)
-      trace("Mirror follower has replica log end offset %d after appending %d bytes of messages for partition %s"
-        .format(log.logEndOffset, records.sizeInBytes, topicPartition))
-
-    val leaderLogStartOffset = partitionData.logStartOffset
-
-    // This works as producer write with acks=1. The leader node will append data into log without HW incremented.
-    // The leader's HW will be incremented only when all ISR (at least minISR) are caught up.
-    if (!partition.maybeIncrementLeaderHWWithLock(log)) {
-      trace(s"Mirror follower received high watermark ${partitionData.highWatermark} from the leader " +
-        s"but did not update replica high watermark for partition $topicPartition")
-    }
-
-    log.maybeIncrementLogStartOffset(leaderLogStartOffset, LogStartOffsetIncrementReason.LeaderOffsetIncremented)
-
-    // Update mirroring lag
-    replicaMgr.updateMirrorOffsetInfo(mirrorName, topicPartition, partitionData.highWatermark, log.highWatermark)
-
-    // Account for replication quota
-    if (quota.isThrottled(topicPartition))
-      quota.record(records.sizeInBytes)
-
-    if (partition.isReassigning && partition.isAddingLocalReplica)
-      brokerTopicStats.updateReassignmentBytesIn(records.sizeInBytes)
-
-    brokerTopicStats.updateReplicationBytesIn(records.sizeInBytes)
-
-    logAppendInfo
-  }
-
   override def leaderEpochFromSource(tp: TopicPartition): Option[Int] = {
     mirrorCache.map(cache => cache.getSourceClusterLeader(mirrorName, tp).leaderEpoch())
   }
@@ -208,39 +204,6 @@ class MirrorFetcherThread(name: String,
     replicaMgr.mirrorFetcherManager.getOffsetInfo(mirrorName).get(topicPartition).map { info =>
       Math.max(0, info.sourceOffset - info.destinationOffset)
     }.getOrElse(0L)
-  }
-
-  override def initiateShutdown(): Boolean = {
-    val justShutdown = super.initiateShutdown()
-    if (justShutdown) {
-      try {
-        leader.initiateClose()
-      } catch {
-        case t: Throwable =>
-          error(s"Failed to initiate shutdown of $leader after initiating mirror fetcher thread shutdown", t)
-      }
-    }
-    justShutdown
-  }
-
-  override def awaitShutdown(): Unit = {
-    super.awaitShutdown()
-    try {
-      leader.close()
-    } catch {
-      case t: Throwable =>
-        error(s"Failed to close $leader after shutting down mirror fetcher thread", t)
-    }
-  }
-
-  override def truncate(topicPartition: TopicPartition, truncationState: OffsetTruncationState): Unit = {
-    val partition = replicaMgr.getPartitionOrException(topicPartition)
-    partition.truncateTo(truncationState.offset, isFuture = false)
-  }
-
-  override def truncateFullyAndStartAt(topicPartition: TopicPartition, offset: Long): Unit = {
-    val partition = replicaMgr.getPartitionOrException(topicPartition)
-    partition.truncateFullyAndStartAt(offset, isFuture = false)
   }
 
   override def latestEpoch(topicPartition: TopicPartition): Optional[Integer] = {
@@ -266,5 +229,38 @@ class MirrorFetcherThread(name: String,
   override def endOffsetForEpoch(topicPartition: TopicPartition, epoch: Int): Optional[OffsetAndEpoch] = {
     val partition = replicaMgr.getPartitionOrException(topicPartition)
     partition.localLogOrException.endOffsetForEpoch(epoch)
+  }
+
+  override def truncate(topicPartition: TopicPartition, truncationState: OffsetTruncationState): Unit = {
+    val partition = replicaMgr.getPartitionOrException(topicPartition)
+    partition.truncateTo(truncationState.offset, isFuture = false)
+  }
+
+  override def truncateFullyAndStartAt(topicPartition: TopicPartition, offset: Long): Unit = {
+    val partition = replicaMgr.getPartitionOrException(topicPartition)
+    partition.truncateFullyAndStartAt(offset, isFuture = false)
+  }
+
+  override def initiateShutdown(): Boolean = {
+    val justShutdown = super.initiateShutdown()
+    if (justShutdown) {
+      try {
+        leader.initiateClose()
+      } catch {
+        case t: Throwable =>
+          error(s"Error initiating close of leader endpoint for fetcher thread $name", t)
+      }
+    }
+    justShutdown
+  }
+
+  override def awaitShutdown(): Unit = {
+    super.awaitShutdown()
+    try {
+      leader.close()
+    } catch {
+      case t: Throwable =>
+        error(s"Error closing leader endpoint for fetcher thread $name", t)
+    }
   }
 }
