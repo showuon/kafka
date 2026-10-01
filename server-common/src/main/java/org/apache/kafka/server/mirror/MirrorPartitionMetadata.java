@@ -89,15 +89,14 @@ public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch
 
     @SuppressWarnings({"cyclomaticComplexity", "BooleanExpressionComplexity"})
     public static boolean isValidStateTransition(MirrorPartitionState source, MirrorPartitionState target) {
-        if (source == target) {
+        if (source == target || source == MirrorPartitionState.FAILED) {
             return true;
         }
         switch (target) {
             case LOG_ALIGNMENT:
                 return source == null
                         || source == MirrorPartitionState.UNKNOWN
-                        || source == MirrorPartitionState.STOPPED
-                        || source == MirrorPartitionState.FAILED;
+                        || source == MirrorPartitionState.STOPPED;
             case EPOCH_FENCING, ULE_RECOVERY, PAUSING:
                 return source == MirrorPartitionState.MIRRORING;
             case MIRRORING:
@@ -105,7 +104,6 @@ public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch
                         || source == MirrorPartitionState.EPOCH_FENCING
                         || source == MirrorPartitionState.PAUSED
                         || source == MirrorPartitionState.ULE_RECOVERY
-                        || source == MirrorPartitionState.FAILED
                         || source == MirrorPartitionState.MIRRORING;
             case PAUSED:
                 return source == MirrorPartitionState.PAUSING;
@@ -115,8 +113,7 @@ public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch
                         || source == MirrorPartitionState.MIRRORING
                         || source == MirrorPartitionState.PAUSING
                         || source == MirrorPartitionState.PAUSED
-                        || source == MirrorPartitionState.ULE_RECOVERY
-                        || source == MirrorPartitionState.FAILED;
+                        || source == MirrorPartitionState.ULE_RECOVERY;
             case STOPPED:
                 return source == MirrorPartitionState.STOPPING;
             case FAILED:

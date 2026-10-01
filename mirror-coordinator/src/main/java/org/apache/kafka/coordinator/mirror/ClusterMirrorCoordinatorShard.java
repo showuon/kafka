@@ -350,7 +350,6 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
             log.warn("Skipping invalid partition {} transition from {} to {}", tp, currentState, state);
             return new CoordinatorResult<>(List.of(), null);
         }
-        log.debug("Transitioning partition {} from {} to {}", tp, currentState, state);
 
         if (state == MirrorPartitionState.FAILED) {
             // Transition to FAILED: calculate next retry attempt and preserve the current state as previous
@@ -393,6 +392,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                 .setErrorMessage(cachedMp.errorMessage());
         CoordinatorRecord record = CoordinatorRecord.record(key,
                 new ApiMessageAndVersion(val, MirrorPartitionStateValue.HIGHEST_SUPPORTED_VERSION));
+        log.debug("Writing record to partition {} with content: {}", tp, record);
         return new CoordinatorResult<>(List.of(record), null);
     }
 
