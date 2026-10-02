@@ -95,6 +95,34 @@ public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch
             return this;
         }
 
+        /**
+         * Resolves error-related fields based on the transition to {@code newState}.
+         * <p>
+         * When entering FAILED, computes the retry attempt count and records the previous state.
+         * When leaving FAILED (or entering STOPPED/PAUSED), clears all error fields.
+         * Otherwise, updates only the error message.
+         */
+        public Builder withResolvedErrorInfo(MirrorPartitionState newState, String errorMessage,
+                                             boolean nonRetryable, int maxRetryAttempts) {
+            if (newState == MirrorPartitionState.FAILED) {
+                MirrorPartitionMetadata current = build();
+                int attempt = current.nextAttempt(nonRetryable, maxRetryAttempts);
+                MirrorPartitionState previousState = current.resolvePrevState(this.state);
+                this.errorMessage = errorMessage;
+                this.retryAttempt = attempt;
+                this.prevState = previousState;
+            } else if ((this.state != MirrorPartitionState.FAILED && this.state != newState)
+                    || newState == MirrorPartitionState.STOPPED
+                    || newState == MirrorPartitionState.PAUSED) {
+                this.errorMessage = null;
+                this.retryAttempt = 0;
+                this.prevState = null;
+            } else {
+                this.errorMessage = errorMessage;
+            }
+            return this;
+        }
+
         public MirrorPartitionMetadata build() {
             return new MirrorPartitionMetadata(state, stateEpoch, lastPosition,
                     errorMessage, retryAttempt, prevState);
