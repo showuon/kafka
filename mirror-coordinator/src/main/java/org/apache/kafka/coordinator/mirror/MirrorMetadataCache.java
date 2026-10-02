@@ -206,16 +206,15 @@ public class MirrorMetadataCache {
         return sourceLeaders.get(mirrorName);
     }
 
-    public SourceClusterLeader getSourceClusterLeader(String mirrorName, TopicPartition tp) {
+    public Optional<SourceClusterLeader> getSourceClusterLeader(String mirrorName, TopicPartition tp) {
         var partitionLeaders = sourceLeaders.get(mirrorName);
         if (partitionLeaders != null) {
             SourceClusterLeader leader = partitionLeaders.get(tp);
             if (leader != null) {
-                return leader;
+                return Optional.of(leader);
             }
         }
-        throw new IllegalStateException("No source cluster metadata available " +
-                "for mirror " + mirrorName + " partition " + tp);
+        return Optional.empty();
     }
 
     public void updateSourceClusterLeader(String mirrorName, TopicPartition tp, SourceClusterLeader leader) {
@@ -226,5 +225,5 @@ public class MirrorMetadataCache {
         sourceLeaders.remove(mirrorName);
     }
 
-    public record SourceClusterLeader(Node node, int leaderEpoch) { }
+    public record SourceClusterLeader(Optional<Node> node, int leaderEpoch) { }
 }

@@ -30,7 +30,7 @@ import org.apache.kafka.common.record.{FileRecords, MemoryRecords, Records}
 import org.apache.kafka.common.requests.OffsetsForLeaderEpochResponse.{UNDEFINED_EPOCH, UNDEFINED_EPOCH_OFFSET}
 import org.apache.kafka.common.requests._
 import org.apache.kafka.common.utils.Time
-import org.apache.kafka.common.{ClientIdAndBroker, InvalidRecordException, TopicPartition, Uuid}
+import org.apache.kafka.common.{ClientIdAndBroker, InvalidRecordException, Node, TopicPartition, Uuid}
 import org.apache.kafka.server.common.OffsetAndEpoch
 import org.apache.kafka.server.LeaderEndPoint
 import org.apache.kafka.server.ResultWithPartitions
@@ -114,6 +114,8 @@ abstract class AbstractFetcherThread(name: String,
     // do nothing
     Map.empty
   }
+
+  protected def updateSourceClusterLeader(mirrorName: String, partition: TopicPartition, leaderNode: Optional[Node], leaderEpoch: Int): Unit = { }
 
   protected def addFetcherForPartitions(partitionAndOffsets: Map[TopicPartition, InitialFetchState]): Unit = {}
 
@@ -308,22 +310,27 @@ abstract class AbstractFetcherThread(name: String,
   }
 
   /**
-   * Updates the currentLeaderEpoch in the fetch state to match the source cluster's
-   * current leader epoch, enabling proper epoch validation when fetching from the source.
+   * Reconciles the local fetch state and mirror cache with the source cluster's leader epoch
+   * after a FENCED_LEADER_EPOCH error. Updates the currentLeaderEpoch in the partition fetch
+   * state, persists the new source leader into the mirror cache, and triggers a metadata refresh
+   * for partitions where the source does not provide a valid epoch in the fetch response.
    */
-  private def updateMirrorFetchEpoch(partitionToData: Map[TopicPartition, PartitionData]): Unit = inLock(partitionMapLock) {
+  private def reconcileSourceLeaderEpoch(partitionToData: Map[TopicPartition, PartitionData]): Unit = inLock(partitionMapLock) {
     val newStates: java.util.Map[TopicPartition, PartitionFetchState] = new util.HashMap[TopicPartition, PartitionFetchState]()
     val partitionsToBeRemoved: java.util.Set[TopicPartition] = new util.HashSet[TopicPartition]()
     partitionStates.partitionStateMap.asScala
       .foreach { case (topicPartition, currentFetchState) =>
         partitionToData.get(topicPartition) match {
           case Some(partitionData) =>
-            // Updating currentLeaderEpoch with source cluster leader epoch to pass epoch validation when fetching from source cluster
             val newCurrentLeaderEpoch = partitionData.currentLeader().leaderEpoch()
-
             if (newCurrentLeaderEpoch > -1) {
-              info(s"Discovered new fetch epoch for mirror partition $topicPartition, " +
-                s"currentLeaderEpoch: ${currentFetchState.currentLeaderEpoch} -> $newCurrentLeaderEpoch")
+              info(s"Updating source leader epoch for mirror partition $topicPartition: " +
+                s"${currentFetchState.currentLeaderEpoch} -> $newCurrentLeaderEpoch")
+              val leaderNode: Optional[Node] = if (leader.lastSeenEndpoints().isEmpty)
+                Optional.empty()
+              else
+                Optional.of(leader.lastSeenEndpoints().get(partitionData.currentLeader().leaderId()))
+              updateSourceClusterLeader(currentFetchState.mirrorName(), topicPartition, leaderNode, newCurrentLeaderEpoch)
               newStates.put(topicPartition, new PartitionFetchState(currentFetchState.topicId, currentFetchState.fetchOffset(), currentFetchState.lag,
                 newCurrentLeaderEpoch, currentFetchState.delay, currentFetchState.state(), currentFetchState.lastFetchedEpoch(),
                 currentFetchState.dueMs(), currentFetchState.mirrorName()))
@@ -337,13 +344,20 @@ abstract class AbstractFetcherThread(name: String,
       }
     partitionStates.set(newStates)
     if (!partitionsToBeRemoved.isEmpty) {
+      warn(s"Source leader epoch not available in fetch response, refreshing source metadata for partitions $partitionsToBeRemoved")
       removeFetcherForPartitions(partitionsToBeRemoved.asScala)
-      refreshSourceClusterMetadata(partitionsToBeRemoved.asScala, "Source leader changed")
+      refreshSourceClusterMetadata(partitionsToBeRemoved.asScala, "Source leader epoch not available in fetch response")
     }
   }
 
-  /** Reassigns mirror partitions to new fetcher threads after source leader change. */
-  private def reassignMirrorPartitionsOnLeaderChange(partitionToData: Map[TopicPartition, PartitionData]): Unit = {
+  /**
+   * Reassigns mirror fetcher threads to the new source leader after a FENCED_LEADER_EPOCH error.
+   * Compares the reported source leader node against the current fetcher endpoint and, if the
+   * host or port changed, removes the old fetcher and creates a new one pointed at the new node.
+   * Also updates the mirror cache with the new source leader metadata. Falls back to a full
+   * source metadata refresh when the fetch response does not include endpoint information.
+   */
+  private def reassignMirrorFetchersForNewSourceLeader(partitionToData: Map[TopicPartition, PartitionData]): Unit = {
     var newStates: Map[TopicPartition, InitialFetchState] = scala.collection.mutable.Map.empty[TopicPartition, InitialFetchState]
       // Snapshot under lock to avoid ConcurrentModificationException from concurrent addFetcherForPartitions
       inLock(partitionMapLock) {
@@ -351,30 +365,31 @@ abstract class AbstractFetcherThread(name: String,
           .foreach { case (topicPartition, currentFetchState) =>
             partitionToData.get(topicPartition) match {
               case Some(partitionData) =>
-                val leaderNode = if (leader.lastSeenEndpoints().isEmpty) Optional.empty()
-                else Optional.of(leader.lastSeenEndpoints().get(partitionData.currentLeader().leaderId()))
-                // If leader node change, we need to update it.
-                // Note: we can't compare the node id because it might be different from the original node id (ex: replied as consumer id -1).
+                val leaderNode: Optional[Node] = if (leader.lastSeenEndpoints().isEmpty) Optional.empty()
+                else Optional.ofNullable(leader.lastSeenEndpoints().get(partitionData.currentLeader().leaderId()))
+                // Compare host/port instead of node id because the id might differ from the original (e.g. returned as -1).
                 if (leaderNode.isPresent && (!leaderNode.get().host.equals(leader.brokerEndPoint().host()) ||
                   leaderNode.get().port != leader.brokerEndPoint().port)) {
                   val brokerEndpoint = new BrokerEndPoint(leaderNode.get.id(), leaderNode.get.host, leaderNode.get.port)
                   newStates += topicPartition -> InitialFetchState(currentFetchState.topicId().toScala, brokerEndpoint,
                     partitionData.currentLeader().leaderEpoch(), currentFetchState.fetchOffset(), currentFetchState.mirrorName())
+                  updateSourceClusterLeader(currentFetchState.mirrorName(), topicPartition, leaderNode, partitionData.currentLeader().leaderEpoch())
                 }
               case _ =>
             }
           }
       }
     if (newStates.nonEmpty) {
+      info(s"Reassigning mirror fetchers to new source leader for partitions ${newStates.keySet}")
       removeFetcherForPartitions(newStates.keySet)
       addFetcherForPartitions(newStates)
     } else if (partitionToData.nonEmpty && leader.lastSeenEndpoints().isEmpty) {
       // Old source without nodeEndpoints in Fetch response, so we need to rediscover via metadata
       val stalePartitions = partitionToData.keySet
-      warn(s"No endpoint info to reassign mirror partitions $stalePartitions, refreshing source metadata")
+      warn(s"No endpoint info available for source leader reassignment, refreshing source metadata for partitions $stalePartitions")
       stalePartitions.foreach(markPartitionRemoved)
       removeFetcherForPartitions(stalePartitions)
-      refreshSourceClusterMetadata(stalePartitions, "No endpoint info in fetch response")
+      refreshSourceClusterMetadata(stalePartitions, "Endpoint info not available in fetch response")
     }
   }
 
@@ -542,7 +557,7 @@ abstract class AbstractFetcherThread(name: String,
                        * truncation and append after the FETCH request was handled. See KAFKA-18723 for more details.
                        *
                        * For read-only leaders (mirror leaders), currentFetchState.currentLeaderEpoch tracks the source
-                       * cluster's leader epoch (maintained by updateMirrorFetchEpoch when errors occur), ensuring proper
+                       * cluster's leader epoch (maintained by reconcileSourceLeaderEpoch when errors occur), ensuring proper
                        * validation of fetched batches from the source cluster.
                        *
                        * Use the current leader epoch to validate batches fetched from the leader.
@@ -671,9 +686,9 @@ abstract class AbstractFetcherThread(name: String,
     if (divergingEndOffsets.nonEmpty)
       truncateOnFetchResponse(divergingEndOffsets)
     if (mirrorPartitionsWithNewEpoch.nonEmpty)
-      updateMirrorFetchEpoch(mirrorPartitionsWithNewEpoch)
+      reconcileSourceLeaderEpoch(mirrorPartitionsWithNewEpoch)
     if (mirrorPartitionsWithNewLeader.nonEmpty && isRunning)
-      reassignMirrorPartitionsOnLeaderChange(mirrorPartitionsWithNewLeader)
+      reassignMirrorFetchersForNewSourceLeader(mirrorPartitionsWithNewLeader)
     if (partitionsWithError.nonEmpty) {
       handlePartitionsWithErrors(partitionsWithError, "processFetchRequest", fetchException)
     }

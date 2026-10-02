@@ -1881,9 +1881,10 @@ class ReplicaManager(val config: KafkaConfig,
                 partition.topicPartition.partition()))
             if (entry != null) entry.state() else MirrorPartitionState.UNKNOWN
           } else MirrorPartitionState.UNKNOWN
-          val sourceLeaderEpochOpt: Optional[Integer] = if (partition.isLeader && mirrorCache.isDefined && mirrorName.isPresent)
-            Optional.of(mirrorCache.get.getSourceClusterLeader(mirrorName.get(), partition.topicPartition).leaderEpoch())
-          else Optional.empty()
+          val sourceLeaderEpochOpt: Optional[Integer] = if (partition.isLeader && mirrorCache.isDefined && mirrorName.isPresent) {
+            val sourceLeader = mirrorCache.get.getSourceClusterLeader(mirrorName.get(), partition.topicPartition)
+            if (sourceLeader.isPresent) Optional.of(sourceLeader.get().leaderEpoch()) else Optional.empty()
+          } else Optional.empty()
 
           // Try the read first, this tells us whether we need all of adjustedFetchSize for this partition
           val readInfo: LogReadInfo = partition.fetchRecords(
@@ -1919,7 +1920,8 @@ class ReplicaManager(val config: KafkaConfig,
                  _: FencedLeaderEpochException |
                  _: ReplicaNotAvailableException |
                  _: KafkaStorageException |
-                 _: InconsistentTopicIdException) =>
+                 _: InconsistentTopicIdException |
+                 _: SourceMetadataNotAvailableException) =>
           createLogReadResult(e)
         case e: OffsetOutOfRangeException =>
           handleOffsetOutOfRangeError(tp, params, fetchInfo, adjustedMaxBytes, minOneMessage, log, fetchTimeMs, e)
@@ -2651,13 +2653,15 @@ class ReplicaManager(val config: KafkaConfig,
         case HostedPartition.Online(partition) =>
           try {
             val sourceLeader = mirrorCache.get.getSourceClusterLeader(mirrorName, tp)
-            val sourceLeaderNode = sourceLeader.node()
+            if (sourceLeader.isEmpty || sourceLeader.get().node().isEmpty)
+              throw new SourceMetadataNotAvailableException()
+            val sourceLeaderNode = sourceLeader.get().node().get()
             val leaderEndpoint = new BrokerEndPoint(sourceLeaderNode.id(), sourceLeaderNode.host(), sourceLeaderNode.port())
 
             val fetchState = InitialFetchState(
               topicId = Some(metadataCache.getTopicId(tp.topic)),
               leader = leaderEndpoint,
-              currentLeaderEpoch = sourceLeader.leaderEpoch(),
+              currentLeaderEpoch = sourceLeader.get().leaderEpoch(),
               initOffset = partition.localLogOrException.logEndOffset,
               mirrorName = mirrorName
             )
@@ -2676,7 +2680,7 @@ class ReplicaManager(val config: KafkaConfig,
             }
             maybeAddListener(tp, mirrorLagListener)
           } catch {
-            case _: IllegalStateException =>
+            case _: SourceMetadataNotAvailableException =>
               pendingMetadataPartitions.add(tp)
               stateChangeLogger.info(s"Deferring fetcher setup for mirror partition $tp: source metadata not yet available")
             case e: Exception =>
