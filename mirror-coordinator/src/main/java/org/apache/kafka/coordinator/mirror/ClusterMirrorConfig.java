@@ -29,7 +29,6 @@ import com.google.re2j.Pattern;
 
 import java.util.List;
 import java.util.Properties;
-import java.util.Set;
 
 import static org.apache.kafka.common.config.ConfigDef.Importance.HIGH;
 import static org.apache.kafka.common.config.ConfigDef.Importance.LOW;
@@ -443,12 +442,12 @@ public final class ClusterMirrorConfig extends AbstractConfig {
     }
 
     /**
-     * Returns the set of all valid configuration keys for cluster mirror configurations.
-     *
-     * @return a set of configuration key names
+     * Checks whether a given configuration name is valid.
+     * @param name configuration name
+     * @return true if it is a known configuration name, false otherwise
      */
-    public static Set<String> configNames() {
-        return CONFIG_DEF.names();
+    public static boolean isValidConfigName(String name) {
+        return CONFIG_DEF.names().contains(name);
     }
 
     public static void main(String[] args) {

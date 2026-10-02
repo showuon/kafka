@@ -147,9 +147,8 @@ class ConfigAdminManager(nodeId: Int,
             case CLIENT_METRICS | GROUP | TOPIC=>
             // Nothing to do.
             case CLUSTER_MIRROR =>
-              val validNames = ClusterMirrorConfig.configNames()
               resource.configs().forEach { config =>
-                if (!validNames.contains(config.name())) {
+                if (!ClusterMirrorConfig.isValidConfigName(config.name())) {
                   throw new InvalidConfigurationException(s"Unknown mirror configuration: ${config.name()}")
                 }
               }

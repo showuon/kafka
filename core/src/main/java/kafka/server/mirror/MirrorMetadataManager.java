@@ -552,8 +552,8 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     }
 
     private Set<TopicPartition> collectFromConfigsDelta(MetadataDelta delta,
-                                                       MetadataImage image,
-                                                       Set<String> configuredMirrors) {
+                                                        MetadataImage image,
+                                                        Set<String> configuredMirrors) {
         Set<TopicPartition> result = new HashSet<>();
 
         if (delta.configsDelta() == null) {
@@ -567,7 +567,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
             // [3] Mirror config changed or deleted: tear down connections
             if (resource.type() == ConfigResource.Type.CLUSTER_MIRROR) {
-                handleMirrorConfigChange(resource, entry.getValue(), image)
+                handleMirrorConfigChange(resource, entry.getValue(), delta.image(), image)
                         .ifPresent(mirrorsToReconnect::add);
 
             // [4] Watched topic config changed
@@ -578,7 +578,6 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         }
 
         if (!mirrorsToReconnect.isEmpty()) {
-            log.info("Re-evaluating partitions for reconnected mirrors: {}", mirrorsToReconnect);
             mirrorCache.getMirrorPartitions().forEach(mp -> {
                 MirrorPartitionMetadata cacheEntry = mirrorCache.getPartitionMetadata(mp);
                 if (cacheEntry != null && mirrorsToReconnect.contains(mp.mirrorName())
@@ -595,6 +594,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     /** Returns the mirror name if it needs reconnection, empty if deleted or unchanged. */
     private Optional<String> handleMirrorConfigChange(ConfigResource resource,
                                                       ConfigurationDelta configDelta,
+                                                      MetadataImage prevImage,
                                                       MetadataImage image) {
         String mirrorName = resource.name();
         boolean mirrorDeleted = image.configs().configProperties(resource).isEmpty();
@@ -604,12 +604,14 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             metricsGroup.removeMetric("MirrorTopicCount", Map.of("mirrorName", mirrorName));
         }
 
-        boolean connectionConfigChanged = configDelta.changes().keySet().stream()
+        boolean isNewMirror = prevImage.configs().configProperties(resource).isEmpty();
+        boolean needsReconnection = !isNewMirror && configDelta.changes().keySet().stream()
                 .anyMatch(key -> !SKIP_RECONNECT_MIRROR_CONFIGS.contains(key));
-        if (connectionConfigChanged) {
+        if (needsReconnection) {
             log.info("Mirror '{}' has config changes. Recreating connections.", mirrorName);
         }
-        if (connectionConfigChanged || mirrorDeleted) {
+
+        if (needsReconnection || mirrorDeleted) {
             mirrorCache.removeSourceClusterLeaders(mirrorName);
             closeAndRemoveSourceAdmin(mirrorName);
             var mirrorFetcherManager = replicaManagerSupplier.get().mirrorFetcherManager();
@@ -617,7 +619,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             mirrorFetcherManager.shutdownIdleFetcherThreads();
         }
 
-        return (connectionConfigChanged && !mirrorDeleted) ? Optional.of(mirrorName) : Optional.empty();
+        return (needsReconnection && !mirrorDeleted) ? Optional.of(mirrorName) : Optional.empty();
     }
 
     /**
