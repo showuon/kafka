@@ -1882,7 +1882,6 @@ class ReplicaManager(val config: KafkaConfig,
             if (entry != null) entry.state() else MirrorPartitionState.UNKNOWN
           } else MirrorPartitionState.UNKNOWN
           val sourceLeaderEpochOpt: Optional[Integer] = if (partition.isLeader && mirrorCache.isDefined && mirrorName.isPresent) {
-            // aggressively refresh the source cluster metadata if we can't get the source leader metadata for end offset for epoch query
             val sourceLeader = mirrorCache.get.getSourceClusterLeader(mirrorName.get(), partition.topicPartition)
             if (sourceLeader.isPresent) Optional.of(sourceLeader.get().leaderEpoch()) else Optional.empty()
           } else Optional.empty()

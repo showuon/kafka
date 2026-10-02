@@ -1695,7 +1695,7 @@ class Partition(val topicPartition: TopicPartition,
       if (epochEndOffset.endOffset == UNDEFINED_EPOCH_OFFSET || epochEndOffset.leaderEpoch == UNDEFINED_EPOCH) {
         if (shouldThrowSourceMetadataException(sourceLeaderEpochOpt))
           throw new SourceMetadataNotAvailableException("Could not determine the end offset of the last fetched epoch " +
-            s"$lastFetchedEpoch from the request due to the source cluster metadata is not available. Refreshing the source cluster metadata.")
+            s"$lastFetchedEpoch because source cluster metadata is not yet available")
         else
           throw new OffsetOutOfRangeException("Could not determine the end offset of the last fetched epoch " +
             s"$lastFetchedEpoch from the request")

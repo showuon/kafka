@@ -62,8 +62,7 @@ class MirrorFetcherThread(name: String,
   override protected def removeFetcherForPartitions(partitions: Set[TopicPartition]): Map[TopicPartition, PartitionFetchState] = {
     replicaMgr.mirrorFetcherManager.removeFetcherForPartitions(partitions)
   }
-
-  // Uses leader info from fetch response to update cache and create new fetchers directly
+  
   override protected def addFetcherForPartitions(partitionAndOffsets: Map[TopicPartition, InitialFetchState]): Unit = {
     mirrorCache.foreach { cache =>
       partitionAndOffsets.foreach { case (tp, state) =>
@@ -74,20 +73,20 @@ class MirrorFetcherThread(name: String,
     replicaMgr.mirrorFetcherManager.addFetcherForPartitions(partitionAndOffsets)
   }
 
-  override def updateSourceLeader(mirrorName: String, partition: TopicPartition, leaderNode: Optional[Node], leaderEpoch: Int): Unit = {
+  override def updateSourceClusterLeader(mirrorName: String, partition: TopicPartition, leaderNode: Optional[Node], leaderEpoch: Int): Unit = {
     mirrorCache.foreach(cache => {
-      val curLeader = cache.getSourceClusterLeader(mirrorName, partition)
-      // When the leader election is in process, the leader node might be empty, so only use the provided node when available.
+      val currentLeader = cache.getSourceClusterLeader(mirrorName, partition)
+      // When the leader election is in process, the leader node might be empty, so only use the provided node when available
       val node: Optional[Node] = if (leaderNode.isPresent)
         leaderNode
-      else if (curLeader.isPresent && curLeader.get().node().isPresent)
-        curLeader.get().node()
+      else if (currentLeader.isPresent && currentLeader.get().node().isPresent)
+        currentLeader.get().node()
       else
         Optional.empty()
 
       // Use the highest leader epoch known
-      val epoch = if (curLeader.isPresent && curLeader.get().leaderEpoch() > leaderEpoch)
-        curLeader.get().leaderEpoch()
+      val epoch = if (currentLeader.isPresent && currentLeader.get().leaderEpoch() > leaderEpoch)
+        currentLeader.get().leaderEpoch()
       else
         leaderEpoch
 
@@ -145,7 +144,6 @@ class MirrorFetcherThread(name: String,
 
     logAppendInfo
   }
-
 
   // Validates batch epoch against local epoch (destination) and partition epoch (source metadata)
   private def validateLeaderEpoch(topicPartition: TopicPartition, partition: Partition, records: Records, partitionLeaderEpoch: Int): Unit = {

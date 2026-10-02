@@ -22,7 +22,6 @@ package org.apache.kafka.common.errors;
  * This exception is retriable because the broker will eventually get the metadata update.
  */
 public class MirrorConfigNotAvailableException extends InvalidMetadataException {
-
     private static final long serialVersionUID = 1L;
 
     public MirrorConfigNotAvailableException() {
@@ -39,5 +38,4 @@ public class MirrorConfigNotAvailableException extends InvalidMetadataException 
     public MirrorConfigNotAvailableException(String message, Throwable throwable) {
         super(message, throwable);
     }
-
 }
