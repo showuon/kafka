@@ -933,9 +933,9 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 int maxAttempts = new ClusterMirrorConfig(brokerConfig).failedRetryMaxAttempts();
                 mirrorCache.updatePartitionMetadata(mp,
                         new MirrorPartitionMetadata.Builder(existing)
-                                .withErrorInfoOnState(state, errorMessage, nonRetryable, maxAttempts)
                                 .withState(state)
                                 .withStateEpoch(part.stateEpoch())
+                                .withResolvedErrorInfo(state, errorMessage, nonRetryable, maxAttempts)
                                 .build());
                 onStateTransition(mirrorName, tp, state);
             } else if (part.errorCode() == Errors.COORDINATOR_LOAD_IN_PROGRESS.code()) {

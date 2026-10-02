@@ -361,7 +361,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
         MirrorPartitionMetadata existing = mirrorCache.getPartitionMetadata(mp);
         mirrorCache.updatePartitionMetadata(mp,
                 new MirrorPartitionMetadata.Builder(existing)
-                        .withErrorInfoOnState(state, errorMessage, nonRetryable, mirrorConfig.failedRetryMaxAttempts())
+                        .withResolvedErrorInfo(state, errorMessage, nonRetryable, mirrorConfig.failedRetryMaxAttempts())
                         .build());
         maybeUpdateLeaderEpochMap(mp, leaderEpoch);
         int newEpoch = currentStateEpoch + 1;
