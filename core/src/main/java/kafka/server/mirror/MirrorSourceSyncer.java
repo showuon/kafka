@@ -119,15 +119,18 @@ class MirrorSourceSyncer {
     private final int nodeId;
 
     private volatile ScheduledFuture<?> syncTaskSchedule;
+    private final Set<String> pendingMetadataRefresh = ConcurrentHashMap.newKeySet();
     private volatile MetadataImage metadataImage = MetadataImage.EMPTY;
 
     private final MirrorMetadataManager metadataManager;
     private final Supplier<ReplicaManager> replicaManagerSupplier;
     private final NodeToControllerChannelManager controllerClient;
     private final MirrorMetadataCache mirrorCache;
-    private final KafkaScheduler syncScheduler;
+    private final KafkaScheduler periodicScheduler;
+    private final KafkaScheduler onDemandScheduler;
 
-    private final ConcurrentHashMap<String, CompletableFuture<List<SourceTopicState>>> ongoingSyncs = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, CompletableFuture<List<SourceTopicState>>>
+            ongoingTopicMetadataSyncs = new ConcurrentHashMap<>();
     private final Set<String> pendingTopicCreations = ConcurrentHashMap.newKeySet();
     private final Map<String, Set<String>> sourceDeletions = new ConcurrentHashMap<>();
 
@@ -163,8 +166,11 @@ class MirrorSourceSyncer {
         this.controllerClient = controllerClient;
         this.mirrorCache = mirrorCache;
 
-        this.syncScheduler = new KafkaScheduler(1, true, "mirror-syncer-");
-        this.syncScheduler.startup();
+        this.periodicScheduler = new KafkaScheduler(1, true, "mirror-syncer-");
+        this.periodicScheduler.startup();
+
+        this.onDemandScheduler = new KafkaScheduler(1, true, "mirror-syncer-oneshot-");
+        this.onDemandScheduler.startup();
 
         this.metricsGroup = metricsGroup;
         this.metadataRefreshError = metadataRefreshError;
@@ -180,12 +186,13 @@ class MirrorSourceSyncer {
 
     void close() {
         try {
-            syncScheduler.shutdown();
+            periodicScheduler.shutdown();
+            onDemandScheduler.shutdown();
             pendingTopicCreations.clear();
             sourceDeletions.clear();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.warn("Interrupted while shutting down sync scheduler", e);
+            log.warn("Interrupted while shutting down sync schedulers", e);
         }
     }
 
@@ -216,7 +223,7 @@ class MirrorSourceSyncer {
         if (oldFuture != null) {
             oldFuture.cancel(false);
         }
-        syncTaskSchedule = syncScheduler.schedule("source-cluster-sync",
+        syncTaskSchedule = periodicScheduler.schedule("source-cluster-sync",
                 this::runSourceClusterSync, intervalMs, intervalMs);
         log.info("Scheduled source cluster sync with interval {} ms", intervalMs);
     }
@@ -246,8 +253,8 @@ class MirrorSourceSyncer {
             try {
                 validateSourceClusterId(mirrorName);
                 updateMirrorTopicMetrics(mirrorName);
-                var topicState = syncSourceTopicMetadata(mirrorName);
-                syncSourceConfigsAndOffsets(mirrorName, topicState);
+                var topicState = refreshSourceTopicMetadata(mirrorName);
+                refreshSourceConfigsAndOffsets(mirrorName, topicState);
             } catch (Exception e) {
                 log.error("Failed to refresh metadata for mirror {}", mirrorName, e);
             }
@@ -373,18 +380,20 @@ class MirrorSourceSyncer {
         return false;
     }
 
-    /** Schedules an immediate one-shot source topic state sync for the given mirror. */
-    void scheduleSourceTopicStateSync(String mirrorName) {
-        syncScheduler.scheduleOnce("source-topic-metadata-sync", () -> syncSourceTopicMetadata(mirrorName));
+    /** Schedules an immediate one-shot source topic metadata refresh for the given mirror. */
+    void scheduleSourceTopicMetadataRefresh(String mirrorName) {
+        if (pendingMetadataRefresh.add(mirrorName)) {
+            onDemandScheduler.scheduleOnce("source-topic-metadata-sync", () -> refreshSourceTopicMetadata(mirrorName));
+        }
     }
 
     /**
-     * Fetches topics metadata from the source cluster.
+     * Refreshes topics metadata from the source cluster.
      * Runs on every broker to keep them in sync.
      */
-    List<SourceTopicState> syncSourceTopicMetadata(String mirrorName) {
+    List<SourceTopicState> refreshSourceTopicMetadata(String mirrorName) {
         var future = new CompletableFuture<List<SourceTopicState>>();
-        var existing = ongoingSyncs.putIfAbsent(mirrorName, future);
+        var existing = ongoingTopicMetadataSyncs.putIfAbsent(mirrorName, future);
         if (existing != null) {
             log.info("Source topic state sync already in progress for mirror {}, waiting for result", mirrorName);
             try {
@@ -408,7 +417,8 @@ class MirrorSourceSyncer {
             future.completeExceptionally(e);
             return List.of();
         } finally {
-            ongoingSyncs.remove(mirrorName, future);
+            ongoingTopicMetadataSyncs.remove(mirrorName, future);
+            pendingMetadataRefresh.remove(mirrorName);
         }
     }
 
@@ -653,10 +663,10 @@ class MirrorSourceSyncer {
     }
 
     /**
-     * Syncs topic configurations, consumer/share group offsets, ACLs, and topic patterns
-     * from the source cluster. Runs only on the coordinator broker for each mirror.
+     * Refreshes topic configs, group offsets, ACLs, and topic patterns from the source cluster.
+     * Runs only on the coordinator broker for each mirror.
      */
-    private void syncSourceConfigsAndOffsets(String mirrorName, List<SourceTopicState> sourceTopicStates) {
+    private void refreshSourceConfigsAndOffsets(String mirrorName, List<SourceTopicState> sourceTopicStates) {
         if (!isLocalCoordinatorFor(mirrorName)) {
             return;
         }

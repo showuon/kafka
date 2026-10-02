@@ -1595,8 +1595,8 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
     // ==== OTHER OPERATIONS ===========================================================================================
 
-    public void scheduleSourceTopicStateSync(String mirrorName) {
-        sourceSyncer.scheduleSourceTopicStateSync(mirrorName);
+    public void scheduleSourceTopicMetadataRefresh(String mirrorName) {
+        sourceSyncer.scheduleSourceTopicMetadataRefresh(mirrorName);
     }
 
     public void scheduleSourceClusterSync(long intervalMs) {
@@ -2037,7 +2037,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     public CompletableFuture<Void> scheduleBumpLeaderEpoch(String mirrorName, TopicPartition tp) {
         CompletableFuture<Void> future = new CompletableFuture<>();
         scheduler.scheduleOnce("bump-leader-epoch-" + tp, () -> {
-            List<SourceTopicState> sourceTopicStates = sourceSyncer.syncSourceTopicMetadata(mirrorName);
+            List<SourceTopicState> sourceTopicStates = sourceSyncer.refreshSourceTopicMetadata(mirrorName);
             maybeBumpLeaderEpochs(mirrorName, sourceTopicStates, Set.of(tp))
                     .whenComplete((v, ex) -> {
                         if (ex != null) {

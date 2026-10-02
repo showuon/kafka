@@ -2699,13 +2699,13 @@ class ReplicaManager(val config: KafkaConfig,
     }
 
     if (pendingMetadataPartitions.nonEmpty) {
-      mirrorManager.foreach(_.scheduleSourceTopicStateSync(mirrorName))
+      mirrorManager.foreach(_.scheduleSourceTopicMetadataRefresh(mirrorName))
       mirrorManager.foreach(_.transitionTo(mirrorName, pendingMetadataPartitions.asJava,
         MirrorPartitionState.FAILED, "Failed to get source metadata", false))
     }
 
     if (errorPartitionAndOffsets.nonEmpty) {
-      mirrorManager.foreach(_.scheduleSourceTopicStateSync(mirrorName))
+      mirrorManager.foreach(_.scheduleSourceTopicMetadataRefresh(mirrorName))
       mirrorManager.foreach(_.transitionTo(mirrorName, errorPartitionAndOffsets.asJava,
         MirrorPartitionState.FAILED, "Failed to create fetcher", false))
     }
