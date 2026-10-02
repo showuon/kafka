@@ -142,7 +142,7 @@ public class KafkaScheduler implements Scheduler {
 
     @Override
     public ScheduledFuture<?> schedule(String name, Runnable task, long delayMs, long periodMs) {
-        log.debug("Scheduling task {} with initial delay {} ms and period {} ms.", name, delayMs, periodMs);
+        log.debug("Scheduling task {} with initial delay {} ms and period {} ms. executor status: {}, {}, {}, {}, {}", name, delayMs, periodMs, executor, executor.getCorePoolSize(), executor.getTaskCount(), executor.getMaximumPoolSize(), executor.getActiveCount());
         synchronized (this) {
             if (isStarted()) {
                 Runnable runnable = () -> {
