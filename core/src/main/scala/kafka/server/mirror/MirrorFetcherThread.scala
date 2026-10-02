@@ -68,10 +68,31 @@ class MirrorFetcherThread(name: String,
     mirrorCache.foreach { cache =>
       partitionAndOffsets.foreach { case (tp, state) =>
         cache.updateSourceClusterLeader(mirrorName, tp,
-          new SourceClusterLeader(new Node(state.leader.id(), state.leader.host(), state.leader.port()), state.currentLeaderEpoch))
+          new SourceClusterLeader(Optional.of(new Node(state.leader.id(), state.leader.host(), state.leader.port())), state.currentLeaderEpoch))
       }
     }
     replicaMgr.mirrorFetcherManager.addFetcherForPartitions(partitionAndOffsets)
+  }
+
+  override def updateSourceLeader(mirrorName: String, partition: TopicPartition, leaderNode: Optional[Node], leaderEpoch: Int): Unit = {
+    mirrorCache.foreach(cache => {
+      val curLeader = cache.getSourceClusterLeader(mirrorName, partition)
+      // When the leader election is in process, the leader node might be empty, so only use the provided node when available.
+      val node: Optional[Node] = if (leaderNode.isPresent)
+        leaderNode
+      else if (curLeader.isPresent && curLeader.get().node().isPresent)
+        curLeader.get().node()
+      else
+        Optional.empty()
+
+      // Use the highest leader epoch known
+      val epoch = if (curLeader.isPresent && curLeader.get().leaderEpoch() > leaderEpoch)
+        curLeader.get().leaderEpoch()
+      else
+        leaderEpoch
+
+      cache.updateSourceClusterLeader(mirrorName, partition, new SourceClusterLeader(node, epoch))
+    })
   }
 
   // Processes fetched data
@@ -196,7 +217,11 @@ class MirrorFetcherThread(name: String,
   }
 
   override def leaderEpochFromSource(tp: TopicPartition): Option[Int] = {
-    mirrorCache.map(cache => cache.getSourceClusterLeader(mirrorName, tp).leaderEpoch())
+    mirrorCache.flatMap(cache => {
+      val sourceLeader = cache.getSourceClusterLeader(mirrorName, tp)
+      if (sourceLeader.isPresent) Some(sourceLeader.get().leaderEpoch())
+      else None
+    })
   }
 
   // Returns the mirror partition lag computed from cached source/destination offsets

@@ -474,7 +474,7 @@ class MirrorSourceSyncer {
             ti.partitions().forEach(pi -> {
                 if (pi.leader() != null) {
                     mirrorCache.updateSourceClusterLeader(mirrorName, pi.topicPartition(),
-                            new MirrorMetadataCache.SourceClusterLeader(pi.leader(), pi.leaderEpoch().orElse(0)));
+                            new MirrorMetadataCache.SourceClusterLeader(Optional.of(pi.leader()), pi.leaderEpoch().orElse(0)));
                 }
             });
 
@@ -1197,7 +1197,7 @@ class MirrorSourceSyncer {
         descriptions.forEach(td -> td.partitions().forEach(pi -> {
             if (pi.leader() != null) {
                 mirrorCache.updateSourceClusterLeader(mirrorName, new TopicPartition(td.name(), pi.partition()),
-                        new MirrorMetadataCache.SourceClusterLeader(pi.leader(), pi.leaderEpoch().orElse(0)));
+                        new MirrorMetadataCache.SourceClusterLeader(Optional.of(pi.leader()), pi.leaderEpoch().orElse(0)));
             }
         }));
     }
