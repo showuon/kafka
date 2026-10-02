@@ -930,11 +930,46 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         res.data().topics().forEach(topic -> topic.partitions().forEach(part -> {
             if (part.errorCode() == Errors.NONE.code()) {
                 MirrorPartitionMetadata existing = mirrorCache.getPartitionMetadata(mp);
-                mirrorCache.updatePartitionMetadata(mp,
-                        new MirrorPartitionMetadata.Builder(existing)
-                                .withState(state)
-                                .withStateEpoch(part.stateEpoch())
-                                .build());
+                MirrorPartitionState currentState = existing.state();
+
+                // luke
+                if (state == MirrorPartitionState.FAILED) {
+
+                    // Transition to FAILED: calculate next retry attempt and preserve the current state as previous
+                    int attempt = existing.nextAttempt(nonRetryable, new ClusterMirrorConfig(brokerConfig).failedRetryMaxAttempts());
+                    MirrorPartitionState previousState = existing.resolvePrevState(currentState);
+                    log.info("current prevState= {}, after: {}", existing.prevState(), previousState);
+                    mirrorCache.updatePartitionMetadata(mp,
+                            new MirrorPartitionMetadata.Builder(existing)
+                                    .withErrorMessage(errorMessage)
+                                    .withRetryAttempt(attempt)
+                                    .withPrevState(previousState)
+                                    .withState(state)
+                                    .withStateEpoch(part.stateEpoch())
+                                    .build());
+
+                } else if ((currentState != MirrorPartitionState.FAILED && currentState != state)
+                        || state == MirrorPartitionState.STOPPED
+                        || state == MirrorPartitionState.PAUSED) {
+                    // Clear error state when transitioning away from FAILED or reaching terminal/pause states
+                    mirrorCache.updatePartitionMetadata(mp,
+                            new MirrorPartitionMetadata.Builder(existing)
+                                    .withErrorMessage(null)
+                                    .withRetryAttempt(0)
+                                    .withPrevState(null)
+                                    .withState(state)
+                                    .withStateEpoch(part.stateEpoch())
+                                    .build());
+                } else {
+                    // Update the error message to make sure it is up-to-date
+                    mirrorCache.updatePartitionMetadata(mp,
+                            new MirrorPartitionMetadata.Builder(existing)
+                                    .withErrorMessage(errorMessage)
+                                    .withState(state)
+                                    .withStateEpoch(part.stateEpoch())
+                                    .build());
+                }
+                //
                 onStateTransition(mirrorName, tp, state);
             } else if (part.errorCode() == Errors.COORDINATOR_LOAD_IN_PROGRESS.code()) {
                 log.debug("Remote coordinator write for partition {} failed. Reason: Controller loading. Retrying in {} ms.",
@@ -1264,6 +1299,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         int maxAttempts = mirrorConfig.failedRetryMaxAttempts();
         MirrorPartition mp = MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
         MirrorPartitionMetadata mpm = mirrorCache.getPartitionMetadata(mp);
+        log.info("schedulePartitionRetry: {}, {}", mp, mpm);
         int attempt = mpm.retryAttempt() != 0 ? mpm.retryAttempt() : 1;
         if (attempt == NON_RETRYABLE_ATTEMPT) {
             log.debug("Skipping retry for partition {} (non-retryable error)", tp);
@@ -1282,7 +1318,12 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         long delay = backoff.backoff(attempt);
         MirrorPartitionState targetState = (mpm.prevState() == null || mpm.prevState() == MirrorPartitionState.UNKNOWN)
             ? MirrorPartitionState.LOG_ALIGNMENT : mpm.prevState();
-        log.info("Scheduling retry #{} for partition {} in {} ms targeting {}", attempt, tp, delay, targetState);
+        log.info("Scheduling retry #{} for partition {} in {} ms targeting {} with thread {}", attempt, tp, delay, targetState, Thread.currentThread());
+        final StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+        for (int i = 1; i < elements.length; i++) {
+            final StackTraceElement s = elements[i];
+            System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+        }
         scheduler.scheduleOnce("failed-retry-" + tp,
             () -> transitionTo(mirrorName, Set.of(tp), targetState, null, false), delay);
     }
