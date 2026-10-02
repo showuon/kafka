@@ -127,6 +127,7 @@ class MirrorSourceSyncer {
     private final NodeToControllerChannelManager controllerClient;
     private final MirrorMetadataCache mirrorCache;
     private final KafkaScheduler syncScheduler;
+    private final KafkaScheduler srcMetadataRefreshScheduler;
 
     private final ConcurrentHashMap<String, CompletableFuture<List<SourceTopicState>>> ongoingSyncs = new ConcurrentHashMap<>();
     private final Set<String> pendingTopicCreations = ConcurrentHashMap.newKeySet();
@@ -167,6 +168,9 @@ class MirrorSourceSyncer {
         this.syncScheduler = new KafkaScheduler(1, true, "mirror-syncer-");
         this.syncScheduler.startup();
 
+        this.srcMetadataRefreshScheduler = new KafkaScheduler(1, true, "mirror-syncer-oneshot-");
+        this.srcMetadataRefreshScheduler.startup();
+
         this.metricsGroup = metricsGroup;
         this.metadataRefreshError = metadataRefreshError;
         this.topicConfigSyncError = topicConfigSyncError;
@@ -182,11 +186,12 @@ class MirrorSourceSyncer {
     void close() {
         try {
             syncScheduler.shutdown();
+            srcMetadataRefreshScheduler.shutdown();
             pendingTopicCreations.clear();
             sourceDeletions.clear();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.warn("Interrupted while shutting down sync scheduler", e);
+            log.warn("Interrupted while shutting down sync schedulers", e);
         }
     }
 
@@ -377,7 +382,7 @@ class MirrorSourceSyncer {
     /** Schedules an immediate one-shot source topic state sync for the given mirror. */
     void scheduleSourceTopicStateSync(String mirrorName) {
         if (pendingMetadataRefresh.add(mirrorName)) {
-            syncScheduler.scheduleOnce("source-topic-metadata-sync", () -> syncSourceTopicMetadata(mirrorName));
+            srcMetadataRefreshScheduler.scheduleOnce("source-topic-metadata-sync", () -> syncSourceTopicMetadata(mirrorName));
         } else {
             log.info("skipping scheduling source-topic-metadata-sync for mirror {}", mirrorName);
         }
