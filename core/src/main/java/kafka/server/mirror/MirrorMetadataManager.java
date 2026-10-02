@@ -886,7 +886,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 .thenCompose(res -> {
                     res.data().topics().forEach(topic -> topic.partitions().forEach(partition -> {
                         TopicPartition tp = new TopicPartition(topic.topicName(), partition.partitionIndex());
-                        onRemoteWriteComplete(mirrorName, tp, targetState, errorMessage, nonRetryable, res);
+                        onRemoteWriteComplete(mirrorName, tp, targetState, errorMessage, nonRetryable, partition);
                     }));
                     return CompletableFuture.completedFuture(null);
                 });
@@ -925,66 +925,61 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     /** Triggers per-partition side effects (actions) after remote coordinator write completes. */
     private void onRemoteWriteComplete(String mirrorName, TopicPartition tp, MirrorPartitionState state,
                                        String errorMessage, boolean nonRetryable,
-                                       WriteMirrorStatesResponse res) {
+                                       WriteMirrorStatesResponseData.PartitionResult part) {
         MirrorPartition mp = MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
-        res.data().topics().forEach(topic -> topic.partitions().forEach(part -> {
-            if (part.errorCode() == Errors.NONE.code()) {
-                MirrorPartitionMetadata existing = mirrorCache.getPartitionMetadata(mp);
-                MirrorPartitionState currentState = existing.state();
+        if (part.errorCode() == Errors.NONE.code()) {
+            MirrorPartitionMetadata existing = mirrorCache.getPartitionMetadata(mp);
+            MirrorPartitionState currentState = existing.state();
 
-                // luke
-                if (state == MirrorPartitionState.FAILED) {
+            if (state == MirrorPartitionState.FAILED) {
 
-                    // Transition to FAILED: calculate next retry attempt and preserve the current state as previous
-                    int attempt = existing.nextAttempt(nonRetryable, new ClusterMirrorConfig(brokerConfig).failedRetryMaxAttempts());
-                    MirrorPartitionState previousState = existing.resolvePrevState(currentState);
-                    log.info("current prevState= {}, after: {}", existing.prevState(), previousState);
-                    mirrorCache.updatePartitionMetadata(mp,
-                            new MirrorPartitionMetadata.Builder(existing)
-                                    .withErrorMessage(errorMessage)
-                                    .withRetryAttempt(attempt)
-                                    .withPrevState(previousState)
-                                    .withState(state)
-                                    .withStateEpoch(part.stateEpoch())
-                                    .build());
+                // Transition to FAILED: calculate next retry attempt and preserve the current state as previous
+                int attempt = existing.nextAttempt(nonRetryable, new ClusterMirrorConfig(brokerConfig).failedRetryMaxAttempts());
+                MirrorPartitionState previousState = existing.resolvePrevState(currentState);
+                mirrorCache.updatePartitionMetadata(mp,
+                        new MirrorPartitionMetadata.Builder(existing)
+                                .withErrorMessage(errorMessage)
+                                .withRetryAttempt(attempt)
+                                .withPrevState(previousState)
+                                .withState(state)
+                                .withStateEpoch(part.stateEpoch())
+                                .build());
 
-                } else if ((currentState != MirrorPartitionState.FAILED && currentState != state)
-                        || state == MirrorPartitionState.STOPPED
-                        || state == MirrorPartitionState.PAUSED) {
-                    // Clear error state when transitioning away from FAILED or reaching terminal/pause states
-                    mirrorCache.updatePartitionMetadata(mp,
-                            new MirrorPartitionMetadata.Builder(existing)
-                                    .withErrorMessage(null)
-                                    .withRetryAttempt(0)
-                                    .withPrevState(null)
-                                    .withState(state)
-                                    .withStateEpoch(part.stateEpoch())
-                                    .build());
-                } else {
-                    // Update the error message to make sure it is up-to-date
-                    mirrorCache.updatePartitionMetadata(mp,
-                            new MirrorPartitionMetadata.Builder(existing)
-                                    .withErrorMessage(errorMessage)
-                                    .withState(state)
-                                    .withStateEpoch(part.stateEpoch())
-                                    .build());
-                }
-                //
-                onStateTransition(mirrorName, tp, state);
-            } else if (part.errorCode() == Errors.COORDINATOR_LOAD_IN_PROGRESS.code()) {
-                log.debug("Remote coordinator write for partition {} failed. Reason: Controller loading. Retrying in {} ms.",
-                        tp, COORD_LOADING_RETRY_BACKOFF_MS);
-                scheduler.scheduleOnce("write-retry-" + tp,
-                        () -> persistState(mirrorName, tp, state, errorMessage, nonRetryable),
-                        COORD_LOADING_RETRY_BACKOFF_MS);
-            } else if (part.errorCode() == Errors.FENCED_LEADER_EPOCH.code()
-                    || part.errorCode() == Errors.FENCED_STATE_EPOCH.code()) {
-                log.debug("Remote coordinator write for partition {} failed. Reason: Stale epoch. Retrying.", tp);
-                readAndRetryTransition(mirrorName, tp, state, errorMessage, nonRetryable);
+            } else if ((currentState != MirrorPartitionState.FAILED && currentState != state)
+                    || state == MirrorPartitionState.STOPPED
+                    || state == MirrorPartitionState.PAUSED) {
+                // Clear error state when transitioning away from FAILED or reaching terminal/pause states
+                mirrorCache.updatePartitionMetadata(mp,
+                        new MirrorPartitionMetadata.Builder(existing)
+                                .withErrorMessage(null)
+                                .withRetryAttempt(0)
+                                .withPrevState(null)
+                                .withState(state)
+                                .withStateEpoch(part.stateEpoch())
+                                .build());
             } else {
-                log.error("Remote coordinator write for partition {} failed with error code {}", tp, part.errorCode());
+                // Update the error message to make sure it is up-to-date
+                mirrorCache.updatePartitionMetadata(mp,
+                        new MirrorPartitionMetadata.Builder(existing)
+                                .withErrorMessage(errorMessage)
+                                .withState(state)
+                                .withStateEpoch(part.stateEpoch())
+                                .build());
             }
-        }));
+            onStateTransition(mirrorName, tp, state);
+        } else if (part.errorCode() == Errors.COORDINATOR_LOAD_IN_PROGRESS.code()) {
+            log.debug("Remote coordinator write for partition {} failed. Reason: Controller loading. Retrying in {} ms.",
+                    tp, COORD_LOADING_RETRY_BACKOFF_MS);
+            scheduler.scheduleOnce("write-retry-" + tp,
+                    () -> persistState(mirrorName, tp, state, errorMessage, nonRetryable),
+                    COORD_LOADING_RETRY_BACKOFF_MS);
+        } else if (part.errorCode() == Errors.FENCED_LEADER_EPOCH.code()
+                || part.errorCode() == Errors.FENCED_STATE_EPOCH.code()) {
+            log.debug("Remote coordinator write for partition {} failed. Reason: Stale epoch. Retrying.", tp);
+            readAndRetryTransition(mirrorName, tp, state, errorMessage, nonRetryable);
+        } else {
+            log.error("Remote coordinator write for partition {} failed with error code {}", tp, part.errorCode());
+        }
     }
 
     private void persistState(String mirrorName, TopicPartition tp, MirrorPartitionState state,
@@ -1010,7 +1005,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             writeStateToRemoteCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)), Set.of())
                 .thenCompose(res -> {
                     res.data().topics().forEach(topic -> topic.partitions().forEach(partition -> {
-                        onRemoteWriteComplete(mirrorName, tp, state, errorMessage, nonRetryable, res);
+                        onRemoteWriteComplete(mirrorName, tp, state, errorMessage, nonRetryable, partition);
                     }));
                     return CompletableFuture.completedFuture(null);
                 });
@@ -1926,8 +1921,9 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                             curState.retryAttempt() == NON_RETRYABLE_ATTEMPT, ex));
         } else {
             writeStateToRemoteCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)), Set.of())
-                    .thenAccept(res -> onRemoteWriteComplete(mirrorName, tp, state, curState.errorMessage(),
-                            curState.retryAttempt() == NON_RETRYABLE_ATTEMPT, res));
+                    .thenAccept(res -> res.data().topics().forEach(topic -> topic.partitions().forEach(partition ->
+                            onRemoteWriteComplete(mirrorName, tp, state, curState.errorMessage(),
+                                    curState.retryAttempt() == NON_RETRYABLE_ATTEMPT, partition))));
         }
     }
 
