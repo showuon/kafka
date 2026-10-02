@@ -72,7 +72,6 @@ import org.apache.kafka.server.log.remote.storage.NoOpRemoteLogMetadataManager;
 import org.apache.kafka.server.log.remote.storage.NoOpRemoteStorageManager;
 import org.apache.kafka.server.log.remote.storage.RemoteLogManagerConfig;
 import org.apache.kafka.server.mirror.MirrorPartition;
-import org.apache.kafka.server.mirror.MirrorPartitionState;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -94,6 +93,10 @@ import java.util.function.Predicate;
 import static org.apache.kafka.common.config.TopicConfig.MIRROR_SUPPORT_UNCLEAN_LEADER_ELECTION_CONFIG;
 import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
 import static org.apache.kafka.server.config.ReplicationConfigs.DEFAULT_REPLICATION_FACTOR_CONFIG;
+import static org.apache.kafka.server.mirror.MirrorPartitionState.FAILED;
+import static org.apache.kafka.server.mirror.MirrorPartitionState.MIRRORING;
+import static org.apache.kafka.server.mirror.MirrorPartitionState.STOPPED;
+import static org.apache.kafka.server.mirror.MirrorPartitionState.ULE_RECOVERY;
 import static org.apache.kafka.test.TestUtils.DEFAULT_MAX_WAIT_MS;
 import static org.apache.kafka.test.TestUtils.waitForCondition;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -103,81 +106,29 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Integration tests for Cluster Mirroring feature.
  */
-@Timeout(value = 180, unit = TimeUnit.SECONDS)
+@Timeout(value = 120, unit = TimeUnit.SECONDS)
 public class ClusterMirroringIntegrationTest {
-    private static final long METADATA_REFRESH_INTERVAL_MS = 5_000L;
     private static final String MIRROR_NAME = "my-mirror";
-    private static final String OTHER_MIRROR_NAME = "new-mirror";
+    private static final String NEW_MIRROR_NAME = "new-mirror";
     private static final String TOPIC_NAME = "my-topic";
+    private static final long METADATA_REFRESH_INTERVAL_MS = 5_000L;
 
     private KafkaClusterTestKit srcCluster;
     private KafkaClusterTestKit dstCluster;
+
+    private String srcBootstrapServer;
+    private String dstBootstrapServer;
+
     private Admin srcAdmin;
     private Admin dstAdmin;
 
-    private String singleSourceBootstrapServer;
-    private String singleDestinationBootstrapServer;
-
     @BeforeEach
     void beforeEach() throws Exception {
-        // Source cluster: 2 brokers, 1 controller
-        srcCluster = new KafkaClusterTestKit.Builder(
-                new TestKitNodes.Builder()
-                        .setNumBrokerNodes(2)
-                        .setNumControllerNodes(1)
-                        .build())
-                .setConfigProp(ClusterMirrorConfig.MIRROR_NUM_REPLICA_FETCHERS_CONFIG, "2")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_METADATA_REFRESH_INTERVAL_MS_CONFIG,
-                        String.valueOf(METADATA_REFRESH_INTERVAL_MS))
-                .setConfigProp(ServerLogConfigs.AUTO_CREATE_TOPICS_ENABLE_CONFIG, "false")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_NUM_PARTITIONS_CONFIG, "3")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_REPLICATION_FACTOR_CONFIG, "2")
-                .setConfigProp(GroupCoordinatorConfig.OFFSETS_TOPIC_REPLICATION_FACTOR_CONFIG, "2")
-                .setConfigProp(ServerConfigs.REQUEST_TIMEOUT_MS_CONFIG, "5000")
-                .setConfigProp(ClusterMirrorConfig.SOCKET_TIMEOUT_MS_CONFIG, "5000")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_ATTEMPTS_CONFIG, "3")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_CONFIG, "1000")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_BACKOFF_MS_CONFIG, "5000")
-                .setConfigProp(DEFAULT_REPLICATION_FACTOR_CONFIG, "2")
-                .setConfigProp(ServerConfigs.UNSTABLE_API_VERSIONS_ENABLE_CONFIG, "true")
-                .setConfigProp(ServerConfigs.UNSTABLE_FEATURE_VERSIONS_ENABLE_CONFIG, "true")
-                .build();
-        srcCluster.format();
-        srcCluster.startup();
-        srcCluster.waitForReadyBrokers();
-        singleSourceBootstrapServer = srcCluster.bootstrapServers().split(",")[0];
+        srcCluster = buildCluster(2, Map.of());
+        srcBootstrapServer = srcCluster.bootstrapServers().split(",")[0];
 
-        // Destination cluster: 2 brokers, 1 controller
-        // Use a short metadata refresh interval so mirror topics are created quickly
-        dstCluster = new KafkaClusterTestKit.Builder(
-                new TestKitNodes.Builder()
-                        .setNumBrokerNodes(2)
-                        .setNumControllerNodes(1)
-                        .build())
-                .setConfigProp(ClusterMirrorConfig.MIRROR_NUM_REPLICA_FETCHERS_CONFIG, "2")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_METADATA_REFRESH_INTERVAL_MS_CONFIG,
-                        String.valueOf(METADATA_REFRESH_INTERVAL_MS))
-                .setConfigProp(ServerLogConfigs.AUTO_CREATE_TOPICS_ENABLE_CONFIG, "false")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_NUM_PARTITIONS_CONFIG, "3")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_REPLICATION_FACTOR_CONFIG, "2")
-                .setConfigProp(GroupCoordinatorConfig.OFFSETS_TOPIC_REPLICATION_FACTOR_CONFIG, "2")
-                .setConfigProp(DEFAULT_REPLICATION_FACTOR_CONFIG, "2")
-
-                // Fast mirror timeouts and retry backoff for testing
-                .setConfigProp(ServerConfigs.REQUEST_TIMEOUT_MS_CONFIG, "5000")
-                .setConfigProp(ClusterMirrorConfig.SOCKET_TIMEOUT_MS_CONFIG, "5000")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_ATTEMPTS_CONFIG, "10")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_CONFIG, "1000")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_BACKOFF_MS_CONFIG, "5000")
-
-                // Enable Cluster Mirroring in early access stage
-                .setConfigProp(ServerConfigs.UNSTABLE_API_VERSIONS_ENABLE_CONFIG, "true")
-                .setConfigProp(ServerConfigs.UNSTABLE_FEATURE_VERSIONS_ENABLE_CONFIG, "true")
-                .build();
-        dstCluster.format();
-        dstCluster.startup();
-        dstCluster.waitForReadyBrokers();
-        singleDestinationBootstrapServer = dstCluster.bootstrapServers().split(",")[0];
+        dstCluster = buildCluster(2, Map.of());
+        dstBootstrapServer = dstCluster.bootstrapServers().split(",")[0];
 
         srcAdmin = Admin.create(Map.of(
                 AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, srcCluster.bootstrapServers()
@@ -203,21 +154,16 @@ public class ClusterMirroringIntegrationTest {
 
         CreateTopicsResult createTopicsResult =
                 srcAdmin.createTopics(List.of(new NewTopic(topic, 1, (short) 1)));
-        createTopicsResult.all().get(30, TimeUnit.SECONDS);
+        createTopicsResult.all().get(10, TimeUnit.SECONDS);
         produceRecords(srcCluster, topic, 0, 10);
 
         // Forward: src -> dst
-        dstAdmin.createClusterMirror(forwardMirror, Map.of(
-                "bootstrap.servers", srcCluster.bootstrapServers()
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(forwardMirror, List.of(topic), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorLagZero(dstAdmin, forwardMirror, topic);
+        createAndStartMirror(dstAdmin, forwardMirror, srcCluster.bootstrapServers(), topic);
 
         // Failover: stop forward mirror, produce on dst
         dstAdmin.stopMirrorTopics(forwardMirror, List.of(topic), new StopMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, forwardMirror, topic, "STOPPED");
+                .all().get(10, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, forwardMirror, topic, STOPPED.name());
         produceRecords(dstCluster, topic, 10, 5);
 
         // LME lookup via Topics filter and clusterId
@@ -227,19 +173,14 @@ public class ClusterMirroringIntegrationTest {
                 null, topicPartitions,
                 new DescribeClusterMirrorsOptions().clusterId(srcClusterId).includeMirrorState(true));
         Map<TopicPartition, EpochOffset> lastMirrorPositions =
-                describeClusterMirrors.lastMirrorPositions().get(30, TimeUnit.SECONDS);
+                describeClusterMirrors.lastMirrorPositions().get(10, TimeUnit.SECONDS);
         TopicPartition tp0 = new TopicPartition(topic, 0);
         assertEquals(1, lastMirrorPositions.size(), "Should have one lookup result");
         assertTrue(lastMirrorPositions.containsKey(tp0), "Should have partition 0");
         assertTrue(lastMirrorPositions.get(tp0).epoch() >= 0, "Should have LME >= 0");
 
         // Failback: src mirrors from dst under a different name
-        srcAdmin.createClusterMirror(reverseMirror, Map.of(
-                "bootstrap.servers", dstCluster.bootstrapServers()
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        srcAdmin.startMirrorTopics(reverseMirror, List.of(topic), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorLagZero(srcAdmin, reverseMirror, topic);
+        createAndStartMirror(srcAdmin, reverseMirror, dstCluster.bootstrapServers(), topic);
 
         // All 15 records should be consumable on src (10 original + 5 from dst)
         consumeRecords(srcCluster, topic, 15);
@@ -253,21 +194,16 @@ public class ClusterMirroringIntegrationTest {
 
         srcAdmin.createTopics(List.of(
                 new NewTopic(topic, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
 
         produceRecords(srcCluster, topic, 0, recordCount);
 
-        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(topic), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
+        createAndStartMirror(dstAdmin, MIRROR_NAME, srcBootstrapServer, topic);
 
         // Stop the mirror topic
         dstAdmin.stopMirrorTopics(MIRROR_NAME, List.of(topic), new StopMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, topic, "STOPPED");
+                .all().get(10, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topic, STOPPED.name());
 
         // Consume all records from the destination with a stable consumer group
         consumeRecords(dstCluster, topic, recordCount, groupId);
@@ -283,7 +219,7 @@ public class ClusterMirroringIntegrationTest {
         // Create topic on source
         srcAdmin.createTopics(List.of(
                 new NewTopic(TOPIC_NAME, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
 
         // Get source topic description (TopicId)
         var topicDesc = describeTopics(srcAdmin, List.of(TOPIC_NAME));
@@ -295,17 +231,11 @@ public class ClusterMirroringIntegrationTest {
         // Pre-create topic on destination with source's TopicId (like ClusterMirrorCommand does)
         dstAdmin.createTopics(List.of(
                 new NewTopic(TOPIC_NAME, Optional.of(1), Optional.empty(), Optional.of(sourceTopicId))
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
 
-        // Create mirror
-        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(TOPIC_NAME), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, TOPIC_NAME);
+        createAndStartMirror(dstAdmin, MIRROR_NAME, srcBootstrapServer, TOPIC_NAME);
 
-        // Wait for async replication
+        // Verify all records were replicated to destination
         consumeRecords(dstCluster, TOPIC_NAME, 50);
     }
 
@@ -320,7 +250,7 @@ public class ClusterMirroringIntegrationTest {
                 new NewTopic(ordersUsTopic, 1, (short) 1),
                 new NewTopic(ordersEuTopic, 1, (short) 1),
                 new NewTopic(eventsTopic, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
 
         produceRecords(srcCluster, ordersUsTopic, 0, 30);
         produceRecords(srcCluster, ordersEuTopic, 0, 30);
@@ -328,9 +258,9 @@ public class ClusterMirroringIntegrationTest {
 
         // Create mirror with topics.include=orders-.*
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer,
+                "bootstrap.servers", srcBootstrapServer,
                 ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG, "orders-.*"
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+        ), new CreateClusterMirrorOptions()).all().get(10, TimeUnit.SECONDS);
         waitForMirrorLagZero(dstAdmin, MIRROR_NAME, ".*");
 
         // Auto-discovery should find orders-us and orders-eu and start replication
@@ -348,7 +278,7 @@ public class ClusterMirroringIntegrationTest {
         alterMirrorConfig(MIRROR_NAME, ClusterMirrorConfig.TOPICS_EXCLUDE_CONFIG, "orders-eu");
 
         // orders-eu should be stopped by enforceExcludePatterns
-        waitForMirrorState(dstAdmin, MIRROR_NAME, ordersEuTopic, "STOPPED");
+        waitForMirrorState(dstAdmin, MIRROR_NAME, ordersEuTopic, STOPPED.name());
 
         // Produce additional records to orders-us and orders-eu on source
         produceRecords(srcCluster, ordersUsTopic, 30, 20);
@@ -371,16 +301,16 @@ public class ClusterMirroringIntegrationTest {
         srcAdmin.createTopics(List.of(
                 new NewTopic(userTopic, 1, (short) 1),
                 new NewTopic(internalTopic, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
 
         produceRecords(srcCluster, userTopic, 0, 25);
         produceRecords(srcCluster, internalTopic, 0, 10);
 
-        // Create mirror with include=.* and no explicit exclude — default __.*  applies
+        // Create mirror with include=.* and no explicit exclude (default __.* applies)
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer,
+                "bootstrap.servers", srcBootstrapServer,
                 ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG, ".*"
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+        ), new CreateClusterMirrorOptions()).all().get(10, TimeUnit.SECONDS);
         waitForMirrorLagZero(dstAdmin, MIRROR_NAME, userTopic);
 
         // user-events should be discovered and replicated
@@ -397,14 +327,14 @@ public class ClusterMirroringIntegrationTest {
 
         srcAdmin.createTopics(List.of(
                 new NewTopic(topic, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
 
         produceRecords(srcCluster, topic, 0, 40);
 
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer,
+                "bootstrap.servers", srcBootstrapServer,
                 ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG, "payments"
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+        ), new CreateClusterMirrorOptions()).all().get(10, TimeUnit.SECONDS);
         waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
 
         consumeRecords(dstCluster, topic, 40);
@@ -420,7 +350,7 @@ public class ClusterMirroringIntegrationTest {
                 new NewTopic(literalTopic, 1, (short) 1),
                 new NewTopic(regexMatchedTopic, 1, (short) 1),
                 new NewTopic(unmatchedTopic, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
 
         produceRecords(srcCluster, literalTopic, 0, 20);
         produceRecords(srcCluster, regexMatchedTopic, 0, 15);
@@ -428,9 +358,9 @@ public class ClusterMirroringIntegrationTest {
 
         // Include literal "payments" and regex "orders-.*"
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer,
+                "bootstrap.servers", srcBootstrapServer,
                 ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG, "payments,orders-.*"
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+        ), new CreateClusterMirrorOptions()).all().get(10, TimeUnit.SECONDS);
         waitForMirrorLagZero(dstAdmin, MIRROR_NAME, literalTopic, regexMatchedTopic);
 
         consumeRecords(dstCluster, literalTopic, 20);
@@ -449,24 +379,24 @@ public class ClusterMirroringIntegrationTest {
         srcAdmin.createTopics(List.of(
                 new NewTopic(topicA, 1, (short) 1),
                 new NewTopic(topicB, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
 
         produceRecords(srcCluster, topicA, 0, 20);
         produceRecords(srcCluster, topicB, 0, 20);
 
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer,
+                "bootstrap.servers", srcBootstrapServer,
                 ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG, "orders-.*"
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+        ), new CreateClusterMirrorOptions()).all().get(10, TimeUnit.SECONDS);
         waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topicA, topicB);
 
         consumeRecords(dstCluster, topicA, 20);
         consumeRecords(dstCluster, topicB, 20);
 
-        // Stop orders-eu (sets mirror.name to test-mirror.stopped)
+        // Stop orders-eu to prevent auto-discovery from restarting it
         dstAdmin.stopMirrorTopics(MIRROR_NAME, List.of(topicB), new StopMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, topicB, "STOPPED");
+                .all().get(10, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topicB, STOPPED.name());
 
         // Produce more data to both topics (only orders-us should receive new records)
         produceRecords(srcCluster, topicA, 20, 20);
@@ -484,26 +414,18 @@ public class ClusterMirroringIntegrationTest {
         String topic = "test-topic";
 
         srcAdmin.createTopics(List.of(
-                new NewTopic(topic, 1, (short) 2))).all().get(30, TimeUnit.SECONDS);
+                new NewTopic(topic, 1, (short) 2))).all().get(10, TimeUnit.SECONDS);
 
         produceRecords(srcCluster, topic, 0, 30);
 
-        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-
-        // Start mirroring
-        dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(topic), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
+        createAndStartMirror(dstAdmin, MIRROR_NAME, srcBootstrapServer, topic);
 
         var topicResource = new ConfigResource(ConfigResource.Type.TOPIC, topic);
-
 
         int dstLeader = dstCluster.brokers().get(0).metadataCache()
                 .getLeaderAndIsr(topic, 0).get().leader();
 
-        // shutdown the follower node in destination cluster
+        // Shut down the follower in the destination cluster
         dstCluster.brokers().values().forEach(broker -> {
             if (broker.config().nodeId() != dstLeader) {
                 broker.shutdown();
@@ -513,34 +435,34 @@ public class ClusterMirroringIntegrationTest {
         int srcLeader = srcCluster.brokers().get(0).metadataCache()
                 .getLeaderAndIsr(topic, 0).get().leader();
 
-        // simulate the source cluster has unclean leader election and the log truncation happened
+        // Simulate unclean leader election with log truncation on source
         srcCluster.brokers().get(srcLeader).replicaManager()
                 .getLog(new TopicPartition(topic, 0)).get().truncateTo(20);
 
-        // verify it's still in MIRRORING state because the "mirror.support.unclean.leader.election" is disabled
+        // Verify it stays in MIRRORING because mirror.support.unclean.leader.election is disabled
         waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
 
-        // Enabling "mirror.support.unclean.leader.election"
+        // Enable mirror.support.unclean.leader.election
         dstAdmin.incrementalAlterConfigs(Map.of(topicResource, List.of(
                 new AlterConfigOp(
                         new ConfigEntry(MIRROR_SUPPORT_UNCLEAN_LEADER_ELECTION_CONFIG, "true"),
                         AlterConfigOp.OpType.SET)))).all().get();
 
-        // simulate the source cluster has unclean leader election and the log truncation happened again
+        // Simulate another unclean leader election with log truncation on source
         srcCluster.brokers().get(srcLeader).replicaManager()
                 .getLog(new TopicPartition(topic, 0)).get().truncateTo(10);
 
-        // When log truncation happened, we should enter ULE_RECOVERY and stay there because there's one replica is not caught up
-        waitForMirrorState(dstAdmin, MIRROR_NAME, topic, MirrorPartitionState.ULE_RECOVERY.name());
+        // Partition should enter ULE_RECOVERY and stay there because one replica is not caught up
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topic, ULE_RECOVERY.name());
 
-        // start up the follower node in the destination cluster
+        // Start the follower in the destination cluster so all replicas rejoin ISR
         dstCluster.brokers().values().forEach(broker -> {
             if (broker.config().nodeId() != dstLeader) {
                 broker.startup();
             }
         });
 
-        // verify it's entering MORRIRNG state and the lag is 0
+        // Verify it returns to MIRRORING state with zero lag
         waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
     }
 
@@ -549,38 +471,33 @@ public class ClusterMirroringIntegrationTest {
         String topic = "delete-mirror-topic";
 
         var result = srcAdmin.createTopics(List.of(new NewTopic(topic, 1, (short) 1)));
-        result.all().get(30, TimeUnit.SECONDS);
+        result.all().get(10, TimeUnit.SECONDS);
 
         Uuid topicId = result.topicId(topic).get();
 
-        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(topic), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
+        createAndStartMirror(dstAdmin, MIRROR_NAME, srcBootstrapServer, topic);
 
         var listConfigResult = dstAdmin.listConfigResources(Set.of(ConfigResource.Type.CLUSTER_MIRROR),
-                new ListConfigResourcesOptions()).all().get(30, TimeUnit.SECONDS);
+                new ListConfigResourcesOptions()).all().get(10, TimeUnit.SECONDS);
         assertEquals(1, listConfigResult.size());
 
         // Verify mirror is listed before deletion
-        var listingsBefore = dstAdmin.listClusterMirrors().all().get(30, TimeUnit.SECONDS);
+        var listingsBefore = dstAdmin.listClusterMirrors().all().get(10, TimeUnit.SECONDS);
         assertTrue(listingsBefore.stream().anyMatch(l -> MIRROR_NAME.equals(l.mirrorName())),
                 "Mirror should be listed before deletion");
 
         // Stop all topics (required precondition for deletion)
         dstAdmin.stopMirrorTopics(MIRROR_NAME, List.of(topic), new StopMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, topic, "STOPPED");
+                .all().get(10, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topic, STOPPED.name());
 
         dstAdmin.deleteClusterMirror(MIRROR_NAME, new DeleteClusterMirrorOptions())
-                .all().get(30, TimeUnit.SECONDS);
+                .all().get(10, TimeUnit.SECONDS);
         waitForListMirrorEmpty();
 
         // Verify the mirror is no longer listed after deletion
         listConfigResult = dstAdmin.listConfigResources(Set.of(ConfigResource.Type.CLUSTER_MIRROR),
-                new ListConfigResourcesOptions()).all().get(30, TimeUnit.SECONDS);
+                new ListConfigResourcesOptions()).all().get(10, TimeUnit.SECONDS);
         assertTrue(listConfigResult.isEmpty());
 
         // Verify that the __mirror_state topic contains the tombstone records for both
@@ -608,31 +525,26 @@ public class ClusterMirroringIntegrationTest {
 
     @Test
     void testMirrorLoopDetection() throws Exception {
-        // Create topic
+        // Create topic on source
         srcAdmin.createTopics(List.of(
                 new NewTopic(TOPIC_NAME, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
 
-        // Create mirror and add topic my-topic
-        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(TOPIC_NAME), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, TOPIC_NAME);
+        // Create forward mirror (src -> dst) and start mirroring
+        createAndStartMirror(dstAdmin, MIRROR_NAME, srcBootstrapServer, TOPIC_NAME);
 
-        // Create mirror and add topic my-topic with another mirror name
-        srcAdmin.createClusterMirror(OTHER_MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleDestinationBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        srcAdmin.startMirrorTopics(OTHER_MIRROR_NAME, List.of(TOPIC_NAME), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
+        // Create reverse mirror (src <- dst) to trigger loop detection
+        srcAdmin.createClusterMirror(NEW_MIRROR_NAME, Map.of(
+                "bootstrap.servers", dstBootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(10, TimeUnit.SECONDS);
+        srcAdmin.startMirrorTopics(NEW_MIRROR_NAME, List.of(TOPIC_NAME), new StartMirrorTopicsOptions())
+                .all().get(10, TimeUnit.SECONDS);
 
-        // verify the dst <- src mirror is still MIRRORING
-        waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "MIRRORING");
-        // verify the src <- dst mirror is FAILED with the expected error message
-        waitForMirrorState(srcAdmin, OTHER_MIRROR_NAME, TOPIC_NAME,
-                "FAILED", Optional.of("Detected mirror loop for mirror"));
+        // Verify the forward mirror (src -> dst) is still MIRRORING
+        waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, MIRRORING.name());
+        // Verify the reverse mirror (src <- dst) failed due to loop detection
+        waitForMirrorState(srcAdmin, NEW_MIRROR_NAME, TOPIC_NAME,
+                FAILED.name(), Optional.of("Detected mirror loop for mirror"));
     }
 
     @Test
@@ -641,19 +553,14 @@ public class ClusterMirroringIntegrationTest {
 
         srcAdmin.createTopics(List.of(
                 new NewTopic(topic, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
 
         produceRecords(srcCluster, topic, 0, 20);
 
-        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(topic), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
+        createAndStartMirror(dstAdmin, MIRROR_NAME, srcBootstrapServer, topic);
 
         // Delete source topic to trigger non-retryable failure
-        srcAdmin.deleteTopics(List.of(topic)).all().get(30, TimeUnit.SECONDS);
+        srcAdmin.deleteTopics(List.of(topic)).all().get(10, TimeUnit.SECONDS);
 
         waitForNonRetryableFailed(topic);
 
@@ -661,7 +568,7 @@ public class ClusterMirroringIntegrationTest {
         long deadline = System.currentTimeMillis() + 3 * METADATA_REFRESH_INTERVAL_MS;
         while (System.currentTimeMillis() < deadline) {
             assertTrue(allPartitionsSatisfy(dstAdmin, MIRROR_NAME, topic,
-                    s -> "FAILED".equals(s.state()) && s.retryAttempt() == -1),
+                    s -> FAILED.name().equals(s.state()) && s.retryAttempt() == -1),
                     "Non-retryable partitions must not be restarted by metadata refresh");
             TimeUnit.MILLISECONDS.sleep(1_000);
         }
@@ -673,20 +580,15 @@ public class ClusterMirroringIntegrationTest {
 
         srcAdmin.createTopics(List.of(
                 new NewTopic(topic, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
 
         produceRecords(srcCluster, topic, 0, 20);
 
-        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(topic), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
+        createAndStartMirror(dstAdmin, MIRROR_NAME, srcBootstrapServer, topic);
 
         // Shut down source to trigger FAILED state
         srcCluster.brokers().values().forEach(KafkaBroker::shutdown);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, topic, "FAILED");
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topic, FAILED.name());
 
         // Restart source so scheduled retry can automatically recover
         srcCluster.brokers().values().forEach(b -> {
@@ -711,16 +613,11 @@ public class ClusterMirroringIntegrationTest {
 
         srcAdmin.createTopics(List.of(
                 new NewTopic(topic, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
 
         produceRecords(srcCluster, topic, 0, 20);
 
-        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(topic), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
+        createAndStartMirror(dstAdmin, MIRROR_NAME, srcBootstrapServer, topic);
 
         // Shut down source to trigger FAILED state
         srcCluster.brokers().values().forEach(KafkaBroker::shutdown);
@@ -737,37 +634,37 @@ public class ClusterMirroringIntegrationTest {
 
         // Recover the failed partitions
         dstAdmin.recoverMirrorTopics(MIRROR_NAME, List.of(topic), new RecoverMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
+                .all().get(10, TimeUnit.SECONDS);
 
         waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topic);
     }
 
     @Test
-    void testCreatePartitionsAllowedOnNonMirrorTopic() throws Exception {
+    void testCreatePartAllowedOnNonMirrorTopic() throws Exception {
         String mirrorTopic = "mirror-topic";
         String nonMirrorTopic = "non-mirror-topic";
 
         // Source topic that will be actively mirrored to the destination
         srcAdmin.createTopics(List.of(
                 new NewTopic(mirrorTopic, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
 
         // A regular destination topic that is not part of any mirror
         dstAdmin.createTopics(List.of(
                 new NewTopic(nonMirrorTopic, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
 
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+                "bootstrap.servers", srcBootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(10, TimeUnit.SECONDS);
         dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(mirrorTopic), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, mirrorTopic, "MIRRORING");
+                .all().get(10, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, mirrorTopic, MIRRORING.name());
 
         // With Cluster Mirroring feature enabled the broker intercepts CreatePartitions, but a
         // topic that belongs to no mirror must be forwarded and created without any mirror check.
         dstAdmin.createPartitions(Map.of(nonMirrorTopic, NewPartitions.increaseTo(2)))
-                .all().get(30, TimeUnit.SECONDS);
+                .all().get(10, TimeUnit.SECONDS);
         waitForCondition(() -> describeTopics(dstAdmin, List.of(nonMirrorTopic)).get(nonMirrorTopic).partitions().size() == 2,
                 "Non mirror topic count not increased");
     }
@@ -779,26 +676,26 @@ public class ClusterMirroringIntegrationTest {
 
         srcAdmin.createTopics(List.of(
                 new NewTopic(mirrorTopic, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
         dstAdmin.createTopics(List.of(
                 new NewTopic(nonMirrorTopic, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
 
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+                "bootstrap.servers", srcBootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(10, TimeUnit.SECONDS);
         dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(mirrorTopic), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, mirrorTopic, "MIRRORING");
+                .all().get(10, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, mirrorTopic, MIRRORING.name());
 
         CreatePartitionsResult result = dstAdmin.createPartitions(Map.of(
                 mirrorTopic, NewPartitions.increaseTo(2),
                 nonMirrorTopic, NewPartitions.increaseTo(2)
         ));
 
-        result.values().get(nonMirrorTopic).get(30, TimeUnit.SECONDS);
+        result.values().get(nonMirrorTopic).get(10, TimeUnit.SECONDS);
         ExecutionException e = assertThrows(ExecutionException.class,
-                () -> result.values().get(mirrorTopic).get(30, TimeUnit.SECONDS));
+                () -> result.values().get(mirrorTopic).get(10, TimeUnit.SECONDS));
         assertEquals(InvalidMirrorStateException.class, e.getCause().getClass());
 
         waitForCondition(() -> {
@@ -816,15 +713,15 @@ public class ClusterMirroringIntegrationTest {
         srcAdmin.createTopics(List.of(
                 new NewTopic(topicA, 1, (short) 1),
                 new NewTopic(topicB, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
 
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+                "bootstrap.servers", srcBootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(10, TimeUnit.SECONDS);
         dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(topicA, topicB), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, topicA, "MIRRORING");
-        waitForMirrorState(dstAdmin, MIRROR_NAME, topicB, "MIRRORING");
+                .all().get(10, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topicA, MIRRORING.name());
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topicB, MIRRORING.name());
 
         // Both mirror topics in a single request are rejected while mirroring
         CreatePartitionsResult result = dstAdmin.createPartitions(Map.of(
@@ -833,20 +730,20 @@ public class ClusterMirroringIntegrationTest {
         ));
         for (String topic : List.of(topicA, topicB)) {
             ExecutionException e = assertThrows(ExecutionException.class,
-                    () -> result.values().get(topic).get(30, TimeUnit.SECONDS));
+                    () -> result.values().get(topic).get(10, TimeUnit.SECONDS));
             assertEquals(InvalidMirrorStateException.class, e.getCause().getClass(), "for topic " + topic);
         }
 
         // After stopping both, the same request succeeds
         dstAdmin.stopMirrorTopics(MIRROR_NAME, List.of(topicA, topicB), new StopMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, topicA, "STOPPED");
-        waitForMirrorState(dstAdmin, MIRROR_NAME, topicB, "STOPPED");
+                .all().get(10, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topicA, STOPPED.name());
+        waitForMirrorState(dstAdmin, MIRROR_NAME, topicB, STOPPED.name());
 
         dstAdmin.createPartitions(Map.of(
                 topicA, NewPartitions.increaseTo(2),
                 topicB, NewPartitions.increaseTo(2)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
         waitForCondition(() -> {
             Map<String, TopicDescription> descriptionMap = describeTopics(dstAdmin, List.of(topicA, topicB));
             return descriptionMap.get(topicA).partitions().size() == 2 && descriptionMap.get(topicB).partitions().size() == 2;
@@ -860,23 +757,23 @@ public class ClusterMirroringIntegrationTest {
 
         srcAdmin.createTopics(List.of(
                 new NewTopic(mirrorTopic, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
         dstAdmin.createTopics(List.of(
                 new NewTopic(nonMirrorTopic, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
 
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+                "bootstrap.servers", srcBootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(10, TimeUnit.SECONDS);
         dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(mirrorTopic), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, mirrorTopic, "MIRRORING");
+                .all().get(10, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, mirrorTopic, MIRRORING.name());
 
         DeleteTopicsResult result = dstAdmin.deleteTopics(Set.of(nonMirrorTopic, mirrorTopic));
 
-        result.topicNameValues().get(nonMirrorTopic).get(30, TimeUnit.SECONDS);
+        result.topicNameValues().get(nonMirrorTopic).get(10, TimeUnit.SECONDS);
         ExecutionException e = assertThrows(ExecutionException.class,
-                () -> result.topicNameValues().get(mirrorTopic).get(30, TimeUnit.SECONDS));
+                () -> result.topicNameValues().get(mirrorTopic).get(10, TimeUnit.SECONDS));
         assertEquals(InvalidMirrorStateException.class, e.getCause().getClass());
     }
 
@@ -885,25 +782,25 @@ public class ClusterMirroringIntegrationTest {
         // Create topic and produce data
         srcAdmin.createTopics(List.of(
                 new NewTopic(TOPIC_NAME, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
 
         // Create mirror and start topic
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+                "bootstrap.servers", srcBootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(10, TimeUnit.SECONDS);
         dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(TOPIC_NAME), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "MIRRORING");
+                .all().get(10, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, MIRRORING.name());
 
         // Attempt to delete topic
         ExecutionException e = assertThrows(ExecutionException.class,
-                () -> dstAdmin.deleteTopics(Set.of(TOPIC_NAME)).all().get(30, TimeUnit.SECONDS));
+                () -> dstAdmin.deleteTopics(Set.of(TOPIC_NAME)).all().get(10, TimeUnit.SECONDS));
         assertEquals(InvalidMirrorStateException.class, e.getCause().getClass());
 
         // Stop mirroring and retry
         dstAdmin.stopMirrorTopics(MIRROR_NAME, List.of(TOPIC_NAME),
-                new StopMirrorTopicsOptions()).all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "STOPPED");
+                new StopMirrorTopicsOptions()).all().get(10, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, STOPPED.name());
 
         dstAdmin.deleteTopics(Set.of(TOPIC_NAME)).all().get();
     }
@@ -913,16 +810,11 @@ public class ClusterMirroringIntegrationTest {
         // Create topic and produce data
         srcAdmin.createTopics(List.of(
                 new NewTopic(TOPIC_NAME, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
         produceRecords(srcCluster, TOPIC_NAME, 0, 10);
 
         // Create mirror and start topic
-        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(TOPIC_NAME), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, TOPIC_NAME);
+        createAndStartMirror(dstAdmin, MIRROR_NAME, srcBootstrapServer, TOPIC_NAME);
 
         // Attempt to delete records while the topic is actively mirroring
         TopicPartition tp = new TopicPartition(TOPIC_NAME, 0);
@@ -932,12 +824,12 @@ public class ClusterMirroringIntegrationTest {
 
         // Stop mirroring and retry
         dstAdmin.stopMirrorTopics(MIRROR_NAME, List.of(TOPIC_NAME),
-                new StopMirrorTopicsOptions()).all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, "STOPPED");
+                new StopMirrorTopicsOptions()).all().get(10, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, TOPIC_NAME, STOPPED.name());
 
         waitForCondition(() -> {
             DeleteRecordsResult result = dstAdmin.deleteRecords(Map.of(tp, RecordsToDelete.beforeOffset(5)));
-            return result.lowWatermarks().get(tp).get(30, TimeUnit.SECONDS).lowWatermark() == 5;
+            return result.lowWatermarks().get(tp).get(10, TimeUnit.SECONDS).lowWatermark() == 5;
         }, "Records not deleted");
     }
 
@@ -949,26 +841,26 @@ public class ClusterMirroringIntegrationTest {
         // Source topic that will be actively mirrored to the destination
         srcAdmin.createTopics(List.of(
                 new NewTopic(mirrorTopic, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
 
         // A regular destination topic that is not part of any mirror
         dstAdmin.createTopics(List.of(
                 new NewTopic(nonMirrorTopic, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
         produceRecords(dstCluster, nonMirrorTopic, 0, 10);
 
         dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+                "bootstrap.servers", srcBootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(10, TimeUnit.SECONDS);
         dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(mirrorTopic), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, MIRROR_NAME, mirrorTopic, "MIRRORING");
+                .all().get(10, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, MIRROR_NAME, mirrorTopic, MIRRORING.name());
 
         // With Cluster Mirroring feature enabled the broker intercepts DeleteRecords, but a
         // topic that belongs to no mirror must be handled without any mirror check.
         TopicPartition tp = new TopicPartition(nonMirrorTopic, 0);
         DeleteRecordsResult result = dstAdmin.deleteRecords(Map.of(tp, RecordsToDelete.beforeOffset(5)));
-        assertEquals(5, result.lowWatermarks().get(tp).get(30, TimeUnit.SECONDS).lowWatermark());
+        assertEquals(5, result.lowWatermarks().get(tp).get(10, TimeUnit.SECONDS).lowWatermark());
     }
 
     @Test
@@ -977,50 +869,33 @@ public class ClusterMirroringIntegrationTest {
 
         srcAdmin.createTopics(List.of(
                 new NewTopic(topic, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
+        )).all().get(10, TimeUnit.SECONDS);
 
-        KafkaClusterTestKit tieredDst = new KafkaClusterTestKit.Builder(
-                new TestKitNodes.Builder()
-                        .setNumBrokerNodes(1)
-                        .setNumControllerNodes(1)
-                        .build())
-                .setConfigProp(ClusterMirrorConfig.MIRROR_NUM_REPLICA_FETCHERS_CONFIG, "1")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_METADATA_REFRESH_INTERVAL_MS_CONFIG,
-                        String.valueOf(METADATA_REFRESH_INTERVAL_MS))
-                .setConfigProp(ServerLogConfigs.AUTO_CREATE_TOPICS_ENABLE_CONFIG, "false")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_NUM_PARTITIONS_CONFIG, "3")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_REPLICATION_FACTOR_CONFIG, "1")
-                .setConfigProp(GroupCoordinatorConfig.OFFSETS_TOPIC_REPLICATION_FACTOR_CONFIG, "1")
-                .setConfigProp(DEFAULT_REPLICATION_FACTOR_CONFIG, "1")
-                .setConfigProp(ServerConfigs.REQUEST_TIMEOUT_MS_CONFIG, "5000")
-                .setConfigProp(ClusterMirrorConfig.SOCKET_TIMEOUT_MS_CONFIG, "5000")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_ATTEMPTS_CONFIG, "3")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_CONFIG, "1000")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_BACKOFF_MS_CONFIG, "5000")
-                .setConfigProp(ServerConfigs.UNSTABLE_API_VERSIONS_ENABLE_CONFIG, "true")
-                .setConfigProp(ServerConfigs.UNSTABLE_FEATURE_VERSIONS_ENABLE_CONFIG, "true")
-                .setConfigProp(RemoteLogManagerConfig.REMOTE_LOG_STORAGE_SYSTEM_ENABLE_PROP, "true")
-                .setConfigProp(RemoteLogManagerConfig.REMOTE_STORAGE_MANAGER_CLASS_NAME_PROP,
-                        NoOpRemoteStorageManager.class.getName())
-                .setConfigProp(RemoteLogManagerConfig.REMOTE_LOG_METADATA_MANAGER_CLASS_NAME_PROP,
-                        NoOpRemoteLogMetadataManager.class.getName())
-                .build();
+        KafkaClusterTestKit tieredDst = buildCluster(1, Map.of(
+                ClusterMirrorConfig.MIRROR_NUM_REPLICA_FETCHERS_CONFIG, "1",
+                ClusterMirrorConfig.MIRROR_STATE_TOPIC_REPLICATION_FACTOR_CONFIG, "1",
+                GroupCoordinatorConfig.OFFSETS_TOPIC_REPLICATION_FACTOR_CONFIG, "1",
+                DEFAULT_REPLICATION_FACTOR_CONFIG, "1",
+                ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_ATTEMPTS_CONFIG, "3",
+                ClusterMirrorConfig.MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_CONFIG, "1000",
+                RemoteLogManagerConfig.REMOTE_LOG_STORAGE_SYSTEM_ENABLE_PROP, "true",
+                RemoteLogManagerConfig.REMOTE_STORAGE_MANAGER_CLASS_NAME_PROP,
+                        NoOpRemoteStorageManager.class.getName(),
+                RemoteLogManagerConfig.REMOTE_LOG_METADATA_MANAGER_CLASS_NAME_PROP,
+                        NoOpRemoteLogMetadataManager.class.getName()
+        ));
 
         try {
-            tieredDst.format();
-            tieredDst.startup();
-            tieredDst.waitForReadyBrokers();
-
             try (Admin tieredAdmin = Admin.create(Map.of(
                     AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, tieredDst.bootstrapServers()))) {
 
                 tieredAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                        "bootstrap.servers", singleSourceBootstrapServer
-                ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
+                        "bootstrap.servers", srcBootstrapServer
+                ), new CreateClusterMirrorOptions()).all().get(10, TimeUnit.SECONDS);
                 tieredAdmin.startMirrorTopics(MIRROR_NAME,
                         List.of(topic), new StartMirrorTopicsOptions())
-                        .all().get(30, TimeUnit.SECONDS);
-                waitForMirrorState(tieredAdmin, MIRROR_NAME, topic, "MIRRORING");
+                        .all().get(10, TimeUnit.SECONDS);
+                waitForMirrorState(tieredAdmin, MIRROR_NAME, topic, MIRRORING.name());
 
                 // Enable tiered storage while mirroring is active
                 ConfigResource topicResource = new ConfigResource(ConfigResource.Type.TOPIC, topic);
@@ -1028,9 +903,9 @@ public class ClusterMirroringIntegrationTest {
                         new AlterConfigOp(
                                 new ConfigEntry(TopicConfig.REMOTE_LOG_STORAGE_ENABLE_CONFIG, "true"),
                                 AlterConfigOp.OpType.SET)
-                ))).all().get(30, TimeUnit.SECONDS);
+                ))).all().get(10, TimeUnit.SECONDS);
 
-                waitForMirrorState(tieredAdmin, MIRROR_NAME, topic, "FAILED",
+                waitForMirrorState(tieredAdmin, MIRROR_NAME, topic, FAILED.name(),
                         Optional.of("tiered storage"));
             }
         } finally {
@@ -1038,6 +913,124 @@ public class ClusterMirroringIntegrationTest {
         }
     }
 
+    @Test
+    void testListClusterMirrorsFilters() throws Exception {
+        String topicA = "list-filter-a";
+        String topicB = "list-filter-b";
+        srcAdmin.createTopics(List.of(
+                new NewTopic(topicA, 1, (short) 1),
+                new NewTopic(topicB, 1, (short) 1)
+        )).all().get(10, TimeUnit.SECONDS);
+
+        // Mirror 1: topicA in MIRRORING state
+        createAndStartMirror(dstAdmin, MIRROR_NAME, srcBootstrapServer, topicA);
+
+        // Mirror 2: topicB started then stopped
+        createAndStartMirror(dstAdmin, NEW_MIRROR_NAME, srcBootstrapServer, topicB);
+        dstAdmin.stopMirrorTopics(NEW_MIRROR_NAME, List.of(topicB), new StopMirrorTopicsOptions())
+                .all().get(10, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, NEW_MIRROR_NAME, topicB, STOPPED.name());
+
+        // No filter: both mirrors returned, default includes MIRRORING and PAUSED
+        var all = listMirrors(new ListClusterMirrorsOptions());
+        assertEquals(2, all.size());
+
+        // Get source cluster ID for later assertions
+        String sourceClusterId = all.iterator().next().sourceClusterId();
+
+        // Filter by mirror name
+        var byName = listMirrors(new ListClusterMirrorsOptions()
+                .mirrorNameFilter(List.of(MIRROR_NAME)));
+        assertEquals(1, byName.size());
+        assertEquals(MIRROR_NAME, byName.iterator().next().mirrorName());
+
+        var byNameMiss = listMirrors(new ListClusterMirrorsOptions()
+                .mirrorNameFilter(List.of("nonexistent")));
+        assertTrue(byNameMiss.isEmpty());
+
+        // Filter by source cluster ID
+        var bySource = listMirrors(new ListClusterMirrorsOptions()
+                .sourceClusterIdFilter(List.of(sourceClusterId)));
+        assertEquals(2, bySource.size());
+
+        var bySourceMiss = listMirrors(new ListClusterMirrorsOptions()
+                .sourceClusterIdFilter(List.of("unknown-cluster-id")));
+        assertTrue(bySourceMiss.isEmpty());
+
+        // Desired state filter: MIRRORING returns topicA on mirror 1, empty on mirror 2
+        var byMirroring = listMirrors(new ListClusterMirrorsOptions()
+                .desiredStateFilter(List.of(MIRRORING.name())));
+        assertEquals(2, byMirroring.size());
+        var mirroringByName = byMirroring.stream()
+                .collect(java.util.stream.Collectors.toMap(ClusterMirrorListing::mirrorName, l -> l));
+        assertEquals(List.of(topicA), mirroringByName.get(MIRROR_NAME).topicNames());
+        assertTrue(mirroringByName.get(NEW_MIRROR_NAME).topicNames().isEmpty());
+
+        // Desired state filter: STOPPED returns topicB on mirror 2, empty on mirror 1
+        var byStopped = listMirrors(new ListClusterMirrorsOptions()
+                .desiredStateFilter(List.of(STOPPED.name())));
+        assertEquals(2, byStopped.size());
+        var stoppedByName = byStopped.stream()
+                .collect(java.util.stream.Collectors.toMap(ClusterMirrorListing::mirrorName, l -> l));
+        assertTrue(stoppedByName.get(MIRROR_NAME).topicNames().isEmpty());
+        assertEquals(List.of(topicB), stoppedByName.get(NEW_MIRROR_NAME).topicNames());
+    }
+
+    private KafkaClusterTestKit buildCluster(int numBrokers,
+                                             Map<String, String> configOverrides) throws Exception {
+        var builder = new KafkaClusterTestKit.Builder(
+                new TestKitNodes.Builder()
+                        .setNumBrokerNodes(numBrokers)
+                        .setNumControllerNodes(1)
+                        .build())
+                .setConfigProp(ClusterMirrorConfig.MIRROR_NUM_REPLICA_FETCHERS_CONFIG, "2")
+                .setConfigProp(ClusterMirrorConfig.MIRROR_METADATA_REFRESH_INTERVAL_MS_CONFIG,
+                        String.valueOf(METADATA_REFRESH_INTERVAL_MS))
+                .setConfigProp(ServerLogConfigs.AUTO_CREATE_TOPICS_ENABLE_CONFIG, "false")
+                .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_NUM_PARTITIONS_CONFIG, "3")
+                .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_REPLICATION_FACTOR_CONFIG, "2")
+                .setConfigProp(GroupCoordinatorConfig.OFFSETS_TOPIC_REPLICATION_FACTOR_CONFIG, "2")
+                .setConfigProp(DEFAULT_REPLICATION_FACTOR_CONFIG, "2")
+                .setConfigProp(ServerConfigs.REQUEST_TIMEOUT_MS_CONFIG, "5000")
+                .setConfigProp(ClusterMirrorConfig.SOCKET_TIMEOUT_MS_CONFIG, "5000")
+                .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_ATTEMPTS_CONFIG, "10")
+                .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_CONFIG, "100")
+                .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_BACKOFF_MS_CONFIG, "5000")
+                .setConfigProp(ServerConfigs.UNSTABLE_API_VERSIONS_ENABLE_CONFIG, "true")
+                .setConfigProp(ServerConfigs.UNSTABLE_FEATURE_VERSIONS_ENABLE_CONFIG, "true");
+        configOverrides.forEach(builder::setConfigProp);
+        var cluster = builder.build();
+        try {
+            cluster.format();
+            cluster.startup();
+            cluster.waitForReadyBrokers();
+        } catch (Exception e) {
+            closeQuietly(cluster);
+            throw e;
+        }
+        return cluster;
+    }
+
+    private void createAndStartMirror(Admin admin, String mirrorName,
+                                      String bootstrapServer, String... topics) throws Exception {
+        admin.createClusterMirror(mirrorName, Map.of(
+                "bootstrap.servers", bootstrapServer
+        ), new CreateClusterMirrorOptions()).all().get(10, TimeUnit.SECONDS);
+        admin.startMirrorTopics(mirrorName, List.of(topics), new StartMirrorTopicsOptions())
+                .all().get(10, TimeUnit.SECONDS);
+        waitForMirrorLagZero(admin, mirrorName, topics);
+    }
+
+    private void closeQuietly(AutoCloseable closeable) {
+        if (closeable != null) {
+            try {
+                closeable.close();
+            } catch (Exception e) {
+                // Ignore
+            }
+        }
+    }
+    
     private void produceRecords(KafkaClusterTestKit cluster, String topic,
                                 int startIndex, int count) {
         Properties props = new Properties();
@@ -1073,26 +1066,17 @@ public class ClusterMirroringIntegrationTest {
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
 
         List<ConsumerRecord<String, String>> allRecords = new ArrayList<>();
-        long deadline = System.currentTimeMillis() + 30_000;
-        while (allRecords.size() < expectedRecords && System.currentTimeMillis() < deadline) {
-            try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props)) {
-                consumer.subscribe(List.of(topic));
-                allRecords.clear();
-                long pollDeadline = System.currentTimeMillis() + 5_000;
-                while (allRecords.size() < expectedRecords && System.currentTimeMillis() < pollDeadline) {
-                    ConsumerRecords<String, String> batch = consumer.poll(Duration.ofMillis(500));
-                    batch.forEach(allRecords::add);
-                }
-                if (commitOffsets && allRecords.size() >= expectedRecords) {
-                    consumer.commitSync();
-                }
-            } catch (Exception e) {
-                if (commitOffsets && allRecords.size() >= expectedRecords) {
-                    throw e;
-                }
+        try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props)) {
+            consumer.subscribe(List.of(topic));
+            // When expectedRecords == 0, poll briefly to verify no records exist
+            long deadline = System.currentTimeMillis() + (expectedRecords > 0 ? 30_000 : 5_000);
+            while (System.currentTimeMillis() < deadline) {
+                ConsumerRecords<String, String> batch = consumer.poll(Duration.ofMillis(500));
+                batch.forEach(allRecords::add);
+                if (expectedRecords > 0 && allRecords.size() >= expectedRecords) break;
             }
-            if (allRecords.size() < expectedRecords) {
-                TimeUnit.MILLISECONDS.sleep(1_000);
+            if (commitOffsets && allRecords.size() >= expectedRecords) {
+                consumer.commitSync();
             }
         }
         assertEquals(expectedRecords, allRecords.size(),
@@ -1102,7 +1086,7 @@ public class ClusterMirroringIntegrationTest {
 
     private Map<String, TopicDescription> describeTopics(
             Admin admin, List<String> topics) throws Exception {
-        long deadline = System.currentTimeMillis() + 30_000;
+        long deadline = System.currentTimeMillis() + 10_000;
         while (true) {
             try {
                 return admin.describeTopics(topics).allTopicNames().get(5, TimeUnit.SECONDS);
@@ -1115,106 +1099,20 @@ public class ClusterMirroringIntegrationTest {
         }
     }
 
-    @Test
-    void testListClusterMirrorsFilters() throws Exception {
-        String topicA = "list-filter-a";
-        String topicB = "list-filter-b";
-        srcAdmin.createTopics(List.of(
-                new NewTopic(topicA, 1, (short) 1),
-                new NewTopic(topicB, 1, (short) 1)
-        )).all().get(30, TimeUnit.SECONDS);
-
-        // Mirror 1: topicA in MIRRORING state
-        dstAdmin.createClusterMirror(MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(MIRROR_NAME, List.of(topicA), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorLagZero(dstAdmin, MIRROR_NAME, topicA);
-
-        // Mirror 2: topicB started then stopped
-        dstAdmin.createClusterMirror(OTHER_MIRROR_NAME, Map.of(
-                "bootstrap.servers", singleSourceBootstrapServer
-        ), new CreateClusterMirrorOptions()).all().get(30, TimeUnit.SECONDS);
-        dstAdmin.startMirrorTopics(OTHER_MIRROR_NAME, List.of(topicB), new StartMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorLagZero(dstAdmin, OTHER_MIRROR_NAME, topicB);
-        dstAdmin.stopMirrorTopics(OTHER_MIRROR_NAME, List.of(topicB), new StopMirrorTopicsOptions())
-                .all().get(30, TimeUnit.SECONDS);
-        waitForMirrorState(dstAdmin, OTHER_MIRROR_NAME, topicB, "STOPPED");
-
-        // No filter: both mirrors returned, default includes MIRRORING + PAUSED
-        var all = listMirrorsFiltered(new ListClusterMirrorsOptions());
-        assertEquals(2, all.size());
-
-        // Get source cluster ID for later assertions
-        String sourceClusterId = all.iterator().next().sourceClusterId();
-
-        // Filter by mirror name
-        var byName = listMirrorsFiltered(new ListClusterMirrorsOptions()
-                .mirrorNameFilter(List.of(MIRROR_NAME)));
-        assertEquals(1, byName.size());
-        assertEquals(MIRROR_NAME, byName.iterator().next().mirrorName());
-
-        var byNameMiss = listMirrorsFiltered(new ListClusterMirrorsOptions()
-                .mirrorNameFilter(List.of("nonexistent")));
-        assertTrue(byNameMiss.isEmpty());
-
-        // Filter by source cluster ID
-        var bySource = listMirrorsFiltered(new ListClusterMirrorsOptions()
-                .sourceClusterIdFilter(List.of(sourceClusterId)));
-        assertEquals(2, bySource.size());
-
-        var bySourceMiss = listMirrorsFiltered(new ListClusterMirrorsOptions()
-                .sourceClusterIdFilter(List.of("unknown-cluster-id")));
-        assertTrue(bySourceMiss.isEmpty());
-
-        // Desired state filter: MIRRORING returns topicA on mirror 1, empty on mirror 2
-        var byMirroring = listMirrorsFiltered(new ListClusterMirrorsOptions()
-                .desiredStateFilter(List.of("MIRRORING")));
-        assertEquals(2, byMirroring.size());
-        var mirroringByName = byMirroring.stream()
-                .collect(java.util.stream.Collectors.toMap(ClusterMirrorListing::mirrorName, l -> l));
-        assertEquals(List.of(topicA), mirroringByName.get(MIRROR_NAME).topicNames());
-        assertTrue(mirroringByName.get(OTHER_MIRROR_NAME).topicNames().isEmpty());
-
-        // Desired state filter: STOPPED returns topicB on mirror 2, empty on mirror 1
-        var byStopped = listMirrorsFiltered(new ListClusterMirrorsOptions()
-                .desiredStateFilter(List.of("STOPPED")));
-        assertEquals(2, byStopped.size());
-        var stoppedByName = byStopped.stream()
-                .collect(java.util.stream.Collectors.toMap(ClusterMirrorListing::mirrorName, l -> l));
-        assertTrue(stoppedByName.get(MIRROR_NAME).topicNames().isEmpty());
-        assertEquals(List.of(topicB), stoppedByName.get(OTHER_MIRROR_NAME).topicNames());
-    }
-
-    private Collection<ClusterMirrorListing> listMirrorsFiltered(ListClusterMirrorsOptions options) throws Exception {
-        return dstAdmin.listClusterMirrors(options).all().get(30, TimeUnit.SECONDS);
-    }
-
-    private void waitForMirrorState(Admin admin, String mirrorName, String topicPattern, String state, Optional<String> errorMsg) throws Exception {
-        long deadline = System.currentTimeMillis() + 30_000;
-        while (System.currentTimeMillis() < deadline) {
-            if (allPartitionsSatisfy(admin, mirrorName, topicPattern,
-                    s -> state.equals(s.state())
-                            && (errorMsg.isEmpty()
-                            || s.errorMessage() != null && s.errorMessage().contains(errorMsg.get()))))
-                return;
-            TimeUnit.MILLISECONDS.sleep(1_000);
-        }
-        throw new AssertionError("Mirror partitions for " + topicPattern + " did not reach state " + state + " within timeout");
+    private Collection<ClusterMirrorListing> listMirrors(ListClusterMirrorsOptions options) throws Exception {
+        return dstAdmin.listClusterMirrors(options).all().get(10, TimeUnit.SECONDS);
     }
 
     private void alterMirrorConfig(String mirrorName, String key, String value) throws Exception {
         ConfigResource mirrorResource = new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName);
         dstAdmin.incrementalAlterConfigs(Map.of(mirrorResource, List.of(
                 new AlterConfigOp(new ConfigEntry(key, value), AlterConfigOp.OpType.SET)
-        ))).all().get(30, TimeUnit.SECONDS);
+        ))).all().get(10, TimeUnit.SECONDS);
     }
 
     private void appendToTopicsInclude(String mirrorName, String pattern) throws Exception {
         ConfigResource mirrorResource = new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName);
-        var configResult = dstAdmin.describeConfigs(List.of(mirrorResource)).all().get(30, TimeUnit.SECONDS);
+        var configResult = dstAdmin.describeConfigs(List.of(mirrorResource)).all().get(10, TimeUnit.SECONDS);
         var mirrorConfigEntries = configResult.get(mirrorResource);
 
         String existingValue = "";
@@ -1225,6 +1123,22 @@ public class ClusterMirroringIntegrationTest {
         String newValue = existingValue.isEmpty() ? pattern : existingValue + "," + pattern;
 
         alterMirrorConfig(mirrorName, ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG, newValue);
+    }
+
+    private long getCommittedOffset(Admin admin, String groupId, TopicPartition tp) throws Exception {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                var offsets = admin.listConsumerGroupOffsets(groupId)
+                        .partitionsToOffsetAndMetadata().get(10, TimeUnit.SECONDS);
+                OffsetAndMetadata oam = offsets.get(tp);
+                if (oam != null) return oam.offset();
+            } catch (Exception e) {
+                // Group may not be visible yet, retry
+            }
+            TimeUnit.MILLISECONDS.sleep(1_000);
+        }
+        throw new AssertionError("No committed offset for " + tp + " in group " + groupId + " within timeout");
     }
 
     private boolean allPartitionsSatisfy(Admin admin, String mirrorName, String topicPattern,
@@ -1247,13 +1161,30 @@ public class ClusterMirroringIntegrationTest {
         waitForMirrorState(admin, mirrorName, topicPattern, state, Optional.empty());
     }
 
+    private void waitForMirrorState(Admin admin,
+                                    String mirrorName,
+                                    String topicPattern,
+                                    String state,
+                                    Optional<String> errorMsg) throws Exception {
+        long deadline = System.currentTimeMillis() + 30_000;
+        while (System.currentTimeMillis() < deadline) {
+            if (allPartitionsSatisfy(admin, mirrorName, topicPattern,
+                    s -> state.equals(s.state())
+                            && (errorMsg.isEmpty()
+                            || s.errorMessage() != null && s.errorMessage().contains(errorMsg.get()))))
+                return;
+            TimeUnit.MILLISECONDS.sleep(1_000);
+        }
+        throw new AssertionError("Mirror partitions for " + topicPattern + " did not reach state " + state + " within timeout");
+    }
+
     private void waitForMirrorLagZero(Admin admin, String mirrorName, String... topicPatterns) throws Exception {
-        long deadline = System.currentTimeMillis() + 60_000;
+        long deadline = System.currentTimeMillis() + 30_000;
         while (System.currentTimeMillis() < deadline) {
             boolean allReady = true;
             for (String tp : topicPatterns) {
                 if (!allPartitionsSatisfy(admin, mirrorName, tp,
-                        s -> s.lag() == 0 && "MIRRORING".equals(s.state()))) {
+                        s -> s.lag() == 0 && MIRRORING.name().equals(s.state()))) {
                     allReady = false;
                     break;
                 }
@@ -1265,10 +1196,10 @@ public class ClusterMirroringIntegrationTest {
     }
 
     private void waitForFailedWithRetriesExhausted(String topicPattern, int maxAttempts) throws Exception {
-        long deadline = System.currentTimeMillis() + 120_000;
+        long deadline = System.currentTimeMillis() + 60_000;
         while (System.currentTimeMillis() < deadline) {
             if (allPartitionsSatisfy(dstAdmin, MIRROR_NAME, topicPattern,
-                    s -> "FAILED".equals(s.state()) && s.retryAttempt() >= maxAttempts)) {
+                    s -> FAILED.name().equals(s.state()) && s.retryAttempt() >= maxAttempts)) {
                 return;
             }
             TimeUnit.MILLISECONDS.sleep(1_000);
@@ -1278,10 +1209,10 @@ public class ClusterMirroringIntegrationTest {
     }
 
     private void waitForNonRetryableFailed(String topicPattern) throws Exception {
-        long deadline = System.currentTimeMillis() + 120_000;
+        long deadline = System.currentTimeMillis() + 60_000;
         while (System.currentTimeMillis() < deadline) {
             if (allPartitionsSatisfy(dstAdmin, MIRROR_NAME, topicPattern,
-                    s -> "FAILED".equals(s.state()) && s.retryAttempt() == -1)) {
+                    s -> FAILED.name().equals(s.state()) && s.retryAttempt() == -1)) {
                 return;
             }
             TimeUnit.MILLISECONDS.sleep(1_000);
@@ -1293,38 +1224,12 @@ public class ClusterMirroringIntegrationTest {
     private void waitForListMirrorEmpty() {
         TestUtils.waitUntilTrue(() -> {
             try {
-                var listMirror = dstAdmin.listClusterMirrors().all().get(30, TimeUnit.SECONDS);
+                var listMirror = dstAdmin.listClusterMirrors().all().get(10, TimeUnit.SECONDS);
                 return listMirror.isEmpty();
             } catch (Exception e) {
                 return false;
             }
         }, () -> "Cluster mirror is not deleted successfully", DEFAULT_MAX_WAIT_MS, 100);
-    }
-
-    private static void closeQuietly(AutoCloseable closeable) {
-        if (closeable != null) {
-            try {
-                closeable.close();
-            } catch (Exception e) {
-                // ignore
-            }
-        }
-    }
-
-    private long getCommittedOffset(Admin admin, String groupId, TopicPartition tp) throws Exception {
-        long deadline = System.currentTimeMillis() + 30_000;
-        while (System.currentTimeMillis() < deadline) {
-            try {
-                var offsets = admin.listConsumerGroupOffsets(groupId)
-                        .partitionsToOffsetAndMetadata().get(10, TimeUnit.SECONDS);
-                OffsetAndMetadata oam = offsets.get(tp);
-                if (oam != null) return oam.offset();
-            } catch (Exception e) {
-                // group may not be visible yet, retry
-            }
-            TimeUnit.MILLISECONDS.sleep(1_000);
-        }
-        throw new AssertionError("No committed offset for " + tp + " in group " + groupId + " within timeout");
     }
 
     private void assertStableOffset(Admin admin, String groupId,
