@@ -51,13 +51,13 @@ class ClientService(KafkaPathResolverMixin, Service):
 class MirrorConfig:
     """Configuration for a cluster mirror connection properties file."""
     def __init__(
-        self,
-        bootstrap_servers: str,
-        mirror_topic_properties_exclude: str = None,
-        mirror_groups_include: str = None,
-        mirror_groups_exclude: str = None,
-        mirror_acl_include: str = None,
-        security_config: SecurityConfig = None,
+            self,
+            bootstrap_servers: str,
+            mirror_topic_properties_exclude: str = None,
+            mirror_groups_include: str = None,
+            mirror_groups_exclude: str = None,
+            mirror_acl_include: str = None,
+            security_config: SecurityConfig = None,
     ):
         self.properties = {
             "bootstrap.servers": bootstrap_servers,
@@ -75,8 +75,8 @@ class MirrorConfig:
         self.properties["socket.timeout.ms"] = "5000"
 
         if (
-            security_config is not None
-            and security_config.security_protocol != SecurityConfig.PLAINTEXT
+                security_config is not None
+                and security_config.security_protocol != SecurityConfig.PLAINTEXT
         ):
             self.properties |= security_config.properties
 
@@ -95,6 +95,21 @@ class MirrorConfig:
 
 class MirrorUtils:
     """Shared helpers for Cluster Mirroring tests."""
+    def create_and_start_mirror(self, kafka, client_node, mirror_name,
+                                mirror_cfg, topic, timeout_sec=60):
+        """Create a cluster mirror, start a topic, and wait for zero lag."""
+        wait_until(
+            lambda: kafka.create_cluster_mirror(client_node, mirror_name, mirror_cfg),
+            timeout_sec=timeout_sec, backoff_sec=2,
+            err_msg="Failed to create cluster mirror",
+        )
+        wait_until(
+            lambda: "Started" in kafka.start_cluster_mirror_topics(
+                client_node, mirror_name, topic),
+            timeout_sec=timeout_sec, backoff_sec=2,
+            err_msg="Failed to start mirror topics",
+        )
+        self.wait_mirror_lag_zero(kafka, client_node, mirror_name, [topic])
 
     def broker_bootstrap(self, node):
         """Return bootstrap server address for a single broker node."""
@@ -147,7 +162,7 @@ class MirrorUtils:
                 if line.strip():
                     count[0] += 1
             self.logger.info("Consumed %d messages from %s so far (expected %s)",
-                        count[0], topic, expected_count)
+                             count[0], topic, expected_count)
             return expected_count is None or count[0] >= expected_count
 
         # When expected_count is set, retry consumption because the high watermark on
@@ -162,21 +177,20 @@ class MirrorUtils:
             try_consume()
         return count[0]
 
-    def create_and_start_mirror(self, kafka, client_node, mirror_name,
-                                mirror_cfg, topic):
-        """Create a cluster mirror, start a topic, and wait for zero lag."""
-        wait_until(
-            lambda: kafka.create_cluster_mirror(client_node, mirror_name, mirror_cfg),
-            timeout_sec=60, backoff_sec=2,
-            err_msg="Failed to create cluster mirror",
-        )
-        wait_until(
-            lambda: "Started" in kafka.start_cluster_mirror_topics(
-                client_node, mirror_name, topic),
-            timeout_sec=60, backoff_sec=2,
-            err_msg="Failed to start mirror topics",
-        )
-        self.wait_mirror_lag_zero(kafka, client_node, mirror_name, [topic])
+    def describe_consumer_group(self, kafka, group, client_node):
+        """Describe a consumer group on a client node with security support."""
+        env_prefix, cmd_suffix = kafka._cmd_security_opts(client_node)
+        cmd = "%s%s --bootstrap-server %s --group %s --describe%s" % (
+            env_prefix,
+            kafka.path.script("kafka-consumer-groups.sh", client_node),
+            kafka.bootstrap_servers(kafka.security_protocol),
+            group, cmd_suffix)
+        output = ""
+        for line in client_node.account.ssh_capture(cmd, allow_fail=True):
+            if not (line.startswith("SLF4J") or line.startswith("GROUP")
+                    or line.startswith("Could not fetch offset")):
+                output += line
+        return output
 
     def all_partitions_satisfy(self, kafka, client_node, mirror_name, per_partition_condition, topics):
         """Check that all partitions of the given mirror topics satisfy the condition."""
@@ -203,7 +217,7 @@ class MirrorUtils:
         return True
 
     def wait_mirror_state(self, kafka, client_node, mirror_name, topics,
-                          state, err_msg=None):
+                          state, timeout_sec=120, err_msg=None):
         """Wait until all mirror partitions reach the given state."""
         def check():
             return self.all_partitions_satisfy(
@@ -211,27 +225,17 @@ class MirrorUtils:
                 lambda p: p["state"] == state, topics)
         if err_msg is None:
             err_msg = "Mirror did not reach %s state" % state
-        wait_until(check, timeout_sec=120, backoff_sec=2, err_msg=err_msg)
-
-    def wait_mirror_retries_exhausted(self, kafka, client_node, mirror_name,
-                                      topics, max_attempts, err_msg=None):
-        """Wait until all mirror partitions are FAILED with retryAttempt >= max_attempts."""
-        def check():
-            return self.all_partitions_satisfy(
-                kafka, client_node, mirror_name,
-                lambda p: p["state"] == "FAILED" and p["retry_attempt"] >= max_attempts, topics)
-        if err_msg is None:
-            err_msg = "Mirror did not exhaust %d retries" % max_attempts
-        wait_until(check, timeout_sec=240, backoff_sec=2, err_msg=err_msg)
+        wait_until(check, timeout_sec=timeout_sec, backoff_sec=2, err_msg=err_msg)
 
     def wait_mirror_lag_zero(self, kafka, client_node, mirror_name,
-                             topics, err_msg="Mirror did not catch up"):
+                             topics, timeout_sec=120,
+                             err_msg="Mirror did not catch up"):
         """Wait until all mirror partitions reach MIRRORING state with zero lag."""
         def check():
             return self.all_partitions_satisfy(
                 kafka, client_node, mirror_name,
                 lambda p: p["lag"] == 0 and p["state"] == "MIRRORING", topics)
-        wait_until(check, timeout_sec=120, backoff_sec=2, err_msg=err_msg)
+        wait_until(check, timeout_sec=timeout_sec, backoff_sec=2, err_msg=err_msg)
 
     def wait_for_metadata_refresh(self, kafka, client_node, mirror_name):
         """Wait for metadata sync by sleeping based on the configured refresh interval."""
@@ -245,22 +249,8 @@ class MirrorUtils:
         self.logger.info("Waiting %ds for metadata sync (interval=%dms)", sleep_s, interval_ms)
         time.sleep(sleep_s)
 
-    def describe_consumer_group(self, kafka, group, client_node):
-        """Describe a consumer group on a client node with security support."""
-        env_prefix, cmd_suffix = kafka._cmd_security_opts(client_node)
-        cmd = "%s%s --bootstrap-server %s --group %s --describe%s" % (
-            env_prefix,
-            kafka.path.script("kafka-consumer-groups.sh", client_node),
-            kafka.bootstrap_servers(kafka.security_protocol),
-            group, cmd_suffix)
-        output = ""
-        for line in client_node.account.ssh_capture(cmd, allow_fail=True):
-            if not (line.startswith("SLF4J") or line.startswith("GROUP")
-                    or line.startswith("Could not fetch offset")):
-                output += line
-        return output
-
-    def wait_for_log_convergence(self, source_kafka, dest_kafka, topics):
+    def wait_for_log_convergence(self, source_kafka, dest_kafka, topics,
+                                 timeout_sec=120):
         """Poll until source leader and all dest replica log segment hashes match."""
         def log_segment_hashes(node, topic, partition):
             cmd = "md5sum %s*/%s-%d/*.log 2>/dev/null" % (
@@ -283,12 +273,12 @@ class MirrorUtils:
                                 source[seg] != dest[seg] for seg in source):
                             return False
                         self.logger.info("Hashes match for %s-%d dest %s: %d segments verified",
-                                    topic, partition, node.name, len(source))
+                                         topic, partition, node.name, len(source))
             return True
 
         wait_until(
             check,
-            timeout_sec=120,
+            timeout_sec=timeout_sec,
             backoff_sec=5,
             err_msg="Log segments did not converge between source and destination",
         )
