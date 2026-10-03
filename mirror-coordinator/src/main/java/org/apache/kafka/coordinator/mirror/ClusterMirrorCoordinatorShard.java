@@ -198,6 +198,11 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                 builder.withErrorMessage(stateValue.errorMessage())
                         .withRetryAttempt(stateValue.retryAttempt())
                         .withPrevState(previousState);
+            } else if (state == MirrorPartitionState.LOG_ALIGNMENT) {
+                // Preserve retry state so failed retries increment the attempt counter
+                builder.withErrorMessage(null)
+                        .withRetryAttempt(stateValue.retryAttempt())
+                        .withPrevState(previousState);
             } else if (state == MirrorPartitionState.LOG_ALIGNMENT
                     || state == MirrorPartitionState.STOPPED
                     || state == MirrorPartitionState.PAUSED) {
