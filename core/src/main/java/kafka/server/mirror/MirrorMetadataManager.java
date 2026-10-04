@@ -1287,7 +1287,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             () -> transitionTo(mirrorName, Set.of(tp), targetState, null, false), delay);
     }
 
-    // ===== COORDINATOR OPERATIONS ==========================================================================================
+    // ===== COORDINATOR OPERATIONS ====================================================================================
 
     /**
      * Reads mirror partition states from the local coordinator via

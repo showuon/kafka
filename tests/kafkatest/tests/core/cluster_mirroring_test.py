@@ -46,7 +46,6 @@ class ClusterMirroringTest(MirrorUtils, Test):
             ["share.coordinator.state.topic.replication.factor", "2"],
             ["share.coordinator.state.topic.min.isr", "1"],
             ["mirror.state.topic.replication.factor", "2"],
-            ["mirror.failed.retry.max.attempts", "10"],
             ["mirror.metadata.refresh.interval.ms", "5000"],
             ["mirror.num.replica.fetchers", "2"],
             ["mirror.failed.retry.max.backoff.ms", "5000"],
@@ -1074,6 +1073,14 @@ class ClusterMirroringTest(MirrorUtils, Test):
     def test_manual_recovery(self, metadata_quorum):
         """Verify that a FAILED partition can be manually recovered after source broker restart."""
         self.logger.info("Using %s", metadata_quorum)
+
+        self.logger.info("Restart dest cluster to set mirror.failed.retry.max.attempts")
+        self.dest_kafka.server_prop_overrides.append(["mirror.failed.retry.max.attempts", "2"])
+        for node in self.dest_kafka.nodes:
+            self.dest_kafka.stop_node(node)
+        for node in self.dest_kafka.nodes:
+            self.dest_kafka.start_node(node)
+
         self.source_kafka.create_topic({"topic": "my-topic", "partitions": 3, "replication-factor": 1})
 
         self.logger.info("Produce initial messages")
@@ -1087,9 +1094,8 @@ class ClusterMirroringTest(MirrorUtils, Test):
         self.logger.info("Stop all source brokers to trigger FAILED state with retries exhausted")
         for node in self.source_kafka.nodes:
             self.source_kafka.stop_node(node)
-        self.wait_mirror_retries_exhausted(self.dest_kafka, self.client_node, "my-mirror",
-                                                  ["my-topic"], max_attempts=10,
-                                                  err_msg="Mirror did not exhaust retries after source shutdown")
+        self.wait_mirror_retries_exhausted(self.dest_kafka, self.client_node, "my-mirror", ["my-topic"], max_attempts=2,
+                                           err_msg="Mirror did not exhaust retries after source shutdown")
 
         self.logger.info("Restart source brokers")
         for node in self.source_kafka.nodes:
