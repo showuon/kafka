@@ -30,7 +30,7 @@
       "about": "The highest leader epoch seen for the partition, or -1 if not available." },
     { "name": "StateEpoch", "type": "int32", "versions": "0+", "default": "0",
       "about": "Monotonically increasing epoch incremented on every state transition." },
-    { "name": "PreviousState", "type": "int8",  "versions": "0+", "default": 16,
+    { "name": "PreviousState", "type": "int8",  "versions": "0+", "default": -1,
       "about": "The mirror partition state before this transition; UNKNOWN if not recorded." },
     { "name": "RetryAttempt", "type": "int16", "versions": "0+", "default": "0",
       "about": "The number of automatic retry attempts while in FAILED state, or -1 for non-retryable failure." },

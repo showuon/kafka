@@ -51,7 +51,7 @@
           "about": "The per-partition error message, or null if there was no error." },
         { "name": "RetryAttempt", "type": "int16", "versions": "0+", "default": 0,
           "about": "The retry attempt count in FAILED state, 0 if not failed, or -1 if non-retryable." },
-        { "name": "PreviousState", "type": "int8", "versions": "0+", "default": 16,
+        { "name": "PreviousState", "type": "int8", "versions": "0+", "default": -1,
           "about": "The mirror partition state before entering FAILED, or UNKNOWN if not recorded." }
       ]}
     ]}

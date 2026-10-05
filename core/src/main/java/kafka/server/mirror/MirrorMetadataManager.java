@@ -931,8 +931,11 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         MirrorPartition mp = MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
         if (part.errorCode() == Errors.NONE.code()) {
             MirrorPartitionMetadata existing = mirrorCache.getPartitionMetadata(mp);
+            int maxAttempts = new ClusterMirrorConfig(brokerConfig).failedRetryMaxAttempts();
             mirrorCache.updatePartitionMetadata(mp,
                     new MirrorPartitionMetadata.Builder(existing)
+                            // we must resolve the error info before state change because we'll set the prevState based on current state
+                            .withResolvedErrorInfo(state, errorMessage, nonRetryable, maxAttempts)
                             .withState(state)
                             .withStateEpoch(part.stateEpoch())
                             .build());
