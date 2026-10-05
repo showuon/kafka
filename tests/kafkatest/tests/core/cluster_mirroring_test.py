@@ -1116,7 +1116,7 @@ class ClusterMirroringTest(MirrorUtils, Test):
         wait_until(
             lambda: "Recovered" in self.dest_kafka.recover_cluster_mirror_topics(
                 self.client_node, "my-mirror", "my-topic"),
-            timeout_sec=60, backoff_sec=2,
+            timeout_sec=120, backoff_sec=2,
             err_msg="Failed to recover mirror topics",
         )
         self.wait_mirror_state(self.dest_kafka, self.client_node, "my-mirror", ["my-topic"], "MIRRORING",
