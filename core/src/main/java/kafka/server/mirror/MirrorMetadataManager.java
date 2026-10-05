@@ -1917,7 +1917,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         .thenCompose(__ -> lastMirrorPositionFuture)
         .thenApply(lastMirrorPositions -> {
             log.info("Received LME lookup response for partition {} in mirror {}: {}",
-                    mirrorName, tp, lastMirrorPositions);
+                    tp, mirrorName, lastMirrorPositions);
             return lastMirrorPositions;
         })
         .orTimeout(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
