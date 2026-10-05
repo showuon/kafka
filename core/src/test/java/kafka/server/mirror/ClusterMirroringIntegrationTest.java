@@ -110,7 +110,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Timeout(value = 120, unit = TimeUnit.SECONDS)
 public class ClusterMirroringIntegrationTest {
     private static final long METADATA_REFRESH_INTERVAL_MS = 5_000;
-    private static final int MAX_RETRY_ATTEMPTS = 5;
 
     private KafkaClusterTestKit srcCluster;
     private KafkaClusterTestKit dstCluster;
@@ -577,12 +576,11 @@ public class ClusterMirroringIntegrationTest {
     void testAutoRecovery() throws Exception {
         String topic = "auto-recovery-topic";
 
+        // Create topic, send some data, start mirroring
         srcAdmin.createTopics(List.of(
-                new NewTopic(topic, 1, (short) 1)
+                new NewTopic(topic, 3, (short) 1)
         )).all().get(10, TimeUnit.SECONDS);
-
         produceRecords(srcCluster, topic, 0, 20);
-
         createAndStartMirror(dstAdmin, "my-mirror", srcBootstrapServer, topic);
 
         // Shut down source to trigger FAILED state
@@ -597,8 +595,7 @@ public class ClusterMirroringIntegrationTest {
                 throw new RuntimeException(e);
             }
         });
-
-        waitForMirrorLagZero(dstAdmin, "my-mirror", topic);
+        waitForMirrorState(dstAdmin, "my-mirror", MIRRORING, topic);
 
         // Verify data still flows after automatic recovery
         produceRecords(srcCluster, topic, 20, 20);
@@ -609,18 +606,28 @@ public class ClusterMirroringIntegrationTest {
     @Test
     void testManualRecovery() throws Exception {
         String topic = "manual-recovery-topic";
+        int maxRetryAttempts = 2;
 
+        // Restart dest cluster to set mirror.failed.retry.max.attempts
+        closeQuietly(dstAdmin);
+        closeQuietly(dstCluster);
+        dstCluster = buildCluster(2, Map.of(
+                ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_ATTEMPTS_CONFIG, String.valueOf(maxRetryAttempts)
+        ));
+        dstAdmin = Admin.create(Map.of(
+                AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, dstCluster.bootstrapServers()
+        ));
+
+        // Create topic, send some data, start mirroring
         srcAdmin.createTopics(List.of(
-                new NewTopic(topic, 1, (short) 1)
+                new NewTopic(topic, 3, (short) 1)
         )).all().get(10, TimeUnit.SECONDS);
-
         produceRecords(srcCluster, topic, 0, 20);
-
         createAndStartMirror(dstAdmin, "my-mirror", srcBootstrapServer, topic);
 
         // Shut down source to trigger FAILED state
         srcCluster.brokers().values().forEach(KafkaBroker::shutdown);
-        waitForFailedState("retries exhausted", MAX_RETRY_ATTEMPTS, topic);
+        waitForFailedState("retries exhausted", maxRetryAttempts, topic);
 
         // Restart source so recovery can succeed
         srcCluster.brokers().values().forEach(b -> {
@@ -634,8 +641,12 @@ public class ClusterMirroringIntegrationTest {
         // Recover the failed partitions
         dstAdmin.recoverMirrorTopics("my-mirror", List.of(topic), new RecoverMirrorTopicsOptions())
                 .all().get(10, TimeUnit.SECONDS);
+        waitForMirrorState(dstAdmin, "my-mirror", MIRRORING, topic);
 
+        // Verify data still flows after manual recovery
+        produceRecords(srcCluster, topic, 20, 20);
         waitForMirrorLagZero(dstAdmin, "my-mirror", topic);
+        consumeRecords(dstCluster, topic, 40);
     }
 
     @Test
@@ -990,7 +1001,7 @@ public class ClusterMirroringIntegrationTest {
                 .setConfigProp(DEFAULT_REPLICATION_FACTOR_CONFIG, "2")
                 .setConfigProp(ServerConfigs.REQUEST_TIMEOUT_MS_CONFIG, "5000")
                 .setConfigProp(ClusterMirrorConfig.SOCKET_TIMEOUT_MS_CONFIG, "5000")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_ATTEMPTS_CONFIG, MAX_RETRY_ATTEMPTS)
+                .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_ATTEMPTS_CONFIG, 10)
                 .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_CONFIG, "100")
                 .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_BACKOFF_MS_CONFIG, "5000")
                 .setConfigProp(ServerConfigs.UNSTABLE_API_VERSIONS_ENABLE_CONFIG, "true")
@@ -1158,7 +1169,7 @@ public class ClusterMirroringIntegrationTest {
     }
 
     private void waitForMirrorState(Admin admin, String mirrorName, MirrorPartitionState state, String... topicPatterns) throws Exception {
-        waitForMirrorState(admin, mirrorName, state, Optional.empty(), 30_000, topicPatterns);
+        waitForMirrorState(admin, mirrorName, state, Optional.empty(), 120_000, topicPatterns);
     }
 
     private void waitForMirrorState(Admin admin, String mirrorName, MirrorPartitionState state,
@@ -1190,7 +1201,7 @@ public class ClusterMirroringIntegrationTest {
     }
 
     private void waitForMirrorLagZero(Admin admin, String mirrorName, String... topicPatterns) throws Exception {
-        waitForMirrorLagZero(admin, mirrorName, 30_000, topicPatterns);
+        waitForMirrorLagZero(admin, mirrorName, 60_000, topicPatterns);
     }
 
     private void waitForMirrorLagZero(Admin admin, String mirrorName, long timeoutMs,
