@@ -1084,8 +1084,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                                             replicaManagerSupplier.get().maybeTruncateForLeaderEpoch(
                                                     Map.of(topicPartition, new EpochOffset(-1, -1)), callback);
                                         } else {
-                                            log.warn("Failed to truncate to last known position for mirror {}",
-                                                    mirrorName, error);
+                                            log.warn("Failed to truncate {} to last known position", topicPartition, error);
                                             transitionTo(mirrorName, Set.of(topicPartition), MirrorPartitionState.FAILED,
                                                     error.getMessage(), false);
                                         }
@@ -1290,7 +1289,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             () -> transitionTo(mirrorName, Set.of(tp), targetState, null, false), delay);
     }
 
-    // ===== COORDINATOR OPERATIONS ==========================================================================================
+    // ===== COORDINATOR OPERATIONS ====================================================================================
 
     /**
      * Reads mirror partition states from the local coordinator via
@@ -1901,8 +1900,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     public CompletionStage<Map<TopicPartition, EpochOffset>> sendLastMirrorEpochLookup(
             String mirrorName, TopicPartition tp, Collection<ClusterMirrorListing> sourceMirrors) {
         Admin admin = getOrCreateSourceAdmin(mirrorName);
-        log.info("Sending LME lookup request for mirror={}, topic={}, partition={}",
-                mirrorName, tp.topic(), tp.partition());
+        log.info("Sending LME lookup request for partition {} in mirror {}", tp, mirrorName);
 
         Map<String, List<Integer>> topicPartitions = Map.of(tp.topic(), List.of(tp.partition()));
         DescribeClusterMirrorsOptions options = new DescribeClusterMirrorsOptions()
@@ -1918,8 +1916,10 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         })
         .thenCompose(__ -> lastMirrorPositionFuture)
         .thenApply(lastMirrorPositions -> {
-            log.info("Received LME lookup response for mirror={}, topic={}, partition={}: {}",
-                    mirrorName, tp.topic(), tp.partition(), lastMirrorPositions);
+            // This log format is used in cluster_mirroring_test.test_failove_failback,
+            // so the system test needs to be updated in case of changes
+            log.info("Received LME lookup response for partition {} in mirror {}: {}",
+                    tp, mirrorName, lastMirrorPositions);
             return lastMirrorPositions;
         })
         .orTimeout(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);

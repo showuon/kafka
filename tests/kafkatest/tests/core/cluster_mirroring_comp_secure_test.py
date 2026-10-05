@@ -31,12 +31,12 @@ from kafkatest.version import (
     V_3_0_0,
 )
 
+ZK_ACL_AUTHORIZER_OLD = "kafka.security.auth.SimpleAclAuthorizer"
+ZK_ACL_AUTHORIZER_NEW = "kafka.security.authorizer.AclAuthorizer"
+
 
 class ClusterMirroringCompSecureTest(MirrorUtils, Test):
     """Compatibility tests for Cluster Mirroring with SASL_SSL setup across different Kafka versions."""
-
-    ZK_ACL_AUTHORIZER_OLD = "kafka.security.auth.SimpleAclAuthorizer"
-    ZK_ACL_AUTHORIZER_NEW = "kafka.security.authorizer.AclAuthorizer"
 
     DST_SERVER_PROPS = [
         ["auto.create.topics.enable", "false"],
@@ -223,13 +223,14 @@ class ClusterMirroringCompSecureTest(MirrorUtils, Test):
     def list_acls(self, kafka, client_node):
         return self.run_acl_cmd(kafka, "--list", client_node)
 
-    def wait_for_acl_condition(self, kafka, mirror_name, condition, err_msg, client_node):
+    def wait_for_acl_condition(self, kafka, mirror_name, condition, err_msg, client_node,
+                               timeout_sec=120):
         self.wait_for_metadata_refresh(kafka, client_node, mirror_name)
         def check():
             dest_acls = self.list_acls(kafka, client_node)
             self.logger.debug("Destination ACLs:\n%s" % dest_acls)
             return condition(dest_acls)
-        wait_until(check, timeout_sec=120, backoff_sec=2, err_msg=err_msg)
+        wait_until(check, timeout_sec=timeout_sec, backoff_sec=2, err_msg=err_msg)
 
 
     @cluster(num_nodes=8)
