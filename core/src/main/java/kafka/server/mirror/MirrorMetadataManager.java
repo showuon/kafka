@@ -1916,6 +1916,8 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         })
         .thenCompose(__ -> lastMirrorPositionFuture)
         .thenApply(lastMirrorPositions -> {
+            // This log format is used in cluster_mirroring_test.test_failove_failback,
+            // so the system test needs to be updated in case of changes
             log.info("Received LME lookup response for partition {} in mirror {}: {}",
                     tp, mirrorName, lastMirrorPositions);
             return lastMirrorPositions;

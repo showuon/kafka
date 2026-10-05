@@ -31,12 +31,12 @@ from kafkatest.version import (
     V_3_0_0,
 )
 
+ZK_ACL_AUTHORIZER_OLD = "kafka.security.auth.SimpleAclAuthorizer"
+ZK_ACL_AUTHORIZER_NEW = "kafka.security.authorizer.AclAuthorizer"
+
 
 class ClusterMirroringCompSecureTest(MirrorUtils, Test):
     """Compatibility tests for Cluster Mirroring with SASL_SSL setup across different Kafka versions."""
-
-    ZK_ACL_AUTHORIZER_OLD = "kafka.security.auth.SimpleAclAuthorizer"
-    ZK_ACL_AUTHORIZER_NEW = "kafka.security.authorizer.AclAuthorizer"
 
     DST_SERVER_PROPS = [
         ["auto.create.topics.enable", "false"],
