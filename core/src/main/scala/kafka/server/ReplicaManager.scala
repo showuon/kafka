@@ -1920,8 +1920,10 @@ class ReplicaManager(val config: KafkaConfig,
                  _: FencedLeaderEpochException |
                  _: ReplicaNotAvailableException |
                  _: KafkaStorageException |
-                 _: InconsistentTopicIdException |
-                 _: SourceMetadataNotAvailableException) =>
+                 _: InconsistentTopicIdException) =>
+          createLogReadResult(e)
+        case e: SourceMetadataNotAvailableException =>
+          partition.getMirrorName().ifPresent(mirrorName => mirrorManager.foreach(mmm => mmm.scheduleSourceTopicMetadataRefresh(mirrorName)))
           createLogReadResult(e)
         case e: OffsetOutOfRangeException =>
           handleOffsetOutOfRangeError(tp, params, fetchInfo, adjustedMaxBytes, minOneMessage, log, fetchTimeMs, e)

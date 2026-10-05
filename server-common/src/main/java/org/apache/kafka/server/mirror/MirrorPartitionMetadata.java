@@ -172,7 +172,7 @@ public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch
     }
 
     public MirrorPartitionState resolvePrevState(MirrorPartitionState currState) {
-        if (currState == MirrorPartitionState.FAILED && prevState != null) {
+        if (currState == MirrorPartitionState.FAILED && (prevState != null && prevState != MirrorPartitionState.UNKNOWN)) {
             return prevState;
         }
         return currState;
