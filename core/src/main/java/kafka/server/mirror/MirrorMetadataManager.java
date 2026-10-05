@@ -931,10 +931,12 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         MirrorPartition mp = MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
         if (part.errorCode() == Errors.NONE.code()) {
             MirrorPartitionMetadata existing = mirrorCache.getPartitionMetadata(mp);
+            int maxAttempts = new ClusterMirrorConfig(brokerConfig).failedRetryMaxAttempts();
             mirrorCache.updatePartitionMetadata(mp,
                     new MirrorPartitionMetadata.Builder(existing)
                             .withState(state)
                             .withStateEpoch(part.stateEpoch())
+                            .withResolvedErrorInfo(state, errorMessage, nonRetryable, maxAttempts)
                             .build());
             onStateTransition(mirrorName, tp, state);
         } else if (part.errorCode() == Errors.COORDINATOR_LOAD_IN_PROGRESS.code()) {
