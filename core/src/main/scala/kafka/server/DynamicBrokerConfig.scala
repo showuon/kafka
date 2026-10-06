@@ -309,7 +309,7 @@ class DynamicBrokerConfig(private val kafkaConfig: KafkaConfig) extends Logging 
     addBrokerReconfigurable(kafkaServer.socketServer)
     addBrokerReconfigurable(new DynamicProducerStateManagerConfig(kafkaServer.logManager.producerStateManagerConfig))
     addBrokerReconfigurable(new DynamicRemoteLogConfig(kafkaServer))
-    addBrokerReconfigurable(new DynamicClusterMirrorConfig(kafkaServer.replicaManager, kafkaServer.mirrorMetadataManager))
+    addBrokerReconfigurable(new DynamicClusterMirrorConfig(kafkaServer))
   }
 
   /**
@@ -1130,8 +1130,7 @@ object DynamicRemoteLogConfig {
   )
 }
 
-class DynamicClusterMirrorConfig(replicaManager: ReplicaManager,
-                                 mirrorMetadataManager: mirror.MirrorMetadataManager) extends BrokerReconfigurable with Logging {
+class DynamicClusterMirrorConfig(server: KafkaBroker) extends BrokerReconfigurable with Logging {
 
   override def reconfigurableConfigs: Set[String] = {
     DynamicClusterMirrorConfig.ReconfigurableConfigs
@@ -1139,15 +1138,13 @@ class DynamicClusterMirrorConfig(replicaManager: ReplicaManager,
 
   override def validateReconfiguration(newConfig: KafkaConfig): Unit = {
     val newFetchers = newConfig.mirrorConfig.numReplicaFetchers
-    val oldFetchers = replicaManager.config.mirrorConfig.numReplicaFetchers
+    val oldFetchers = server.config.mirrorConfig.numReplicaFetchers
     if (newFetchers != oldFetchers) {
       val errorMsg = s"Dynamic thread count update validation failed for ${ClusterMirrorConfig.MIRROR_NUM_REPLICA_FETCHERS_CONFIG}=$newFetchers"
-      if (newFetchers <= 0)
-        throw new ConfigException(s"$errorMsg, value should be at least 1")
       if (newFetchers < oldFetchers / 2)
-        throw new ConfigException(s"$errorMsg, value should be at least half the current value $oldFetchers")
+        throw new ConfigException(s"$errorMsg, Value should be at least half the current value $oldFetchers")
       if (newFetchers > oldFetchers * 2)
-        throw new ConfigException(s"$errorMsg, value should not be greater than double the current value $oldFetchers")
+        throw new ConfigException(s"$errorMsg, Value should not be greater than double the current value $oldFetchers")
     }
 
     val newInterval = newConfig.mirrorConfig.metadataRefreshIntervalMs
@@ -1160,13 +1157,13 @@ class DynamicClusterMirrorConfig(replicaManager: ReplicaManager,
     val newMirrorConfig = newConfig.mirrorConfig
 
     if (newMirrorConfig.numReplicaFetchers != oldMirrorConfig.numReplicaFetchers) {
-      replicaManager.mirrorFetcherManager.resizeThreadPool(newMirrorConfig.numReplicaFetchers)
+      server.replicaManager.mirrorFetcherManager.resizeThreadPool(newMirrorConfig.numReplicaFetchers)
       info(s"Updated ${ClusterMirrorConfig.MIRROR_NUM_REPLICA_FETCHERS_CONFIG} " +
         s"from ${oldMirrorConfig.numReplicaFetchers} to ${newMirrorConfig.numReplicaFetchers}")
     }
 
     if (newMirrorConfig.metadataRefreshIntervalMs != oldMirrorConfig.metadataRefreshIntervalMs) {
-      mirrorMetadataManager.scheduleSourceClusterSync(newMirrorConfig.metadataRefreshIntervalMs)
+      server.mirrorMetadataManager.scheduleSourceClusterSync(newMirrorConfig.metadataRefreshIntervalMs)
       info(s"Updated ${ClusterMirrorConfig.MIRROR_METADATA_REFRESH_INTERVAL_MS_CONFIG} " +
         s"from ${oldMirrorConfig.metadataRefreshIntervalMs} to ${newMirrorConfig.metadataRefreshIntervalMs}")
     }

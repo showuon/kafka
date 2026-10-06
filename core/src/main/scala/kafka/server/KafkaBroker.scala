@@ -94,7 +94,7 @@ trait KafkaBroker extends Logging {
   def metrics: Metrics
   def quotaManagers: QuotaFactory.QuotaManagers
   def replicaManager: ReplicaManager
-  def clusterMirrorCoordinator: ClusterMirrorCoordinatorService
+  def mirrorCoordinator: ClusterMirrorCoordinatorService
   def mirrorMetadataManager: MirrorMetadataManager
   def socketServer: SocketServer
   def metadataCache: MetadataCache

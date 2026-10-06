@@ -128,7 +128,7 @@ class BrokerServer(
 
   var transactionCoordinator: TransactionCoordinator = _
 
-  var clusterMirrorCoordinator: ClusterMirrorCoordinatorService = _
+  var mirrorCoordinator: ClusterMirrorCoordinatorService = _
   var mirrorMetadataCache: MirrorMetadataCache = _
   var mirrorMetadataManager: MirrorMetadataManager = _
 
@@ -407,7 +407,7 @@ class BrokerServer(
         new KafkaScheduler(1, true, "transaction-log-manager-"),
         producerIdManagerSupplier, metrics, metadataCache, Time.SYSTEM)
 
-      clusterMirrorCoordinator = createClusterMirrorCoordinator()
+      mirrorCoordinator = createClusterMirrorCoordinator()
 
       autoTopicCreationManager = new DefaultAutoTopicCreationManager(
         config, clientToControllerChannelManager, groupCoordinator,
@@ -471,7 +471,7 @@ class BrokerServer(
         groupCoordinator = groupCoordinator,
         txnCoordinator = transactionCoordinator,
         shareCoordinator = shareCoordinator,
-        clusterMirrorCoordinator = clusterMirrorCoordinator,
+        clusterMirrorCoordinator = mirrorCoordinator,
         mirrorMetadataManager = mirrorMetadataManager,
         mirrorMetadataCache = mirrorMetadataCache,
         autoTopicCreationManager = autoTopicCreationManager,
@@ -542,7 +542,7 @@ class BrokerServer(
         ),
         sharedServer.initialBrokerMetadataLoadFaultHandler,
         sharedServer.metadataPublishingFaultHandler,
-        clusterMirrorCoordinator,
+        mirrorCoordinator,
         mirrorMetadataManager
       )
       // If the BrokerLifecycleManager's initial catch-up future fails, it means we timed out
@@ -836,8 +836,8 @@ class BrokerServer(
         CoreUtils.swallow(groupConfigManager.close(), this)
       if (groupCoordinator != null)
         CoreUtils.swallow(groupCoordinator.shutdown(), this)
-      if (clusterMirrorCoordinator != null)
-        CoreUtils.swallow(clusterMirrorCoordinator.shutdown(), this)
+      if (mirrorCoordinator != null)
+        CoreUtils.swallow(mirrorCoordinator.shutdown(), this)
       if (shareCoordinator != null)
         CoreUtils.swallow(shareCoordinator.shutdown(), this)
 
