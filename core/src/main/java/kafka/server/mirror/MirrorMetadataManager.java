@@ -806,6 +806,9 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         } else if (currentState == MirrorPartitionState.UNKNOWN
                 || currentState == MirrorPartitionState.STOPPED) {
             transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.LOG_ALIGNMENT, null, false);
+        } else {
+            // Re-assert the current state to trigger side effects and keep the state machine progressing
+            transitionTo(mirrorName, Set.of(tp), currentState, null, false);
         }
     }
 
