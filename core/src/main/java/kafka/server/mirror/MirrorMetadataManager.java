@@ -716,12 +716,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                                                 Errors.forCode(partition.errorCode()));
                                         return;
                                     }
-                                    TopicPartition tp = new TopicPartition(topic.topicName(), partition.partitionIndex());
-                                    TopicImage topicImage = metadataImage.topics().getTopic(tp.topic());
-                                    MirrorPartitionState desiredState = topicImage != null ?
-                                            MirrorPartitionState.fromValue(topicImage.desiredMirrorState()) : MirrorPartitionState.UNKNOWN;
-                                    MirrorPartitionState currentState = MirrorPartitionState.fromValue(partition.state());
-                                    applyStateTransition(mirrorName, tp, currentState, desiredState, null);
+                                    handleReadStateResponse(mirrorName, topic.topicName(), partition.partitionIndex(), MirrorPartitionState.fromValue(partition.state()));
                                 }))));
 
         // Phase 3: Read current state from remote coordinators and apply transitions
@@ -735,16 +730,16 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                                                 Errors.forCode(partition.errorCode()));
                                         return;
                                     }
-                                    TopicPartition tp = new TopicPartition(topic.topicName(), partition.partitionIndex());
-                                    TopicImage topicImage = metadataImage.topics().getTopic(tp.topic());
-                                    MirrorPartitionState desiredState = topicImage != null ?
-                                            MirrorPartitionState.fromValue(topicImage.desiredMirrorState()) : MirrorPartitionState.UNKNOWN;
-                                    MirrorPartitionMetadata mpm = mirrorCache.getPartitionMetadata(
-                                            MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition()));
-                                    MirrorPartitionState currentState = mpm != null ? mpm.state() : MirrorPartitionState.UNKNOWN;
-                                    MirrorPartitionState fetchedState = MirrorPartitionState.fromValue(partition.state());
-                                    applyStateTransition(mirrorName, tp, currentState, desiredState, fetchedState);
+                                    handleReadStateResponse(mirrorName, topic.topicName(), partition.partitionIndex(), MirrorPartitionState.fromValue(partition.state()));
                                 }))));
+    }
+
+    private void handleReadStateResponse(String mirrorName, String topicName, int partitionInd, MirrorPartitionState currentState) {
+        TopicPartition tp = new TopicPartition(topicName, partitionInd);
+        TopicImage topicImage = metadataImage.topics().getTopic(tp.topic());
+        MirrorPartitionState desiredState = topicImage != null ?
+                MirrorPartitionState.fromValue(topicImage.desiredMirrorState()) : MirrorPartitionState.UNKNOWN;
+        applyStateTransition(mirrorName, tp, currentState, desiredState);
     }
 
     /** Completes epoch bump futures whose requested epochs are now reflected in the metadata image. */
@@ -774,14 +769,12 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
      * Applies the appropriate state transition based on current state and desired state.
      * <p>
      * The mirror partition state machine handles explicit transitions (stop/pause requests)
-     * and automatic transitions (start mirroring, fail on errors). For automatic transitions,
-     * the fetchedState parameter allows syncing with remote coordinator state.
+     * and automatic transitions (start mirroring, fail on errors).
      */
     private void applyStateTransition(String mirrorName,
                                       TopicPartition tp,
                                       MirrorPartitionState currentState,
-                                      MirrorPartitionState desiredState,
-                                      MirrorPartitionState fetchedState) {
+                                      MirrorPartitionState desiredState) {
         var log = replicaManagerSupplier.get().getLog(tp);
         if (log.isDefined() && log.get().remoteLogEnabled()) {
             transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED,
@@ -814,9 +807,8 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 || currentState == MirrorPartitionState.STOPPED) {
             transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.LOG_ALIGNMENT, null, false);
         } else {
-            // The remote state is authoritative, and we must align with it to avoid state divergence
-            var targetState = fetchedState != null ? fetchedState : currentState;
-            transitionTo(mirrorName, Set.of(tp), targetState, null, false);
+            // Re-assert the current state to trigger side effects and keep the state machine progressing
+            transitionTo(mirrorName, Set.of(tp), currentState, null, false);
         }
     }
 
