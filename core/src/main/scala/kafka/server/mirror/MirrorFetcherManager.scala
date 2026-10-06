@@ -232,6 +232,10 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
   }
 
   def getOffsetInfo(mirrorName: String): Map[TopicPartition, MirrorOffsetInfo] = {
+    logger.info("getOffsetInfo:" + mirrorOffsetInfoMap)
+    fetcherThreadMap.values.foreach { fetcherThread =>
+      logger.info("fetcherThread.fetcherLagStats.stats:" + fetcherThread.fetcherLagStats.stats)
+    }
     mirrorOffsetInfoMap.collect {
       case (key, info) if key.mirrorName == mirrorName => key.topicPartition -> info
     }.toMap

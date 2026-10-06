@@ -130,6 +130,7 @@ class MirrorFetcherThread(name: String,
 
     log.maybeIncrementLogStartOffset(leaderLogStartOffset, LogStartOffsetIncrementReason.LeaderOffsetIncremented)
 
+    logger.info("processPartitionData:" + topicPartition + ";;" + partitionData.highWatermark + ";;" + log.highWatermark)
     // Update mirroring lag
     replicaMgr.updateMirrorOffsetInfo(mirrorName, topicPartition, partitionData.highWatermark, log.highWatermark)
 

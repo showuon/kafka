@@ -504,7 +504,9 @@ abstract class AbstractFetcherThread(name: String,
 
     val startNs = time.nanoseconds()
     try {
+      info("fetch request:" + fetchRequest)
       responseData = leader.fetch(fetchRequest).asScala
+      info("fetch response:" + responseData)
     } catch {
       case t: Throwable =>
         fetchException = Some(t)
@@ -1145,6 +1147,10 @@ class FetcherLagMetrics(metricId: ClientIdTopicPartition) {
   def unregister(): Unit = {
     metricsGroup.removeMetric(FetcherMetrics.ConsumerLag, tags)
   }
+
+  override def toString: String = {
+    s"FetcherLagMetrics: $lagVal , $tags"
+  }
 }
 
 class FetcherLagStats(metricId: ClientIdAndBroker) {
@@ -1161,6 +1167,10 @@ class FetcherLagStats(metricId: ClientIdAndBroker) {
 
   def unregister(): Unit = {
     stats.forEach((key, _) => unregister(key))
+  }
+
+  override def toString: String = {
+    s"stats: $stats"
   }
 }
 

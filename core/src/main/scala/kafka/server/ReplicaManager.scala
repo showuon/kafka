@@ -2676,6 +2676,7 @@ class ReplicaManager(val config: KafkaConfig,
                 // Keep the existing source offset, it will be updated by the next mirror fetch
                 val mirrorOffsetInfo = mirrorFetcherManager.getOffsetInfo(mirrorName).get(tp)
                 mirrorOffsetInfo.foreach { info =>
+                  logger.info("onHighWatermarkUpdated:" + tp + ";;" + info.sourceOffset + ";;" + offset)
                   updateMirrorOffsetInfo(mirrorName, tp, info.sourceOffset, offset)
                 }
               }
