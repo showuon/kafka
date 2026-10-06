@@ -679,14 +679,6 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
     // ===== PARTITION STATE TRANSITIONS ===============================================================================
 
-    private void handleReadStateResponse(String mirrorName, String topicName, int partitionInd, MirrorPartitionState currentState) {
-        TopicPartition tp = new TopicPartition(topicName, partitionInd);
-        TopicImage topicImage = metadataImage.topics().getTopic(tp.topic());
-        MirrorPartitionState desiredState = topicImage != null ?
-                MirrorPartitionState.fromValue(topicImage.desiredMirrorState()) : MirrorPartitionState.UNKNOWN;
-        applyStateTransition(mirrorName, tp, currentState, desiredState);
-    }
-    
     /**
      * Applies state transitions for the given mirror partitions. Local and remote coordinator
      * partitions are batched by mirror and transitioned after reading current state.
@@ -740,6 +732,14 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                                     }
                                     handleReadStateResponse(mirrorName, topic.topicName(), partition.partitionIndex(), MirrorPartitionState.fromValue(partition.state()));
                                 }))));
+    }
+
+    private void handleReadStateResponse(String mirrorName, String topicName, int partitionInd, MirrorPartitionState currentState) {
+        TopicPartition tp = new TopicPartition(topicName, partitionInd);
+        TopicImage topicImage = metadataImage.topics().getTopic(tp.topic());
+        MirrorPartitionState desiredState = topicImage != null ?
+                MirrorPartitionState.fromValue(topicImage.desiredMirrorState()) : MirrorPartitionState.UNKNOWN;
+        applyStateTransition(mirrorName, tp, currentState, desiredState);
     }
 
     /** Completes epoch bump futures whose requested epochs are now reflected in the metadata image. */
