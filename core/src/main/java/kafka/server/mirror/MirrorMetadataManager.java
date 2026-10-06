@@ -898,6 +898,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     /** Triggers per-partition side effects (actions) after local coordinator write completes. */
     private void onLocalWriteComplete(String mirrorName, TopicPartition tp, MirrorPartitionState state,
                                       String errorMessage, boolean nonRetryable, Throwable ex) {
+        log.info("onLocalWriteComplete:" + state + ";;" + errorMessage + ";;" + ex);
         MirrorPartition mp = MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
         if (ex != null) {
             Throwable cause = (ex instanceof CompletionException && ex.getCause() != null) ? ex.getCause() : ex;
@@ -928,6 +929,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     private void onRemoteWriteComplete(String mirrorName, TopicPartition tp, MirrorPartitionState state,
                                        String errorMessage, boolean nonRetryable,
                                        WriteMirrorStatesResponseData.PartitionResult part) {
+        log.info("onRemoteWriteComplete:" + state + ";;" + errorMessage + ";;" + part.errorMessage() + ";;" + part.errorCode());
         MirrorPartition mp = MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
         if (part.errorCode() == Errors.NONE.code()) {
             MirrorPartitionMetadata existing = mirrorCache.getPartitionMetadata(mp);
@@ -987,8 +989,10 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
     private void readAndRetryTransition(String mirrorName, TopicPartition tp, MirrorPartitionState state,
                                         String errorMessage, boolean nonRetryable) {
+        log.info("readAndRetryTransition:" + tp + ";;" + state + ";;" + errorMessage);
         Consumer<ReadMirrorStatesResponse> onReadComplete = res ->
                 res.data().topics().forEach(topic -> topic.partitions().forEach(partition -> {
+                    log.info("readAndRetryTransition partition:" + partition +  ";;" + partition.errorMessage() + ";;" + partition.errorCode());
                     if (partition.errorCode() == Errors.NONE.code()) {
                         var curState = pendingStateTransitions.get(tp);
                         if (curState != state) {
@@ -1014,10 +1018,12 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         if (isLocalCoordinatorFor(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition())) {
             coordinatorReader.ifPresent(reader ->
                     reader.readPartitionStates(mirrorName, partitions).whenComplete((data, ex) -> {
+                        log.info("readPartitionStates:" + data + ";;" + ex);
                         onReadComplete.accept(new ReadMirrorStatesResponse(data));
                     }));
         } else {
             readStateFromRemoteCoordinator(mirrorName, partitions).whenComplete((data, ex) -> {
+                log.info("readStateFromRemoteCoordinator:" + data + ";;" + ex);
                 onReadComplete.accept(data);
             });
         }
