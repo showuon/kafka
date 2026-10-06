@@ -582,8 +582,15 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 MirrorPartitionMetadata cacheEntry = mirrorCache.getPartitionMetadata(mp);
                 if (cacheEntry != null && mirrorsToReconnect.contains(mp.mirrorName())
                         && cacheEntry.state() == MirrorPartitionState.MIRRORING) {
-                    mirrorCache.getTopicName(mp.topicId()).ifPresent(topicName ->
-                            result.add(new TopicPartition(topicName, mp.partition())));
+                    mirrorCache.getTopicName(mp.topicId()).ifPresent(topicName -> {
+                        TopicImage topicImage = image.topics().getTopic(topicName);
+                        if (topicImage != null) {
+                            var partitionReg = topicImage.partitions().get(mp.partition());
+                            if (partitionReg != null && partitionReg.leader == nodeId) {
+                                result.add(new TopicPartition(topicName, mp.partition()));
+                            }
+                        }
+                    });
                 }
             });
         }
