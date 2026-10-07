@@ -45,8 +45,8 @@ import static org.apache.kafka.server.util.MirrorUtils.compilePatternList;
 import static org.apache.kafka.server.util.MirrorUtils.parseAclRules;
 
 /**
- * This class provides proper validation, defaults, and documentation for all
- * configurations supported by the Cluster Mirroring feature.
+ * This class provides proper validation, defaults, and documentation
+ * for all configurations supported by the Cluster Mirroring feature.
  */
 public final class ClusterMirrorConfig extends AbstractConfig {
     // ---------------------------------------------------------------

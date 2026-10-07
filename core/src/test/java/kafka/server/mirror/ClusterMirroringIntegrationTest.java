@@ -501,7 +501,7 @@ public class ClusterMirroringIntegrationTest {
         // Verify that the __mirror_state topic contains the tombstone records for both
         // MirrorPartitionStateKey and LastMirrorEpochsKey types
         // 1. Get the partition index hosting the metadata for the mirror topic partition
-        int partId = dstCluster.brokers().get(0).clusterMirrorCoordinator()
+        int partId = dstCluster.brokers().get(0).mirrorCoordinator()
                 .partitionFor(new MirrorPartition("my-mirror", topicId, 0));
         // 2. Get the partition leader
         int leaderMirrorStatePartition = dstCluster.brokers().get(0).metadataCache()
