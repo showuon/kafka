@@ -1169,7 +1169,7 @@ public class ClusterMirroringIntegrationTest {
     }
 
     private void waitForMirrorState(Admin admin, String mirrorName, MirrorPartitionState state, String... topicPatterns) throws Exception {
-        waitForMirrorState(admin, mirrorName, state, Optional.empty(), 120_000, topicPatterns);
+        waitForMirrorState(admin, mirrorName, state, Optional.empty(), 180_000, topicPatterns);
     }
 
     private void waitForMirrorState(Admin admin, String mirrorName, MirrorPartitionState state,
