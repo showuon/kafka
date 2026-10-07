@@ -646,6 +646,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         });
 
         mirrorCache.removeMirrorPartitions(mirrorName);
+        mirrorCache.removeSourceClusterLeaders(mirrorName);
         pendingLeaderEpochBumps.removeIf(bump -> {
             bump.partitionToEpoch().keySet().removeAll(states.keySet());
             if (bump.partitionToEpoch().isEmpty()) {

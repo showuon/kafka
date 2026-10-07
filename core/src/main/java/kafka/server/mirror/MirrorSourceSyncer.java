@@ -73,6 +73,7 @@ import org.apache.kafka.server.common.ControllerRequestCompletionHandler;
 import org.apache.kafka.server.common.NodeToControllerChannelManager;
 import org.apache.kafka.server.metrics.KafkaMetricsGroup;
 import org.apache.kafka.server.mirror.MirrorPartition;
+import org.apache.kafka.server.mirror.MirrorPartitionMetadata;
 import org.apache.kafka.server.mirror.MirrorPartitionState;
 import org.apache.kafka.server.util.KafkaScheduler;
 import org.apache.kafka.server.util.MirrorUtils;
@@ -188,6 +189,7 @@ class MirrorSourceSyncer {
         try {
             periodicScheduler.shutdown();
             onDemandScheduler.shutdown();
+            ongoingTopicMetadataSyncs.clear();
             pendingTopicCreations.clear();
             sourceDeletions.clear();
         } catch (InterruptedException e) {
@@ -289,7 +291,7 @@ class MirrorSourceSyncer {
                     log.error(errMsg);
 
                     Set<String> mirrorTopics = mirrorCache.getMirrorTopics(mirrorName,
-                            EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED, MirrorPartitionState.STOPPED));
+                            EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED));
                     if (!mirrorTopics.isEmpty()) {
                         Set<TopicPartition> mirrorLeaderPartitions = new HashSet<>();
                         for (String topic : mirrorTopics) {
@@ -297,7 +299,13 @@ class MirrorSourceSyncer {
                             if (topicImage != null) {
                                 topicImage.partitions().forEach((partitionId, partition) -> {
                                     if (partition.leader == nodeId) {
-                                        mirrorLeaderPartitions.add(new TopicPartition(topic, partitionId));
+                                        MirrorPartition key = new MirrorPartition(mirrorName, topicImage.id(),  partitionId);
+                                        MirrorPartitionMetadata mpm = MirrorPartitionMetadata.orEmpty(mirrorCache.getPartitionMetadata(key));
+                                        if (mpm.state() == MirrorPartitionState.FAILED && mpm.retryAttempt() == MirrorPartitionMetadata.NON_RETRYABLE_ATTEMPT)
+                                            log.debug("Skipping transition to FAILED state for partition {}-{} . Reason: Already in this state due to: {}.",
+                                                    topic, partitionId, mpm.errorMessage());
+                                        else
+                                            mirrorLeaderPartitions.add(new TopicPartition(topic, partitionId));
                                     }
                                 });
                             }
@@ -425,7 +433,7 @@ class MirrorSourceSyncer {
     private List<SourceTopicState> doSyncSourceTopicMetadata(String mirrorName) {
         log.info("Syncing source topic state for mirror {}", mirrorName);
         Set<String> topics = mirrorCache.getMirrorTopics(mirrorName,
-                EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED, MirrorPartitionState.STOPPED));
+                EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED));
         if (topics.isEmpty()) {
             return List.of();
         }
@@ -593,28 +601,37 @@ class MirrorSourceSyncer {
 
         Admin srcAdmin = metadataManager.getOrCreateSourceAdmin(mirrorName);
         try {
-            Set<String> allTopics = srcAdmin.listTopics().names().get();
-            log.debug("Source topic name list: {}", allTopics);
-            deletedSourceTopicNames.removeAll(allTopics);
+            Set<String> allSourceTopics = srcAdmin.listTopics().names().get();
+            log.debug("Source topic name list: {}", allSourceTopics);
+            deletedSourceTopicNames.removeAll(allSourceTopics);
         } catch (Exception e) {
             log.warn("Failed to list topics for mirror {}, skipping deleted topic detection: {}", mirrorName, e.getMessage());
             metadataRefreshError.mark();
             return;
         }
 
-        Set<String> allTopics = mirrorCache.getMirrorTopics(mirrorName,
-                EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED, MirrorPartitionState.STOPPED));
-        allTopics.forEach(name -> {
+        Set<String> allMirrorTopics = mirrorCache.getMirrorTopics(mirrorName,
+                EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED));
+        allMirrorTopics.forEach(name -> {
             if (deletedSourceTopicNames.contains(name)) {
                 Set<String> topics = sourceDeletions.get(mirrorName);
                 if (topics != null && topics.contains(name)) {
-                    log.info("Detected topic {} deleted in source cluster {}, marking partitions as failed (non retryable)", name, mirrorName);
                     topics.remove(name);
                     TopicImage topicImage = metadataImage.topics().getTopic(name);
                     if (topicImage != null) {
-                        topicImage.partitions().forEach((partitionId, partition) ->
-                                metadataManager.transitionTo(mirrorName, Set.of(new TopicPartition(name, partitionId)),
-                                        MirrorPartitionState.FAILED, "The source topic is deleted", true));
+                        topicImage.partitions().forEach((partitionId, partition) -> {
+                            if (partition.leader == nodeId) {
+                                MirrorPartition key = new MirrorPartition(mirrorName, topicImage.id(), partitionId);
+                                MirrorPartitionMetadata mpm = MirrorPartitionMetadata.orEmpty(mirrorCache.getPartitionMetadata(key));
+                                if (mpm.state() == MirrorPartitionState.FAILED && mpm.retryAttempt() == MirrorPartitionMetadata.NON_RETRYABLE_ATTEMPT)
+                                    log.debug("Skipping transition to FAILED state for partition {}. Already in this state due to: {}", name, partition, mpm.errorMessage());
+                                else {
+                                    log.info("Detected topic {} deleted in source cluster {}, marking partitions as failed (non retryable).", name, mirrorName);
+                                    metadataManager.transitionTo(mirrorName, Set.of(new TopicPartition(name, partitionId)),
+                                            MirrorPartitionState.FAILED, "The source topic is deleted", true);
+                                }
+                            }
+                        });
                     }
                 } else {
                     log.debug("Topic {} not found in source cluster {}, pending deletion confirmation on next sync", name, mirrorName);
