@@ -706,32 +706,62 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         });
 
         // Phase 2: Read current state from local coordinators and apply transitions
-        localPartitions.forEach((mirrorName, partitions) ->
-                readStateFromLocalCoordinator(mirrorName, partitions).thenAccept(res ->
-                        res.data().topics().forEach(topic ->
-                                topic.partitions().forEach(partition -> {
-                                    if (partition.errorCode() != Errors.NONE.code()) {
-                                        log.warn("Error reading local mirror state for partition {}-{}: {}",
-                                                topic.topicName(), partition.partitionIndex(),
-                                                Errors.forCode(partition.errorCode()));
-                                        return;
-                                    }
-                                    handleReadStateResponse(mirrorName, topic.topicName(), partition.partitionIndex(), MirrorPartitionState.fromValue(partition.state()));
-                                }))));
+        localPartitions.forEach(this::readLocalPartitionStates);
 
         // Phase 3: Read current state from remote coordinators and apply transitions
-        remotePartitions.forEach((mirrorName, partitions) ->
-                readStateFromRemoteCoordinator(mirrorName, partitions).thenAccept(res ->
-                        res.data().topics().forEach(topic ->
-                                topic.partitions().forEach(partition -> {
-                                    if (partition.errorCode() != Errors.NONE.code()) {
-                                        log.warn("Error reading remote mirror state for partition {}-{}: {}",
-                                                topic.topicName(), partition.partitionIndex(),
-                                                Errors.forCode(partition.errorCode()));
-                                        return;
-                                    }
-                                    handleReadStateResponse(mirrorName, topic.topicName(), partition.partitionIndex(), MirrorPartitionState.fromValue(partition.state()));
-                                }))));
+        remotePartitions.forEach(this::readRemotePartitionStates);
+    }
+
+    private void readLocalPartitionStates(String mirrorName, Map<String, Set<Integer>> partitions) {
+        readStateFromLocalCoordinator(mirrorName, partitions).whenComplete((res, ex) -> {
+            if (ex != null) {
+                log.warn("Local coordinator read for mirror {} failed.", mirrorName, ex);
+                scheduleReadAndRetry(mirrorName, () -> readLocalPartitionStates(mirrorName, partitions));
+                return;
+            }
+            Map<String, Set<Integer>> partitionsToRetry = new HashMap<>();
+            res.data().topics().forEach(topic ->
+                    topic.partitions().forEach(partition -> {
+                        if (partition.errorCode() != Errors.NONE.code()) {
+                            log.warn("Error reading local mirror state for partition {}-{}: {}",
+                                    topic.topicName(), partition.partitionIndex(),
+                                    Errors.forCode(partition.errorCode()));
+                            partitionsToRetry.computeIfAbsent(topic.topicName(), k -> new HashSet<>())
+                                    .add(partition.partitionIndex());
+                            return;
+                        }
+                        handleReadStateResponse(mirrorName, topic.topicName(), partition.partitionIndex(), MirrorPartitionState.fromValue(partition.state()));
+                    }));
+            if (!partitionsToRetry.isEmpty()) {
+                scheduleReadAndRetry(mirrorName, () -> readLocalPartitionStates(mirrorName, partitionsToRetry));
+            }
+        });
+    }
+
+    private void readRemotePartitionStates(String mirrorName, Map<String, Set<Integer>> partitions) {
+        readStateFromRemoteCoordinator(mirrorName, partitions).whenComplete((res, ex) -> {
+            if (ex != null) {
+                log.warn("Remote coordinator read for mirror {} failed.", mirrorName, ex);
+                scheduleReadAndRetry(mirrorName, () -> readRemotePartitionStates(mirrorName, partitions));
+                return;
+            }
+            Map<String, Set<Integer>> partitionsToRetry = new HashMap<>();
+            res.data().topics().forEach(topic ->
+                    topic.partitions().forEach(partition -> {
+                        if (partition.errorCode() != Errors.NONE.code()) {
+                            log.warn("Error reading remote mirror state for partition {}-{}: {}",
+                                    topic.topicName(), partition.partitionIndex(),
+                                    Errors.forCode(partition.errorCode()));
+                            partitionsToRetry.computeIfAbsent(topic.topicName(), k -> new HashSet<>())
+                                    .add(partition.partitionIndex());
+                            return;
+                        }
+                        handleReadStateResponse(mirrorName, topic.topicName(), partition.partitionIndex(), MirrorPartitionState.fromValue(partition.state()));
+                    }));
+            if (!partitionsToRetry.isEmpty()) {
+                scheduleReadAndRetry(mirrorName, () -> readRemotePartitionStates(mirrorName, partitionsToRetry));
+            }
+        });
     }
 
     private void handleReadStateResponse(String mirrorName, String topicName, int partitionInd, MirrorPartitionState currentState) {
@@ -986,40 +1016,67 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
     private void readAndRetryTransition(String mirrorName, TopicPartition tp, MirrorPartitionState state,
                                         String errorMessage, boolean nonRetryable) {
-        Consumer<ReadMirrorStatesResponse> onReadComplete = res ->
-                res.data().topics().forEach(topic -> topic.partitions().forEach(partition -> {
-                    if (partition.errorCode() == Errors.NONE.code()) {
-                        var curState = pendingStateTransitions.get(tp);
-                        if (curState != state) {
-                            log.debug("Skipping transition to {} for partition {}. Reason: Already transitioning to {}.",
-                                    curState, tp, state);
-                            return;
-                        }
-                        MirrorPartition mp = MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
-                        mirrorCache.updatePartitionMetadata(mp,
-                                new MirrorPartitionMetadata.Builder()
-                                        .withState(MirrorPartitionState.fromValue(partition.state()))
-                                        .withStateEpoch(partition.stateEpoch())
-                                        .withLastPosition(new EpochOffset(partition.lastMirrorEpoch(), partition.lastMirrorOffset()))
-                                        .withErrorMessage(partition.errorMessage())
-                                        .withRetryAttempt(partition.retryAttempt())
-                                        .withPrevState(MirrorPartitionState.fromValue(partition.previousState()))
-                                        .build());
-                        persistState(mirrorName, tp, state, errorMessage, nonRetryable);
-                    }
-                }));
-
         Map<String, Set<Integer>> partitions = Map.of(tp.topic(), Set.of(tp.partition()));
         if (isLocalCoordinatorFor(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition())) {
             coordinatorReader.ifPresent(reader ->
                     reader.readPartitionStates(mirrorName, partitions).whenComplete((data, ex) -> {
-                        onReadComplete.accept(new ReadMirrorStatesResponse(data));
+                        if (ex != null) {
+                            log.warn("Local coordinator read for partition {} failed.", tp, ex);
+                            scheduleReadAndRetry(tp.toString(),
+                                    () -> readAndRetryTransition(mirrorName, tp, state, errorMessage, nonRetryable));
+                            return;
+                        }
+                        processReadAndRetryResponse(mirrorName, tp, state, errorMessage, nonRetryable,
+                                new ReadMirrorStatesResponse(data));
                     }));
         } else {
             readStateFromRemoteCoordinator(mirrorName, partitions).whenComplete((data, ex) -> {
-                onReadComplete.accept(data);
+                if (ex != null) {
+                    log.warn("Remote coordinator read for partition {} failed.", tp, ex);
+                    scheduleReadAndRetry(tp.toString(),
+                            () -> readAndRetryTransition(mirrorName, tp, state, errorMessage, nonRetryable));
+                    return;
+                }
+                processReadAndRetryResponse(mirrorName, tp, state, errorMessage, nonRetryable, data);
             });
         }
+    }
+
+    private void scheduleReadAndRetry(String name, Runnable callback) {
+        scheduler.scheduleOnce("read-retry-" + name,
+                callback,
+                COORD_LOADING_RETRY_BACKOFF_MS);
+    }
+
+    private void processReadAndRetryResponse(String mirrorName, TopicPartition tp, MirrorPartitionState state,
+                                             String errorMessage, boolean nonRetryable,
+                                             ReadMirrorStatesResponse res) {
+        res.data().topics().forEach(topic -> topic.partitions().forEach(partition -> {
+            if (partition.errorCode() != Errors.NONE.code()) {
+                log.warn("Read-and-retry for partition {} returned no usable state. Retrying in {} ms.",
+                        tp, COORD_LOADING_RETRY_BACKOFF_MS);
+                scheduleReadAndRetry(tp.toString(),
+                        () -> readAndRetryTransition(mirrorName, tp, state, errorMessage, nonRetryable));
+                return;
+            }
+            var curState = pendingStateTransitions.get(tp);
+            if (curState != state) {
+                log.debug("Skipping transition to {} for partition {}. Reason: Already transitioning to {}.",
+                        curState, tp, state);
+                return;
+            }
+            MirrorPartition mp = MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
+            mirrorCache.updatePartitionMetadata(mp,
+                    new MirrorPartitionMetadata.Builder()
+                            .withState(MirrorPartitionState.fromValue(partition.state()))
+                            .withStateEpoch(partition.stateEpoch())
+                            .withLastPosition(new EpochOffset(partition.lastMirrorEpoch(), partition.lastMirrorOffset()))
+                            .withErrorMessage(partition.errorMessage())
+                            .withRetryAttempt(partition.retryAttempt())
+                            .withPrevState(MirrorPartitionState.fromValue(partition.previousState()))
+                            .build());
+            persistState(mirrorName, tp, state, errorMessage, nonRetryable);
+        }));
     }
 
     /**
