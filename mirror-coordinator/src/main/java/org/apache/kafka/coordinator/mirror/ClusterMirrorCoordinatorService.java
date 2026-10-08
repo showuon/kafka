@@ -495,5 +495,5 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
     }
 
     public record MirrorStateWrite(int partition, MirrorPartitionState state, int leaderEpoch, int stateEpoch,
-                                   EpochOffset lastMirrorPosition, String errorMessage, boolean nonRetryable) { }
+                                   EpochOffset lastMirrorPosition, String errorMessage, boolean nonRetryable, int retryAttempt) { }
 }

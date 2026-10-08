@@ -856,7 +856,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             MirrorStateWrite write = new MirrorStateWrite(tp.partition(), targetState,
                     mirrorCache.getLeaderEpoch(tp),
                     mirrorCache.getPartitionMetadata(mp).stateEpoch(),
-                    null, errorMessage, nonRetryable);
+                    null, errorMessage, nonRetryable, -1);
 
             if (isLocalCoordinatorFor(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition())) {
                 localWrites.computeIfAbsent(tp.topic(), k -> new HashSet<>()).add(write);
@@ -960,7 +960,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         var curState = mirrorCache.getPartitionMetadata(mp);
         int leaderEpoch = mirrorCache.getLeaderEpoch(tp);
         MirrorStateWrite write = new MirrorStateWrite(tp.partition(), state, leaderEpoch, curState.stateEpoch(),
-                null, errorMessage, nonRetryable);
+                null, errorMessage, nonRetryable, -1);
         if (isLocalCoordinatorFor(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition())) {
             writeStateToLocalCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)))
                 .thenCompose(data -> {
@@ -1151,7 +1151,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             writePositionFuture = coordinatorWriter.get().writeLastMirrorPositions(mirrorName, Map.of(tp, lastMirrorPosition));
         } else {
             writeStateToRemoteCoordinator(mirrorName,
-                Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), null, -1, -1, lastMirrorPosition, null, false))),
+                Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), null, -1, -1, lastMirrorPosition, null, false, -1))),
                 Set.of());
             writePositionFuture = CompletableFuture.completedFuture(null);
         }
@@ -1877,7 +1877,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         int stateEpoch = mirrorCache.getPartitionMetadata(mp).stateEpoch();
         int leaderEpoch = mirrorCache.getLeaderEpoch(tp);
         MirrorStateWrite write = new MirrorStateWrite(tp.partition(), state, leaderEpoch, stateEpoch,
-                null, curState.errorMessage(), curState.retryAttempt() == NON_RETRYABLE_ATTEMPT);
+                null, curState.errorMessage(), curState.retryAttempt() == NON_RETRYABLE_ATTEMPT, 0);
 
         if (isLocalCoordinatorFor(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition())) {
             writeStateToLocalCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)))
@@ -1997,7 +1997,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 if (mpm.state() == MirrorPartitionState.FAILED && mpm.prevState() != null) {
                     MirrorPartitionState targetState = mpm.prevState();
                     MirrorStateWrite write = new MirrorStateWrite(i, targetState,
-                            mpm.lastPosition().epoch(), mpm.stateEpoch(), null, null, false);
+                            mpm.lastPosition().epoch(), mpm.stateEpoch(), null, null, false, 0);
                     if (isLocalCoordinatorFor(mirrorName, topicImage.id(), i)) {
                         localWrites.computeIfAbsent(topic, k -> new HashSet<>()).add(write);
                     } else {

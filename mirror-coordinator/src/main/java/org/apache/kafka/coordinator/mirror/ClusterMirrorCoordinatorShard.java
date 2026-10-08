@@ -317,7 +317,8 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                     CoordinatorResult<Void, CoordinatorRecord> result =
                             writePartitionState(mirrorName, tp, partition.state(),
                                     partition.leaderEpoch(), partition.stateEpoch(),
-                                    partition.errorMessage(), partition.nonRetryable());
+                                    partition.errorMessage(), partition.nonRetryable(),
+                                    partition.retryAttempt());
                     records.addAll(result.records());
                     int newEpoch = stateEpochMap.getOrDefault(
                             MirrorPartition.of(mirrorName, mirrorCache.getTopicId(topic), tp.partition()), 0);
@@ -340,7 +341,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
 
     private CoordinatorResult<Void, CoordinatorRecord> writePartitionState(
             String mirrorName, TopicPartition tp, MirrorPartitionState state,
-            int leaderEpoch, int expectedStateEpoch, String errorMessage, boolean nonRetryable
+            int leaderEpoch, int expectedStateEpoch, String errorMessage, boolean nonRetryable, int retryAttempt
     ) {
         MirrorPartition mp = MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
         if (leaderEpoch != -1 && leaderEpochMap.containsKey(mp) && leaderEpochMap.get(mp) > leaderEpoch) {
@@ -359,8 +360,10 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
         }
 
         MirrorPartitionMetadata existing = mirrorCache.getPartitionMetadata(mp);
+        int updatedRetryAttempt = retryAttempt == -1 ? existing.retryAttempt() : retryAttempt;
         mirrorCache.updatePartitionMetadata(mp,
                 new MirrorPartitionMetadata.Builder(existing)
+                        .withRetryAttempt(updatedRetryAttempt)
                         .withResolvedErrorInfo(state, errorMessage, nonRetryable, mirrorConfig.failedRetryMaxAttempts())
                         .build());
         maybeUpdateLeaderEpochMap(mp, leaderEpoch);

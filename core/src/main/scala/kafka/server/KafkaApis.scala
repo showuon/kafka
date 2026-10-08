@@ -4958,7 +4958,7 @@ class KafkaApis(val requestChannel: RequestChannel,
           new EpochOffset(part.lastMirrorEpoch(), part.lastMirrorOffset()) else null
         topicState.add(new MirrorStateWrite(part.partitionIndex(),
           MirrorPartitionState.fromValue(part.state()), part.leaderEpoch(), part.stateEpoch(),
-            lm, part.errorMessage(), part.nonRetryable()))
+            lm, part.errorMessage(), part.nonRetryable(), part.retryAttempt()))
       })
       mirrorState.put(topic.topicName(), topicState)
     })
