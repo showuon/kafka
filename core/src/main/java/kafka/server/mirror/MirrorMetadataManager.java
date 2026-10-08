@@ -909,6 +909,12 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                         onLocalWriteComplete(mirrorName, tp, targetState,  errorMessage, nonRetryable, partitionEx);
                     }));
                     return CompletableFuture.completedFuture(null);
+                }).exceptionally(ex -> {
+                    log.error("Failed to write mirror states to local coordinator for mirror {}", mirrorName, ex);
+                    localWrites.forEach((topic, writes) -> writes.forEach(write ->
+                        pendingStateTransitions.remove(new TopicPartition(topic, write.partition()))
+                    ));
+                    return null;
                 });
         }
 
@@ -921,6 +927,12 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                         onRemoteWriteComplete(mirrorName, tp, targetState, errorMessage, nonRetryable, partition);
                     }));
                     return CompletableFuture.completedFuture(null);
+                }).exceptionally(ex -> {
+                    log.error("Failed to write mirror states to remote coordinator for mirror {}", mirrorName, ex);
+                    remoteWrites.forEach((topic, writes) -> writes.forEach(write ->
+                        pendingStateTransitions.remove(new TopicPartition(topic, write.partition()))
+                    ));
+                    return null;
                 });
         }
     }
@@ -1003,6 +1015,10 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                         onLocalWriteComplete(mirrorName, tp, state, errorMessage, nonRetryable, partitionEx);
                     }));
                     return CompletableFuture.completedFuture(null);
+                }).exceptionally(ex -> {
+                    log.error("Failed to persist mirror state to local coordinator for partition {}", tp, ex);
+                    pendingStateTransitions.remove(tp);
+                    return null;
                 });
         } else {
             writeStateToRemoteCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)), Set.of())
@@ -1011,6 +1027,10 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                         onRemoteWriteComplete(mirrorName, tp, state, errorMessage, nonRetryable, partition);
                     }));
                     return CompletableFuture.completedFuture(null);
+                }).exceptionally(ex -> {
+                    log.error("Failed to persist mirror state to remote coordinator for partition {}", tp, ex);
+                    pendingStateTransitions.remove(tp);
+                    return null;
                 });
         }
     }
