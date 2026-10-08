@@ -301,11 +301,12 @@ class MirrorSourceSyncer {
                                     if (partition.leader == nodeId) {
                                         MirrorPartition key = new MirrorPartition(mirrorName, topicImage.id(),  partitionId);
                                         MirrorPartitionMetadata mpm = MirrorPartitionMetadata.orEmpty(mirrorCache.getPartitionMetadata(key));
-                                        if (mpm.state() == MirrorPartitionState.FAILED && mpm.retryAttempt() == MirrorPartitionMetadata.NON_RETRYABLE_ATTEMPT)
+                                        if (mpm.state() == MirrorPartitionState.FAILED && mpm.retryAttempt() == MirrorPartitionMetadata.NON_RETRYABLE_ATTEMPT) {
                                             log.debug("Skipping transition to FAILED state for partition {}-{} . Reason: Already in this state due to: {}.",
                                                     topic, partitionId, mpm.errorMessage());
-                                        else
+                                        } else {
                                             mirrorLeaderPartitions.add(new TopicPartition(topic, partitionId));
+                                        }
                                     }
                                 });
                             }
@@ -623,9 +624,9 @@ class MirrorSourceSyncer {
                             if (partition.leader == nodeId) {
                                 MirrorPartition key = new MirrorPartition(mirrorName, topicImage.id(), partitionId);
                                 MirrorPartitionMetadata mpm = MirrorPartitionMetadata.orEmpty(mirrorCache.getPartitionMetadata(key));
-                                if (mpm.state() == MirrorPartitionState.FAILED && mpm.retryAttempt() == MirrorPartitionMetadata.NON_RETRYABLE_ATTEMPT)
+                                if (mpm.state() == MirrorPartitionState.FAILED && mpm.retryAttempt() == MirrorPartitionMetadata.NON_RETRYABLE_ATTEMPT) {
                                     log.debug("Skipping transition to FAILED state for partition {}. Already in this state due to: {}", name, partition, mpm.errorMessage());
-                                else {
+                                } else {
                                     log.info("Detected topic {} deleted in source cluster {}, marking partitions as failed (non retryable).", name, mirrorName);
                                     metadataManager.transitionTo(mirrorName, Set.of(new TopicPartition(name, partitionId)),
                                             MirrorPartitionState.FAILED, "The source topic is deleted", true);
@@ -760,6 +761,10 @@ class MirrorSourceSyncer {
     }
 
     private void applyConfigurationChanges(Map<String, Map<String, String>> configsToChange) {
+        if (configsToChange.isEmpty()) {
+            return;
+        }
+
         log.debug("Applying configuration changes {}", configsToChange);
 
         var resources = configsToChange.entrySet().stream()
@@ -777,12 +782,10 @@ class MirrorSourceSyncer {
                 })
                 .collect(Collectors.toCollection(IncrementalAlterConfigsRequestData.AlterConfigsResourceCollection::new));
 
-        if (!resources.isEmpty()) {
-            var data = new IncrementalAlterConfigsRequestData()
-                    .setValidateOnly(false)
-                    .setResources(resources);
-            controllerClient.sendRequest(new IncrementalAlterConfigsRequest.Builder(data), new TimeoutHandler(log, topicConfigSyncError));
-        }
+        var data = new IncrementalAlterConfigsRequestData()
+                .setValidateOnly(false)
+                .setResources(resources);
+        controllerClient.sendRequest(new IncrementalAlterConfigsRequest.Builder(data), new TimeoutHandler(log, topicConfigSyncError));
     }
 
     /**
@@ -1033,14 +1036,14 @@ class MirrorSourceSyncer {
             log.debug("Describe ACLs response from remote cluster {}: {}", mirrorName, sourceAcls);
 
             List<MirrorUtils.AclRule> aclIncludeRules = mirrorConfig.aclIncludeRules();
-            var allRemoteAcls = sourceAcls.stream()
+            var allSourceAcls = sourceAcls.stream()
                     .filter(acl -> aclIncludeRules.stream().anyMatch(rule -> rule.matches(acl)))
                     .toList();
-            var aclChanges = detectAclChanges(allRemoteAcls);
+            var aclChanges = detectAclChanges(allSourceAcls);
             applyAclChanges(mirrorName, aclChanges);
         } catch (ExecutionException e) {
             if (e.getCause() instanceof SecurityDisabledException) {
-                log.debug("ACL sync skipped for mirror {}", mirrorName, e.getCause());
+                log.debug("ACL sync skipped for mirror {} because security is disabled", mirrorName);
             } else {
                 log.warn("Failed to describe ACLs for mirror {}", mirrorName, e);
                 aclSyncError.mark();
