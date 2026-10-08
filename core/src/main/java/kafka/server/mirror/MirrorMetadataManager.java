@@ -856,7 +856,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             MirrorStateWrite write = new MirrorStateWrite(tp.partition(), targetState,
                     mirrorCache.getLeaderEpoch(tp),
                     mirrorCache.getPartitionMetadata(mp).stateEpoch(),
-                    null, errorMessage, nonRetryable);
+                    null, errorMessage, -1, nonRetryable);
 
             if (isLocalCoordinatorFor(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition())) {
                 localWrites.computeIfAbsent(tp.topic(), k -> new HashSet<>()).add(write);
@@ -934,7 +934,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             mirrorCache.updatePartitionMetadata(mp,
                     new MirrorPartitionMetadata.Builder(existing)
                             // we must resolve the error info before state change because we'll set the prevState based on current state
-                            .withResolvedErrorInfo(state, errorMessage, nonRetryable, maxAttempts)
+                            .withResolvedErrorInfo(state, errorMessage, -1, nonRetryable, maxAttempts)
                             .withState(state)
                             .withStateEpoch(part.stateEpoch())
                             .build());
@@ -960,7 +960,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         var curState = mirrorCache.getPartitionMetadata(mp);
         int leaderEpoch = mirrorCache.getLeaderEpoch(tp);
         MirrorStateWrite write = new MirrorStateWrite(tp.partition(), state, leaderEpoch, curState.stateEpoch(),
-                null, errorMessage, nonRetryable);
+                null, errorMessage, -1, nonRetryable);
         if (isLocalCoordinatorFor(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition())) {
             writeStateToLocalCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)))
                 .thenCompose(data -> {
@@ -1151,7 +1151,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             writePositionFuture = coordinatorWriter.get().writeLastMirrorPositions(mirrorName, Map.of(tp, lastMirrorPosition));
         } else {
             writeStateToRemoteCoordinator(mirrorName,
-                Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), null, -1, -1, lastMirrorPosition, null, false))),
+                Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), null, -1, -1, lastMirrorPosition, null, -1, false))),
                 Set.of());
             writePositionFuture = CompletableFuture.completedFuture(null);
         }
@@ -1877,7 +1877,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         int stateEpoch = mirrorCache.getPartitionMetadata(mp).stateEpoch();
         int leaderEpoch = mirrorCache.getLeaderEpoch(tp);
         MirrorStateWrite write = new MirrorStateWrite(tp.partition(), state, leaderEpoch, stateEpoch,
-                null, curState.errorMessage(), curState.retryAttempt() == NON_RETRYABLE_ATTEMPT);
+                null, curState.errorMessage(), 0, curState.retryAttempt() == NON_RETRYABLE_ATTEMPT);
 
         if (isLocalCoordinatorFor(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition())) {
             writeStateToLocalCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)))
@@ -1997,7 +1997,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 if (mpm.state() == MirrorPartitionState.FAILED && mpm.prevState() != null) {
                     MirrorPartitionState targetState = mpm.prevState();
                     MirrorStateWrite write = new MirrorStateWrite(i, targetState,
-                            mpm.lastPosition().epoch(), mpm.stateEpoch(), null, null, false);
+                            mpm.lastPosition().epoch(), mpm.stateEpoch(), null, null, 0, false);
                     if (isLocalCoordinatorFor(mirrorName, topicImage.id(), i)) {
                         localWrites.computeIfAbsent(topic, k -> new HashSet<>()).add(write);
                     } else {

@@ -103,14 +103,15 @@ public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch
          * Otherwise, updates only the error message.
          */
         public Builder withResolvedErrorInfo(MirrorPartitionState newState, String errorMessage,
-                                             boolean nonRetryable, int maxRetryAttempts) {
+                                             int retryAttempt, boolean nonRetryable, int maxRetryAttempts) {
+            if (retryAttempt != -1) {
+                this.retryAttempt = retryAttempt;
+            }
             if (newState == MirrorPartitionState.FAILED) {
                 MirrorPartitionMetadata current = build();
-                int attempt = current.nextAttempt(nonRetryable, maxRetryAttempts);
-                MirrorPartitionState previousState = current.resolvePrevState(this.state);
                 this.errorMessage = errorMessage;
-                this.retryAttempt = attempt;
-                this.prevState = previousState;
+                this.retryAttempt = current.nextAttempt(nonRetryable, maxRetryAttempts);
+                this.prevState = current.resolvePrevState(this.state);
             } else if ((this.state != MirrorPartitionState.FAILED && this.state != newState)
                     || newState == MirrorPartitionState.STOPPED
                     || newState == MirrorPartitionState.PAUSED) {
