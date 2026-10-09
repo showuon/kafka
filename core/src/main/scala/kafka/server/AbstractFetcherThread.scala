@@ -315,34 +315,36 @@ abstract class AbstractFetcherThread(name: String,
    * state, persists the new source leader into the mirror cache, and triggers a metadata refresh
    * for partitions where the source does not provide a valid epoch in the fetch response.
    */
-  private def reconcileSourceLeaderEpoch(partitionToData: Map[TopicPartition, PartitionData]): Unit = inLock(partitionMapLock) {
+  private def reconcileSourceLeaderEpoch(partitionToData: Map[TopicPartition, PartitionData]): Unit = {
     val newStates: java.util.Map[TopicPartition, PartitionFetchState] = new util.HashMap[TopicPartition, PartitionFetchState]()
     val partitionsToBeRemoved: java.util.Set[TopicPartition] = new util.HashSet[TopicPartition]()
-    partitionStates.partitionStateMap.asScala
-      .foreach { case (topicPartition, currentFetchState) =>
-        partitionToData.get(topicPartition) match {
-          case Some(partitionData) =>
-            val newCurrentLeaderEpoch = partitionData.currentLeader().leaderEpoch()
-            if (newCurrentLeaderEpoch > -1) {
-              info(s"Updating source leader epoch for mirror partition $topicPartition: " +
-                s"${currentFetchState.currentLeaderEpoch} -> $newCurrentLeaderEpoch")
-              val leaderNode: Optional[Node] = if (leader.lastSeenEndpoints().isEmpty)
-                Optional.empty()
-              else
-                Optional.of(leader.lastSeenEndpoints().get(partitionData.currentLeader().leaderId()))
-              updateSourceClusterLeader(currentFetchState.mirrorName(), topicPartition, leaderNode, newCurrentLeaderEpoch)
-              newStates.put(topicPartition, new PartitionFetchState(currentFetchState.topicId, currentFetchState.fetchOffset(), currentFetchState.lag,
-                newCurrentLeaderEpoch, currentFetchState.delay, currentFetchState.state(), currentFetchState.lastFetchedEpoch(),
-                currentFetchState.dueMs(), currentFetchState.mirrorName()))
-            } else {
-              // The returned leaderEpoch is < 0, which means the source cluster doesn't support fetch API v9
-              // so we need to refresh source cluster metadata and retry
-              partitionsToBeRemoved.add(topicPartition)
-            }
-          case None => newStates.put(topicPartition, currentFetchState)
+    inLock(partitionMapLock) {
+      partitionStates.partitionStateMap.asScala
+        .foreach { case (topicPartition, currentFetchState) =>
+          partitionToData.get(topicPartition) match {
+            case Some(partitionData) =>
+              val newCurrentLeaderEpoch = partitionData.currentLeader().leaderEpoch()
+              if (newCurrentLeaderEpoch > -1) {
+                info(s"Updating source leader epoch for mirror partition $topicPartition: " +
+                  s"${currentFetchState.currentLeaderEpoch} -> $newCurrentLeaderEpoch")
+                val leaderNode: Optional[Node] = if (leader.lastSeenEndpoints().isEmpty)
+                  Optional.empty()
+                else
+                  Optional.of(leader.lastSeenEndpoints().get(partitionData.currentLeader().leaderId()))
+                updateSourceClusterLeader(currentFetchState.mirrorName(), topicPartition, leaderNode, newCurrentLeaderEpoch)
+                newStates.put(topicPartition, new PartitionFetchState(currentFetchState.topicId, currentFetchState.fetchOffset(), currentFetchState.lag,
+                  newCurrentLeaderEpoch, currentFetchState.delay, currentFetchState.state(), currentFetchState.lastFetchedEpoch(),
+                  currentFetchState.dueMs(), currentFetchState.mirrorName()))
+              } else {
+                // The returned leaderEpoch is < 0, which means the source cluster doesn't support fetch API v9
+                // so we need to refresh source cluster metadata and retry
+                partitionsToBeRemoved.add(topicPartition)
+              }
+            case None => newStates.put(topicPartition, currentFetchState)
+          }
         }
-      }
-    partitionStates.set(newStates)
+      partitionStates.set(newStates)
+    }
     if (!partitionsToBeRemoved.isEmpty) {
       warn(s"Source leader epoch not available in fetch response, refreshing source metadata for partitions $partitionsToBeRemoved")
       removeFetcherForPartitions(partitionsToBeRemoved.asScala)
@@ -499,6 +501,7 @@ abstract class AbstractFetcherThread(name: String,
     val divergingEndOffsets = mutable.Map.empty[TopicPartition, EpochEndOffset]
     val mirrorPartitionsWithNewEpoch = mutable.Map.empty[TopicPartition, PartitionData]
     val mirrorPartitionsWithNewLeader = mutable.Map.empty[TopicPartition, PartitionData]
+    val partitionsNeedsWaitForFollowers = mutable.Set.empty[TopicPartition]
     var responseData: Map[TopicPartition, FetchData] = Map.empty
     var fetchException: Option[Throwable] = None
 
@@ -621,8 +624,11 @@ abstract class AbstractFetcherThread(name: String,
                       markPartitionFailed(topicPartition, s"Unexpected error: ${t.getMessage}")
                   }
                 case Errors.OFFSET_OUT_OF_RANGE =>
-                  if (!handleOutOfRangeError(topicPartition, currentFetchState, fetchPartitionData.currentLeaderEpoch))
+                  val (success, truncated) = handleOutOfRangeError(topicPartition, currentFetchState, fetchPartitionData.currentLeaderEpoch)
+                  if (!success)
                     partitionsWithError += topicPartition
+                  if (truncated)
+                    partitionsNeedsWaitForFollowers += topicPartition
 
                 case Errors.UNKNOWN_LEADER_EPOCH =>
                   debug(s"Remote broker has a smaller leader epoch for partition $topicPartition than " +
@@ -634,7 +640,7 @@ abstract class AbstractFetcherThread(name: String,
                     if (onPartitionFenced(topicPartition, fetchPartitionData.currentLeaderEpoch))
                       partitionsWithError += topicPartition
                   } else {
-                    // cluster mirroring: outaded epoch due to initial fetch or source leader election
+                    // cluster mirroring: outdated epoch due to initial fetch or source leader election
                     mirrorPartitionsWithNewEpoch += topicPartition -> partitionData
                     mirrorPartitionsWithNewLeader += topicPartition -> partitionData
                   }
@@ -683,6 +689,8 @@ abstract class AbstractFetcherThread(name: String,
       }
     }
 
+    if (partitionsNeedsWaitForFollowers.nonEmpty)
+      maybeWaitForFollowersCaughtUp(partitionsNeedsWaitForFollowers)
     if (divergingEndOffsets.nonEmpty)
       truncateOnFetchResponse(divergingEndOffsets)
     if (mirrorPartitionsWithNewEpoch.nonEmpty)
@@ -972,29 +980,26 @@ abstract class AbstractFetcherThread(name: String,
    */
   private def handleOutOfRangeError(topicPartition: TopicPartition,
                                     fetchState: PartitionFetchState,
-                                    leaderEpochInRequest: Optional[Integer]): Boolean = {
+                                    leaderEpochInRequest: Optional[Integer]): (Boolean, Boolean) = {
     try {
       val (newFetchState, truncated) = fetchOffsetAndTruncate(topicPartition, fetchState.topicId().toScala, fetchState.currentLeaderEpoch)
       partitionStates.updateAndMoveToEnd(topicPartition, newFetchState)
       info(s"Current offset ${fetchState.fetchOffset} for partition $topicPartition is " +
         s"out of range, which typically implies a leader change. Reset fetch offset to ${newFetchState.fetchOffset}")
-      if (truncated) {
-        maybeWaitForFollowersCaughtUp(Set(topicPartition))
-      }
-      true
+      (true, truncated)
     } catch {
       case _: FencedLeaderEpochException =>
-        onPartitionFenced(topicPartition, leaderEpochInRequest)
+        (onPartitionFenced(topicPartition, leaderEpochInRequest), false)
 
       case e@(_: UnknownTopicOrPartitionException |
               _: UnknownLeaderEpochException |
               _: NotLeaderOrFollowerException) =>
         info(s"Could not fetch offset for $topicPartition due to error: ${e.getMessage}")
-        false
+        (false, false)
 
       case e: Throwable =>
         error(s"Error getting offset for partition $topicPartition", e)
-        false
+        (false, false)
     }
   }
 
