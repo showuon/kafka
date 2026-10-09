@@ -899,40 +899,40 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         // Phase 2: Write to local coordinator and handle completion
         if (!localWrites.isEmpty()) {
             writeStateToLocalCoordinator(mirrorName, localWrites)
-                .thenCompose(data -> {
+                .whenComplete((data, ex) -> {
+                    if (ex != null) {
+                        log.error("Failed to write mirror states to local coordinator for mirror {}", mirrorName, ex);
+                        localWrites.forEach((topic, writes) -> writes.forEach(write ->
+                            readAndRetryTransition(mirrorName, new TopicPartition(topic, write.partition()),
+                                targetState, errorMessage, nonRetryable)));
+                        return;
+                    }
                     data.topics().forEach(topic -> topic.partitions().forEach(partition -> {
                         TopicPartition tp = new TopicPartition(topic.topicName(), partition.partitionIndex());
                         Throwable partitionEx = null;
                         if (partition.errorCode() != Errors.NONE.code()) {
                             partitionEx = Errors.forCode(partition.errorCode()).exception();
                         }
-                        onLocalWriteComplete(mirrorName, tp, targetState,  errorMessage, nonRetryable, partitionEx);
+                        onLocalWriteComplete(mirrorName, tp, targetState, errorMessage, nonRetryable, partitionEx);
                     }));
-                    return CompletableFuture.completedFuture(null);
-                }).exceptionally(ex -> {
-                    log.error("Failed to write mirror states to local coordinator for mirror {}", mirrorName, ex);
-                    localWrites.forEach((topic, writes) -> writes.forEach(write ->
-                        pendingStateTransitions.remove(new TopicPartition(topic, write.partition()))
-                    ));
-                    return null;
                 });
         }
 
         // Phase 3: Write to remote coordinator and handle completion
         if (!remoteWrites.isEmpty()) {
             writeStateToRemoteCoordinator(mirrorName, remoteWrites, Set.of())
-                .thenCompose(res -> {
+                .whenComplete((res, ex) -> {
+                    if (ex != null) {
+                        log.error("Failed to write mirror states to remote coordinator for mirror {}", mirrorName, ex);
+                        remoteWrites.forEach((topic, writes) -> writes.forEach(write ->
+                            readAndRetryTransition(mirrorName, new TopicPartition(topic, write.partition()),
+                                targetState, errorMessage, nonRetryable)));
+                        return;
+                    }
                     res.data().topics().forEach(topic -> topic.partitions().forEach(partition -> {
                         TopicPartition tp = new TopicPartition(topic.topicName(), partition.partitionIndex());
                         onRemoteWriteComplete(mirrorName, tp, targetState, errorMessage, nonRetryable, partition);
                     }));
-                    return CompletableFuture.completedFuture(null);
-                }).exceptionally(ex -> {
-                    log.error("Failed to write mirror states to remote coordinator for mirror {}", mirrorName, ex);
-                    remoteWrites.forEach((topic, writes) -> writes.forEach(write ->
-                        pendingStateTransitions.remove(new TopicPartition(topic, write.partition()))
-                    ));
-                    return null;
                 });
         }
     }
@@ -976,7 +976,8 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             int maxAttempts = new ClusterMirrorConfig(brokerConfig).failedRetryMaxAttempts();
             mirrorCache.updatePartitionMetadata(mp,
                     new MirrorPartitionMetadata.Builder(existing)
-                            // we must resolve the error info before state change because we'll set the prevState based on current state
+                            // We must resolve the error info before state change because
+                            // we'll set the prevState based on current state
                             .withResolvedErrorInfo(state, errorMessage, -1, nonRetryable, maxAttempts)
                             .withState(state)
                             .withStateEpoch(part.stateEpoch())
@@ -1006,7 +1007,12 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 null, errorMessage, -1, nonRetryable);
         if (isLocalCoordinatorFor(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition())) {
             writeStateToLocalCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)))
-                .thenCompose(data -> {
+                .whenComplete((data, ex) -> {
+                    if (ex != null) {
+                        log.error("Failed to persist mirror state to local coordinator for partition {}", tp, ex);
+                        readAndRetryTransition(mirrorName, tp, state, errorMessage, nonRetryable);
+                        return;
+                    }
                     data.topics().forEach(topic -> topic.partitions().forEach(partition -> {
                         Throwable partitionEx = null;
                         if (partition.errorCode() != Errors.NONE.code()) {
@@ -1014,27 +1020,28 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                         }
                         onLocalWriteComplete(mirrorName, tp, state, errorMessage, nonRetryable, partitionEx);
                     }));
-                    return CompletableFuture.completedFuture(null);
-                }).exceptionally(ex -> {
-                    log.error("Failed to persist mirror state to local coordinator for partition {}", tp, ex);
-                    pendingStateTransitions.remove(tp);
-                    return null;
                 });
         } else {
             writeStateToRemoteCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)), Set.of())
-                .thenCompose(res -> {
+                .whenComplete((res, ex) -> {
+                    if (ex != null) {
+                        log.error("Failed to persist mirror state to remote coordinator for partition {}", tp, ex);
+                        readAndRetryTransition(mirrorName, tp, state, errorMessage, nonRetryable);
+                        return;
+                    }
                     res.data().topics().forEach(topic -> topic.partitions().forEach(partition -> {
                         onRemoteWriteComplete(mirrorName, tp, state, errorMessage, nonRetryable, partition);
                     }));
-                    return CompletableFuture.completedFuture(null);
-                }).exceptionally(ex -> {
-                    log.error("Failed to persist mirror state to remote coordinator for partition {}", tp, ex);
-                    pendingStateTransitions.remove(tp);
-                    return null;
                 });
         }
     }
 
+    /**
+     * Re-reads partition state from the coordinator to refresh cached epochs,
+     * then re-attempts the write via {@link #persistState}. Read failures are
+     * retried on a backoff schedule. This is the common recovery path for
+     * write failures caused by stale epochs or transient coordinator errors.
+     */
     private void readAndRetryTransition(String mirrorName, TopicPartition tp, MirrorPartitionState state,
                                         String errorMessage, boolean nonRetryable) {
         Map<String, Set<Integer>> partitions = Map.of(tp.topic(), Set.of(tp.partition()));
