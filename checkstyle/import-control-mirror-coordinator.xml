@@ -46,10 +46,12 @@
         <subpackage name="mirror">
             <allow pkg="com.google.re2j"/>
             <allow pkg="org.apache.kafka.clients" />
+            <allow pkg="org.apache.kafka.common.acl" />
             <allow pkg="org.apache.kafka.common.annotation" />
             <allow pkg="org.apache.kafka.common.config" />
             <allow pkg="org.apache.kafka.common.message" />
             <allow pkg="org.apache.kafka.common.network" />
+            <allow pkg="org.apache.kafka.common.resource" />
             <allow pkg="org.apache.kafka.common.internals" />
             <allow pkg="org.apache.kafka.common.requests" />
             <allow pkg="org.apache.kafka.coordinator.common" />

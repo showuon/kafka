@@ -1923,7 +1923,7 @@ class ReplicaManager(val config: KafkaConfig,
                  _: InconsistentTopicIdException) =>
           createLogReadResult(e)
         case e: SourceMetadataNotAvailableException =>
-          partition.getMirrorName().ifPresent(mirrorName => mirrorManager.foreach(mmm => mmm.scheduleSourceTopicMetadataRefresh(mirrorName)))
+          partition.getMirrorName().ifPresent(mirrorName => mirrorManager.foreach(mmm => mmm.scheduleOnceSourceTopicMetadataSync(mirrorName)))
           createLogReadResult(e)
         case e: OffsetOutOfRangeException =>
           handleOffsetOutOfRangeError(tp, params, fetchInfo, adjustedMaxBytes, minOneMessage, log, fetchTimeMs, e)
@@ -2705,13 +2705,13 @@ class ReplicaManager(val config: KafkaConfig,
     }
 
     if (pendingMetadataPartitions.nonEmpty) {
-      mirrorManager.foreach(_.scheduleSourceTopicMetadataRefresh(mirrorName))
+      mirrorManager.foreach(_.scheduleOnceSourceTopicMetadataSync(mirrorName))
       mirrorManager.foreach(_.transitionTo(mirrorName, pendingMetadataPartitions.asJava,
         MirrorPartitionState.FAILED, "Failed to get source metadata", false))
     }
 
     if (errorPartitionAndOffsets.nonEmpty) {
-      mirrorManager.foreach(_.scheduleSourceTopicMetadataRefresh(mirrorName))
+      mirrorManager.foreach(_.scheduleOnceSourceTopicMetadataSync(mirrorName))
       mirrorManager.foreach(_.transitionTo(mirrorName, errorPartitionAndOffsets.asJava,
         MirrorPartitionState.FAILED, "Failed to create fetcher", false))
     }

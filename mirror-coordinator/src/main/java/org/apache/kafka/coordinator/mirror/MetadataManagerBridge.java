@@ -38,7 +38,7 @@ import java.util.function.Function;
  *   the CoordinatorReader/CoordinatorWriter callbacks.
  */
 public interface MetadataManagerBridge {
-    void onBrokerStartup(
+    void onCoordStartup(
         Function<MirrorPartition, Integer> coordPartFinder,
         CoordinatorReader coordinatorReader,
         CoordinatorWriter coordinatorWriter
@@ -48,7 +48,7 @@ public interface MetadataManagerBridge {
 
     void onShardUnloaded(int coordPartition, int coordPartitionCount);
 
-    void onBrokerShutdown();
+    void onCoordShutdown();
 
     // Delegating the read through the runtime ensures that a shard still loading
     // surfaces as {@code COORDINATOR_LOAD_IN_PROGRESS} instead of returning
