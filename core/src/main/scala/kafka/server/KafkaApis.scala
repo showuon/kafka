@@ -4265,7 +4265,6 @@ class KafkaApis(val requestChannel: RequestChannel,
     authHelper.authorize(request.context, operation, CLUSTER, CLUSTER_NAME)
   }
 
-
   def handleStartMirrorTopics(request: RequestChannel.Request): CompletableFuture[Unit] = {
     if (!MirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
       logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring start mirror topics request")
@@ -4500,8 +4499,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       }
     }
   }
-
-
+  
   def handleDeleteClusterMirror(request: RequestChannel.Request): Unit = {
     if (!MirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
       logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring delete mirror request")

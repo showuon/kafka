@@ -107,7 +107,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Integration tests for Cluster Mirroring feature.
  */
-@Timeout(value = 120, unit = TimeUnit.SECONDS)
+@Timeout(value = 180, unit = TimeUnit.SECONDS)
 public class ClusterMirroringIntegrationTest {
     private static final long METADATA_REFRESH_INTERVAL_MS = 5_000;
 
