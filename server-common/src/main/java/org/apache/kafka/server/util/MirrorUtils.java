@@ -16,40 +16,13 @@
  */
 package org.apache.kafka.server.util;
 
-import org.apache.kafka.common.acl.AclBinding;
-import org.apache.kafka.common.acl.AclOperation;
-import org.apache.kafka.common.acl.AclPermissionType;
-import org.apache.kafka.common.errors.InvalidRegularExpression;
-import org.apache.kafka.common.resource.ResourceType;
-
 import com.google.re2j.Pattern;
-import com.google.re2j.PatternSyntaxException;
 
 import java.util.List;
-import java.util.Locale;
 import java.util.stream.Collectors;
 
 public final class MirrorUtils {
     private MirrorUtils() {}
-
-    /**
-     * Validates that each pattern in the list is a valid RE2J regular expression.
-     *
-     * @param patterns the list of regex pattern strings to validate
-     * @throws InvalidRegularExpression if any pattern is invalid
-     */
-    public static void validateRe2jPatterns(List<String> patterns) {
-        for (String p : patterns) {
-            String pattern = p.trim();
-            if (!pattern.isEmpty()) {
-                try {
-                    Pattern.compile(pattern);
-                } catch (PatternSyntaxException e) {
-                    throw new InvalidRegularExpression("Invalid pattern: " + pattern);
-                }
-            }
-        }
-    }
 
     /**
      * Compiles a list of regex pattern strings into a single {@link Pattern} by joining them with {@code |}.
@@ -63,120 +36,5 @@ public final class MirrorUtils {
                 .filter(s -> !s.isEmpty())
                 .collect(Collectors.joining("|"));
         return combined.isEmpty() ? null : Pattern.compile("^(" + combined + ")$");
-    }
-
-    /**
-     * Parses a list of ACL rule strings into a list of {@link AclRule} instances.
-     *
-     * @param rules the list of rule strings in semicolon-separated format
-     * @return parsed list of AclRule instances
-     */
-    public static List<AclRule> parseAclRules(List<String> rules) {
-        return rules.stream()
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .map(AclRule::parse)
-                .toList();
-    }
-
-    /**
-     * Represents an ACL include rule parsed from the semicolon-separated format:
-     * resourceType;resourceName;operation;permissionType;principal
-     *
-     * Each field uses * as a wildcard (match all). The resourceName and principal
-     * fields support regex patterns. Trailing wildcard fields can be omitted.
-     *
-     * Valid resourceType values: TOPIC, GROUP, CLUSTER, TRANSACTIONAL_ID, DELEGATION_TOKEN, USER.
-     * Valid operation values: READ, WRITE, CREATE, DELETE, ALTER, DESCRIBE, CLUSTER_ACTION,
-     * DESCRIBE_CONFIGS, ALTER_CONFIGS, IDEMPOTENT_WRITE, ALL, etc.
-     * Valid permissionType values: ALLOW, DENY.
-     *
-     * Examples:
-     * <pre>
-     * *                                       - match all ACLs (default)
-     * TOPIC;orders.*                          - all ACLs for topics matching orders.*
-     * *;*;*;*;User:alice                      - all ACLs for principal User:alice
-     * *;*;*;*;User:app-.*                     - all ACLs for principals matching User:app-.*
-     * TOPIC;*;READ;ALLOW                      - all topic READ/ALLOW ACLs
-     * GROUP;consumer-.*;READ;ALLOW;User:bob   - READ/ALLOW ACLs on groups matching consumer-.* for User:bob
-     * </pre>
-     *
-     * Config usage example:
-     * <pre>
-     * mirror.acls.include=TOPIC;orders.*, *;*;*;*;User:alice
-     * </pre>
-     *
-     * @param resourceType the resource type to match, or null for wildcard
-     * @param resourceNamePattern regex pattern for the resource name, or null for wildcard
-     * @param operation the ACL operation to match, or null for wildcard
-     * @param permissionType the ACL permission type to match, or null for wildcard
-     * @param principalPattern regex pattern for the principal, or null for wildcard
-     */
-    public record AclRule(
-            ResourceType resourceType,
-            Pattern resourceNamePattern,
-            AclOperation operation,
-            AclPermissionType permissionType,
-            Pattern principalPattern
-    ) {
-        /**
-         * Parses a semicolon-separated rule string into an AclRule.
-         *
-         * @param rule the rule string (e.g., "TOPIC;orders.*;READ;ALLOW;User:alice")
-         * @return the parsed AclRule
-         */
-        public static AclRule parse(String rule) {
-            String[] parts = rule.trim().split(";", -1);
-
-            ResourceType resourceType = null;
-            Pattern resourceNamePattern = null;
-            AclOperation operation = null;
-            AclPermissionType permissionType = null;
-            Pattern principalPattern = null;
-
-            if (parts.length >= 1 && !"*".equals(parts[0].trim())) {
-                resourceType = ResourceType.valueOf(parts[0].trim().toUpperCase(Locale.ROOT));
-            }
-            if (parts.length >= 2 && !"*".equals(parts[1].trim())) {
-                resourceNamePattern = Pattern.compile(parts[1].trim());
-            }
-            if (parts.length >= 3 && !"*".equals(parts[2].trim())) {
-                operation = AclOperation.valueOf(parts[2].trim().toUpperCase(Locale.ROOT));
-            }
-            if (parts.length >= 4 && !"*".equals(parts[3].trim())) {
-                permissionType = AclPermissionType.valueOf(parts[3].trim().toUpperCase(Locale.ROOT));
-            }
-            if (parts.length >= 5 && !"*".equals(parts[4].trim())) {
-                principalPattern = Pattern.compile(parts[4].trim());
-            }
-
-            return new AclRule(resourceType, resourceNamePattern, operation, permissionType, principalPattern);
-        }
-
-        /**
-         * Tests whether the given AclBinding matches this rule.
-         * A null field acts as a wildcard and matches any value.
-         *
-         * @param binding the ACL binding to test
-         * @return true if the binding matches all non-wildcard fields of this rule
-         */
-        public boolean matches(AclBinding binding) {
-            if (resourceType != null && binding.pattern().resourceType() != resourceType) {
-                return false;
-            }
-            if (resourceNamePattern != null && !resourceNamePattern.matcher(binding.pattern().name()).matches()) {
-                return false;
-            }
-            if (operation != null && binding.entry().operation() != operation) {
-                return false;
-            }
-            if (permissionType != null && binding.entry().permissionType() != permissionType) {
-                return false;
-            }
-            if (principalPattern != null && !principalPattern.matcher(binding.entry().principal()).matches()) {
-                return false;
-            }
-            return true;
-        }
     }
 }
