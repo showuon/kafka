@@ -115,19 +115,19 @@ abstract class AbstractFetcherThread(name: String,
     Map.empty
   }
 
-  protected def updateSourceClusterLeader(mirrorName: String, partition: TopicPartition, leaderNode: Optional[Node], leaderEpoch: Int): Unit = { }
-
   protected def addFetcherForPartitions(partitionAndOffsets: Map[TopicPartition, InitialFetchState]): Unit = {}
 
-  protected def refreshSourceClusterMetadata(mirrorPartitions: Set[TopicPartition], reason: String): Unit = {}
+  protected def updateMirrorSourceLeader(mirrorName: String, partition: TopicPartition, leaderNode: Optional[Node], leaderEpoch: Int): Unit = { }
 
-  protected def maybeWaitForFollowersCaughtUp(mirrorPartitions: Set[TopicPartition]): Unit = {}
+  protected def refreshMirrorSourceMetadata(mirrorPartitions: Set[TopicPartition], reason: String): Unit = {}
 
-  protected def handlePartitionFailed(topicPartition: TopicPartition, reason: String): Unit = {}
+  protected def maybeWaitForMirrorConvergence(mirrorPartitions: Set[TopicPartition]): Unit = {}
+
+  protected def handleMirrorPartitionFailed(topicPartition: TopicPartition, reason: String): Unit = {}
 
   protected def handleMirrorLeaderEpochExceeded(mirrorName: String, topicPartition: TopicPartition): Unit = {}
 
-  protected def leaderEpochFromSource(tp: TopicPartition): Option[Int] = {
+  protected def mirrorLeaderEpochFromSource(tp: TopicPartition): Option[Int] = {
     Option.empty
   }
 
@@ -178,7 +178,7 @@ abstract class AbstractFetcherThread(name: String,
       if (mirrorName.nonEmpty && isRunning && fetchException.nonEmpty) {
         try {
           partitions.foreach(markPartitionRemoved)
-          refreshSourceClusterMetadata(partitions.toSet, s"Fetch error: ${fetchException.get.getMessage}")
+          refreshMirrorSourceMetadata(partitions.toSet, s"Fetch error: ${fetchException.get.getMessage}")
         } catch {
           case t: Throwable =>
             warn(s"Failed to re-resolve source leader for mirror $mirrorName", t)
@@ -205,7 +205,7 @@ abstract class AbstractFetcherThread(name: String,
             val currentLeaderEpoch = if (mirrorName.isBlank)
               state.currentLeaderEpoch
             else
-              leaderEpochFromSource(tp).getOrElse(state.currentLeaderEpoch())
+              mirrorLeaderEpochFromSource(tp).getOrElse(state.currentLeaderEpoch())
             partitionsWithEpochs += tp -> new EpochData()
               .setPartition(tp.partition)
               .setCurrentLeaderEpoch(currentLeaderEpoch)
@@ -286,11 +286,11 @@ abstract class AbstractFetcherThread(name: String,
     if (!partitionsNeedsRefreshMetadata.isEmpty) {
       info(s"Refreshing source metadata for mirror name $mirrorName with partitions: $partitionsNeedsRefreshMetadata")
       removeFetcherForPartitions(partitionsNeedsRefreshMetadata.asScala)
-      refreshSourceClusterMetadata(partitionsNeedsRefreshMetadata.asScala, "Truncation requires source metadata refresh")
+      refreshMirrorSourceMetadata(partitionsNeedsRefreshMetadata.asScala, "Truncation requires source metadata refresh")
     }
     if (!partitionsNeedsWaitForFollowers.isEmpty) {
       info(s"Waiting for followers to catch up with the leader for partitions: $partitionsNeedsWaitForFollowers")
-      maybeWaitForFollowersCaughtUp(partitionsNeedsWaitForFollowers.asScala)
+      maybeWaitForMirrorConvergence(partitionsNeedsWaitForFollowers.asScala)
     }
   }
 
@@ -305,7 +305,7 @@ abstract class AbstractFetcherThread(name: String,
     }
     if (!partitionsNeedsWaitForFollowers.isEmpty) {
       info(s"Waiting for followers to catch up with the leader for partitions: $partitionsNeedsWaitForFollowers")
-      maybeWaitForFollowersCaughtUp(partitionsNeedsWaitForFollowers.asScala)
+      maybeWaitForMirrorConvergence(partitionsNeedsWaitForFollowers.asScala)
     }
   }
 
@@ -315,7 +315,7 @@ abstract class AbstractFetcherThread(name: String,
    * state, persists the new source leader into the mirror cache, and triggers a metadata refresh
    * for partitions where the source does not provide a valid epoch in the fetch response.
    */
-  private def reconcileSourceLeaderEpoch(partitionToData: Map[TopicPartition, PartitionData]): Unit = {
+  private def reconcileMirrorSourceEpoch(partitionToData: Map[TopicPartition, PartitionData]): Unit = {
     val newStates: java.util.Map[TopicPartition, PartitionFetchState] = new util.HashMap[TopicPartition, PartitionFetchState]()
     val partitionsToBeRemoved: java.util.Set[TopicPartition] = new util.HashSet[TopicPartition]()
     inLock(partitionMapLock) {
@@ -331,7 +331,7 @@ abstract class AbstractFetcherThread(name: String,
                   Optional.empty()
                 else
                   Optional.of(leader.lastSeenEndpoints().get(partitionData.currentLeader().leaderId()))
-                updateSourceClusterLeader(currentFetchState.mirrorName(), topicPartition, leaderNode, newCurrentLeaderEpoch)
+                updateMirrorSourceLeader(currentFetchState.mirrorName(), topicPartition, leaderNode, newCurrentLeaderEpoch)
                 newStates.put(topicPartition, new PartitionFetchState(currentFetchState.topicId, currentFetchState.fetchOffset(), currentFetchState.lag,
                   newCurrentLeaderEpoch, currentFetchState.delay, currentFetchState.state(), currentFetchState.lastFetchedEpoch(),
                   currentFetchState.dueMs(), currentFetchState.mirrorName()))
@@ -348,7 +348,7 @@ abstract class AbstractFetcherThread(name: String,
     if (!partitionsToBeRemoved.isEmpty) {
       warn(s"Source leader epoch not available in fetch response, refreshing source metadata for partitions $partitionsToBeRemoved")
       removeFetcherForPartitions(partitionsToBeRemoved.asScala)
-      refreshSourceClusterMetadata(partitionsToBeRemoved.asScala, "Source leader epoch not available in fetch response")
+      refreshMirrorSourceMetadata(partitionsToBeRemoved.asScala, "Source leader epoch not available in fetch response")
     }
   }
 
@@ -359,7 +359,7 @@ abstract class AbstractFetcherThread(name: String,
    * Also updates the mirror cache with the new source leader metadata. Falls back to a full
    * source metadata refresh when the fetch response does not include endpoint information.
    */
-  private def reassignMirrorFetchersForNewSourceLeader(partitionToData: Map[TopicPartition, PartitionData]): Unit = {
+  private def reassignMirrorFetchers(partitionToData: Map[TopicPartition, PartitionData]): Unit = {
     var newStates: Map[TopicPartition, InitialFetchState] = scala.collection.mutable.Map.empty[TopicPartition, InitialFetchState]
       // Snapshot under lock to avoid ConcurrentModificationException from concurrent addFetcherForPartitions
       inLock(partitionMapLock) {
@@ -375,7 +375,7 @@ abstract class AbstractFetcherThread(name: String,
                   val brokerEndpoint = new BrokerEndPoint(leaderNode.get.id(), leaderNode.get.host, leaderNode.get.port)
                   newStates += topicPartition -> InitialFetchState(currentFetchState.topicId().toScala, brokerEndpoint,
                     partitionData.currentLeader().leaderEpoch(), currentFetchState.fetchOffset(), currentFetchState.mirrorName())
-                  updateSourceClusterLeader(currentFetchState.mirrorName(), topicPartition, leaderNode, partitionData.currentLeader().leaderEpoch())
+                  updateMirrorSourceLeader(currentFetchState.mirrorName(), topicPartition, leaderNode, partitionData.currentLeader().leaderEpoch())
                 }
               case _ =>
             }
@@ -391,7 +391,7 @@ abstract class AbstractFetcherThread(name: String,
       warn(s"No endpoint info available for source leader reassignment, refreshing source metadata for partitions $stalePartitions")
       stalePartitions.foreach(markPartitionRemoved)
       removeFetcherForPartitions(stalePartitions)
-      refreshSourceClusterMetadata(stalePartitions, "Endpoint info not available in fetch response")
+      refreshMirrorSourceMetadata(stalePartitions, "Endpoint info not available in fetch response")
     }
   }
 
@@ -490,7 +490,7 @@ abstract class AbstractFetcherThread(name: String,
     }
   }
 
-  private[server] def getPartitionLag(topicPartition: TopicPartition, leaderHW: Long, nextOffset: Long, mirrorName: String): Long = {
+  private[server] def partitionLag(topicPartition: TopicPartition, leaderHW: Long, nextOffset: Long, mirrorName: String): Long = {
     Math.max(0L, leaderHW - nextOffset)
   }
 
@@ -560,7 +560,7 @@ abstract class AbstractFetcherThread(name: String,
                        * truncation and append after the FETCH request was handled. See KAFKA-18723 for more details.
                        *
                        * For read-only leaders (mirror leaders), currentFetchState.currentLeaderEpoch tracks the source
-                       * cluster's leader epoch (maintained by reconcileSourceLeaderEpoch when errors occur), ensuring proper
+                       * cluster's leader epoch (maintained by reconcileMirrorSourceEpoch when errors occur), ensuring proper
                        * validation of fetched batches from the source cluster.
                        *
                        * Use the current leader epoch to validate batches fetched from the leader.
@@ -578,7 +578,7 @@ abstract class AbstractFetcherThread(name: String,
                         val validBytes = logAppendInfo.validBytes
                         val nextOffset = if (validBytes > 0) logAppendInfo.lastOffset + 1 else currentFetchState.fetchOffset
 
-                        val lag = getPartitionLag(topicPartition, partitionData.highWatermark(), nextOffset, currentFetchState.mirrorName())
+                        val lag = partitionLag(topicPartition, partitionData.highWatermark(), nextOffset, currentFetchState.mirrorName())
                         fetcherLagStats.getAndMaybePut(topicPartition).lag = lag
 
                         // ReplicaDirAlterThread may have removed topicPartition from the partitionStates after processing the partition data
@@ -617,7 +617,7 @@ abstract class AbstractFetcherThread(name: String,
                       error(s"Error while processing data for mirror partition $topicPartition " +
                         s"at offset ${currentFetchState.fetchOffset}, triggering metadata update.", e)
                       markPartitionRemoved(topicPartition)
-                      refreshSourceClusterMetadata(Set(topicPartition), e.getMessage)
+                      refreshMirrorSourceMetadata(Set(topicPartition), e.getMessage)
                     case t: Throwable =>
                       error(s"Unexpected error occurred while processing data for partition $topicPartition " +
                         s"at offset ${currentFetchState.fetchOffset}", t)
@@ -690,13 +690,13 @@ abstract class AbstractFetcherThread(name: String,
     }
 
     if (partitionsNeedsWaitForFollowers.nonEmpty)
-      maybeWaitForFollowersCaughtUp(partitionsNeedsWaitForFollowers)
+      maybeWaitForMirrorConvergence(partitionsNeedsWaitForFollowers)
     if (divergingEndOffsets.nonEmpty)
       truncateOnFetchResponse(divergingEndOffsets)
     if (mirrorPartitionsWithNewEpoch.nonEmpty)
-      reconcileSourceLeaderEpoch(mirrorPartitionsWithNewEpoch)
+      reconcileMirrorSourceEpoch(mirrorPartitionsWithNewEpoch)
     if (mirrorPartitionsWithNewLeader.nonEmpty && isRunning)
-      reassignMirrorFetchersForNewSourceLeader(mirrorPartitionsWithNewLeader)
+      reassignMirrorFetchers(mirrorPartitionsWithNewLeader)
     if (partitionsWithError.nonEmpty) {
       handlePartitionsWithErrors(partitionsWithError, "processFetchRequest", fetchException)
     }
@@ -730,7 +730,7 @@ abstract class AbstractFetcherThread(name: String,
 
   private def markPartitionFailed(topicPartition: TopicPartition, reason: String): Unit = {
     markPartitionRemoved(topicPartition)
-    handlePartitionFailed(topicPartition, reason)
+    handleMirrorPartitionFailed(topicPartition, reason)
   }
 
   /**

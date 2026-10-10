@@ -881,7 +881,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                                                 || root instanceof UnsupportedVersionException) {
                                             log.warn("The source cluster doesn't support DescribeClusterMirror API. " +
                                                     "Replication will be one-way without failback.");
-                                            replicaManagerSupplier.get().maybeTruncateForLeaderEpoch(
+                                            replicaManagerSupplier.get().truncateForMirrorAlignment(
                                                     Map.of(topicPartition, new EpochOffset(-1, -1)), callback);
                                         } else {
                                             log.warn("Failed to truncate {} to last known position", topicPartition, error);
@@ -894,7 +894,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                                         log.info("No epoch returned for {}, mirroring from scratch", topicPartition);
                                         offsetEpochs.put(topicPartition, new EpochOffset(-1, -1));
                                     }
-                                    replicaManagerSupplier.get().maybeTruncateForLeaderEpoch(
+                                    replicaManagerSupplier.get().truncateForMirrorAlignment(
                                             offsetEpochs, callback);
                                 });
                     } catch (Exception e) {
@@ -918,7 +918,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     }
 
     private void handleUleRecovery(String mirrorName, TopicPartition tp) {
-        replicaManagerSupplier.get().awaitReplicaConvergence(tp)
+        replicaManagerSupplier.get().waitForMirrorReplicaConvergence(tp)
                 .thenRun(() -> transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.MIRRORING, null, false));
     }
 
