@@ -168,6 +168,13 @@ public class TopicConfig {
         "thread to trigger election periodically (default is 5 minutes). Please run <code>kafka-leader-election.sh</code> with <code>unclean</code> option " +
          "to trigger the unclean leader election immediately if needed.</p>";
 
+    public static final String MIRROR_UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG = "mirror.unclean.leader.election.enable";
+    public static final String MIRROR_UNCLEAN_LEADER_ELECTION_ENABLE_DOC = "When enabled, this property allows the mirror to support " +
+        "unclean leader elections. During log truncation, it forces the mirror to wait for all assigned replicas, not just active ISR " +
+        "members, to complete truncation. While this guarantees absolute cross-cluster consistency, a single stuck replica will block " +
+        "the partition indefinitely. Conversely, when disabled, the mirror will bypass recovery entirely during a ULE, immediately " +
+        "dropping the partition into a FAILED state and halting replication.";
+
     public static final String MIN_IN_SYNC_REPLICAS_CONFIG = "min.insync.replicas";
     public static final String MIN_IN_SYNC_REPLICAS_DOC = "Specifies the <i>minimum</i> number of in-sync replicas (including the leader) " +
         "required for a write to succeed when a producer sets <code>acks</code> to \"all\" (or \"-1\"). In the <code>acks=all</code> " +
@@ -218,10 +225,6 @@ public class TopicConfig {
         "or equal to the broker's timestamp, with the maximum allowable difference determined by the value set in this " +
         "configuration. If message.timestamp.type=CreateTime, the message will be rejected if the difference in " +
         "timestamps exceeds this specified threshold. This configuration is ignored if message.timestamp.type=LogAppendTime.";
-
-    public static final String MIRROR_UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG = "mirror.unclean.leader.election.enable";
-    public static final String MIRROR_UNCLEAN_LEADER_ELECTION_ENABLE_DOC = "When enabled, " +
-            "LastMirrorEpoch log truncation waits for all replicas (not just ISR members) to join the ISR and complete the truncation.";
 
     /**
      * @deprecated down-conversion is not possible in Apache Kafka 4.0 and newer, hence this configuration is a no-op,
