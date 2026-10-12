@@ -26,13 +26,13 @@ import org.apache.kafka.common.EpochOffset;
  * @param lastPosition   the last mirrored epoch and offset, or {@link EpochOffset#EMPTY} if not yet recorded
  * @param errorMessage   the failure reason when in FAILED state, or null otherwise
  * @param retryAttempt   the retry count in FAILED state, 0 if not failed,
- *                       or {@link #NON_RETRYABLE_ATTEMPT} if non-retryable
+ *                       or {@link #NON_RETRYABLE_ERROR} if non-retryable
  * @param prevState      the state before entering FAILED, or null if not applicable
  */
 public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch, EpochOffset lastPosition,
                                       String errorMessage, int retryAttempt, MirrorPartitionState prevState) {
     public static final MirrorPartitionMetadata EMPTY = new MirrorPartitionMetadata(MirrorPartitionState.UNKNOWN, 0, EpochOffset.EMPTY, null, 0, null);
-    public static final int NON_RETRYABLE_ATTEMPT = -1;
+    public static final int NON_RETRYABLE_ERROR = -1;
 
     public static MirrorPartitionMetadata orEmpty(MirrorPartitionMetadata mpm) {
         return mpm != null ? mpm : EMPTY;
@@ -166,8 +166,8 @@ public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch
     }
 
     public int nextAttempt(boolean nonRetryable, int maxAttempts) {
-        if (nonRetryable || retryAttempt == NON_RETRYABLE_ATTEMPT) {
-            return NON_RETRYABLE_ATTEMPT;
+        if (nonRetryable || retryAttempt == NON_RETRYABLE_ERROR) {
+            return NON_RETRYABLE_ERROR;
         }
         return retryAttempt != 0 ? Math.min(maxAttempts, retryAttempt + 1) : 1;
     }

@@ -133,7 +133,7 @@ import scala.jdk.javaapi.CollectionConverters;
 
 import static org.apache.kafka.clients.CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG;
 import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
-import static org.apache.kafka.server.mirror.MirrorPartitionMetadata.NON_RETRYABLE_ATTEMPT;
+import static org.apache.kafka.server.mirror.MirrorPartitionMetadata.NON_RETRYABLE_ERROR;
 
 /**
  * Reacts to KRaft metadata changes, decides mirror partition state transitions,
@@ -797,7 +797,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         if (currentState == MirrorPartitionState.FAILED) {
             MirrorPartition mp = MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
             MirrorPartitionMetadata mpm = mirrorCache.getPartitionMetadata(mp);
-            transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED, mpm.errorMessage(), mpm.retryAttempt() == NON_RETRYABLE_ATTEMPT);
+            transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.FAILED, mpm.errorMessage(), mpm.retryAttempt() == NON_RETRYABLE_ERROR);
         } else if (stopRequested) {
             if (currentState != MirrorPartitionState.STOPPED) {
                 transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.STOPPING, null, false);
@@ -1234,7 +1234,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         MirrorPartition mp = MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
         MirrorPartitionMetadata mpm = mirrorCache.getPartitionMetadata(mp);
         int attempt = mpm.retryAttempt() != 0 ? mpm.retryAttempt() : 1;
-        if (attempt == NON_RETRYABLE_ATTEMPT) {
+        if (attempt == NON_RETRYABLE_ERROR) {
             log.debug("Skipping retry for partition {} (non-retryable error)", tp);
             return;
         }
@@ -1942,18 +1942,18 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         int stateEpoch = mirrorCache.getPartitionMetadata(mp).stateEpoch();
         int leaderEpoch = mirrorCache.getLeaderEpoch(tp);
         MirrorStateWrite write = new MirrorStateWrite(tp.partition(), state, leaderEpoch, stateEpoch,
-                null, curState.errorMessage(), 0, curState.retryAttempt() == NON_RETRYABLE_ATTEMPT);
+                null, curState.errorMessage(), 0, curState.retryAttempt() == NON_RETRYABLE_ERROR);
 
         if (isLocalCoordinatorFor(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition())) {
             writeStateToLocalCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)))
                     .whenComplete((data, ex) -> onLocalWriteComplete(
                             mirrorName, tp, state, curState.errorMessage(),
-                            curState.retryAttempt() == NON_RETRYABLE_ATTEMPT, ex));
+                            curState.retryAttempt() == NON_RETRYABLE_ERROR, ex));
         } else {
             writeStateToRemoteCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)), Set.of())
                     .thenAccept(res -> res.data().topics().forEach(topic -> topic.partitions().forEach(partition ->
                             onRemoteWriteComplete(mirrorName, tp, state, curState.errorMessage(),
-                                    curState.retryAttempt() == NON_RETRYABLE_ATTEMPT, partition))));
+                                    curState.retryAttempt() == NON_RETRYABLE_ERROR, partition))));
         }
     }
 
