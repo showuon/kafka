@@ -277,6 +277,7 @@ public class LogConfig extends AbstractConfig {
     public final boolean compact;
     public final boolean delete;
     public final boolean uncleanLeaderElectionEnable;
+    public final boolean mirrorUncleanLeaderElectionEnable;
     public final int minInSyncReplicas;
     public final BrokerCompressionType compressionType;
     public final Optional<Compression> compression;
@@ -288,8 +289,6 @@ public class LogConfig extends AbstractConfig {
     public final long messageTimestampAfterMaxMs;
     public final List<String> leaderReplicationThrottledReplicas;
     public final List<String> followerReplicationThrottledReplicas;
-
-    public final boolean mirrorSupportUncleanLeaderElection;
 
     private final RemoteLogConfig remoteLogConfig;
     private final int maxMessageSize;
@@ -330,6 +329,7 @@ public class LogConfig extends AbstractConfig {
                 .toList()
                 .contains(TopicConfig.CLEANUP_POLICY_DELETE);
         this.uncleanLeaderElectionEnable = getBoolean(TopicConfig.UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG);
+        this.mirrorUncleanLeaderElectionEnable = getBoolean(TopicConfig.MIRROR_UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG);
         this.minInSyncReplicas = getInt(TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG);
         this.compressionType = BrokerCompressionType.forName(getString(TopicConfig.COMPRESSION_TYPE_CONFIG));
         this.compression = getCompression();
@@ -339,7 +339,6 @@ public class LogConfig extends AbstractConfig {
         this.messageTimestampAfterMaxMs = getLong(TopicConfig.MESSAGE_TIMESTAMP_AFTER_MAX_MS_CONFIG);
         this.leaderReplicationThrottledReplicas = Collections.unmodifiableList(getList(QuotaConfig.LEADER_REPLICATION_THROTTLED_REPLICAS_CONFIG));
         this.followerReplicationThrottledReplicas = Collections.unmodifiableList(getList(QuotaConfig.FOLLOWER_REPLICATION_THROTTLED_REPLICAS_CONFIG));
-        this.mirrorSupportUncleanLeaderElection = getBoolean(TopicConfig.MIRROR_UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG);
 
         remoteLogConfig = new RemoteLogConfig(this);
     }
@@ -650,6 +649,7 @@ public class LogConfig extends AbstractConfig {
                 ", compact=" + compact +
                 ", delete=" + delete +
                 ", uncleanLeaderElectionEnable=" + uncleanLeaderElectionEnable +
+                ", mirrorUncleanLeaderElectionEnable=" + mirrorUncleanLeaderElectionEnable +
                 ", minInSyncReplicas=" + minInSyncReplicas +
                 ", compressionType='" + compressionType + '\'' +
                 ", preallocate=" + preallocate +

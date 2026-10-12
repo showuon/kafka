@@ -188,8 +188,8 @@ class MirrorFetcherThread(name: String,
 
   override protected def maybeWaitForFollowersCaughtUp(mirrorPartitions: Set[TopicPartition]): Unit = {
     removeFetcherForPartitions(mirrorPartitions)
-    val uleEnabledPartitions = mirrorPartitions.filter(tp => replicaMgr.getLog(tp).get.config().mirrorSupportUncleanLeaderElection).toSet
-    val uleDisabledPartitions = mirrorPartitions.filter(tp => !replicaMgr.getLog(tp).get.config().mirrorSupportUncleanLeaderElection).toSet
+    val uleEnabledPartitions = mirrorPartitions.filter(tp => replicaMgr.getLog(tp).get.config().mirrorUncleanLeaderElectionEnable).toSet
+    val uleDisabledPartitions = mirrorPartitions.filter(tp => !replicaMgr.getLog(tp).get.config().mirrorUncleanLeaderElectionEnable).toSet
     if (uleEnabledPartitions.nonEmpty) {
       replicaMgr.mirrorManager.foreach(_.transitionTo(mirrorName, uleEnabledPartitions.asJava,
         MirrorPartitionState.ULE_RECOVERY, null, false))
