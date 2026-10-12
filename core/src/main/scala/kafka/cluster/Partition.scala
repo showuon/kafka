@@ -1284,7 +1284,7 @@ class Partition(val topicPartition: TopicPartition,
 
     // Guard: wait for all replicas when unclean leader election is enabled
     if (requireFullReplicaConvergence && assignmentState.replicationFactor > partitionState.isr.size) {
-        info(s"Not completing truncation because 'mirror.support.unclean.leader.election' is enabled and" +
+        info(s"Not completing truncation because mirror.unclean.leader.election.enable is enabled and" +
           s" partition ISR doesn't contain all replicas (ISR=${partitionState.isr}, replicationFactor=${assignmentState.replicationFactor})")
         return false
     }

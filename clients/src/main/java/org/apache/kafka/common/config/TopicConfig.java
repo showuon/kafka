@@ -219,8 +219,8 @@ public class TopicConfig {
         "configuration. If message.timestamp.type=CreateTime, the message will be rejected if the difference in " +
         "timestamps exceeds this specified threshold. This configuration is ignored if message.timestamp.type=LogAppendTime.";
 
-    public static final String MIRROR_SUPPORT_UNCLEAN_LEADER_ELECTION_CONFIG = "mirror.support.unclean.leader.election";
-    public static final String MIRROR_SUPPORT_UNCLEAN_LEADER_ELECTION_DOC = "When enabled, " +
+    public static final String MIRROR_UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG = "mirror.unclean.leader.election.enable";
+    public static final String MIRROR_UNCLEAN_LEADER_ELECTION_ENABLE_DOC = "When enabled, " +
             "LastMirrorEpoch log truncation waits for all replicas (not just ISR members) to join the ISR and complete the truncation.";
 
     /**

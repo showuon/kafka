@@ -251,7 +251,7 @@ class ClusterMirroringCompTest(MirrorUtils, Test):
             self.dest_kafka, self.dest_client_node, "my-mirror", mirror_cfg, "my-topic")
 
         dest_broker0 = self.dest_kafka.nodes[0]
-        enable_ule_support_cmd = "%s --entity-type topics --entity-name %s --alter --add-config mirror.support.unclean.leader.election=true" % \
+        enable_ule_support_cmd = "%s --entity-type topics --entity-name %s --alter --add-config mirror.unclean.leader.election.enable=true" % \
                                  (self.dest_kafka.kafka_configs_cmd_with_optional_security_settings(dest_broker0, force_use_zk_connection=False), "my-topic")
         dest_broker0.account.ssh(enable_ule_support_cmd)
 
