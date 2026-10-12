@@ -188,8 +188,8 @@ class MirrorFetcherThread(name: String,
 
   override protected def maybeWaitForFollowersCaughtUp(mirrorPartitions: Set[TopicPartition]): Unit = {
     removeFetcherForPartitions(mirrorPartitions)
-    val uleEnabledPartitions = mirrorPartitions.filter(tp => replicaMgr.getLog(tp).get.config().mirrorSupportUncleanLeaderElection).toSet
-    val uleDisabledPartitions = mirrorPartitions.filter(tp => !replicaMgr.getLog(tp).get.config().mirrorSupportUncleanLeaderElection).toSet
+    val uleEnabledPartitions = mirrorPartitions.filter(tp => replicaMgr.getLog(tp).get.config().mirrorUncleanLeaderElectionEnable).toSet
+    val uleDisabledPartitions = mirrorPartitions.filter(tp => !replicaMgr.getLog(tp).get.config().mirrorUncleanLeaderElectionEnable).toSet
     if (uleEnabledPartitions.nonEmpty) {
       replicaMgr.mirrorManager.foreach(_.transitionTo(mirrorName, uleEnabledPartitions.asJava,
         MirrorPartitionState.ULE_RECOVERY, null, false))
@@ -198,7 +198,7 @@ class MirrorFetcherThread(name: String,
       // move the state to terminal FAILED state.
       replicaMgr.mirrorManager.foreach(_.transitionTo(mirrorName, uleDisabledPartitions.asJava,
         MirrorPartitionState.FAILED, "Detected log truncation during mirroring. This implies unclean leader election " +
-          "in source cluster, but mirror.support.unclean.leader.election is disabled. Moving to FAILED state.", true))
+          "in source cluster, but mirror.unclean.leader.election.enable is disabled. Moving to FAILED state.", true))
     }
   }
 

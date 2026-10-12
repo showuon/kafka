@@ -89,7 +89,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 
-import static org.apache.kafka.common.config.TopicConfig.MIRROR_SUPPORT_UNCLEAN_LEADER_ELECTION_CONFIG;
+import static org.apache.kafka.common.config.TopicConfig.MIRROR_UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG;
 import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
 import static org.apache.kafka.server.config.ReplicationConfigs.DEFAULT_REPLICATION_FACTOR_CONFIG;
 import static org.apache.kafka.server.mirror.MirrorPartitionMetadata.NON_RETRYABLE_ERROR;
@@ -447,13 +447,13 @@ public class ClusterMirroringIntegrationTest {
         srcCluster.brokers().get(srcLeader).replicaManager()
                 .getLog(new TopicPartition(topic, 0)).get().truncateTo(20);
 
-        // Verify it stays in MIRRORING because mirror.support.unclean.leader.election is disabled
+        // Verify it stays in MIRRORING because ULE support is disabled
         waitForMirrorLagZero(dstAdmin, mirror, topic);
 
-        // Enable mirror.support.unclean.leader.election
+        // Enable ULE support
         dstAdmin.incrementalAlterConfigs(Map.of(topicResource, List.of(
                 new AlterConfigOp(
-                        new ConfigEntry(MIRROR_SUPPORT_UNCLEAN_LEADER_ELECTION_CONFIG, "true"),
+                        new ConfigEntry(MIRROR_UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG, "true"),
                         AlterConfigOp.OpType.SET)))).all().get();
 
         // Simulate another unclean leader election with log truncation on source
