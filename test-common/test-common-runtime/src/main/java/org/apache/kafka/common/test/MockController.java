@@ -140,9 +140,9 @@ public class MockController implements Controller {
         throw new UnsupportedOperationException();
     }
 
-    public CompletableFuture<BumpLeaderEpochsResponseData> bumpLeaderEpoch(
+    public CompletableFuture<BumpLeaderEpochsResponseData> bumpLeaderEpochs(
             ControllerRequestContext context,
-            Map<String, Map<Integer, Integer>> partitionLeaderEpochs) {
+            Map<String, Map<Integer, Integer>> leaderEpochs) {
         throw new UnsupportedOperationException();
     }
 

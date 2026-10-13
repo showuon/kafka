@@ -143,7 +143,7 @@ class ControllerApis(
         case ApiKeys.RESUME_MIRROR_TOPICS => handleResumeMirrorTopics(request)
         case ApiKeys.RECOVER_MIRROR_TOPICS => handleRecoverMirrorTopics(request)
         case ApiKeys.DELETE_CLUSTER_MIRROR => handleDeleteClusterMirror(request)
-        case ApiKeys.BUMP_LEADER_EPOCHS => handleBumpLeaderEpoch(request)
+        case ApiKeys.BUMP_LEADER_EPOCHS => handleBumpLeaderEpochs(request)
         case _ => throw new ApiException(s"Unsupported ApiKey ${request.context.header.apiKey}")
       }
 
@@ -1404,20 +1404,20 @@ class ControllerApis(
     CompletableFuture.completedFuture[Unit](())
   }
 
-  def handleBumpLeaderEpoch(request: RequestChannel.Request): CompletableFuture[Unit] = {
+  def handleBumpLeaderEpochs(request: RequestChannel.Request): CompletableFuture[Unit] = {
     authHelper.authorizeClusterOperation(request, CLUSTER_ACTION)
     val bumpLeaderEpochRequest = request.body[BumpLeaderEpochsRequest]
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
-    val partitionLeaderEpochs: util.Map[String, util.Map[Integer, Integer]] = new util.HashMap[String, util.Map[Integer, Integer]]()
+    val leaderEpochs: util.Map[String, util.Map[Integer, Integer]] = new util.HashMap[String, util.Map[Integer, Integer]]()
     bumpLeaderEpochRequest.data().topics().forEach( topic => {
       val map = new util.HashMap[Integer, Integer]()
       topic.partitions().forEach(par => {
         map.put(par.partitionIndex(), par.minLeaderEpoch())
       })
-      partitionLeaderEpochs.put(topic.topicName(), map)
+      leaderEpochs.put(topic.topicName(), map)
     })
-    controller.bumpLeaderEpoch(context, partitionLeaderEpochs)
+    controller.bumpLeaderEpochs(context, leaderEpochs)
       .handle[Unit] { (response, exception) =>
         logger.debug("Bump leader epoch response: " + response + " exception: " + exception)
         if (exception != null) {

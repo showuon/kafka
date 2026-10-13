@@ -1016,17 +1016,17 @@ public class ReplicationControlManager {
         return ApiError.NONE;
     }
 
-    public ControllerResult<BumpLeaderEpochsResponseData> bumpLeaderEpochs(Map<String, Map<Integer, Integer>> partitionLeaderEpochs) {
+    public ControllerResult<BumpLeaderEpochsResponseData> bumpLeaderEpochs(Map<String, Map<Integer, Integer>> leaderEpochs) {
         List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
-        for (Entry<String, Map<Integer, Integer>> partitionLeaderEpoch : partitionLeaderEpochs.entrySet()) {
+        for (Entry<String, Map<Integer, Integer>> partitionLeaderEpoch : leaderEpochs.entrySet()) {
             String topicName = partitionLeaderEpoch.getKey();
-            Map<Integer, Integer> leaderEpochs = partitionLeaderEpoch.getValue();
+            Map<Integer, Integer> epochs = partitionLeaderEpoch.getValue();
             Uuid topicId = topicsByName.get(topicName);
             TopicControlInfo info = topics.get(topicId);
-            leaderEpochs.forEach((partitionId, leaderEpoch) -> {
+            epochs.forEach((partitionId, epoch) -> {
                 PartitionRegistration partition = info.parts.get(partitionId);
                 // Skip if the current epoch already exceeds the requested value
-                if (partition.leaderEpoch <= leaderEpoch) {
+                if (partition.leaderEpoch <= epoch) {
                     PartitionChangeBuilder builder = new PartitionChangeBuilder(
                             partition,
                             info.topicId(),
@@ -1035,12 +1035,12 @@ public class ReplicationControlManager {
                             featureControl.metadataVersionOrThrow(),
                             getTopicEffectiveMinIsr(topicName)
                     )
-                            .setTargetLeaderEpoch(leaderEpochs.getOrDefault(partitionId, NO_PARTITION_LEADER_EPOCH))
+                            .setTargetLeaderEpoch(epochs.getOrDefault(partitionId, NO_PARTITION_LEADER_EPOCH))
                             .setDefaultDirProvider(clusterDescriber);
                     builder.build().ifPresent(records::add);
-                    log.debug("Updating partition {} leader epoch for topic {} from {} to {}: {}", partitionId, topicName, partition.leaderEpoch, leaderEpoch, records);
+                    log.debug("Updating partition {} leader epoch for topic {} from {} to {}: {}", partitionId, topicName, partition.leaderEpoch, epoch, records);
                 } else {
-                    log.debug("Skipping partition {} leader epoch update for topic {} from {} to {}", partitionId, topicName, partition.leaderEpoch, leaderEpoch);
+                    log.debug("Skipping partition {} leader epoch update for topic {} from {} to {}", partitionId, topicName, partition.leaderEpoch, epoch);
                 }
             });
         }

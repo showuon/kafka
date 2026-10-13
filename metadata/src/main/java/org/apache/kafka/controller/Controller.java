@@ -212,9 +212,9 @@ public interface Controller extends AclMutator, AutoCloseable {
             long brokerMetadataOffset
     );
 
-    CompletableFuture<BumpLeaderEpochsResponseData> bumpLeaderEpoch(
+    CompletableFuture<BumpLeaderEpochsResponseData> bumpLeaderEpochs(
             ControllerRequestContext context,
-            Map<String, Map<Integer, Integer>> partitionLeaderEpochs
+            Map<String, Map<Integer, Integer>> leaderEpochs
     );
 
     /**

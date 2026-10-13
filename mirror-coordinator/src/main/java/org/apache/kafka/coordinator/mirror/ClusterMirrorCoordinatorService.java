@@ -192,7 +192,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
 
         log.info("Starting up");
         try {
-            mirrorManager.onBrokerStartup(
+            mirrorManager.onCoordStartup(
                 this::partitionFor,
                 this::readPartitionStates,
                 new MetadataManagerBridge.CoordinatorWriter() {
@@ -243,9 +243,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
             log.info("Shutting down before the service was initialized");
         }
         log.info("Shutting down");
-        // Close source Admin clients shutdown as they may hold
-        // pending operations and stop graceful shutdown
-        mirrorManager.onBrokerShutdown();
+        mirrorManager.onCoordShutdown();
         try {
             scheduler.shutdown();
         } catch (InterruptedException e) {

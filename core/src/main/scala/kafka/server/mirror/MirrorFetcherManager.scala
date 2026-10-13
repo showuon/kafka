@@ -45,7 +45,7 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
                            metadataCache: MetadataCache,
                            mirrorCache: Option[MirrorMetadataCache] = None)
     extends AbstractFetcherManager[MirrorFetcherThread](
-      name = "MirrorFetcherManager id=" + brokerConfig.brokerId,
+      name = "MirrorFetcherManager brokerId=" + brokerConfig.brokerId,
       clientId = "MirrorReplica",
       numFetchers = brokerConfig.mirrorConfig.numReplicaFetchers) {
   private lazy val mirrorFetcherThreadMap = new mutable.HashMap[MirrorFetcherKey, MirrorFetcherThread]

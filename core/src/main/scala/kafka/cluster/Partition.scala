@@ -344,7 +344,6 @@ class Partition(val topicPartition: TopicPartition,
   @volatile var assignmentState: AssignmentState = SimpleAssignmentState(Seq.empty)
 
   // Mutable state for truncation protocol used for Cluster Mirroring.
-  // Latched by maybeCompleteTruncation and cleared by completeTruncationCallbacks.
   @volatile private var onCompleteCallback: Optional[Consumer[TopicPartition]] = Optional.empty()
   @volatile private var requireFullReplicaConvergence: Boolean = false
 
@@ -571,10 +570,6 @@ class Partition(val topicPartition: TopicPartition,
    * Returns true if this node is currently leader for the Partition.
    */
   def isLeader: Boolean = leaderReplicaIdOpt.contains(localBrokerId)
-
-  private def shouldThrowSourceMetadataException(sourceEpochOpt: Optional[Integer]): Boolean = {
-    getMirrorName().isPresent && isLeader && sourceEpochOpt.isEmpty
-  }
 
   def leaderIdIfLocal: Option[Int] = {
     leaderReplicaIdOpt.filter(_ == localBrokerId)
@@ -835,7 +830,7 @@ class Partition(val topicPartition: TopicPartition,
       partitionEpoch = partitionState.partitionEpoch
       leaderReplicaIdOpt = Some(localBrokerId)
 
-      maybeCompleteReplicaConvergence(leaderLog)
+      maybeCompleteMirrorConvergence(leaderLog)
       // We may need to increment high watermark since ISR could be down to 1.
       (maybeIncrementLeaderHW(leaderLog, currentTimeMs = currentTimeMs), isNewLeader)
     }
@@ -966,7 +961,7 @@ class Partition(val topicPartition: TopicPartition,
       // leaderIsrUpdateLock to prevent adding new hw to invalid log.
       inReadLock(leaderIsrUpdateLock) {
         leaderLogIfLocal.exists(leaderLog => {
-          maybeCompleteReplicaConvergence(leaderLog, followerFetchTimeMs)
+          maybeCompleteMirrorConvergence(leaderLog, followerFetchTimeMs)
           maybeIncrementLeaderHW(leaderLog, followerFetchTimeMs)
         })
       }
@@ -1237,40 +1232,29 @@ class Partition(val topicPartition: TopicPartition,
   }
 
   /**
-   * Attempts to complete log truncation for a mirror partition by
-   * verifying that all replicas have converged with the leader.
+   * Checks whether all relevant replicas have converged to or below the
+   * leader's log end offset after a mirror partition truncation. If they
+   * have, invokes {@code onCompleteCallback} so the partition can
+   * transition to its next state.
    *
-   * Because the log truncation always truncates as a batch( no partially truncated
-   * batch is possible), there is no need to wait for all replicas caught up before truncating.
-   *
-   * This method's only job is to wait until every relevant replica has
-   * itself converged to less or equal to the leader's log end offset,
-   * then invoke the {@code onCompleteCallback} to signal that the partition
-   * is ready to transition to its next state. "Relevant" replicas are the
-   * ISR by default, or all assigned replicas when {@code waitForAllReplicas}
-   * is set (used when unclean leader election is enabled).
-   *
-   * When the partition has no follower replicas (single node cluster), the
-   * callback is invoked immediately and the method returns {@code true},
-   * because there are no replica fetch requests that would otherwise drive
-   * convergence checks forward.
+   * "Relevant" means ISR members by default, or all assigned replicas
+   * when {@code waitForAllReplicas} is true (unclean leader election).
+   * On a single-node cluster (no followers), the callback fires
+   * immediately.
    *
    * @param leaderLog           the leader's unified log
-   * @param currentTimeMs       the current time in milliseconds
-   * @param waitForAllReplicas  if true, require all assigned replicas (not
-   *                            just the ISR) to catch up before completing;
-   *                            used when unclean leader election is enabled
-   * @param onCompleteCallback  callback invoked when truncation is fully
-   *                            complete and the partition can move to its
-   *                            next state; if absent and no prior callback
-   *                            was registered, the method returns false
-   * @return true if truncation completed (callbacks invoked), false if
-   *         still waiting for replicas or no callback was registered
+   * @param currentTimeMs       current time in milliseconds
+   * @param waitForAllReplicas  require all assigned replicas, not just ISR
+   * @param onCompleteCallback  fired once convergence is complete; if
+   *                            absent and none was previously registered,
+   *                            the method returns false
+   * @return true if convergence completed, false if still waiting or no
+   *         callback registered
    */
-  def maybeCompleteReplicaConvergence(leaderLog: UnifiedLog,
-                                      currentTimeMs: Long = time.milliseconds,
-                                      waitForAllReplicas: Boolean = false,
-                                      onCompleteCallback: Optional[Consumer[TopicPartition]] = Optional.empty()): Boolean = {
+  def maybeCompleteMirrorConvergence(leaderLog: UnifiedLog,
+                                     currentTimeMs: Long = time.milliseconds,
+                                     waitForAllReplicas: Boolean = false,
+                                     onCompleteCallback: Optional[Consumer[TopicPartition]] = Optional.empty()): Boolean = {
     // Put callbacks and flags into instance state
     if (onCompleteCallback.isPresent) {
       this.onCompleteCallback = onCompleteCallback
@@ -1298,7 +1282,7 @@ class Partition(val topicPartition: TopicPartition,
     // Single node: no followers to wait for, complete immediately
     if (remoteReplicasMap.isEmpty) {
       info(s"Completing truncation immediately for $topicPartition: no follower replicas present")
-      completeTruncationCallbacks()
+      completeMirrorTruncationCallbacks()
       return true
     }
 
@@ -1323,12 +1307,12 @@ class Partition(val topicPartition: TopicPartition,
       return false
     }
 
-    // leader truncated and all replicas caught up to the new LEO
-    completeTruncationCallbacks()
+    // Leader truncated and all replicas caught up to the new LEO
+    completeMirrorTruncationCallbacks()
     true
   }
 
-  private def completeTruncationCallbacks(): Unit = {
+  private def completeMirrorTruncationCallbacks(): Unit = {
     onCompleteCallback.ifPresent(callback => {
       callback.accept(topicPartition)
       this.onCompleteCallback = Optional.empty()
@@ -1693,7 +1677,7 @@ class Partition(val topicPartition: TopicPartition,
       }
 
       if (epochEndOffset.endOffset == UNDEFINED_EPOCH_OFFSET || epochEndOffset.leaderEpoch == UNDEFINED_EPOCH) {
-        if (shouldThrowSourceMetadataException(sourceLeaderEpochOpt))
+        if (getMirrorName().isPresent && isLeader && sourceLeaderEpochOpt.isEmpty)
           throw new SourceMetadataNotAvailableException("Could not determine the end offset of the last fetched epoch " +
             s"$lastFetchedEpoch because source cluster metadata is not yet available")
         else
@@ -2137,7 +2121,7 @@ class Partition(val topicPartition: TopicPartition,
 
       // we may need to increment high watermark since ISR could be down to 1
       leaderLogIfLocal.exists(log => {
-        maybeCompleteReplicaConvergence(log)
+        maybeCompleteMirrorConvergence(log)
         maybeIncrementLeaderHW(log)
       })
     }
