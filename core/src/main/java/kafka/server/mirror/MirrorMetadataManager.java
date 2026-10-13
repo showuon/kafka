@@ -24,7 +24,6 @@ import kafka.server.mirror.MirrorSourceSyncer.SourceTopicMetadata;
 import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.Admin;
-import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.ClusterMirrorDescription;
 import org.apache.kafka.clients.admin.ClusterMirrorListing;
 import org.apache.kafka.clients.admin.DescribeClusterMirrorsOptions;
@@ -40,7 +39,6 @@ import org.apache.kafka.common.errors.CoordinatorLoadInProgressException;
 import org.apache.kafka.common.errors.FencedLeaderEpochException;
 import org.apache.kafka.common.errors.FencedStateEpochException;
 import org.apache.kafka.common.errors.InvalidRegularExpression;
-import org.apache.kafka.common.errors.MirrorConfigNotAvailableException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.message.BumpLeaderEpochsRequestData;
 import org.apache.kafka.common.message.DeleteClusterMirrorRequestData;
@@ -100,7 +98,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -115,7 +112,6 @@ import java.util.stream.Collectors;
 
 import scala.jdk.javaapi.CollectionConverters;
 
-import static org.apache.kafka.clients.CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG;
 import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
 import static org.apache.kafka.server.mirror.MirrorPartitionMetadata.NON_RETRYABLE_ERROR;
 
@@ -201,29 +197,6 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     @Override
     public String name() {
         return name;
-    }
-
-    Admin getOrCreateSourceAdmin(String mirrorName) {
-        if (srcAdmins == null) {
-            srcAdmins = new ConcurrentHashMap<>();
-        }
-        return srcAdmins.computeIfAbsent(mirrorName, k -> {
-            Properties props = mirrorCache.getResourceConfig(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, k));
-            if (!props.containsKey(BOOTSTRAP_SERVERS_CONFIG)) {
-                throw new MirrorConfigNotAvailableException();
-            }
-            props.put(AdminClientConfig.CLIENT_ID_CONFIG, "mirror-manager-src-" + k + "-" + nodeId);
-            return Admin.create(props);
-        });
-    }
-
-    private void closeAndRemoveSourceAdmin(String mirrorName) {
-        if (srcAdmins != null) {
-            Admin admin = srcAdmins.remove(mirrorName);
-            if (admin != null) {
-                admin.close(Duration.ZERO);
-            }
-        }
     }
 
     // ===== LIFECYCLE MANAGEMENT ======================================================================================
@@ -513,7 +486,6 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
         if (needsReconnection || mirrorDeleted) {
             mirrorCache.removeSourceClusterLeaders(mirrorName);
-            closeAndRemoveSourceAdmin(mirrorName);
             if (sourceSyncer != null) {
                 sourceSyncer.closeAndRemoveSourceAdmin(mirrorName);
             }
@@ -1058,7 +1030,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
      * @throws IllegalStateException if the request fails
      */
     Collection<ClusterMirrorListing> listSourceClusterMirrors(String mirrorName) {
-        Admin srcAdmin = getOrCreateSourceAdmin(mirrorName);
+        Admin srcAdmin = sourceSyncer.getOrCreateSourceAdmin(mirrorName);
         try {
             return srcAdmin
                     .listClusterMirrors(new ListClusterMirrorsOptions())
@@ -1116,7 +1088,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
      */
     public CompletionStage<Map<TopicPartition, EpochOffset>> sendLastMirrorEpochLookup(
             String mirrorName, TopicPartition tp, Collection<ClusterMirrorListing> sourceMirrors) {
-        Admin admin = getOrCreateSourceAdmin(mirrorName);
+        Admin admin = sourceSyncer.getOrCreateSourceAdmin(mirrorName);
         log.info("Sending LME lookup request for partition {} in mirror {}", tp, mirrorName);
 
         Map<String, List<Integer>> topicPartitions = Map.of(tp.topic(), List.of(tp.partition()));
@@ -1166,7 +1138,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         if (topicPatterns == null || topicPatterns.isEmpty()) {
             return CompletableFuture.completedFuture(Map.of());
         }
-        Admin srcAdmin = getOrCreateSourceAdmin(mirrorName);
+        Admin srcAdmin = sourceSyncer.getOrCreateSourceAdmin(mirrorName);
 
         return srcAdmin.listTopics().names().toCompletionStage().toCompletableFuture()
             .thenCompose(allSourceTopics -> {

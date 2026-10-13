@@ -233,7 +233,7 @@ class MirrorSourceSyncer {
         return false;
     }
 
-    private Admin getOrCreateSourceAdmin(String mirrorName) {
+    Admin getOrCreateSourceAdmin(String mirrorName) {
         if (srcAdmins == null) {
             srcAdmins = new ConcurrentHashMap<>();
         }

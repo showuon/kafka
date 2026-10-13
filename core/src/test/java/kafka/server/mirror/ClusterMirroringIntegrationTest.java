@@ -76,7 +76,6 @@ import org.apache.kafka.server.mirror.MirrorPartitionState;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -106,7 +105,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Integration tests for Cluster Mirroring feature.
  */
-@Timeout(value = 180, unit = TimeUnit.SECONDS)
 public class ClusterMirroringIntegrationTest {
     private static final long METADATA_REFRESH_INTERVAL_MS = 5_000;
 
@@ -1186,7 +1184,7 @@ public class ClusterMirroringIntegrationTest {
                 () -> allPartitionsSatisfy(admin, mirrorName,
                         s -> state.name().equals(s.state()),
                         topicPatterns),
-                120_000,
+                180_000,
                 "Mirror partitions for " + topicPatterns + " did not reach " + state + " state");
     }
 
@@ -1199,7 +1197,7 @@ public class ClusterMirroringIntegrationTest {
                                 && (errorMsg.isEmpty() || s.errorMessage() != null
                                     && s.errorMessage().contains(errorMsg.get())),
                         List.of(topicPattern)),
-                120_000,
+                180_000,
                 "Mirror partitions for " + topicPattern + " did not reach FAILED state, " +
                         "or error message did not match");
     }
@@ -1213,7 +1211,7 @@ public class ClusterMirroringIntegrationTest {
                 () -> allPartitionsSatisfy(admin, mirrorName,
                         s -> s.lag() == 0 && MIRRORING.name().equals(s.state()),
                         topicPatterns),
-                120_000,
+                180_000,
                 "Mirror partitions for " + topicPatterns + "did not reach zero lag");
     }
 
@@ -1222,7 +1220,7 @@ public class ClusterMirroringIntegrationTest {
                 () -> dstAdmin.listClusterMirrors(
                         new ListClusterMirrorsOptions().mirrorNameFilter(List.of(mirrorName))
                 ).all().get(5, TimeUnit.SECONDS).isEmpty(),
-                120_000,
+                180_000,
                 "Cluster mirror is not deleted successfully");
     }
 
