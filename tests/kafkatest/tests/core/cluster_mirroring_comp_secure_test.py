@@ -52,6 +52,13 @@ class ClusterMirroringCompSecureTest(MirrorUtils, Test):
         ["mirror.metadata.refresh.interval.ms", "5000"],
         ["mirror.num.replica.fetchers", "2"],
         ["mirror.failed.retry.max.backoff.ms", "5000"],
+        # Required for auto-discovery: buildDestAdminClientProps() needs this to authenticate
+        # the internal Admin client as User:kafka (super user) instead of falling back to
+        # the static JAAS file's KafkaClient section which authenticates as User:client.
+        ["listener.name.sasl_ssl.plain.sasl.jaas.config",
+         'org.apache.kafka.common.security.plain.PlainLoginModule required '
+         'username="kafka" password="kafka-secret" '
+         'user_client="client-secret" user_kafka="kafka-secret";'],
     ]
 
     SRC_SERVER_PROPS = [

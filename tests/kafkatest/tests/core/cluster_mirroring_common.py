@@ -53,6 +53,7 @@ class MirrorConfig:
     def __init__(
             self,
             bootstrap_servers: str,
+            mirror_topics_include: str = None,
             mirror_topic_properties_exclude: str = None,
             mirror_groups_include: str = None,
             mirror_groups_exclude: str = None,
@@ -63,6 +64,8 @@ class MirrorConfig:
         self.properties = {
             "bootstrap.servers": bootstrap_servers,
         }
+        if mirror_topics_include is not None:
+            self.properties["topics.include"] = mirror_topics_include
         if mirror_topic_properties_exclude is not None:
             self.properties["topic.properties.exclude"] = (
                 mirror_topic_properties_exclude
@@ -98,22 +101,6 @@ class MirrorConfig:
 
 class MirrorUtils:
     """Shared helpers for Cluster Mirroring tests."""
-    def create_and_start_mirror(self, kafka, client_node, mirror_name,
-                                mirror_cfg, topic, timeout_sec=60):
-        """Create a cluster mirror, start a topic, and wait for zero lag."""
-        wait_until(
-            lambda: kafka.create_cluster_mirror(client_node, mirror_name, mirror_cfg),
-            timeout_sec=timeout_sec, backoff_sec=2,
-            err_msg="Failed to create cluster mirror",
-        )
-        wait_until(
-            lambda: "Started" in kafka.start_cluster_mirror_topics(
-                client_node, mirror_name, topic),
-            timeout_sec=timeout_sec, backoff_sec=2,
-            err_msg="Failed to start mirror topics",
-        )
-        self.wait_mirror_lag_zero(kafka, client_node, mirror_name, [topic])
-
     def broker_bootstrap(self, node):
         """Return bootstrap server address for a single broker node."""
         return "%s:9092" % node.account.hostname
