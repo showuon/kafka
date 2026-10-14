@@ -276,7 +276,9 @@ class MirrorCoordinatorSender {
                                 merged.topics().addAll(readMirrorStatesResponse.data().topics());
                             }
                         } else {
-                            log.warn("Unexpected response type from coordinator {}: {}", node, response.responseBody());
+                            log.warn("Unexpected response type from coordinator {}: {}. disconnected={}, timedOut={}, versionMismatch={}, authException={}",
+                                    node, response.responseBody(), response.wasDisconnected(), response.wasTimedOut(),
+                                    response.versionMismatch(), response.authenticationException());
                         }
 
                         if (remaining.decrementAndGet() == 0) {
@@ -343,7 +345,9 @@ class MirrorCoordinatorSender {
                                 merged.topics().addAll(readOffsetsResponse.data().topics());
                             }
                         } else {
-                            log.warn("Unexpected response type from leader {}: {}", node, response.responseBody());
+                            log.warn("Unexpected response type from coordinator {}: {}. disconnected={}, timedOut={}, versionMismatch={}, authException={}",
+                                    node, response.responseBody(), response.wasDisconnected(), response.wasTimedOut(),
+                                    response.versionMismatch(), response.authenticationException());
                         }
 
                         if (remaining.decrementAndGet() == 0) {
@@ -441,7 +445,9 @@ class MirrorCoordinatorSender {
                             }
                         }
                     } else {
-                        log.warn("Unexpected response type from coordinator {}: {}", node, response.responseBody());
+                        log.warn("Unexpected response type from coordinator {}: {}. disconnected={}, timedOut={}, versionMismatch={}, authException={}",
+                                node, response.responseBody(), response.wasDisconnected(), response.wasTimedOut(),
+                                response.versionMismatch(), response.authenticationException());
                     }
 
                     if (remaining.decrementAndGet() == 0) {
