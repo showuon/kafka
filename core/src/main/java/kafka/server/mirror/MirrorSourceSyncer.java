@@ -1069,8 +1069,10 @@ class MirrorSourceSyncer {
             log.debug("Describe ACLs response from remote cluster {}: {}", mirrorName, sourceAcls);
 
             List<MirrorAclInclude> aclIncludeRules = mirrorConfig.aclIncludeRules();
+            List<MirrorAclInclude> aclExcludeRules = mirrorConfig.aclExcludeRules();
             var allSourceAcls = sourceAcls.stream()
-                    .filter(acl -> aclIncludeRules.stream().anyMatch(rule -> rule.matches(acl)))
+                    .filter(acl -> aclIncludeRules.stream().anyMatch(rule -> rule.matches(acl))
+                            && aclExcludeRules.stream().noneMatch(rule -> rule.matches(acl)))
                     .toList();
             var aclChanges = detectAclChanges(allSourceAcls);
             applyAclChanges(mirrorName, aclChanges);

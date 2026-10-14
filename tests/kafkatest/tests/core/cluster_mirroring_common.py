@@ -57,6 +57,7 @@ class MirrorConfig:
             mirror_groups_include: str = None,
             mirror_groups_exclude: str = None,
             mirror_acl_include: str = None,
+            mirror_acl_exclude: str = None,
             security_config: SecurityConfig = None,
     ):
         self.properties = {
@@ -72,6 +73,8 @@ class MirrorConfig:
             self.properties["groups.exclude"] = mirror_groups_exclude
         if mirror_acl_include is not None:
             self.properties["acls.include"] = mirror_acl_include
+        if mirror_acl_exclude is not None:
+            self.properties["acls.exclude"] = mirror_acl_exclude
         self.properties["socket.timeout.ms"] = "5000"
 
         if (
