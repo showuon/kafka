@@ -412,6 +412,9 @@ class MirrorCoordinatorSender {
             return resultFuture;
         }
 
+        WriteMirrorStatesResponseData merged = new WriteMirrorStatesResponseData();
+        AtomicInteger remaining = new AtomicInteger(nodeToTopicPartitions.size());
+
         nodeToTopicPartitions.forEach((node, topicPartitionsMap) -> {
             WriteMirrorStatesRequestData data = new WriteMirrorStatesRequestData().setMirrorName(mirrorName);
             List<WriteMirrorStatesRequestData.TopicMetadata> topicDataList = new ArrayList<>();
@@ -430,7 +433,19 @@ class MirrorCoordinatorSender {
                 response -> {
                     log.debug("Write states to remote coordinator completed: {}", response.responseBody());
                     if (response.responseBody() instanceof WriteMirrorStatesResponse writeMirrorStatesResponse) {
-                        resultFuture.complete(writeMirrorStatesResponse);
+                        synchronized (merged) {
+                            merged.topics().addAll(writeMirrorStatesResponse.data().topics());
+                            if (writeMirrorStatesResponse.data().errorCode() != Errors.NONE.code()) {
+                                merged.setErrorCode(writeMirrorStatesResponse.data().errorCode());
+                                merged.setErrorMessage(writeMirrorStatesResponse.data().errorMessage());
+                            }
+                        }
+                    } else {
+                        log.warn("Unexpected response type from coordinator {}: {}", node, response.responseBody());
+                    }
+
+                    if (remaining.decrementAndGet() == 0) {
+                        resultFuture.complete(new WriteMirrorStatesResponse(merged));
                     }
                 }
             ));
