@@ -273,7 +273,7 @@ class ClusterMirroringCompSecureTest(MirrorUtils, Test):
         self.logger.info("Start cluster mirror with ACL include and exclude filters")
         mirror_cfg = self.create_mirror_config(self.source_kafka)
         mirror_cfg.properties["acls.include"] = "TOPIC;my-topic-.*,GROUP;my-group"
-        mirror_cfg.properties["acls.exclude"] = ".*;.*;WRITE"
+        mirror_cfg.properties["acls.exclude"] = "ANY;.*;WRITE"
         wait_until(
             lambda: self.dest_kafka.create_cluster_mirror(
                 self.dest_client_node, "my-mirror", mirror_cfg),

@@ -82,7 +82,7 @@ public class ClusterMirroringAclsIntegrationTest {
                 dstAdmin.createClusterMirror(mirror, Map.of(
                         ClusterMirrorConfig.BOOTSTRAP_SERVERS_CONFIG, srcBootstrap,
                         ClusterMirrorConfig.ACLS_INCLUDE_CONFIG, "TOPIC;acl-.*,GROUP;my-group",
-                        ClusterMirrorConfig.ACLS_EXCLUDE_CONFIG, ".*;.*;.*;.*;User:bob"
+                        ClusterMirrorConfig.ACLS_EXCLUDE_CONFIG, "ANY;.*;ANY;ANY;User:bob"
                 ), new CreateClusterMirrorOptions()).all().get(10, TimeUnit.SECONDS);
                 dstAdmin.startMirrorTopics(mirror, List.of(topic), new StartMirrorTopicsOptions())
                         .all().get(10, TimeUnit.SECONDS);

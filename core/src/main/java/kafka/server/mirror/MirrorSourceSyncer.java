@@ -72,7 +72,7 @@ import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig;
-import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig.MirrorAclInclude;
+import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig.MirrorAclRule;
 import org.apache.kafka.coordinator.mirror.MirrorMetadataCache;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.image.TopicImage;
@@ -1068,8 +1068,8 @@ class MirrorSourceSyncer {
 
             log.debug("Describe ACLs response from remote cluster {}: {}", mirrorName, sourceAcls);
 
-            List<MirrorAclInclude> aclIncludeRules = mirrorConfig.aclIncludeRules();
-            List<MirrorAclInclude> aclExcludeRules = mirrorConfig.aclExcludeRules();
+            List<MirrorAclRule> aclIncludeRules = mirrorConfig.aclIncludeRules();
+            List<MirrorAclRule> aclExcludeRules = mirrorConfig.aclExcludeRules();
             var allSourceAcls = sourceAcls.stream()
                     .filter(acl -> aclIncludeRules.stream().anyMatch(rule -> rule.matches(acl))
                             && aclExcludeRules.stream().noneMatch(rule -> rule.matches(acl)))
