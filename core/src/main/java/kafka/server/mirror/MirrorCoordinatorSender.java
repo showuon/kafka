@@ -274,9 +274,17 @@ class MirrorCoordinatorSender {
 
                             synchronized (merged) {
                                 merged.topics().addAll(readMirrorStatesResponse.data().topics());
+                                if (readMirrorStatesResponse.data().errorCode() != Errors.NONE.code()) {
+                                    log.error("Failed to read states from remote coordinator: {}-{}",
+                                            readMirrorStatesResponse.data().errorCode(), readMirrorStatesResponse.data().errorMessage());
+                                    merged.setErrorCode(readMirrorStatesResponse.data().errorCode());
+                                    merged.setErrorMessage(readMirrorStatesResponse.data().errorMessage());
+                                }
                             }
                         } else {
-                            log.warn("Unexpected response type from coordinator {}: {}", node, response.responseBody());
+                            log.warn("Unexpected response type from coordinator {}: {}. disconnected={}, timedOut={}, versionMismatch={}, authException={}",
+                                    node, response.responseBody(), response.wasDisconnected(), response.wasTimedOut(),
+                                    response.versionMismatch(), response.authenticationException());
                         }
 
                         if (remaining.decrementAndGet() == 0) {
@@ -341,9 +349,17 @@ class MirrorCoordinatorSender {
 
                             synchronized (merged) {
                                 merged.topics().addAll(readOffsetsResponse.data().topics());
+                                if (readOffsetsResponse.data().errorCode() != Errors.NONE.code()) {
+                                    log.error("Failed to read offsets from remote coordinator: {}-{}",
+                                            readOffsetsResponse.data().errorCode(), readOffsetsResponse.data().errorMessage());
+                                    merged.setErrorCode(readOffsetsResponse.data().errorCode());
+                                    merged.setErrorMessage(readOffsetsResponse.data().errorMessage());
+                                }
                             }
                         } else {
-                            log.warn("Unexpected response type from leader {}: {}", node, response.responseBody());
+                            log.warn("Unexpected response type from coordinator {}: {}. disconnected={}, timedOut={}, versionMismatch={}, authException={}",
+                                    node, response.responseBody(), response.wasDisconnected(), response.wasTimedOut(),
+                                    response.versionMismatch(), response.authenticationException());
                         }
 
                         if (remaining.decrementAndGet() == 0) {
@@ -412,6 +428,9 @@ class MirrorCoordinatorSender {
             return resultFuture;
         }
 
+        WriteMirrorStatesResponseData merged = new WriteMirrorStatesResponseData();
+        AtomicInteger remaining = new AtomicInteger(nodeToTopicPartitions.size());
+
         nodeToTopicPartitions.forEach((node, topicPartitionsMap) -> {
             WriteMirrorStatesRequestData data = new WriteMirrorStatesRequestData().setMirrorName(mirrorName);
             List<WriteMirrorStatesRequestData.TopicMetadata> topicDataList = new ArrayList<>();
@@ -430,7 +449,23 @@ class MirrorCoordinatorSender {
                 response -> {
                     log.debug("Write states to remote coordinator completed: {}", response.responseBody());
                     if (response.responseBody() instanceof WriteMirrorStatesResponse writeMirrorStatesResponse) {
-                        resultFuture.complete(writeMirrorStatesResponse);
+                        synchronized (merged) {
+                            merged.topics().addAll(writeMirrorStatesResponse.data().topics());
+                            if (writeMirrorStatesResponse.data().errorCode() != Errors.NONE.code()) {
+                                log.error("Failed to write states to remote coordinator: {}-{}",
+                                        writeMirrorStatesResponse.data().errorCode(), writeMirrorStatesResponse.data().errorMessage());
+                                merged.setErrorCode(writeMirrorStatesResponse.data().errorCode());
+                                merged.setErrorMessage(writeMirrorStatesResponse.data().errorMessage());
+                            }
+                        }
+                    } else {
+                        log.warn("Unexpected response type from coordinator {}: {}. disconnected={}, timedOut={}, versionMismatch={}, authException={}",
+                                node, response.responseBody(), response.wasDisconnected(), response.wasTimedOut(),
+                                response.versionMismatch(), response.authenticationException());
+                    }
+
+                    if (remaining.decrementAndGet() == 0) {
+                        resultFuture.complete(new WriteMirrorStatesResponse(merged));
                     }
                 }
             ));
