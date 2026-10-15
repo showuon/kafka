@@ -610,17 +610,18 @@ public final class ClusterMirrorConfig extends AbstractConfig {
      * @param resourceNamePattern regex pattern for the resource name, or null for wildcard
      * @param operation the ACL operation enum, or null for wildcard
      * @param permissionType the ACL permission type enum, or null for wildcard
-     * @param principalPattern regex pattern for the principal, or null for wildcard
+     * @param principal the principal string (e.g. User:alice), or null for wildcard
      */
     public record MirrorAclRule(
             ResourceType resourceType,
             Pattern resourceNamePattern,
             AclOperation operation,
             AclPermissionType permissionType,
-            Pattern principalPattern
+            String principal
     ) {
         private static final String SEPARATOR = ";";
         private static final String MATCH_ALL = ".*";
+        private static final String WILDCARD_PRINCIPAL = "*";
         private static final MirrorAclRule MATCH_ALL_RULE =
                 new MirrorAclRule(null, null, null, null, null);
 
@@ -628,7 +629,9 @@ public final class ClusterMirrorConfig extends AbstractConfig {
                 + "resourceType;resourceName;operation;permissionType;principal. "
                 + "The resourceType, operation, and permissionType fields use enum values (e.g. TOPIC, READ, ALLOW). "
                 + "Use ANY to match all values for these fields. "
-                + "The resourceName and principal fields support regex patterns. "
+                + "The resourceName field supports RE2 regex patterns. "
+                + "The principal field uses exact match in principalType:name format (e.g. User:alice). "
+                + "Use * to match all principals. "
                 + "Trailing fields can be omitted and will match anything. "
                 + "Use .* as the entire value to match all ACLs. ";
 
@@ -643,7 +646,7 @@ public final class ClusterMirrorConfig extends AbstractConfig {
                     parsePattern(parts, 1),
                     parseOperation(parts, 2),
                     parsePermissionType(parts, 3),
-                    parsePattern(parts, 4)
+                    parsePrincipal(parts, 4)
             );
         }
 
@@ -673,6 +676,13 @@ public final class ClusterMirrorConfig extends AbstractConfig {
             return compilePattern(parts[index].trim());
         }
 
+        private static String parsePrincipal(String[] parts, int index) {
+            if (index >= parts.length) return null;
+            String value = parts[index].trim();
+            if (value.isEmpty() || value.equals(WILDCARD_PRINCIPAL)) return null;
+            return value;
+        }
+
         /**
          * Tests whether the given AclBinding matches this rule.
          * A null field acts as a wildcard and matches any value.
@@ -690,7 +700,7 @@ public final class ClusterMirrorConfig extends AbstractConfig {
             if (permissionType != null && binding.entry().permissionType() != permissionType) {
                 return false;
             }
-            if (principalPattern != null && !principalPattern.matcher(binding.entry().principal()).matches()) {
+            if (principal != null && !principal.equals(binding.entry().principal())) {
                 return false;
             }
             return true;

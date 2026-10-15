@@ -82,7 +82,7 @@ public class ClusterMirroringAclsIntegrationTest {
                 dstAdmin.createClusterMirror(mirror, Map.of(
                         ClusterMirrorConfig.BOOTSTRAP_SERVERS_CONFIG, srcBootstrap,
                         ClusterMirrorConfig.ACLS_INCLUDE_CONFIG, "TOPIC;acl-.*,GROUP;my-group",
-                        ClusterMirrorConfig.ACLS_EXCLUDE_CONFIG, "ANY;.*;ANY;ANY;User:bob"
+                        ClusterMirrorConfig.ACLS_EXCLUDE_CONFIG, "TOPIC;.*;WRITE;ALLOW,ANY;.*;ANY;ANY;User:bob"
                 ), new CreateClusterMirrorOptions()).all().get(10, TimeUnit.SECONDS);
                 dstAdmin.startMirrorTopics(mirror, List.of(topic), new StartMirrorTopicsOptions())
                         .all().get(10, TimeUnit.SECONDS);
@@ -93,10 +93,11 @@ public class ClusterMirroringAclsIntegrationTest {
                     var synced = dstAcls.stream()
                             .filter(a -> a.pattern().resourceType() != ResourceType.CLUSTER_MIRROR)
                             .toList();
-                    return synced.contains(aliceRead) && synced.contains(aliceWrite)
+                    return synced.contains(aliceRead)
                             && synced.contains(groupRead)
+                            && !synced.contains(aliceWrite)
                             && !synced.contains(bobRead);
-                }, DEFAULT_MAX_WAIT_MS, "Alice TOPIC+GROUP ACLs should be synced, Bob ACL should be excluded");
+                }, DEFAULT_MAX_WAIT_MS, "Alice READ+GROUP ACLs should be synced, WRITE and Bob ACLs should be excluded");
             }
         } finally {
             closeQuietly(aclDst);
