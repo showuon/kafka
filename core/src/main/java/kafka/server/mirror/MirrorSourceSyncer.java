@@ -240,7 +240,7 @@ class MirrorSourceSyncer {
         return srcAdmins.computeIfAbsent(mirrorName, k -> {
             Properties props = mirrorCache.getResourceConfig(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, k));
             if (!props.containsKey(BOOTSTRAP_SERVERS_CONFIG)) {
-                throw new MirrorConfigNotAvailableException();
+                throw new MirrorConfigNotAvailableException(BOOTSTRAP_SERVERS_CONFIG + " is not available");
             }
             props.put(AdminClientConfig.CLIENT_ID_CONFIG, "mirror-syncer-src-" + k + "-" + nodeId);
             return Admin.create(props);

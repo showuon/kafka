@@ -16,25 +16,10 @@
  */
 package org.apache.kafka.common.errors;
 
-/**
- * Source metadata is not available during cluster mirroring.
- * Thrown when the source cluster metadata has not yet been retrieved, allowing graceful backoff and retry.
- */
 public class SourceMetadataNotAvailableException extends InvalidMetadataException {
     private static final long serialVersionUID = 1L;
 
-    public SourceMetadataNotAvailableException() {
-    }
-
     public SourceMetadataNotAvailableException(String message) {
         super(message);
-    }
-
-    public SourceMetadataNotAvailableException(Throwable throwable) {
-        super(throwable);
-    }
-
-    public SourceMetadataNotAvailableException(String message, Throwable throwable) {
-        super(message, throwable);
     }
 }

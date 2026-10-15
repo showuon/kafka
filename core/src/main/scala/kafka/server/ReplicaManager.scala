@@ -2612,7 +2612,7 @@ class ReplicaManager(val config: KafkaConfig,
           try {
             val sourceLeader = mirrorCache.get.getSourceClusterLeader(mirrorName, tp)
             if (sourceLeader.isEmpty || sourceLeader.get().node().isEmpty)
-              throw new SourceMetadataNotAvailableException()
+              throw new SourceMetadataNotAvailableException("Could not create mirror fetchers because source cluster metadata is not available")
             val sourceLeaderNode = sourceLeader.get().node().get()
             val leaderEndpoint = new BrokerEndPoint(sourceLeaderNode.id(), sourceLeaderNode.host(), sourceLeaderNode.port())
 
