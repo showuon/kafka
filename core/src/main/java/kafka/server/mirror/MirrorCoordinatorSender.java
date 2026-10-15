@@ -274,6 +274,12 @@ class MirrorCoordinatorSender {
 
                             synchronized (merged) {
                                 merged.topics().addAll(readMirrorStatesResponse.data().topics());
+                                if (readMirrorStatesResponse.data().errorCode() != Errors.NONE.code()) {
+                                    log.error("Failed to read states from remote coordinator: {}-{}",
+                                            readMirrorStatesResponse.data().errorCode(), readMirrorStatesResponse.data().errorMessage());
+                                    merged.setErrorCode(readMirrorStatesResponse.data().errorCode());
+                                    merged.setErrorMessage(readMirrorStatesResponse.data().errorMessage());
+                                }
                             }
                         } else {
                             log.warn("Unexpected response type from coordinator {}: {}. disconnected={}, timedOut={}, versionMismatch={}, authException={}",
@@ -343,6 +349,12 @@ class MirrorCoordinatorSender {
 
                             synchronized (merged) {
                                 merged.topics().addAll(readOffsetsResponse.data().topics());
+                                if (readOffsetsResponse.data().errorCode() != Errors.NONE.code()) {
+                                    log.error("Failed to read offsets from remote coordinator: {}-{}",
+                                            readOffsetsResponse.data().errorCode(), readOffsetsResponse.data().errorMessage());
+                                    merged.setErrorCode(readOffsetsResponse.data().errorCode());
+                                    merged.setErrorMessage(readOffsetsResponse.data().errorMessage());
+                                }
                             }
                         } else {
                             log.warn("Unexpected response type from coordinator {}: {}. disconnected={}, timedOut={}, versionMismatch={}, authException={}",
@@ -440,6 +452,8 @@ class MirrorCoordinatorSender {
                         synchronized (merged) {
                             merged.topics().addAll(writeMirrorStatesResponse.data().topics());
                             if (writeMirrorStatesResponse.data().errorCode() != Errors.NONE.code()) {
+                                log.error("Failed to write states to remote coordinator: {}-{}",
+                                        writeMirrorStatesResponse.data().errorCode(), writeMirrorStatesResponse.data().errorMessage());
                                 merged.setErrorCode(writeMirrorStatesResponse.data().errorCode());
                                 merged.setErrorMessage(writeMirrorStatesResponse.data().errorMessage());
                             }
