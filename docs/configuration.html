@@ -465,6 +465,10 @@ config.providers.fileProvider.class=org.apache.kafka.common.config.provider.File
   <p><b>Example connector configuration referencing file properties</b></p>
   <pre><code>database.user=${fileProvider:/path/to/connector-credentials.properties:dbUsername}
 database.password=${fileProvider:/path/to/connector-credentials.properties:dbPassword}</code></pre>
-  <p>At runtime, the configuration provider reads and extracts the values from the properties file.</p>  
+  <p>At runtime, the configuration provider reads and extracts the values from the properties file.</p>
+
+  <h3 class="anchor-heading"><a id="clustermirrorconfigs" class="anchor-link"></a><a href="#clustermirrorconfigs">3.13 Cluster Mirror Configs</a></h3>
+  Below is the configuration for cluster mirroring.
+  <!--#include virtual="generated/cluster_mirror_config.html" -->
 </script>
 <div class="p-configuration"></div>

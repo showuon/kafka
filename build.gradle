@@ -1188,7 +1188,8 @@ project(':core') {
                                ':connect:runtime:genConnectMetricsDocs', ':connect:runtime:genConnectOpenAPIDocs',
                                ':connect:mirror:genMirrorSourceConfigDocs', ':connect:mirror:genMirrorCheckpointConfigDocs',
                                ':connect:mirror:genMirrorHeartbeatConfigDocs', ':connect:mirror:genMirrorConnectorConfigDocs',
-                               ':storage:genRemoteLogManagerConfigDoc', ':storage:genRemoteLogMetadataManagerConfigDoc'], type: Tar) {
+                               ':storage:genRemoteLogManagerConfigDoc', ':storage:genRemoteLogMetadataManagerConfigDoc',
+                               ':mirror-coordinator:genClusterMirrorConfigDocs'], type: Tar) {
     archiveClassifier = 'site-docs'
     compression = Compression.GZIP
     from project.file("$rootDir/docs")
@@ -1654,6 +1655,13 @@ project(':mirror-coordinator') {
 
     compileJava.dependsOn 'processMessages'
     srcJar.dependsOn 'processMessages'
+
+    task genClusterMirrorConfigDocs(type: JavaExec) {
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'org.apache.kafka.coordinator.mirror.ClusterMirrorConfig'
+        if( !generatedDocsDir.exists() ) { generatedDocsDir.mkdirs() }
+        standardOutput = new File(generatedDocsDir, "cluster_mirror_config.html").newOutputStream()
+    }
 
     javadoc {
         enabled = false
