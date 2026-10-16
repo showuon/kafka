@@ -621,7 +621,7 @@ public final class ClusterMirrorConfig extends AbstractConfig {
         private static final MirrorAclRule MATCH_ALL_RULE =
                 new MirrorAclRule(null, null, null, null, null);
 
-        private static String DOC = "Each rule uses semicolon-separated fields: "
+        private static final String DOC = "Each rule uses semicolon-separated fields: "
                 + "resourceType;resourceName;operation;permissionType;principal. "
                 + "The resourceType, operation, and permissionType fields use enum values (e.g. TOPIC, READ, ALLOW). "
                 + "Use ANY to match all values for these fields. "
