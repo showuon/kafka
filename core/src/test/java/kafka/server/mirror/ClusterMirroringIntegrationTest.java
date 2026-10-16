@@ -103,7 +103,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Integration tests for Cluster Mirroring feature.
+ * Integration tests for Cluster Mirroring.
  */
 public class ClusterMirroringIntegrationTest {
     private static final long METADATA_REFRESH_INTERVAL_MS = 5_000;

@@ -237,8 +237,8 @@ class ClusterMirroringCompSecureTest(MirrorUtils, Test):
     @parametrize(source_version=str(LATEST_2_1), metadata_quorum=quorum.zk)
     @parametrize(source_version=str(LATEST_3_9), metadata_quorum=quorum.zk)
     @parametrize(source_version=str(LATEST_4_0), metadata_quorum=quorum.isolated_kraft)
-    def test_acl_sync_and_filtering(self, source_version, metadata_quorum):
-        """Verify ACL sync and filtering across different Kafka versions with SASL_SSL."""
+    def test_mtls_and_acls_sync(self, source_version, metadata_quorum):
+        """Verify mTLS and ACLs sync and filtering across different Kafka versions."""
         self.setup_source(KafkaVersion(source_version), metadata_quorum)
         self.setup_dest()
 
@@ -270,9 +270,10 @@ class ClusterMirroringCompSecureTest(MirrorUtils, Test):
         self.produce_as_client(self.source_kafka,
                                self.source_client_node, "my-topic-a", 10)
 
-        self.logger.info("Start cluster mirror with ACL include filter")
+        self.logger.info("Start cluster mirror with ACL include and exclude filters")
         mirror_cfg = self.create_mirror_config(self.source_kafka)
         mirror_cfg.properties["acls.include"] = "TOPIC;my-topic-.*,GROUP;my-group"
+        mirror_cfg.properties["acls.exclude"] = "ANY;.*;WRITE"
         wait_until(
             lambda: self.dest_kafka.create_cluster_mirror(
                 self.dest_client_node, "my-mirror", mirror_cfg),
@@ -296,24 +297,22 @@ class ClusterMirroringCompSecureTest(MirrorUtils, Test):
                                        max_messages=10, expected_count=10)
         assert count >= 10, "Expected 10 messages on my-topic-a, got %d" % count
 
-        self.logger.info("Verify ACL filtering: my-topic-a ACL synced, new-topic ACL filtered out")
+        self.logger.info("Verify ACL filtering: READ synced, WRITE excluded, new-topic filtered out")
         self.wait_for_acl_condition(
             self.dest_kafka, "my-mirror",
             lambda acls: "User:client" in acls and "my-topic-a" in acls,
-            "Client READ ACL on my-topic-a should be synced (matches include rule)",
+            "Client READ ACL on my-topic-a should be synced (matches include, not excluded)",
             self.dest_client_node)
 
         dest_acls = self.list_acls(self.dest_kafka, self.dest_client_node)
         assert "User:other-client" not in dest_acls and "new-topic" not in dest_acls, \
-            "Other-client READ ACL on new-topic should not be synced (filtered out)"
+            "Other-client READ ACL on new-topic should not be synced (filtered out by include)"
+        assert "Write" not in dest_acls.lower(), \
+            "WRITE ACLs should not be synced (filtered out by exclude rule)"
 
-        self.logger.info("Remove my-topic-a ACLs from source cluster")
+        self.logger.info("Remove my-topic-a READ ACL from source cluster")
         self.run_acl_cmd(self.source_kafka,
                          "--remove --allow-principal User:client --operation READ "
-                         "--topic my-topic-a --force",
-                         self.source_client_node)
-        self.run_acl_cmd(self.source_kafka,
-                         "--remove --allow-principal User:client --operation WRITE "
                          "--topic my-topic-a --force",
                          self.source_client_node)
 

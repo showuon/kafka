@@ -125,7 +125,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     private static final Set<String> SKIP_RECONNECT_MIRROR_CONFIGS = Set.of(
             ClusterMirrorConfig.TOPICS_INCLUDE_CONFIG, ClusterMirrorConfig.TOPICS_EXCLUDE_CONFIG,
             ClusterMirrorConfig.GROUPS_INCLUDE_CONFIG, ClusterMirrorConfig.GROUPS_EXCLUDE_CONFIG,
-            ClusterMirrorConfig.ACLS_INCLUDE_CONFIG);
+            ClusterMirrorConfig.ACLS_INCLUDE_CONFIG, ClusterMirrorConfig.ACLS_EXCLUDE_CONFIG);
 
     // Topic config keys that trigger mirror partition re-evaluation on change
     private static final Set<String> WATCHED_TOPIC_CONFIGS = Set.of(

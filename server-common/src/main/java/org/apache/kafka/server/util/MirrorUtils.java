@@ -25,6 +25,18 @@ public final class MirrorUtils {
     private MirrorUtils() {}
 
     /**
+     * Compiles a single regex pattern string into a {@link Pattern}.
+     *
+     * @param pattern the regex pattern string
+     * @return a compiled Pattern, or null if the input is null or blank
+     */
+    public static Pattern compilePattern(String pattern) {
+        if (pattern == null) return null;
+        String trimmed = pattern.trim();
+        return trimmed.isEmpty() ? null : Pattern.compile(trimmed);
+    }
+
+    /**
      * Compiles a list of regex pattern strings into a single {@link Pattern} by joining them with {@code |}.
      *
      * @param patterns the list of regex pattern strings
@@ -35,6 +47,6 @@ public final class MirrorUtils {
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .collect(Collectors.joining("|"));
-        return combined.isEmpty() ? null : Pattern.compile("^(" + combined + ")$");
+        return compilePattern(combined.isEmpty() ? null : "^(" + combined + ")$");
     }
 }
