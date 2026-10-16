@@ -128,8 +128,8 @@ class ClusterMirroringCompTest(MirrorUtils, Test):
     @parametrize(source_version=str(LATEST_2_1), metadata_quorum=quorum.zk)
     @parametrize(source_version=str(LATEST_3_9), metadata_quorum=quorum.zk)
     @parametrize(source_version=str(LATEST_4_0), metadata_quorum=quorum.isolated_kraft)
-    def test_mirroring_sync(self, source_version, metadata_quorum):
-        """Verify data mirroring and metadata sync."""
+    def test_mirroring(self, source_version, metadata_quorum):
+        """Verify data mirroring and metadata synchronization."""
         self.setup_source(KafkaVersion(source_version), metadata_quorum)
         self.setup_dest()
 
@@ -166,14 +166,6 @@ class ClusterMirroringCompTest(MirrorUtils, Test):
             timeout_sec=60, backoff_sec=2,
             err_msg="Failed to create cluster mirror",
         )
-        for regex in ["my-topic.*", "new-topic"]:
-            wait_until(
-                lambda r=regex: "Started" in self.dest_kafka.start_cluster_mirror_topics(
-                    self.dest_client_node, "my-mirror", r),
-                timeout_sec=60, backoff_sec=2,
-                err_msg="Failed to start mirror topics for %s" % regex,
-            )
-        self.logger.info("Wait for all partitions to reach MIRRORING with zero lag")
         self.wait_mirror_lag_zero(
             self.dest_kafka, self.dest_client_node, "my-mirror", topics=list(topics.keys()))
         self.wait_for_metadata_refresh(self.dest_kafka, self.dest_client_node, "my-mirror")
@@ -246,9 +238,13 @@ class ClusterMirroringCompTest(MirrorUtils, Test):
 
         self.logger.info("Start cluster mirror on destination cluster")
         mirror_cfg = MirrorConfig(self.source_kafka.bootstrap_servers())
-
-        self.create_and_start_mirror(
-            self.dest_kafka, self.dest_client_node, "my-mirror", mirror_cfg, "my-topic")
+        wait_until(
+            lambda: self.dest_kafka.create_cluster_mirror(
+                self.dest_client_node, "my-mirror", mirror_cfg),
+            timeout_sec=60, backoff_sec=2,
+            err_msg="Failed to create cluster mirror",
+        )
+        self.wait_mirror_lag_zero(self.dest_kafka, self.dest_client_node, "my-mirror", ["my-topic"])
 
         dest_broker0 = self.dest_kafka.nodes[0]
         enable_ule_support_cmd = "%s --entity-type topics --entity-name %s --alter --add-config mirror.unclean.leader.election.enable=true" % \
@@ -289,9 +285,13 @@ class ClusterMirroringCompTest(MirrorUtils, Test):
 
         self.logger.info("Start cluster mirror on destination cluster")
         mirror_cfg = MirrorConfig(self.source_kafka.bootstrap_servers())
-
-        self.create_and_start_mirror(
-            self.dest_kafka, self.dest_client_node, "my-mirror", mirror_cfg, "my-topic")
+        wait_until(
+            lambda: self.dest_kafka.create_cluster_mirror(
+                self.dest_client_node, "my-mirror", mirror_cfg),
+            timeout_sec=60, backoff_sec=2,
+            err_msg="Failed to create cluster mirror",
+        )
+        self.wait_mirror_lag_zero(self.dest_kafka, self.dest_client_node, "my-mirror", ["my-topic"])
 
         self.logger.info("Delete topic on source and wait for metadata sync")
         self.source_kafka.delete_topic("my-topic")
