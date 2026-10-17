@@ -1729,16 +1729,18 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
      * Only succeeds if partition is in MIRRORING state.
      */
     public void clearFailedStateAndPersist(String mirrorName, TopicPartition tp) {
-        MirrorPartitionMetadata curState = mirrorCache.getPartitionMetadata(
-                MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition()));
-        MirrorPartitionState state = curState != null ? curState.state() : null;
+        MirrorPartition mp = MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
+        MirrorPartitionMetadata existing = mirrorCache.getPartitionMetadata(mp);
+        MirrorPartitionState state = existing.state();
         if (state != MirrorPartitionState.MIRRORING) {
             log.debug("Skipping clearing failed state for partition {}. Reason: Current state is {}.", tp, state);
             return;
         }
 
-        MirrorPartition mp = MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
-        MirrorPartitionMetadata existing = mirrorCache.getPartitionMetadata(mp);
+        if (existing.retryAttempt() == 0 && existing.errorMessage() == null && existing.prevState() == null) {
+            log.trace("Skipping clearing failed state for partition {}. Reason: Current state is already up-to-date: {}.", tp, state);
+            return;
+        }
         mirrorCache.updatePartitionMetadata(mp,
                 new MirrorPartitionMetadata.Builder(existing)
                     .withErrorMessage(null)
@@ -1749,18 +1751,18 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         int stateEpoch = mirrorCache.getPartitionMetadata(mp).stateEpoch();
         int leaderEpoch = mirrorCache.getLeaderEpoch(tp);
         MirrorStateWrite write = new MirrorStateWrite(tp.partition(), state, leaderEpoch, stateEpoch,
-                null, curState.errorMessage(), 0, curState.retryAttempt() == NON_RETRYABLE_ERROR);
+                null, null, 0, false);
 
         if (coordSender.isLocalCoordinatorFor(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition())) {
             coordSender.writeStateToLocalCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)))
                     .whenComplete((data, ex) -> onLocalWriteComplete(
-                            mirrorName, tp, state, curState.errorMessage(),
-                            curState.retryAttempt() == NON_RETRYABLE_ERROR, ex));
+                            mirrorName, tp, state, null,
+                            false, ex));
         } else {
             coordSender.writeStateToRemoteCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)), Set.of())
                     .thenAccept(res -> res.data().topics().forEach(topic -> topic.partitions().forEach(partition ->
-                            onRemoteWriteComplete(mirrorName, tp, state, curState.errorMessage(),
-                                    curState.retryAttempt() == NON_RETRYABLE_ERROR, partition))));
+                            onRemoteWriteComplete(mirrorName, tp, state, null,
+                                    false, partition))));
         }
     }
 
