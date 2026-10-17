@@ -277,6 +277,11 @@ class MirrorCoordinatorSender {
                             }
                         } else {
                             log.warn("Unexpected response type from coordinator {}: {}", node, response.responseBody());
+                            future.completeExceptionally(new RuntimeException(
+                                    "Read states from remote coordinator " + node + " failed:"
+                                    + " disconnected=" + response.wasDisconnected()
+                                    + " timedOut=" + response.wasTimedOut()));
+                            return;
                         }
 
                         if (remaining.decrementAndGet() == 0) {
@@ -344,6 +349,11 @@ class MirrorCoordinatorSender {
                             }
                         } else {
                             log.warn("Unexpected response type from leader {}: {}", node, response.responseBody());
+                            resultFuture.completeExceptionally(new RuntimeException(
+                                    "Read offsets from remote leader " + node + " failed:"
+                                    + " disconnected=" + response.wasDisconnected()
+                                    + " timedOut=" + response.wasTimedOut()));
+                            return;
                         }
 
                         if (remaining.decrementAndGet() == 0) {
@@ -431,6 +441,11 @@ class MirrorCoordinatorSender {
                     log.debug("Write states to remote coordinator completed: {}", response.responseBody());
                     if (response.responseBody() instanceof WriteMirrorStatesResponse writeMirrorStatesResponse) {
                         resultFuture.complete(writeMirrorStatesResponse);
+                    } else {
+                        resultFuture.completeExceptionally(new RuntimeException(
+                                "Write states to remote coordinator " + node + " failed:"
+                                + " disconnected=" + response.wasDisconnected()
+                                + " timedOut=" + response.wasTimedOut()));
                     }
                 }
             ));
