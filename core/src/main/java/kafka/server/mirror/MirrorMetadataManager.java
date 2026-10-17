@@ -1358,6 +1358,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     }
 
     void maybeCompletePendingEpochBumps() {
+        log.info("maybeCompletePendingEpochBumps:" + pendingLeaderEpochBumps.size());
         pendingLeaderEpochBumps.removeIf(bumpLeaderEpoch -> {
             Set<TopicPartition> pendingPartitions = bumpLeaderEpoch.partitionToEpoch().entrySet().stream().filter(entry -> {
                 TopicPartition tp = entry.getKey();

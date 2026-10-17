@@ -91,20 +91,20 @@ Configuration:
   # See: https://logging.apache.org/log4j/2.x/manual/configuration.html#configuring-loggers
   Loggers:
     Root:
-      level: INFO
+      level: DEBUG
       AppenderRef:
         - ref: STDOUT
         - ref: KafkaAppender
     Logger:
       # Kafka logger
       - name: kafka
-        level: INFO
+        level: DEBUG
       # Kafka org.apache logger
       - name: org.apache.kafka
-        level: INFO
+        level: DEBUG
       # Kafka request logger
       - name: kafka.request.logger
-        level: WARN
+        level: DEBUG
 
       # Uncomment the lines below and change log4j.logger.kafka.network.RequestChannel$ to TRACE
       # for additional output related to the handling of requests
@@ -120,11 +120,11 @@ Configuration:
 #          ref: RequestAppender
       # Kafka network RequestChannel$ logger
       - name: kafka.network.RequestChannel$
-        level: WARN
+        level: DEBUG
 
       # Controller logger
       - name: org.apache.kafka.controller
-        level: INFO
+        level: DEBUG
 #        additivity: false
 #        AppenderRef:
 #          ref: ControllerAppender
@@ -146,7 +146,7 @@ Configuration:
           ref: CleanerAppender
       # State change logger
       - name: state.change.logger
-        level: INFO
+        level: DEBUG
 #        additivity: false
 #        AppenderRef:
 #          ref: StateChangeAppender
