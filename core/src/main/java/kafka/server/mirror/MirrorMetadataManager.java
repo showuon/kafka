@@ -210,7 +210,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     public void onCoordStartup(Function<MirrorPartition, Integer> coordPartFinder,
                                MetadataManagerBridge.CoordinatorReader coordinatorReader,
                                MetadataManagerBridge.CoordinatorWriter coordinatorWriter) {
-        log.debug("Coordinator is starting up");
+        log.info("Coordinator is starting up");
         this.coordSender = new MirrorCoordinatorSender(brokerConfig, () -> metadataImage, mirrorCache,
                 coordPartFinder, coordinatorReader, coordinatorWriter, metrics, time);
         coordSender.startup();
@@ -228,7 +228,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
      */
     @Override
     public void onShardLoaded(int coordPartition) {
-        log.debug("Coordinator shard {} loaded", coordPartition);
+        log.info("Coordinator shard {} loaded", coordPartition);
         if (!isInitialized || metadataImage == null || coordSender.coordPartFinder().isEmpty()) {
             return;
         }
@@ -286,7 +286,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
      */
     @Override
     public void onShardUnloaded(int coordPartIndex, int numPartitions) {
-        log.debug("Coordinator shard {} unloaded", coordPartIndex);
+        log.info("Coordinator shard {} unloaded", coordPartIndex);
         mirrorCache.removePartitionMetadata(coordPartIndex, numPartitions);
     }
 
@@ -296,7 +296,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
      */
     @Override
     public void onCoordShutdown() {
-        log.debug("Coordinator is shutting down");
+        log.info("Coordinator is shutting down");
         if (srcAdmins != null) {
             srcAdmins.values().forEach(admin -> admin.close(Duration.ZERO));
         }
@@ -709,7 +709,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             MirrorPartitionState currentState = entry != null ? entry.state() : null;
             MirrorPartitionState pendingState = pendingStateTransitions.get(tp);
             if (pendingState != MirrorPartitionState.MIRRORING && pendingState == targetState) {
-                log.debug("Skipping state transition for partition {}. Reason: Already transitioning to {}.",
+                log.info("Skipping state transition for partition {}. Reason: Already transitioning to {}.",
                         tp, pendingState);
                 continue;
             }
@@ -950,7 +950,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         MirrorPartitionMetadata mpm = mirrorCache.getPartitionMetadata(mp);
         int attempt = mpm.retryAttempt() != 0 ? mpm.retryAttempt() : 1;
         if (attempt == NON_RETRYABLE_ERROR) {
-            log.debug("Skipping retry for partition {} (non-retryable error)", tp);
+            log.info("Skipping retry for partition {} (non-retryable error)", tp);
             return;
         }
         if (attempt >= maxAttempts) {
@@ -1442,7 +1442,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             }
             var curState = pendingStateTransitions.get(tp);
             if (curState != state) {
-                log.debug("Skipping transition to {} for partition {}. Reason: Already transitioning to {}.",
+                log.info("Skipping transition to {} for partition {}. Reason: Already transitioning to {}.",
                         curState, tp, state);
                 return;
             }
@@ -1777,7 +1777,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         MirrorPartitionMetadata existing = mirrorCache.getPartitionMetadata(mp);
         MirrorPartitionState state = existing.state();
         if (state != MirrorPartitionState.MIRRORING) {
-            log.debug("Skipping clearing failed state for partition {}. Reason: Current state is {}.", tp, state);
+            log.info("Skipping clearing failed state for partition {}. Reason: Current state is {}.", tp, state);
             return;
         }
 

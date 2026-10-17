@@ -384,7 +384,7 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                 .setErrorMessage(cachedMp.errorMessage());
         CoordinatorRecord record = CoordinatorRecord.record(key,
                 new ApiMessageAndVersion(val, MirrorPartitionStateValue.HIGHEST_SUPPORTED_VERSION));
-        log.debug("Writing partitionState record to partition {} with content: {}", tp, record);
+        log.info("Writing partitionState record to partition {} with content: {}", tp, record);
         return new CoordinatorResult<>(List.of(record), null);
     }
 
