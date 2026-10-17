@@ -127,7 +127,7 @@ class MirrorFetcherThread(name: String,
         s"exceeds local epoch $localLeaderEpoch for partition $topicPartition")
     } else {
       replicaMgr.mirrorManager.foreach { mmm =>
-        mmm.clearFailedStateAndPersist(mirrorName, topicPartition)
+        mmm.maybeClearFailedStateAndPersist(mirrorName, topicPartition)
 
         if (highestBatchLeaderEpoch > localLeaderEpoch - LEADER_EPOCH_BUMP_THRESHOLD) {
           mmm.scheduleBumpLeaderEpoch(partition.getMirrorName().get(), topicPartition)

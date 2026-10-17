@@ -1728,7 +1728,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
      * Clears failed info from cache and persists the state to the appropriate coordinator (local or remote).
      * Only succeeds if partition is in MIRRORING state.
      */
-    public void clearFailedStateAndPersist(String mirrorName, TopicPartition tp) {
+    public void maybeClearFailedStateAndPersist(String mirrorName, TopicPartition tp) {
         MirrorPartition mp = MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
         MirrorPartitionMetadata existing = mirrorCache.getPartitionMetadata(mp);
         MirrorPartitionState state = existing.state();
