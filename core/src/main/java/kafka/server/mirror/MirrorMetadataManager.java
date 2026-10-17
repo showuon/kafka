@@ -1295,6 +1295,26 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                             RETRY_BACKOFF_MS, "Bump leader epoch response has top-level error: " + topLevelError);
                     return;
                 }
+
+                Map<TopicPartition, Integer> failedPartitions = new HashMap<>();
+                bumpResponse.data().topics().forEach(topic ->
+                    topic.partitions().forEach(partition -> {
+                        Errors partitionError = Errors.forCode(partition.errorCode());
+                        if (partitionError != Errors.NONE) {
+                            TopicPartition tp = new TopicPartition(topic.topicName(), partition.partitionIndex());
+                            log.warn("Bump leader epoch partition-level error for {}: {}", tp, partitionError);
+                            Integer minEpoch = partitionMinEpochs.get(tp);
+                            if (minEpoch != null) {
+                                failedPartitions.put(tp, minEpoch);
+                            }
+                        }
+                    }));
+
+                if (!failedPartitions.isEmpty()) {
+                    scheduleRetry("bump-leader-epoch", () -> sendBumpLeaderEpochsRequest(failedPartitions, future),
+                            RETRY_BACKOFF_MS, "Bump leader epoch response has partition-level errors");
+                }
+
                 log.info("Bump leader epoch response successful: {}", response);
                 maybeCompletePendingEpochBumps();
             }
