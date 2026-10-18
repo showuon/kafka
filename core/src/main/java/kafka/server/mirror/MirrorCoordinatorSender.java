@@ -285,6 +285,11 @@ class MirrorCoordinatorSender {
                             log.warn("Unexpected response type from coordinator {}: {}. disconnected={}, timedOut={}, versionMismatch={}, authException={}",
                                     node, response.responseBody(), response.wasDisconnected(), response.wasTimedOut(),
                                     response.versionMismatch(), response.authenticationException());
+                            future.completeExceptionally(new RuntimeException(
+                                    "Read states from remote coordinator " + node + " failed:"
+                                    + " disconnected=" + response.wasDisconnected()
+                                    + " timedOut=" + response.wasTimedOut()));
+                            return;
                         }
 
                         if (remaining.decrementAndGet() == 0) {
@@ -360,6 +365,11 @@ class MirrorCoordinatorSender {
                             log.warn("Unexpected response type from coordinator {}: {}. disconnected={}, timedOut={}, versionMismatch={}, authException={}",
                                     node, response.responseBody(), response.wasDisconnected(), response.wasTimedOut(),
                                     response.versionMismatch(), response.authenticationException());
+                            resultFuture.completeExceptionally(new RuntimeException(
+                                    "Read offsets from remote leader " + node + " failed:"
+                                    + " disconnected=" + response.wasDisconnected()
+                                    + " timedOut=" + response.wasTimedOut()));
+                            return;
                         }
 
                         if (remaining.decrementAndGet() == 0) {
@@ -462,6 +472,10 @@ class MirrorCoordinatorSender {
                         log.warn("Unexpected response type from coordinator {}: {}. disconnected={}, timedOut={}, versionMismatch={}, authException={}",
                                 node, response.responseBody(), response.wasDisconnected(), response.wasTimedOut(),
                                 response.versionMismatch(), response.authenticationException());
+                        resultFuture.completeExceptionally(new RuntimeException(
+                                "Write states to remote coordinator " + node + " failed:"
+                                        + " disconnected=" + response.wasDisconnected()
+                                        + " timedOut=" + response.wasTimedOut()));
                     }
 
                     if (remaining.decrementAndGet() == 0) {
