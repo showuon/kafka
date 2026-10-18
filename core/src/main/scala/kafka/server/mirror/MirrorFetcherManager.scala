@@ -117,13 +117,15 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
         // Initialize lag information for newly added partitions
         initialFetchOffsets.foreach { case (topicPartition, _) =>
           val key = MirrorLagKey(mirrorFetcherKey.mirrorName, topicPartition)
-          // Initialize with 0 values until first fetch updates it
-          val destinationOffset = replicaManager.getPartition(topicPartition) match {
-            case HostedPartition.Online(partition) =>
-              partition.log.map(_.highWatermark).getOrElse(0L)
-            case _ => 0L
+          if (!mirrorOffsetInfoMap.contains(key)) {
+            // Initialize with current high watermark (or 0) if no cached offset info, until first fetch updates it
+            val destinationOffset = replicaManager.getPartition(topicPartition) match {
+              case HostedPartition.Online(partition) =>
+                partition.log.map(_.highWatermark).getOrElse(0L)
+              case _ => 0L
+            }
+            mirrorOffsetInfoMap.put(key, MirrorOffsetInfo(destinationOffset, destinationOffset, time.milliseconds()))
           }
-          mirrorOffsetInfoMap.put(key, MirrorOffsetInfo(destinationOffset, destinationOffset, time.milliseconds()))
         }
       }
     }
@@ -159,7 +161,15 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
         // Remove lag cache entries for partitions that were actually removed
         for (partition <- removed.keys) {
           val lagKey = MirrorLagKey(fetcherKey.mirrorName, partition)
-          mirrorOffsetInfoMap.remove(lagKey)
+          val lisr = metadataCache.getLeaderAndIsr(partition.topic(), partition.partition())
+          if (lisr.isPresent) {
+            // Only remove the mirror offset info if the leadership has changed.
+            if (lisr.get().leader() != brokerConfig.nodeId) {
+              mirrorOffsetInfoMap.remove(lagKey)
+            }
+          } else {
+            mirrorOffsetInfoMap.remove(lagKey)
+          }
         }
       }
       failedPartitions.removeAll(partitions)
