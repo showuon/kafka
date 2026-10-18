@@ -350,19 +350,19 @@ class MirrorCoordinatorSender {
                     new ReadMirrorOffsetsRequest.Builder(data),
                     response -> {
                         if (response.responseBody() instanceof ReadMirrorOffsetsResponse readOffsetsResponse) {
-                            log.debug("Read offsets from remote leader completed from node {}: {}", node, response.responseBody());
+                            log.debug("Read offsets from remote leader node {} completed. {}", node, response.responseBody());
 
                             synchronized (merged) {
                                 merged.topics().addAll(readOffsetsResponse.data().topics());
                                 if (readOffsetsResponse.data().errorCode() != Errors.NONE.code()) {
-                                    log.error("Failed to read offsets from remote coordinator: {}-{}",
-                                            readOffsetsResponse.data().errorCode(), readOffsetsResponse.data().errorMessage());
+                                    log.error("Failed to read offsets from remote leader node {}. {}: {}",
+                                            node, readOffsetsResponse.data().errorCode(), readOffsetsResponse.data().errorMessage());
                                     merged.setErrorCode(readOffsetsResponse.data().errorCode());
                                     merged.setErrorMessage(readOffsetsResponse.data().errorMessage());
                                 }
                             }
                         } else {
-                            log.warn("Unexpected response type from coordinator {}: {}. disconnected={}, timedOut={}, versionMismatch={}, authException={}",
+                            log.warn("Unexpected response type from node {}: {}. Disconnected={}, timedOut={}, versionMismatch={}, authException={}",
                                     node, response.responseBody(), response.wasDisconnected(), response.wasTimedOut(),
                                     response.versionMismatch(), response.authenticationException());
                             resultFuture.completeExceptionally(new RuntimeException(
