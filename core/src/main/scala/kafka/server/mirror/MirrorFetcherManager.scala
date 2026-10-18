@@ -227,6 +227,7 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
   }
 
   def updateOffsetInfo(mirrorName: String, topicPartition: TopicPartition, sourceOffset: Long, destinationOffset: Long): Unit = {
+    logger.info("updateOffsetInfo topic partition:" + topicPartition + ";;" + sourceOffset + ";;" + destinationOffset)
     val key = MirrorLagKey(mirrorName, topicPartition)
     mirrorOffsetInfoMap.put(key, MirrorOffsetInfo(sourceOffset, destinationOffset, time.milliseconds()))
   }

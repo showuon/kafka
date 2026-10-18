@@ -73,9 +73,9 @@ class MirrorFetcherThread(name: String,
       throw new IllegalStateException("Offset mismatch for partition %s: fetched offset = %d, log end offset = %d.".format(
         topicPartition, fetchOffset, log.logEndOffset))
 
-    if (logTrace)
-      trace(s"Appending records for partition $topicPartition: log end offset=${log.logEndOffset}, " +
-        s"record bytes=${records.sizeInBytes}, leader high watermark=${partitionData.highWatermark}")
+//    if (logTrace)
+    info(s"Appending records for partition $topicPartition: log end offset=${log.logEndOffset}, " +
+      s"record bytes=${records.sizeInBytes}, leader high watermark=${partitionData.highWatermark}")
 
     validateLeaderEpoch(topicPartition, partition, records, partitionLeaderEpoch)
 
