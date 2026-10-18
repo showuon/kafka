@@ -1733,12 +1733,12 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         MirrorPartitionMetadata existing = mirrorCache.getPartitionMetadata(mp);
         MirrorPartitionState state = existing.state();
         if (state != MirrorPartitionState.MIRRORING) {
-            log.debug("Skipping clearing failed state for partition {}. Reason: Current state is {}.", tp, state);
+            log.debug("Skipping failed state clearance for partition {}. Reason: Current state is {}.", tp, state);
             return;
         }
 
         if (existing.retryAttempt() == 0 && existing.errorMessage() == null && existing.prevState() == null) {
-            log.trace("Skipping clearing failed state for partition {}. Reason: Current state is already up-to-date: {}.", tp, state);
+            log.debug("Skipping failed state clearance for partition {}. Reason: Current state is up-to-date.", tp);
             return;
         }
         mirrorCache.updatePartitionMetadata(mp,
