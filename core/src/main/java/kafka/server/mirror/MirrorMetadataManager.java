@@ -151,7 +151,6 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     private volatile MetadataImage metadataImage = MetadataImage.EMPTY;
     private volatile MirrorCoordinatorSender coordSender;
     private volatile MirrorSourceSyncer sourceSyncer;
-    private volatile Map<String, Admin> srcAdmins;
     private volatile boolean isInitialized = false;
 
     private final Map<TopicPartition, MirrorPartitionState> pendingStateTransitions = new ConcurrentHashMap<>();
@@ -296,9 +295,6 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     @Override
     public void onCoordShutdown() {
         log.debug("Coordinator is shutting down");
-        if (srcAdmins != null) {
-            srcAdmins.values().forEach(admin -> admin.close(Duration.ZERO));
-        }
     }
 
     /**
@@ -314,9 +310,6 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         scheduler.shutdown();
         pendingStateTransitions.clear();
         pendingLeaderEpochBumps.clear();
-        if (srcAdmins != null) {
-            srcAdmins.values().forEach(admin -> admin.close(Duration.ZERO));
-        }
 
         metricsGroup.removeMetric("LogAlignmentPartitionState");
         metricsGroup.removeMetric("UleRecoveryPartitionState");
