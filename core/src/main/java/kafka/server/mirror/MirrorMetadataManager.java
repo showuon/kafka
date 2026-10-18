@@ -309,7 +309,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         }
         scheduler.shutdown();
         pendingStateTransitions.clear();
-        pendingLeaderEpochBumps.clear();
+        clearAllPendingEpochBumps();
 
         metricsGroup.removeMetric("LogAlignmentPartitionState");
         metricsGroup.removeMetric("UleRecoveryPartitionState");
@@ -393,14 +393,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 return;
             }
             pendingStateTransitions.remove(tp);
-            pendingLeaderEpochBumps.removeIf(bump -> {
-                bump.partitionToEpoch().remove(tp);
-                if (bump.partitionToEpoch().isEmpty()) {
-                    bump.future().complete(null);
-                    return true;
-                }
-                return false;
-            });
+            removePendingEpochBumpPartitions(Set.of(tp));
             if (!coordSender.isLocalCoordinatorFor(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition())) {
                 MirrorPartition mp = MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
                 mirrorCache.removePartitionMetadata(mp);
@@ -981,14 +974,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
         mirrorCache.removeMirrorPartitions(mirrorName);
         mirrorCache.removeSourceClusterLeaders(mirrorName);
-        pendingLeaderEpochBumps.removeIf(bump -> {
-            bump.partitionToEpoch().keySet().removeAll(states.keySet());
-            if (bump.partitionToEpoch().isEmpty()) {
-                bump.future().cancel(false);
-                return true;
-            }
-            return false;
-        });
+        removePendingEpochBumpPartitions(states.keySet());
 
         if (coordPartitionToMirrorPartitions.isEmpty()) {
             states.keySet().forEach(tp ->
@@ -1224,7 +1210,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         }
 
         CompletableFuture<Void> future = new CompletableFuture<>();
-        pendingLeaderEpochBumps.add(new PendingLeaderEpochBump(future, new ConcurrentHashMap<>(partitionMinEpochs)));
+        addPendingEpochBump(future, partitionMinEpochs);
         maybeCompletePendingEpochBumps();
 
         sendBumpLeaderEpochsRequest(partitionMinEpochs, future);
@@ -1237,7 +1223,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             return;
         }
 
-        log.info("Sending bump leader epoch request : {}", partitionMinEpochs);
+        log.info("Sending bump leader epoch request: {}", partitionMinEpochs);
 
         List<BumpLeaderEpochsRequestData.TopicState> topicStates = new ArrayList<>();
         Map<String, Set<Integer>> partitions = new HashMap<>();
@@ -1266,25 +1252,27 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 if (response.versionMismatch() != null) {
                     log.error("Bump leader epoch failed due to version mismatch", response.versionMismatch());
                     future.completeExceptionally(response.versionMismatch());
+                    removePendingEpochBump(future);
                     return;
                 }
                 if (response.authenticationException() != null) {
                     log.error("Bump leader epoch failed due to authentication error", response.authenticationException());
                     future.completeExceptionally(response.authenticationException());
+                    removePendingEpochBump(future);
                     return;
                 }
                 if (response.wasDisconnected()) {
-                    log.warn("Bump leader epoch request was disconnected");
-                    scheduleRetry("bump-leader-epoch", () -> sendBumpLeaderEpochsRequest(partitionMinEpochs, future),
-                            RETRY_BACKOFF_MS, "Bump leader epoch request was disconnected");
+                    partitionMinEpochs.keySet().forEach(tp ->
+                        scheduleRetry("bump-leader-epoch-" + tp, () -> sendBumpLeaderEpochsRequest(partitionMinEpochs, future),
+                                RETRY_BACKOFF_MS, "Bump leader epoch request was disconnected"));
                     return;
                 }
                 BumpLeaderEpochsResponse bumpResponse = (BumpLeaderEpochsResponse) response.responseBody();
                 Errors topLevelError = Errors.forCode(bumpResponse.data().errorCode());
                 if (topLevelError != Errors.NONE) {
-                    log.warn("Bump leader epoch response has top-level error: {}", topLevelError);
-                    scheduleRetry("bump-leader-epoch", () -> sendBumpLeaderEpochsRequest(partitionMinEpochs, future),
-                            RETRY_BACKOFF_MS, "Bump leader epoch response has top-level error: " + topLevelError);
+                    partitionMinEpochs.keySet().forEach(tp ->
+                        scheduleRetry("bump-leader-epoch-" + tp, () -> sendBumpLeaderEpochsRequest(partitionMinEpochs, future),
+                                RETRY_BACKOFF_MS, "Bump leader epoch response has top-level error: " + topLevelError));
                     return;
                 }
 
@@ -1303,12 +1291,13 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                     }));
 
                 if (!failedPartitions.isEmpty()) {
-                    scheduleRetry("bump-leader-epoch", () -> sendBumpLeaderEpochsRequest(failedPartitions, future),
-                            RETRY_BACKOFF_MS, "Bump leader epoch response has partition-level errors");
+                    failedPartitions.keySet().forEach(tp ->
+                        scheduleRetry("bump-leader-epoch-" + tp, () -> sendBumpLeaderEpochsRequest(failedPartitions, future),
+                                RETRY_BACKOFF_MS, "Bump leader epoch response has partition-level errors"));
+                } else {
+                    log.info("Bump leader epoch response successful: {}", response);
+                    maybeCompletePendingEpochBumps();
                 }
-
-                log.info("Bump leader epoch response successful: {}", response);
-                maybeCompletePendingEpochBumps();
             }
 
             @Override
@@ -1317,8 +1306,9 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                     return;
                 }
                 log.warn("Bump leader epoch request timed out");
-                scheduleRetry("bump-leader-epoch", () -> sendBumpLeaderEpochsRequest(partitionMinEpochs, future),
-                        RETRY_BACKOFF_MS, "Bump leader epoch timeout");
+                partitionMinEpochs.keySet().forEach(tp ->
+                    scheduleRetry("bump-leader-epoch-" + tp, () -> sendBumpLeaderEpochsRequest(partitionMinEpochs, future),
+                            RETRY_BACKOFF_MS, "Bump leader epoch timeout"));
             }
         });
     }
@@ -1369,9 +1359,13 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         }
     }
 
+    private void addPendingEpochBump(CompletableFuture<Void> future, Map<TopicPartition, Integer> partitionMinEpochs) {
+        pendingLeaderEpochBumps.add(new PendingLeaderEpochBump(future, new ConcurrentHashMap<>(partitionMinEpochs)));
+    }
+
     void maybeCompletePendingEpochBumps() {
-        pendingLeaderEpochBumps.removeIf(bumpLeaderEpoch -> {
-            Set<TopicPartition> pendingPartitions = bumpLeaderEpoch.partitionToEpoch().entrySet().stream().filter(entry -> {
+        pendingLeaderEpochBumps.removeIf(bump -> {
+            Set<TopicPartition> pendingPartitions = bump.partitionToEpoch().entrySet().stream().filter(entry -> {
                 TopicPartition tp = entry.getKey();
                 int epoch = entry.getValue();
                 var topicImage = metadataImage.topics().getTopic(tp.topic());
@@ -1381,14 +1375,34 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 return partitionReg.leaderEpoch <= epoch;
             }).map(Map.Entry::getKey).collect(Collectors.toSet());
             if (pendingPartitions.isEmpty()) {
-                bumpLeaderEpoch.future().complete(null);
+                bump.future().complete(null);
                 return true;
             } else {
-                log.info("bumpLeaderEpoch is pending for partitions: {}, all: {}",
-                        pendingPartitions, bumpLeaderEpoch.partitionToEpoch().keySet());
+                log.info("Bump leader epoch is pending for partitions: {}, all: {}",
+                        pendingPartitions, bump.partitionToEpoch().keySet());
                 return false;
             }
         });
+    }
+
+    private void removePendingEpochBump(CompletableFuture<Void> future) {
+        pendingLeaderEpochBumps.removeIf(bump -> bump.future() == future);
+    }
+
+    private void removePendingEpochBumpPartitions(Set<TopicPartition> partitionsToRemove) {
+        pendingLeaderEpochBumps.removeIf(bump -> {
+            bump.partitionToEpoch().keySet().removeAll(partitionsToRemove);
+            if (bump.partitionToEpoch().isEmpty()) {
+                bump.future().complete(null);
+                return true;
+            }
+            return false;
+        });
+    }
+
+    private void clearAllPendingEpochBumps() {
+        pendingLeaderEpochBumps.forEach(bump -> bump.future().complete(null));
+        pendingLeaderEpochBumps.clear();
     }
 
     private void scheduleRetry(String name, Runnable callback, long delayMs, String reason) {
