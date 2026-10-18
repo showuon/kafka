@@ -161,13 +161,15 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
         // Remove lag cache entries for partitions that were actually removed
         for (partition <- removed.keys) {
           val lagKey = MirrorLagKey(fetcherKey.mirrorName, partition)
-          metadataCache.getLeaderAndIsr(partition.topic(), partition.partition()).ifPresent(lisr => {
+          val lisr = metadataCache.getLeaderAndIsr(partition.topic(), partition.partition())
+          if (lisr.isPresent) {
             // only remove the mirror offset info if the leadership has changed.
-            if (lisr.leader() != brokerConfig.nodeId) {
+            if (lisr.get().leader() != brokerConfig.nodeId) {
               mirrorOffsetInfoMap.remove(lagKey)
             }
-          })
-
+          } else {
+            mirrorOffsetInfoMap.remove(lagKey)
+          }
         }
       }
       failedPartitions.removeAll(partitions)
