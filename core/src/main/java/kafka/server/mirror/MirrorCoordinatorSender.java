@@ -333,6 +333,8 @@ class MirrorCoordinatorSender {
         ReadMirrorOffsetsResponseData merged = new ReadMirrorOffsetsResponseData();
         AtomicInteger remaining = new AtomicInteger(nodeToTopicPartitions.size());
 
+        log.info("readOffsetsFromRemoteLeaders:" + nodeToTopicPartitions);
+
         nodeToTopicPartitions.forEach((node, topicPartitionsMap) -> {
             ReadMirrorOffsetsRequestData data = new ReadMirrorOffsetsRequestData().setMirrorName(mirrorName);
             List<ReadMirrorOffsetsRequestData.TopicData> topicDataList = new ArrayList<>();
@@ -350,7 +352,7 @@ class MirrorCoordinatorSender {
                     new ReadMirrorOffsetsRequest.Builder(data),
                     response -> {
                         if (response.responseBody() instanceof ReadMirrorOffsetsResponse readOffsetsResponse) {
-                            log.debug("Read offsets from remote leader completed: {}", response.responseBody());
+                            log.debug("Read offsets from remote leader completed from node {}: {}", node, response.responseBody());
 
                             synchronized (merged) {
                                 merged.topics().addAll(readOffsetsResponse.data().topics());
