@@ -101,14 +101,14 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
       for ((mirrorFetcherKey, initialFetchOffsets) <- partitionsPerFetcher) {
         val fetcherThread = mirrorFetcherThreadMap.get(mirrorFetcherKey) match {
           case Some(currentFetcherThread) if currentFetcherThread.leader.brokerEndPoint() == mirrorFetcherKey.sourceBroker =>
-            logger.debug("Reusing fetcher thread for {}", mirrorFetcherKey)
+            logger.info("Reusing fetcher thread for {}", mirrorFetcherKey)
             currentFetcherThread
           case Some(f) =>
-            logger.debug("Recreating fetcher thread for {}", mirrorFetcherKey)
+            logger.info("Recreating fetcher thread for {}", mirrorFetcherKey)
             f.shutdown()
             addAndStartFetcherThread(mirrorFetcherKey)
           case None =>
-            logger.debug("Creating fetcher thread for {}", mirrorFetcherKey)
+            logger.info("Creating fetcher thread for {}", mirrorFetcherKey)
             addAndStartFetcherThread(mirrorFetcherKey)
         }
         // Failed partitions are removed when added partitions to thread
@@ -117,13 +117,17 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
         // Initialize lag information for newly added partitions
         initialFetchOffsets.foreach { case (topicPartition, _) =>
           val key = MirrorLagKey(mirrorFetcherKey.mirrorName, topicPartition)
-          // Initialize with 0 values until first fetch updates it
-          val destinationOffset = replicaManager.getPartition(topicPartition) match {
-            case HostedPartition.Online(partition) =>
-              partition.log.map(_.highWatermark).getOrElse(0L)
-            case _ => 0L
+          if (!mirrorOffsetInfoMap.contains(key)) {
+            // Initialize with 0 values until first fetch updates it
+            val destinationOffset = replicaManager.getPartition(topicPartition) match {
+              case HostedPartition.Online(partition) =>
+                partition.log.map(_.highWatermark).getOrElse(0L)
+              case _ => 0L
+            }
+            mirrorOffsetInfoMap.put(key, MirrorOffsetInfo(destinationOffset, destinationOffset, time.milliseconds()))
+          } else {
+            info("addFetcherForPartitions don't update mirrorOffsetInfoMap:" + mirrorOffsetInfoMap.get(key))
           }
-          mirrorOffsetInfoMap.put(key, MirrorOffsetInfo(destinationOffset, destinationOffset, time.milliseconds()))
         }
       }
     }
@@ -161,10 +165,11 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
           val lagKey = MirrorLagKey(fetcherKey.mirrorName, partition)
           // luke
           metadataCache.getLeaderAndIsr(partition.topic(), partition.partition()).ifPresent(lisr => {
+            info("lisr:" + lisr)
             if (lisr.leader() != brokerConfig.nodeId) {
               mirrorOffsetInfoMap.remove(lagKey)
             } else {
-              info("!!! don't remove offset cache")
+              info("don't remove offset cache: " + partition)
             }
           })
 
