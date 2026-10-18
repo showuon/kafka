@@ -118,7 +118,7 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
         initialFetchOffsets.foreach { case (topicPartition, _) =>
           val key = MirrorLagKey(mirrorFetcherKey.mirrorName, topicPartition)
           if (!mirrorOffsetInfoMap.contains(key)) {
-            // Initialize with current high watermark if no cached offset info, until first fetch updates it
+            // Initialize with current high watermark (or 0) if no cached offset info, until first fetch updates it
             val destinationOffset = replicaManager.getPartition(topicPartition) match {
               case HostedPartition.Online(partition) =>
                 partition.log.map(_.highWatermark).getOrElse(0L)
