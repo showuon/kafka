@@ -291,7 +291,6 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
     /**
      * Called by the MirrorCoordinator when shutdown is invoked.
-     * Closes source Admin clients as they may hold pending operations.
      */
     @Override
     public void onCoordShutdown() {
