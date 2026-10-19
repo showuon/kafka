@@ -1208,11 +1208,33 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             return CompletableFuture.completedFuture(null);
         }
 
+        // Filter out partitions that already have an inflight bump with an equal or higher target epoch
+        Map<TopicPartition, Integer> filteredPartitions = new HashMap<>(partitionMinEpochs);
+        for (PendingLeaderEpochBump pending : pendingLeaderEpochBumps) {
+            if (pending.future().isDone()) {
+                continue;
+            }
+            filteredPartitions.entrySet().removeIf(entry -> {
+                Integer inflightEpoch = pending.partitionToEpoch().get(entry.getKey());
+                return inflightEpoch != null && inflightEpoch >= entry.getValue();
+            });
+        }
+
+        if (filteredPartitions.isEmpty()) {
+            log.debug("All partitions in {} already have inflight bump leader epoch requests, skipping", partitionMinEpochs.keySet());
+            return CompletableFuture.completedFuture(null);
+        }
+
+        if (filteredPartitions.size() < partitionMinEpochs.size()) {
+            log.debug("Filtered out {} partitions with inflight bump leader epoch requests, sending for {}",
+                    partitionMinEpochs.size() - filteredPartitions.size(), filteredPartitions.keySet());
+        }
+
         CompletableFuture<Void> future = new CompletableFuture<>();
-        addPendingEpochBump(future, partitionMinEpochs);
+        addPendingEpochBump(future, filteredPartitions);
         maybeCompletePendingEpochBumps();
 
-        sendBumpLeaderEpochsRequest(partitionMinEpochs, future);
+        sendBumpLeaderEpochsRequest(filteredPartitions, future);
         return future;
     }
 
