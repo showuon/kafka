@@ -290,10 +290,14 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
     /**
      * Called by the MirrorCoordinator when shutdown is invoked.
+     * Closes source Admin clients as they may hold pending operations.
      */
     @Override
     public void onCoordShutdown() {
         log.debug("Coordinator is shutting down");
+        if (sourceSyncer != null) {
+            sourceSyncer.closeAndRemoveSourceAdmins();
+        }
     }
 
     /**
@@ -472,7 +476,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         if (needsReconnection || mirrorDeleted) {
             mirrorCache.removeSourceClusterLeaders(mirrorName);
             if (sourceSyncer != null) {
-                sourceSyncer.closeAndRemoveSourceAdmin(mirrorName);
+                sourceSyncer.closeAndRemoveSourceAdmins(mirrorName);
             }
             var mirrorFetcherManager = replicaManagerSupplier.get().mirrorFetcherManager();
             mirrorFetcherManager.removeFetchersForMirror(mirrorName);
