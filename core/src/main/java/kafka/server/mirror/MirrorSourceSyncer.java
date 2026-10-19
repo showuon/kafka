@@ -247,7 +247,13 @@ class MirrorSourceSyncer {
         });
     }
 
-    void closeAndRemoveSourceAdmin(String mirrorName) {
+    void closeAndRemoveSourceAdmins() {
+        if (srcAdmins != null) {
+            srcAdmins.keySet().forEach(this::closeAndRemoveSourceAdmins);
+        }
+    }
+
+    void closeAndRemoveSourceAdmins(String mirrorName) {
         if (srcAdmins != null) {
             Admin admin = srcAdmins.remove(mirrorName);
             if (admin != null) {
