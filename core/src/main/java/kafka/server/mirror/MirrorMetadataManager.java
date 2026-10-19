@@ -1217,6 +1217,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         return future;
     }
 
+    @SuppressWarnings("NPathComplexity")
     private void sendBumpLeaderEpochsRequest(Map<TopicPartition, Integer> partitionMinEpochs,
                                              CompletableFuture<Void> future) {
         if (future.isDone()) {
@@ -1250,11 +1251,11 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                     return;
                 }
                 if (response.versionMismatch() != null) {
-                    handleBumpLeaderEpochFatalError(future, response.versionMismatch());
+                    handleBumpLeaderEpochError(future, response.versionMismatch());
                     return;
                 }
                 if (response.authenticationException() != null) {
-                    handleBumpLeaderEpochFatalError(future, response.authenticationException());
+                    handleBumpLeaderEpochError(future, response.authenticationException());
                     return;
                 }
                 if (response.wasDisconnected()) {
@@ -1272,7 +1273,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                                 RETRY_BACKOFF_MS, "Bump leader epoch response has top-level error: " + topLevelError);
                         return;
                     } else {
-                        handleBumpLeaderEpochFatalError(future, topLevelError.exception());
+                        handleBumpLeaderEpochError(future, topLevelError.exception());
                         return;
                     }
                 }
@@ -1282,26 +1283,26 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 Set<TopicPartition> successfulPartitions = new HashSet<>();
 
                 bumpResponse.data().topics().forEach(topic ->
-                    topic.partitions().forEach(partition -> {
-                        Errors partitionError = Errors.forCode(partition.errorCode());
-                        TopicPartition tp = new TopicPartition(topic.topicName(), partition.partitionIndex());
-                        if (partitionError != Errors.NONE) {
-                            log.warn("Bump leader epoch partition-level error for {}: {}", tp, partitionError);
-                            Integer minEpoch = partitionMinEpochs.get(tp);
-                            if (minEpoch != null) {
-                                if (partitionError.exception() instanceof RetriableException) {
-                                    retriableFailures.put(tp, minEpoch);
-                                } else {
-                                    nonRetriableFailures.add(tp);
+                        topic.partitions().forEach(partition -> {
+                            Errors partitionError = Errors.forCode(partition.errorCode());
+                            TopicPartition tp = new TopicPartition(topic.topicName(), partition.partitionIndex());
+                            if (partitionError != Errors.NONE) {
+                                log.warn("Bump leader epoch partition-level error for {}: {}", tp, partitionError);
+                                Integer minEpoch = partitionMinEpochs.get(tp);
+                                if (minEpoch != null) {
+                                    if (partitionError.exception() instanceof RetriableException) {
+                                        retriableFailures.put(tp, minEpoch);
+                                    } else {
+                                        nonRetriableFailures.add(tp);
+                                    }
                                 }
+                            } else {
+                                successfulPartitions.add(tp);
                             }
-                        } else {
-                            successfulPartitions.add(tp);
-                        }
-                    }));
+                        }));
 
                 if (!nonRetriableFailures.isEmpty()) {
-                    log.error("Bump leader epoch non-retriable errors for partitions: {}", nonRetriableFailures);
+                    log.error("Bump leader epoch response has non-retriable errors for partitions: {}", nonRetriableFailures);
                     removePendingEpochBumpPartitions(nonRetriableFailures);
                 }
 
@@ -1312,7 +1313,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 }
 
                 if (!successfulPartitions.isEmpty()) {
-                    log.info("Bump leader epoch response successful for partitions: {}", successfulPartitions);
+                    log.info("Bump leader epoch response success for partitions: {}", successfulPartitions);
                     maybeCompletePendingEpochBumps();
                 }
             }
@@ -1327,6 +1328,14 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                         RETRY_BACKOFF_MS, "Bump leader epoch timeout");
             }
         });
+    }
+
+    private void handleBumpLeaderEpochError(CompletableFuture<Void> future, Exception fatalError) {
+        if (fatalError != null) {
+            log.error("Bump leader epoch request failed", fatalError);
+            future.completeExceptionally(fatalError);
+            removePendingEpochBump(future);
+        }
     }
 
     private Map<TopicPartition, Integer> buildSourceEpochBumpTargets(String mirrorName,
@@ -1399,14 +1408,6 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 return false;
             }
         });
-    }
-
-    private void handleBumpLeaderEpochFatalError(CompletableFuture<Void> future, Exception fatalError) {
-        if (fatalError != null) {
-            log.error("bump leader epoch failed", fatalError);
-            future.completeExceptionally(fatalError);
-            removePendingEpochBump(future);
-        }
     }
 
     private void removePendingEpochBump(CompletableFuture<Void> future) {
