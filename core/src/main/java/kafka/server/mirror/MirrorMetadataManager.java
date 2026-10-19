@@ -1401,14 +1401,12 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         });
     }
 
-    private boolean handleBumpLeaderEpochFatalError(CompletableFuture<Void> future, Exception fatalError) {
+    private void handleBumpLeaderEpochFatalError(CompletableFuture<Void> future, Exception fatalError) {
         if (fatalError != null) {
             log.error("bump leader epoch failed", fatalError);
             future.completeExceptionally(fatalError);
             removePendingEpochBump(future);
-            return true;
         }
-        return false;
     }
 
     private void removePendingEpochBump(CompletableFuture<Void> future) {
