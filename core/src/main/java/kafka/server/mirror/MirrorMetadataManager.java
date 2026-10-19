@@ -1273,29 +1273,46 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                         return;
                     } else {
                         handleBumpLeaderEpochFatalError(future, topLevelError.exception());
+                        return;
                     }
                 }
 
-                Map<TopicPartition, Integer> failedPartitions = new HashMap<>();
+                Map<TopicPartition, Integer> retriableFailures = new HashMap<>();
+                Set<TopicPartition> nonRetriableFailures = new HashSet<>();
+                Set<TopicPartition> successfulPartitions = new HashSet<>();
+
                 bumpResponse.data().topics().forEach(topic ->
                     topic.partitions().forEach(partition -> {
                         Errors partitionError = Errors.forCode(partition.errorCode());
+                        TopicPartition tp = new TopicPartition(topic.topicName(), partition.partitionIndex());
                         if (partitionError != Errors.NONE) {
-                            TopicPartition tp = new TopicPartition(topic.topicName(), partition.partitionIndex());
                             log.warn("Bump leader epoch partition-level error for {}: {}", tp, partitionError);
                             Integer minEpoch = partitionMinEpochs.get(tp);
                             if (minEpoch != null) {
-                                failedPartitions.put(tp, minEpoch);
+                                if (partitionError.exception() instanceof RetriableException) {
+                                    retriableFailures.put(tp, minEpoch);
+                                } else {
+                                    nonRetriableFailures.add(tp);
+                                }
                             }
+                        } else {
+                            successfulPartitions.add(tp);
                         }
                     }));
 
-                if (!failedPartitions.isEmpty()) {
-                    scheduleRetry("bump-leader-epoch-" + failedPartitions.keySet(),
-                            () -> sendBumpLeaderEpochsRequest(partitionMinEpochs, future),
+                if (!nonRetriableFailures.isEmpty()) {
+                    log.error("Bump leader epoch non-retriable errors for partitions: {}", nonRetriableFailures);
+                    removePendingEpochBumpPartitions(nonRetriableFailures);
+                }
+
+                if (!retriableFailures.isEmpty()) {
+                    scheduleRetry("bump-leader-epoch-" + retriableFailures.keySet(),
+                            () -> sendBumpLeaderEpochsRequest(retriableFailures, future),
                             RETRY_BACKOFF_MS, "Bump leader epoch response has partition-level errors");
-                } else {
-                    log.info("Bump leader epoch response successful: {}", response);
+                }
+
+                if (!successfulPartitions.isEmpty()) {
+                    log.info("Bump leader epoch response successful for partitions: {}", successfulPartitions);
                     maybeCompletePendingEpochBumps();
                 }
             }
