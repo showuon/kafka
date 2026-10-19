@@ -39,6 +39,7 @@ import org.apache.kafka.common.errors.CoordinatorLoadInProgressException;
 import org.apache.kafka.common.errors.FencedLeaderEpochException;
 import org.apache.kafka.common.errors.FencedStateEpochException;
 import org.apache.kafka.common.errors.InvalidRegularExpression;
+import org.apache.kafka.common.errors.RetriableException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.message.BumpLeaderEpochsRequestData;
 import org.apache.kafka.common.message.DeleteClusterMirrorRequestData;
@@ -1242,6 +1243,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         return future;
     }
 
+    @SuppressWarnings("NPathComplexity")
     private void sendBumpLeaderEpochsRequest(Map<TopicPartition, Integer> partitionMinEpochs,
                                              CompletableFuture<Void> future) {
         if (future.isDone()) {
@@ -1275,52 +1277,69 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                     return;
                 }
                 if (response.versionMismatch() != null) {
-                    log.error("Bump leader epoch failed due to version mismatch", response.versionMismatch());
-                    future.completeExceptionally(response.versionMismatch());
-                    removePendingEpochBump(future);
+                    handleBumpLeaderEpochError(future, response.versionMismatch());
                     return;
                 }
                 if (response.authenticationException() != null) {
-                    log.error("Bump leader epoch failed due to authentication error", response.authenticationException());
-                    future.completeExceptionally(response.authenticationException());
-                    removePendingEpochBump(future);
+                    handleBumpLeaderEpochError(future, response.authenticationException());
                     return;
                 }
                 if (response.wasDisconnected()) {
-                    partitionMinEpochs.keySet().forEach(tp ->
-                        scheduleRetry("bump-leader-epoch-" + tp, () -> sendBumpLeaderEpochsRequest(partitionMinEpochs, future),
-                                RETRY_BACKOFF_MS, "Bump leader epoch request was disconnected"));
+                    scheduleRetry("bump-leader-epoch-" + partitionMinEpochs.keySet(),
+                            () -> sendBumpLeaderEpochsRequest(partitionMinEpochs, future),
+                            RETRY_BACKOFF_MS, "Bump leader epoch request was disconnected");
                     return;
                 }
                 BumpLeaderEpochsResponse bumpResponse = (BumpLeaderEpochsResponse) response.responseBody();
                 Errors topLevelError = Errors.forCode(bumpResponse.data().errorCode());
                 if (topLevelError != Errors.NONE) {
-                    partitionMinEpochs.keySet().forEach(tp ->
-                        scheduleRetry("bump-leader-epoch-" + tp, () -> sendBumpLeaderEpochsRequest(partitionMinEpochs, future),
-                                RETRY_BACKOFF_MS, "Bump leader epoch response has top-level error: " + topLevelError));
-                    return;
+                    if (topLevelError.exception() instanceof RetriableException) {
+                        scheduleRetry("bump-leader-epoch-" + partitionMinEpochs.keySet(),
+                                () -> sendBumpLeaderEpochsRequest(partitionMinEpochs, future),
+                                RETRY_BACKOFF_MS, "Bump leader epoch response has top-level error: " + topLevelError);
+                        return;
+                    } else {
+                        handleBumpLeaderEpochError(future, topLevelError.exception());
+                        return;
+                    }
                 }
 
-                Map<TopicPartition, Integer> failedPartitions = new HashMap<>();
-                bumpResponse.data().topics().forEach(topic ->
-                    topic.partitions().forEach(partition -> {
-                        Errors partitionError = Errors.forCode(partition.errorCode());
-                        if (partitionError != Errors.NONE) {
-                            TopicPartition tp = new TopicPartition(topic.topicName(), partition.partitionIndex());
-                            log.warn("Bump leader epoch partition-level error for {}: {}", tp, partitionError);
-                            Integer minEpoch = partitionMinEpochs.get(tp);
-                            if (minEpoch != null) {
-                                failedPartitions.put(tp, minEpoch);
-                            }
-                        }
-                    }));
+                Map<TopicPartition, Integer> retriableFailures = new HashMap<>();
+                Set<TopicPartition> nonRetriableFailures = new HashSet<>();
+                Set<TopicPartition> successfulPartitions = new HashSet<>();
 
-                if (!failedPartitions.isEmpty()) {
-                    failedPartitions.keySet().forEach(tp ->
-                        scheduleRetry("bump-leader-epoch-" + tp, () -> sendBumpLeaderEpochsRequest(failedPartitions, future),
-                                RETRY_BACKOFF_MS, "Bump leader epoch response has partition-level errors"));
-                } else {
-                    log.info("Bump leader epoch response successful: {}", response);
+                bumpResponse.data().topics().forEach(topic ->
+                        topic.partitions().forEach(partition -> {
+                            Errors partitionError = Errors.forCode(partition.errorCode());
+                            TopicPartition tp = new TopicPartition(topic.topicName(), partition.partitionIndex());
+                            if (partitionError != Errors.NONE) {
+                                log.warn("Bump leader epoch partition-level error for {}: {}", tp, partitionError);
+                                Integer minEpoch = partitionMinEpochs.get(tp);
+                                if (minEpoch != null) {
+                                    if (partitionError.exception() instanceof RetriableException) {
+                                        retriableFailures.put(tp, minEpoch);
+                                    } else {
+                                        nonRetriableFailures.add(tp);
+                                    }
+                                }
+                            } else {
+                                successfulPartitions.add(tp);
+                            }
+                        }));
+
+                if (!nonRetriableFailures.isEmpty()) {
+                    log.error("Bump leader epoch response has non-retriable errors for partitions: {}", nonRetriableFailures);
+                    removePendingEpochBumpPartitions(nonRetriableFailures);
+                }
+
+                if (!retriableFailures.isEmpty()) {
+                    scheduleRetry("bump-leader-epoch-" + retriableFailures.keySet(),
+                            () -> sendBumpLeaderEpochsRequest(retriableFailures, future),
+                            RETRY_BACKOFF_MS, "Bump leader epoch response has partition-level errors");
+                }
+
+                if (!successfulPartitions.isEmpty()) {
+                    log.info("Bump leader epoch response success for partitions: {}", successfulPartitions);
                     maybeCompletePendingEpochBumps();
                 }
             }
@@ -1330,12 +1349,19 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 if (future.isDone()) {
                     return;
                 }
-                log.warn("Bump leader epoch request timed out");
-                partitionMinEpochs.keySet().forEach(tp ->
-                    scheduleRetry("bump-leader-epoch-" + tp, () -> sendBumpLeaderEpochsRequest(partitionMinEpochs, future),
-                            RETRY_BACKOFF_MS, "Bump leader epoch timeout"));
+                scheduleRetry("bump-leader-epoch-" + partitionMinEpochs.keySet(),
+                        () -> sendBumpLeaderEpochsRequest(partitionMinEpochs, future),
+                        RETRY_BACKOFF_MS, "Bump leader epoch timeout");
             }
         });
+    }
+
+    private void handleBumpLeaderEpochError(CompletableFuture<Void> future, Exception fatalError) {
+        if (fatalError != null) {
+            log.error("Bump leader epoch request failed", fatalError);
+            future.completeExceptionally(fatalError);
+            removePendingEpochBump(future);
+        }
     }
 
     private Map<TopicPartition, Integer> buildSourceEpochBumpTargets(String mirrorName,
