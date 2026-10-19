@@ -65,6 +65,7 @@ import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig;
 import org.apache.kafka.coordinator.mirror.MirrorRecordSerde;
 import org.apache.kafka.coordinator.mirror.generated.LastMirrorEpochsKey;
 import org.apache.kafka.coordinator.mirror.generated.MirrorPartitionStateKey;
+import org.apache.kafka.server.config.ReplicationConfigs;
 import org.apache.kafka.server.config.ServerConfigs;
 import org.apache.kafka.server.config.ServerLogConfigs;
 import org.apache.kafka.server.log.remote.storage.NoOpRemoteLogMetadataManager;
@@ -88,9 +89,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 
-import static org.apache.kafka.common.config.TopicConfig.MIRROR_UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG;
 import static org.apache.kafka.common.internals.Topic.MIRROR_STATE_TOPIC_NAME;
-import static org.apache.kafka.server.config.ReplicationConfigs.DEFAULT_REPLICATION_FACTOR_CONFIG;
 import static org.apache.kafka.server.mirror.MirrorPartitionMetadata.NON_RETRYABLE_ERROR;
 import static org.apache.kafka.server.mirror.MirrorPartitionState.FAILED;
 import static org.apache.kafka.server.mirror.MirrorPartitionState.MIRRORING;
@@ -555,7 +554,7 @@ public class ClusterMirroringIntegrationTest {
         // Enable ULE support
         dstAdmin.incrementalAlterConfigs(Map.of(topicResource, List.of(
                 new AlterConfigOp(
-                        new ConfigEntry(MIRROR_UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG, "true"),
+                        new ConfigEntry(TopicConfig.MIRROR_UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG, "true"),
                         AlterConfigOp.OpType.SET)))).all().get();
 
         // Simulate another unclean leader election with log truncation on source
@@ -1021,8 +1020,9 @@ public class ClusterMirroringIntegrationTest {
         KafkaClusterTestKit tieredDst = buildCluster(1, Map.of(
                 ClusterMirrorConfig.MIRROR_NUM_REPLICA_FETCHERS_CONFIG, "1",
                 ClusterMirrorConfig.MIRROR_STATE_TOPIC_REPLICATION_FACTOR_CONFIG, "1",
+                ClusterMirrorConfig.MIRROR_STATE_TOPIC_MIN_ISR_CONFIG, "1",
                 GroupCoordinatorConfig.OFFSETS_TOPIC_REPLICATION_FACTOR_CONFIG, "1",
-                DEFAULT_REPLICATION_FACTOR_CONFIG, "1",
+                ReplicationConfigs.DEFAULT_REPLICATION_FACTOR_CONFIG, "1",
                 ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_ATTEMPTS_CONFIG, "3",
                 ClusterMirrorConfig.MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_CONFIG, "1000",
                 RemoteLogManagerConfig.REMOTE_LOG_STORAGE_SYSTEM_ENABLE_PROP, "true",
@@ -1160,11 +1160,12 @@ public class ClusterMirroringIntegrationTest {
                 .setConfigProp(ServerLogConfigs.AUTO_CREATE_TOPICS_ENABLE_CONFIG, "false")
                 .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_NUM_PARTITIONS_CONFIG, "3")
                 .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_REPLICATION_FACTOR_CONFIG, "2")
+                .setConfigProp(ClusterMirrorConfig.MIRROR_STATE_TOPIC_MIN_ISR_CONFIG, "1")
+                .setConfigProp(ReplicationConfigs.DEFAULT_REPLICATION_FACTOR_CONFIG, "2")
                 .setConfigProp(GroupCoordinatorConfig.OFFSETS_TOPIC_REPLICATION_FACTOR_CONFIG, "2")
-                .setConfigProp(DEFAULT_REPLICATION_FACTOR_CONFIG, "2")
                 .setConfigProp(ServerConfigs.REQUEST_TIMEOUT_MS_CONFIG, "5000")
                 .setConfigProp(ClusterMirrorConfig.SOCKET_TIMEOUT_MS_CONFIG, "5000")
-                .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_ATTEMPTS_CONFIG, 10)
+                .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_ATTEMPTS_CONFIG, "10")
                 .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_CONFIG, "100")
                 .setConfigProp(ClusterMirrorConfig.MIRROR_FAILED_RETRY_MAX_BACKOFF_MS_CONFIG, "5000")
                 .setConfigProp(ServerConfigs.UNSTABLE_API_VERSIONS_ENABLE_CONFIG, "true")

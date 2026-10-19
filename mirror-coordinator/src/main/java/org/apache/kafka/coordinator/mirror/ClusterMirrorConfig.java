@@ -82,6 +82,18 @@ public final class ClusterMirrorConfig extends AbstractConfig {
     private static final String MIRROR_STATE_TOPIC_REPLICATION_FACTOR_DOC = "The replication factor for the internal topic. " +
             "Topic creation will fail until the cluster size meets this replication factor requirement.";
 
+    public static final String MIRROR_STATE_TOPIC_MIN_ISR_CONFIG = "mirror.state.topic.min.isr";
+    private static final int MIRROR_STATE_TOPIC_MIN_ISR_DEFAULT = 2;
+    private static final String MIRROR_STATE_TOPIC_MIN_ISR_DOC = "The minimum number of replicas that must acknowledge a write to mirror state topic in order to be considered successful.";
+
+    public static final String MIRROR_STATE_TOPIC_SEGMENT_BYTES_CONFIG = "mirror.state.topic.segment.bytes";
+    private static final int MIRROR_STATE_TOPIC_SEGMENT_BYTES_DEFAULT = 100 * 1024 * 1024;
+    private static final String MIRROR_STATE_TOPIC_SEGMENT_BYTES_DOC = "The mirror state topic segment bytes should be kept relatively small in order to facilitate faster log compaction and cache loads.";
+
+    public static final String MIRROR_STATE_TOPIC_LOAD_BUFFER_SIZE_CONFIG = "mirror.state.topic.load.buffer.size";
+    private static final int MIRROR_STATE_TOPIC_LOAD_BUFFER_SIZE_DEFAULT = 5 * 1024 * 1024;
+    private static final String MIRROR_STATE_TOPIC_LOAD_BUFFER_SIZE_DOC = "Batch size for reading from the mirror state log segments when loading mirror state into the cache (soft-limit, overridden if records are too large).";
+
     public static final String MIRROR_NUM_REPLICA_FETCHERS_CONFIG = "mirror.num.replica.fetchers";
     private static final int MIRROR_NUM_REPLICA_FETCHERS_DEFAULT = 1;
     private static final String MIRROR_NUM_REPLICA_FETCHERS_DOC = "Number of fetcher threads used to replicate records from each source broker in a cluster mirror. " +
@@ -367,22 +379,15 @@ public final class ClusterMirrorConfig extends AbstractConfig {
             .define(MIRROR_COORDINATOR_LOAD_BUFFER_SIZE_CONFIG, INT, MIRROR_COORDINATOR_LOAD_BUFFER_SIZE_DEFAULT, atLeast(1), LOW, MIRROR_COORDINATOR_LOAD_BUFFER_SIZE_DOC)
             .define(MIRROR_STATE_TOPIC_NUM_PARTITIONS_CONFIG, INT, MIRROR_STATE_TOPIC_NUM_PARTITIONS_DEFAULT, atLeast(1), HIGH, MIRROR_STATE_TOPIC_NUM_PARTITIONS_DOC)
             .define(MIRROR_STATE_TOPIC_REPLICATION_FACTOR_CONFIG, SHORT, MIRROR_STATE_TOPIC_REPLICATION_FACTOR_DEFAULT, atLeast(1), HIGH, MIRROR_STATE_TOPIC_REPLICATION_FACTOR_DOC)
+            .define(MIRROR_STATE_TOPIC_MIN_ISR_CONFIG, INT, MIRROR_STATE_TOPIC_MIN_ISR_DEFAULT, atLeast(1), HIGH, MIRROR_STATE_TOPIC_MIN_ISR_DOC)
+            .define(MIRROR_STATE_TOPIC_SEGMENT_BYTES_CONFIG, INT, MIRROR_STATE_TOPIC_SEGMENT_BYTES_DEFAULT, atLeast(1), HIGH, MIRROR_STATE_TOPIC_SEGMENT_BYTES_DOC)
+            .define(MIRROR_STATE_TOPIC_LOAD_BUFFER_SIZE_CONFIG, INT, MIRROR_STATE_TOPIC_LOAD_BUFFER_SIZE_DEFAULT, atLeast(1), HIGH, MIRROR_STATE_TOPIC_LOAD_BUFFER_SIZE_DOC)
             .define(MIRROR_NUM_REPLICA_FETCHERS_CONFIG, INT, MIRROR_NUM_REPLICA_FETCHERS_DEFAULT, atLeast(1), HIGH, MIRROR_NUM_REPLICA_FETCHERS_DOC)
             .define(MIRROR_METADATA_REFRESH_INTERVAL_MS_CONFIG, LONG, MIRROR_METADATA_REFRESH_INTERVAL_MS_DEFAULT, atLeast(0L), MEDIUM, MIRROR_METADATA_REFRESH_INTERVAL_MS_DOC)
             .define(MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_CONFIG, LONG, MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_DEFAULT, atLeast(1L), MEDIUM, MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_DOC)
             .define(MIRROR_FAILED_RETRY_MAX_BACKOFF_MS_CONFIG, LONG, MIRROR_FAILED_RETRY_MAX_BACKOFF_MS_DEFAULT, atLeast(1L), MEDIUM, MIRROR_FAILED_RETRY_MAX_BACKOFF_MS_DOC)
             .define(MIRROR_FAILED_RETRY_MAX_ATTEMPTS_CONFIG, INT, MIRROR_FAILED_RETRY_MAX_ATTEMPTS_DEFAULT, between(0, Short.MAX_VALUE), MEDIUM, MIRROR_FAILED_RETRY_MAX_ATTEMPTS_DOC);
 
-    private final Pattern topicPropertiesExcludePattern;
-    private final Pattern topicsIncludePattern;
-    private final Pattern topicsExcludePattern;
-    private final Pattern groupsIncludePattern;
-    private final Pattern groupsExcludePattern;
-    private final List<MirrorAclRule> aclIncludeRules;
-    private final List<MirrorAclRule> aclExcludeRules;
-    private final String securityProtocol;
-    private final String saslMechanism;
-    
     /**
      * Creates a ClusterMirrorConfig from mirror metadata properties stored in the cluster metadata.
      * Filter configs are loaded from the metadata, with defaults applied for any missing values.
@@ -406,6 +411,14 @@ public final class ClusterMirrorConfig extends AbstractConfig {
         return new ClusterMirrorConfig(CONFIG_DEF, properties, doLog);
     }
 
+    private final Pattern topicPropertiesExcludePattern;
+    private final Pattern topicsIncludePattern;
+    private final Pattern topicsExcludePattern;
+    private final Pattern groupsIncludePattern;
+    private final Pattern groupsExcludePattern;
+    private final List<MirrorAclRule> aclIncludeRules;
+    private final List<MirrorAclRule> aclExcludeRules;
+
     private ClusterMirrorConfig(ConfigDef configDef, Properties properties, boolean doLog) {
         super(configDef, properties, doLog);
         this.topicPropertiesExcludePattern = compilePatternList(getList(TOPIC_PROPERTIES_EXCLUDE_CONFIG));
@@ -415,8 +428,6 @@ public final class ClusterMirrorConfig extends AbstractConfig {
         this.groupsExcludePattern = compilePatternList(getList(GROUPS_EXCLUDE_CONFIG));
         this.aclIncludeRules = parseAclRules(getList(ACLS_INCLUDE_CONFIG));
         this.aclExcludeRules = parseAclRules(getList(ACLS_EXCLUDE_CONFIG));
-        this.securityProtocol = getString(SECURITY_PROTOCOL_CONFIG);
-        this.saslMechanism = getString(SASL_MECHANISM_CONFIG);
     }
 
     /**
@@ -434,8 +445,6 @@ public final class ClusterMirrorConfig extends AbstractConfig {
         this.groupsExcludePattern = null;
         this.aclIncludeRules = null;
         this.aclExcludeRules = null;
-        this.securityProtocol = null;
-        this.saslMechanism = null;
     }
 
     /**
@@ -518,12 +527,20 @@ public final class ClusterMirrorConfig extends AbstractConfig {
         return getShort(MIRROR_STATE_TOPIC_REPLICATION_FACTOR_CONFIG);
     }
 
+    public int stateTopicMinISR() {
+        return getInt(MIRROR_STATE_TOPIC_MIN_ISR_CONFIG);
+    }
+
+    public int stateTopicSegmentBytes() {
+        return getInt(MIRROR_STATE_TOPIC_SEGMENT_BYTES_CONFIG);
+    }
+
     public String securityProtocol() {
-        return securityProtocol;
+        return getString(SECURITY_PROTOCOL_CONFIG);
     }
 
     public String saslMechanism() {
-        return saslMechanism;
+        return getString(SASL_MECHANISM_CONFIG);
     }
 
     public int numReplicaFetchers() {

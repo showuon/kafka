@@ -1177,6 +1177,8 @@ class ControllerApis(
       }
 
       val properties = new Properties
+      properties.put(TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG, config.mirrorConfig.stateTopicMinISR().toString)
+      properties.put(TopicConfig.SEGMENT_BYTES_CONFIG, config.mirrorConfig.stateTopicSegmentBytes().toString)
       properties.put(TopicConfig.CLEANUP_POLICY_CONFIG, TopicConfig.CLEANUP_POLICY_COMPACT)
       properties.put(TopicConfig.COMPRESSION_TYPE_CONFIG, BrokerCompressionType.PRODUCER.name)
       properties.put(TopicConfig.RETENTION_MS_CONFIG, -1)
