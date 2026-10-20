@@ -35,6 +35,7 @@ import org.apache.kafka.clients.admin.StartMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.StopMirrorTopicsOptions;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.EpochOffset;
 import org.apache.kafka.common.Endpoint;
 import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.Node;
@@ -67,6 +68,7 @@ import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.CreateTopicsResponse;
 import org.apache.kafka.common.requests.DeleteAclsRequest;
 import org.apache.kafka.common.requests.IncrementalAlterConfigsRequest;
+import org.apache.kafka.common.requests.ReadMirrorStatesResponse;
 import org.apache.kafka.common.resource.ResourceType;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.LogContext;
@@ -130,6 +132,7 @@ class MirrorSourceSyncer {
     private final Supplier<ReplicaManager> replicaManagerSupplier;
     private final NodeToControllerChannelManager controllerClient;
     private final MirrorMetadataCache mirrorCache;
+    private final MirrorCoordinatorSender coordSender;
     private final TransitionHandler transitionHandler;
     private final Consumer<String> tombstoneWriter;
     private final EpochBumpHandler epochBumpHandler;
@@ -159,6 +162,7 @@ class MirrorSourceSyncer {
         Supplier<ReplicaManager> replicaManagerSupplier,
         NodeToControllerChannelManager controllerClient,
         MirrorMetadataCache mirrorCache,
+        MirrorCoordinatorSender coordSender,
         TransitionHandler transitionHandler,
         Consumer<String> tombstoneWriter,
         EpochBumpHandler epochBumpHandler
@@ -171,6 +175,7 @@ class MirrorSourceSyncer {
         this.replicaManagerSupplier = replicaManagerSupplier;
         this.controllerClient = controllerClient;
         this.mirrorCache = mirrorCache;
+        this.coordSender = coordSender;
         this.transitionHandler = transitionHandler;
         this.tombstoneWriter = tombstoneWriter;
         this.epochBumpHandler = epochBumpHandler;
@@ -734,9 +739,45 @@ class MirrorSourceSyncer {
             if (cachedEntry.state() != MirrorPartitionState.UNKNOWN) {
                 return;
             } else if (cachedEntry.equals(MirrorPartitionMetadata.EMPTY)) {
-                // luke
-
-
+                // Cache is empty -- could be due to shard unload or never read.
+                // Read the authoritative state from the coordinator before proceeding.
+                Map<String, Set<Integer>> partitions = Map.of(tp.topic(), Set.of(tp.partition()));
+                try {
+                    ReadMirrorStatesResponse response;
+                    if (coordSender.isLocalCoordinatorFor(mirrorName, key.topicId(), tp.partition())) {
+                        response = coordSender.readStateFromLocalCoordinator(mirrorName, partitions)
+                            .get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
+                    } else {
+                        response = coordSender.readStateFromRemoteCoordinator(mirrorName, partitions)
+                            .get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
+                    }
+                    if (response.data().errorCode() != Errors.NONE.code()) {
+                        log.warn("Failed to read state from coordinator for {} with error {}, will retry on next sync", tp, response.data().errorMessage());
+                        return;
+                    }
+                    // Update cache from the response. The remote read path already updates
+                    // mirrorCache internally, but we apply here for both paths to be safe.
+                    response.data().topics().forEach(topic ->
+                        topic.partitions().forEach(partition -> {
+                            MirrorPartitionMetadata updatedMpm = new MirrorPartitionMetadata.Builder()
+                                .withState(MirrorPartitionState.fromValue(partition.state()))
+                                .withStateEpoch(partition.stateEpoch())
+                                .withLastPosition(new EpochOffset(partition.lastMirrorEpoch(), partition.lastMirrorOffset()))
+                                .withErrorMessage(partition.errorMessage())
+                                .withRetryAttempt(partition.retryAttempt())
+                                .withPrevState(MirrorPartitionState.fromValue(partition.previousState()))
+                                .build();
+                            mirrorCache.updatePartitionMetadata(key, updatedMpm);
+                        }));
+                    // Re-read the cache after update
+                    cachedEntry = mirrorCache.getPartitionMetadata(key);
+                    if (cachedEntry.state() != MirrorPartitionState.UNKNOWN) {
+                        return; // Real state loaded -- not a missed partition
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to read state from coordinator for {}, will retry on next sync", tp, e);
+                    return;
+                }
             }
             TopicImage topicImage = metadataImage.topics().getTopic(tp.topic());
             if (topicImage == null) {

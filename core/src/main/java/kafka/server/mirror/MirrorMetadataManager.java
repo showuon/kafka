@@ -216,7 +216,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         coordSender.startup();
 
         this.sourceSyncer = new MirrorSourceSyncer(brokerConfig, replicaManagerSupplier, controllerClient,
-                mirrorCache, this::transitionTo, this::writeTombstoneRecords, this::maybeBumpLeaderEpochs);
+                mirrorCache, coordSender, this::transitionTo, this::writeTombstoneRecords, this::maybeBumpLeaderEpochs);
         sourceSyncer.startup();
 
         this.isInitialized = true;

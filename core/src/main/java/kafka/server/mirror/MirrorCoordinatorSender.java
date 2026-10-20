@@ -195,7 +195,8 @@ class MirrorCoordinatorSender {
                     } else {
                         log.warn("Failed to read local state for partitions {}. {}", partitions, cause.getMessage());
                     }
-                    return new ReadMirrorStatesResponse(new ReadMirrorStatesResponseData());
+                    Errors error =  Errors.forException(cause);
+                    return new ReadMirrorStatesResponse(new ReadMirrorStatesResponseData().setErrorCode(error.code()).setErrorMessage(error.message()));
                 })).orElseGet(() -> CompletableFuture.completedFuture(new ReadMirrorStatesResponse(new ReadMirrorStatesResponseData())));
     }
 
