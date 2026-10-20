@@ -44,7 +44,7 @@ import org.apache.kafka.common.requests.WriteMirrorStatesRequest;
 import org.apache.kafka.common.requests.WriteMirrorStatesResponse;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
-import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService.MirrorStateWrite;
+import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinator.MirrorStateWrite;
 import org.apache.kafka.coordinator.mirror.MetadataManagerBridge.CoordinatorReader;
 import org.apache.kafka.coordinator.mirror.MetadataManagerBridge.CoordinatorWriter;
 import org.apache.kafka.coordinator.mirror.MirrorMetadataCache;
@@ -114,7 +114,7 @@ class MirrorCoordinatorSender {
     }
 
     void startup() {
-        String name = MirrorCoordinatorSender.class.getSimpleName();
+        String name = MirrorInterBrokerSender.class.getSimpleName()  + " brokerId=" + nodeId;
         this.interBrokerSender = new MirrorInterBrokerSender(name,
                 NetworkUtils.buildNetworkClient(MirrorCoordinatorSender.class.getSimpleName(),
                         brokerConfig, metrics, time, new LogContext(name)),

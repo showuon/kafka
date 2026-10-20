@@ -229,7 +229,7 @@ public class ConfigurationControlManager {
         return ControllerResult.atomicOf(outputRecords, outputResults);
     }
 
-    ControllerResult<CreateClusterMirrorResponseData> addMirrorConfig(
+    ControllerResult<CreateClusterMirrorResponseData> createClusterMirror(
         String mirrorName,
         Map<String, Map.Entry<AlterConfigOp.OpType, String>> configChanges
     ) {

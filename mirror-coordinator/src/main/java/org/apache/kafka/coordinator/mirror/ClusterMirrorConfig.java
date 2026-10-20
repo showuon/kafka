@@ -90,10 +90,6 @@ public final class ClusterMirrorConfig extends AbstractConfig {
     private static final int MIRROR_STATE_TOPIC_SEGMENT_BYTES_DEFAULT = 100 * 1024 * 1024;
     private static final String MIRROR_STATE_TOPIC_SEGMENT_BYTES_DOC = "The mirror state topic segment bytes should be kept relatively small in order to facilitate faster log compaction and cache loads.";
 
-    public static final String MIRROR_STATE_TOPIC_LOAD_BUFFER_SIZE_CONFIG = "mirror.state.topic.load.buffer.size";
-    private static final int MIRROR_STATE_TOPIC_LOAD_BUFFER_SIZE_DEFAULT = 5 * 1024 * 1024;
-    private static final String MIRROR_STATE_TOPIC_LOAD_BUFFER_SIZE_DOC = "Batch size for reading from the mirror state log segments when loading mirror state into the cache (soft-limit, overridden if records are too large).";
-
     public static final String MIRROR_NUM_REPLICA_FETCHERS_CONFIG = "mirror.num.replica.fetchers";
     private static final int MIRROR_NUM_REPLICA_FETCHERS_DEFAULT = 1;
     private static final String MIRROR_NUM_REPLICA_FETCHERS_DOC = "Number of fetcher threads used to replicate records from each source broker in a cluster mirror. " +
@@ -381,7 +377,6 @@ public final class ClusterMirrorConfig extends AbstractConfig {
             .define(MIRROR_STATE_TOPIC_REPLICATION_FACTOR_CONFIG, SHORT, MIRROR_STATE_TOPIC_REPLICATION_FACTOR_DEFAULT, atLeast(1), HIGH, MIRROR_STATE_TOPIC_REPLICATION_FACTOR_DOC)
             .define(MIRROR_STATE_TOPIC_MIN_ISR_CONFIG, INT, MIRROR_STATE_TOPIC_MIN_ISR_DEFAULT, atLeast(1), HIGH, MIRROR_STATE_TOPIC_MIN_ISR_DOC)
             .define(MIRROR_STATE_TOPIC_SEGMENT_BYTES_CONFIG, INT, MIRROR_STATE_TOPIC_SEGMENT_BYTES_DEFAULT, atLeast(1), HIGH, MIRROR_STATE_TOPIC_SEGMENT_BYTES_DOC)
-            .define(MIRROR_STATE_TOPIC_LOAD_BUFFER_SIZE_CONFIG, INT, MIRROR_STATE_TOPIC_LOAD_BUFFER_SIZE_DEFAULT, atLeast(1), HIGH, MIRROR_STATE_TOPIC_LOAD_BUFFER_SIZE_DOC)
             .define(MIRROR_NUM_REPLICA_FETCHERS_CONFIG, INT, MIRROR_NUM_REPLICA_FETCHERS_DEFAULT, atLeast(1), HIGH, MIRROR_NUM_REPLICA_FETCHERS_DOC)
             .define(MIRROR_METADATA_REFRESH_INTERVAL_MS_CONFIG, LONG, MIRROR_METADATA_REFRESH_INTERVAL_MS_DEFAULT, atLeast(0L), MEDIUM, MIRROR_METADATA_REFRESH_INTERVAL_MS_DOC)
             .define(MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_CONFIG, LONG, MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_DEFAULT, atLeast(1L), MEDIUM, MIRROR_FAILED_RETRY_INITIAL_BACKOFF_MS_DOC)
