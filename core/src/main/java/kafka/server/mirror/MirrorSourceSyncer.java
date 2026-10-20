@@ -730,8 +730,13 @@ class MirrorSourceSyncer {
         partitionLeaders.keySet().forEach(tp -> {
             var key = MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
             var cachedEntry = mirrorCache.getPartitionMetadata(key);
-            if (cachedEntry != null && cachedEntry.state() != null && cachedEntry.state() != MirrorPartitionState.UNKNOWN) {
+
+            if (cachedEntry.state() != MirrorPartitionState.UNKNOWN) {
                 return;
+            } else if (cachedEntry.equals(MirrorPartitionMetadata.EMPTY)) {
+                // luke
+
+
             }
             TopicImage topicImage = metadataImage.topics().getTopic(tp.topic());
             if (topicImage == null) {
@@ -744,7 +749,7 @@ class MirrorSourceSyncer {
             }
             var partition = topicImage.partitions().get(tp.partition());
             if (partition != null && partition.leader == nodeId) {
-                log.info("Source leader for {} discovered after initial onMetadataUpdate", tp);
+                log.info("Source leader for {} discovered after initial onMetadataUpdate, cachedEntry: {}, key: {}", tp, cachedEntry, key);
                 transitionHandler.transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.LOG_ALIGNMENT, null, false);
             }
         });

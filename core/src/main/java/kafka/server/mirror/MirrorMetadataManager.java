@@ -976,6 +976,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
      * of a deleted mirror, then removes the mirror's cache entries.
      */
     void writeTombstoneRecords(String mirrorName) {
+        log.info("Writing tombstone records for mirror {}", mirrorName);
         Map<TopicPartition, MirrorPartitionState> states = mirrorCache.getPartitionStates(mirrorName);
         Map<Integer, Set<TopicPartition>> coordPartitionToMirrorPartitions = new HashMap<>();
         states.forEach((tp, state) -> {

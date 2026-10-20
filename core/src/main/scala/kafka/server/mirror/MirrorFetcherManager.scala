@@ -165,7 +165,6 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
           val lagKey = MirrorLagKey(fetcherKey.mirrorName, partition)
           // luke
           metadataCache.getLeaderAndIsr(partition.topic(), partition.partition()).ifPresent(lisr => {
-            info("lisr:" + lisr)
             if (lisr.leader() != brokerConfig.nodeId) {
               mirrorOffsetInfoMap.remove(lagKey)
             } else {
@@ -246,8 +245,6 @@ class MirrorFetcherManager(brokerConfig: KafkaConfig,
   }
 
   def getOffsetInfo(mirrorName: String): Map[TopicPartition, MirrorOffsetInfo] = {
-    logger.info("getOffsetInfo:" + mirrorOffsetInfoMap)
-
     mirrorOffsetInfoMap.collect {
       case (key, info) if key.mirrorName == mirrorName => key.topicPartition -> info
     }.toMap
