@@ -346,6 +346,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                         .toList();
                     data.setTopics(topicResults);
                 }
+                log.info("read mirror states for {} completes with {}", partitions, data);
                 resultFuture.complete(data);
             });
         return resultFuture;
