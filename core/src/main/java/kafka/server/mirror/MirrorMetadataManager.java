@@ -656,6 +656,14 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                                 targetState, errorMessage, nonRetryable, ex.getMessage())));
                         return;
                     }
+                    if (data.errorCode() != Errors.NONE.code()) {
+                        log.warn("Local coordinator write failed with top-level error: {}",
+                                Errors.forCode(data.errorCode()));
+                        localWrites.forEach((topic, writes) -> writes.forEach(write ->
+                            refreshAndPersistState(mirrorName, new TopicPartition(topic, write.partition()),
+                                targetState, errorMessage, nonRetryable, data.errorMessage())));
+                        return;
+                    }
                     data.topics().forEach(topic -> topic.partitions().forEach(partition -> {
                         TopicPartition tp = new TopicPartition(topic.topicName(), partition.partitionIndex());
                         Throwable partitionEx = null;
@@ -675,6 +683,14 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                         remoteWrites.forEach((topic, writes) -> writes.forEach(write ->
                             refreshAndPersistState(mirrorName, new TopicPartition(topic, write.partition()),
                                 targetState, errorMessage, nonRetryable, ex.getMessage())));
+                        return;
+                    }
+                    if (res.data().errorCode() != Errors.NONE.code()) {
+                        log.warn("Remote coordinator write failed with top-level error: {}",
+                                Errors.forCode(res.data().errorCode()));
+                        remoteWrites.forEach((topic, writes) -> writes.forEach(write ->
+                            refreshAndPersistState(mirrorName, new TopicPartition(topic, write.partition()),
+                                targetState, errorMessage, nonRetryable, res.data().errorMessage())));
                         return;
                     }
                     res.data().topics().forEach(topic -> topic.partitions().forEach(partition -> {
