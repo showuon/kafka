@@ -527,6 +527,13 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                         RETRY_BACKOFF_MS, "Local coordinator read failed: " + ex.getMessage());
                 return;
             }
+            if (res.data().errorCode() != Errors.NONE.code()) {
+                log.warn("Local coordinator read failed with top-level error: {}",
+                        Errors.forCode(res.data().errorCode()));
+                scheduleRetry(mirrorName, () -> readLocalPartitionStates(mirrorName, partitions),
+                        RETRY_BACKOFF_MS, "Local read top-level error: " + res.data().errorMessage());
+                return;
+            }
             Map<String, Set<Integer>> partitionsToRetry = new HashMap<>();
             res.data().topics().forEach(topic ->
                     topic.partitions().forEach(partition -> {
@@ -553,6 +560,13 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             if (ex != null) {
                 scheduleRetry(mirrorName, () -> readRemotePartitionStates(mirrorName, partitions),
                         RETRY_BACKOFF_MS, "Remote coordinator read failed: " + ex.getMessage());
+                return;
+            }
+            if (res.data().errorCode() != Errors.NONE.code()) {
+                log.warn("Remote coordinator read failed with top-level error: {}",
+                        Errors.forCode(res.data().errorCode()));
+                scheduleRetry(mirrorName, () -> readRemotePartitionStates(mirrorName, partitions),
+                        RETRY_BACKOFF_MS, "Remote read top-level error: " + res.data().errorMessage());
                 return;
             }
             Map<String, Set<Integer>> partitionsToRetry = new HashMap<>();
@@ -659,9 +673,13 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                     if (data.errorCode() != Errors.NONE.code()) {
                         log.warn("Local coordinator write failed with top-level error: {}",
                                 Errors.forCode(data.errorCode()));
-                        localWrites.forEach((topic, writes) -> writes.forEach(write ->
-                            refreshAndPersistState(mirrorName, new TopicPartition(topic, write.partition()),
-                                targetState, errorMessage, nonRetryable, data.errorMessage())));
+                        localWrites.forEach((topic, writes) -> writes.forEach(write -> {
+                            TopicPartition tp = new TopicPartition(topic, write.partition());
+                            scheduleRetry(tp.toString(),
+                                () -> refreshAndPersistState(mirrorName, tp,
+                                    targetState, errorMessage, nonRetryable, data.errorMessage()),
+                                RETRY_BACKOFF_MS, "Local write top-level error: " + data.errorMessage());
+                        }));
                         return;
                     }
                     data.topics().forEach(topic -> topic.partitions().forEach(partition -> {
@@ -688,9 +706,13 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                     if (res.data().errorCode() != Errors.NONE.code()) {
                         log.warn("Remote coordinator write failed with top-level error: {}",
                                 Errors.forCode(res.data().errorCode()));
-                        remoteWrites.forEach((topic, writes) -> writes.forEach(write ->
-                            refreshAndPersistState(mirrorName, new TopicPartition(topic, write.partition()),
-                                targetState, errorMessage, nonRetryable, res.data().errorMessage())));
+                        remoteWrites.forEach((topic, writes) -> writes.forEach(write -> {
+                            TopicPartition tp = new TopicPartition(topic, write.partition());
+                            scheduleRetry(tp.toString(),
+                                () -> refreshAndPersistState(mirrorName, tp,
+                                    targetState, errorMessage, nonRetryable, res.data().errorMessage()),
+                                RETRY_BACKOFF_MS, "Remote write top-level error: " + res.data().errorMessage());
+                        }));
                         return;
                     }
                     res.data().topics().forEach(topic -> topic.partitions().forEach(partition -> {
@@ -1525,6 +1547,14 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     private void handleRefreshResponse(String mirrorName, TopicPartition tp, MirrorPartitionState state,
                                        String errorMessage, boolean nonRetryable, ReadMirrorStatesResponse res,
                                        String reason) {
+        if (res.data().errorCode() != Errors.NONE.code()) {
+            log.warn("Coordinator read for refresh failed with top-level error: {}",
+                    Errors.forCode(res.data().errorCode()));
+            scheduleRetry(tp.toString(),
+                    () -> refreshAndPersistState(mirrorName, tp, state, errorMessage, nonRetryable, reason),
+                    RETRY_BACKOFF_MS, "Refresh read top-level error: " + res.data().errorMessage());
+            return;
+        }
         res.data().topics().forEach(topic -> topic.partitions().forEach(partition -> {
             if (partition.errorCode() != Errors.NONE.code()) {
                 scheduleRetry(tp.toString(),
@@ -1566,6 +1596,13 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                             refreshAndPersistState(mirrorName, tp, state, errorMessage, nonRetryable, ex.getMessage());
                             return;
                         }
+                        if (data.errorCode() != Errors.NONE.code()) {
+                            scheduleRetry(tp.toString(),
+                                    () -> refreshAndPersistState(mirrorName, tp, state, errorMessage, nonRetryable,
+                                            "Local write top-level error: " + data.errorMessage()),
+                                    RETRY_BACKOFF_MS, "Local write top-level error: " + data.errorMessage());
+                            return;
+                        }
                         data.topics().forEach(topic -> topic.partitions().forEach(partition -> {
                             Throwable partitionEx = null;
                             if (partition.errorCode() != Errors.NONE.code()) {
@@ -1579,6 +1616,13 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                     .whenComplete((res, ex) -> {
                         if (ex != null) {
                             refreshAndPersistState(mirrorName, tp, state, errorMessage, nonRetryable, ex.getMessage());
+                            return;
+                        }
+                        if (res.data().errorCode() != Errors.NONE.code()) {
+                            scheduleRetry(tp.toString(),
+                                    () -> refreshAndPersistState(mirrorName, tp, state, errorMessage, nonRetryable,
+                                            "Remote write top-level error: " + res.data().errorMessage()),
+                                    RETRY_BACKOFF_MS, "Remote write top-level error: " + res.data().errorMessage());
                             return;
                         }
                         res.data().topics().forEach(topic -> topic.partitions().forEach(partition -> {
@@ -1891,14 +1935,48 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
         if (coordSender.isLocalCoordinatorFor(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition())) {
             coordSender.writeStateToLocalCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)))
-                    .whenComplete((data, ex) -> onLocalWriteComplete(
-                            mirrorName, tp, state, null,
-                            false, ex));
+                    .whenComplete((data, ex) -> {
+                        if (ex != null) {
+                            scheduleRetry(tp.toString(),
+                                    () -> refreshAndPersistState(mirrorName, tp, state, null, false, ex.getMessage()),
+                                    RETRY_BACKOFF_MS, "Recovery write exception: " + ex.getMessage());
+                            return;
+                        }
+                        if (data.errorCode() != Errors.NONE.code()) {
+                            scheduleRetry(tp.toString(),
+                                    () -> refreshAndPersistState(mirrorName, tp, state, null, false,
+                                            "Recovery write top-level error: " + data.errorMessage()),
+                                    RETRY_BACKOFF_MS, "Recovery write top-level error: " + data.errorMessage());
+                            return;
+                        }
+                        data.topics().forEach(topic -> topic.partitions().forEach(partition -> {
+                            Throwable partitionEx = null;
+                            if (partition.errorCode() != Errors.NONE.code()) {
+                                partitionEx = Errors.forCode(partition.errorCode()).exception();
+                            }
+                            onLocalWriteComplete(mirrorName, tp, state, null, false, partitionEx);
+                        }));
+                    });
         } else {
             coordSender.writeStateToRemoteCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)), Set.of())
-                    .thenAccept(res -> res.data().topics().forEach(topic -> topic.partitions().forEach(partition ->
-                            onRemoteWriteComplete(mirrorName, tp, state, null,
-                                    false, partition))));
+                    .whenComplete((res, ex) -> {
+                        if (ex != null) {
+                            scheduleRetry(tp.toString(),
+                                    () -> refreshAndPersistState(mirrorName, tp, state, null, false, ex.getMessage()),
+                                    RETRY_BACKOFF_MS, "Recovery write exception: " + ex.getMessage());
+                            return;
+                        }
+                        if (res.data().errorCode() != Errors.NONE.code()) {
+                            scheduleRetry(tp.toString(),
+                                    () -> refreshAndPersistState(mirrorName, tp, state, null, false,
+                                            "Recovery write top-level error: " + res.data().errorMessage()),
+                                    RETRY_BACKOFF_MS, "Recovery write top-level error: " + res.data().errorMessage());
+                            return;
+                        }
+                        res.data().topics().forEach(topic -> topic.partitions().forEach(partition ->
+                                onRemoteWriteComplete(mirrorName, tp, state, null,
+                                        false, partition)));
+                    });
         }
     }
 
