@@ -203,7 +203,9 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
     /**
      * Called by the MirrorCoordinator when startup is invoked.
-     * Initializes source cluster metadata syncer and coordinator sender.
+     * Initializes source cluster metadata syncer and coordinator sender,
+     * then processes any mirror leader partitions whose metadata deltas
+     * arrived before initialization (and were therefore skipped by onMetadataUpdate).
      */
     @Override
     public void onCoordStartup(Function<MirrorPartition, Integer> coordPartFinder,
@@ -219,6 +221,35 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         sourceSyncer.startup();
 
         this.isInitialized = true;
+
+        processPreInitMirrorLeaders();
+    }
+
+    /**
+     * Scans the current metadata image for all mirror leader partitions and
+     * processes state transitions for them. This catches partitions whose
+     * leadership deltas arrived via onMetadataUpdate before isInitialized was
+     * set, which would have been skipped.
+     */
+    private void processPreInitMirrorLeaders() {
+        if (metadataImage == null) {
+            return;
+        }
+        Set<String> configuredMirrors = mirrorCache.getMirrorNames();
+        Set<TopicPartition> mirrorLeaders = new HashSet<>();
+        metadataImage.topics().topicsByName().forEach((topicName, topicImage) -> {
+            if (topicImage.mirrorName() != null && configuredMirrors.contains(topicImage.mirrorName())) {
+                topicImage.partitions().forEach((partitionId, partition) -> {
+                    if (partition.leader == nodeId) {
+                        mirrorLeaders.add(new TopicPartition(topicName, partitionId));
+                    }
+                });
+            }
+        });
+        if (!mirrorLeaders.isEmpty()) {
+            log.info("Processing mirror leader partition(s) from pre-init metadata: {}", mirrorLeaders);
+            processStateTransitions(mirrorLeaders, metadataImage);
+        }
     }
 
     /**
