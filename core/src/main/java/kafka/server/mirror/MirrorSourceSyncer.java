@@ -604,7 +604,6 @@ class MirrorSourceSyncer {
         }
 
         maybeFailDeletedTopics(mirrorName, sourceTopicMetadata);
-        maybeStartMissedPartitions(mirrorName);
     }
 
     /**
@@ -719,39 +718,6 @@ class MirrorSourceSyncer {
                 if (topics != null) {
                     topics.remove(name);
                 }
-            }
-        });
-    }
-
-    /*
-     * Retries partitions stuck in UNKNOWN because their source leader was not yet resolved when
-     * onMetadataUpdate ran (metadata still loading on ZK sources). Since that callback only fires
-     * on destination metadata changes, it will not retry on its own.
-     */
-    private void maybeStartMissedPartitions(String mirrorName) {
-        var partitionLeaders = mirrorCache.getSourceClusterLeaders(mirrorName);
-        if (partitionLeaders == null) {
-            return;
-        }
-        partitionLeaders.keySet().forEach(tp -> {
-            var key = MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
-            var cachedEntry = mirrorCache.getPartitionMetadata(key);
-            if (cachedEntry != null && cachedEntry.state() != null && cachedEntry.state() != MirrorPartitionState.UNKNOWN) {
-                return;
-            }
-            TopicImage topicImage = metadataImage.topics().getTopic(tp.topic());
-            if (topicImage == null) {
-                return;
-            }
-            byte desiredState = topicImage.desiredMirrorState();
-            if (desiredState == MirrorPartitionState.STOPPED.value()
-                    || desiredState == MirrorPartitionState.PAUSED.value()) {
-                return;
-            }
-            var partition = topicImage.partitions().get(tp.partition());
-            if (partition != null && partition.leader == nodeId) {
-                log.info("Source leader for {} discovered after initial onMetadataUpdate", tp);
-                transitionHandler.transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.LOG_ALIGNMENT, null, false);
             }
         });
     }
