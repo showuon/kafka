@@ -222,34 +222,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
         this.isInitialized = true;
 
-        processPreInitMirrorLeaders();
-    }
-
-    /**
-     * Scans the current metadata image for all mirror leader partitions and
-     * processes state transitions for them. This catches partitions whose
-     * leadership deltas arrived via onMetadataUpdate before isInitialized was
-     * set, which would have been skipped.
-     */
-    private void processPreInitMirrorLeaders() {
-        if (metadataImage == null) {
-            return;
-        }
-        Set<String> configuredMirrors = mirrorCache.getMirrorNames();
-        Set<TopicPartition> mirrorLeaders = new HashSet<>();
-        metadataImage.topics().topicsByName().forEach((topicName, topicImage) -> {
-            if (topicImage.mirrorName() != null && configuredMirrors.contains(topicImage.mirrorName())) {
-                topicImage.partitions().forEach((partitionId, partition) -> {
-                    if (partition.leader == nodeId) {
-                        mirrorLeaders.add(new TopicPartition(topicName, partitionId));
-                    }
-                });
-            }
-        });
-        if (!mirrorLeaders.isEmpty()) {
-            log.info("Processing mirror leader partition(s) from pre-init metadata: {}", mirrorLeaders);
-            processStateTransitions(mirrorLeaders, metadataImage);
-        }
+        processMirrorLeadersFromMetadata();
     }
 
     /**
@@ -358,6 +331,34 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     }
 
     // ===== STATE TRANSITION OPERATIONS ===============================================================================
+
+    /**
+     * Scans the current metadata image for all mirror leader partitions and
+     * processes state transitions for them. This catches partitions whose
+     * leadership deltas arrived via onMetadataUpdate before isInitialized was
+     * set, which would have been skipped.
+     */
+    private void processMirrorLeadersFromMetadata() {
+        if (metadataImage == null) {
+            return;
+        }
+        Set<String> configuredMirrors = mirrorCache.getMirrorNames();
+        Set<TopicPartition> mirrorLeaders = new HashSet<>();
+        metadataImage.topics().topicsByName().forEach((topicName, topicImage) -> {
+            if (topicImage.mirrorName() != null && configuredMirrors.contains(topicImage.mirrorName())) {
+                topicImage.partitions().forEach((partitionId, partition) -> {
+                    if (partition.leader == nodeId) {
+                        mirrorLeaders.add(new TopicPartition(topicName, partitionId));
+                    }
+                });
+            }
+        });
+        if (!mirrorLeaders.isEmpty()) {
+            log.info("Processing mirror leader partition(s) from metadata: {}", mirrorLeaders);
+            processStateTransitions(mirrorLeaders, metadataImage);
+        }
+    }
+
 
     /**
      * Collects mirror partitions that need a state transition and handles
