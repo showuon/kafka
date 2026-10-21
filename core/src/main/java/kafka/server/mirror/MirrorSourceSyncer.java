@@ -485,7 +485,7 @@ class MirrorSourceSyncer {
                                         MirrorPartition key = new MirrorPartition(mirrorName, topicImage.id(),  partitionId);
                                         MirrorPartitionMetadata mpm = MirrorPartitionMetadata.orEmpty(mirrorCache.getPartitionMetadata(key, false));
                                         if (mpm.state() == MirrorPartitionState.FAILED && mpm.retryAttempt() == MirrorPartitionMetadata.NON_RETRYABLE_ERROR) {
-                                            log.debug("Skipping transition to FAILED state for partition {}-{} . Reason: Already in this state due to: {}.",
+                                            log.info("Skipping transition to FAILED state for partition {}-{} . Reason: Already in this state due to: {}.",
                                                     topic, partitionId, mpm.errorMessage());
                                         } else {
                                             mirrorLeaderPartitions.add(new TopicPartition(topic, partitionId));
@@ -651,7 +651,7 @@ class MirrorSourceSyncer {
 
     private void maybeScalePartitions(CreatePartitionsRequestData.CreatePartitionsTopicCollection topics) {
         if (!topics.isEmpty()) {
-            log.debug("Detected partition count change, sending CreatePartitionsRequest: {}", topics);
+            log.info("Detected partition count change, sending CreatePartitionsRequest: {}", topics);
             controllerClient.sendRequest(new CreatePartitionsRequest.Builder(
                     new CreatePartitionsRequestData()
                             .setTopics(topics)
@@ -678,7 +678,7 @@ class MirrorSourceSyncer {
         Admin srcAdmin = getOrCreateSourceAdmin(mirrorName);
         try {
             Set<String> allSourceTopics = srcAdmin.listTopics().names().get();
-            log.debug("Source topic name list: {}", allSourceTopics);
+            log.info("Source topic name list: {}", allSourceTopics);
             deletedSourceTopicNames.removeAll(allSourceTopics);
         } catch (Exception e) {
             log.warn("Failed to list topics for mirror {}, skipping deleted topic detection: {}", mirrorName, e.getMessage());
@@ -700,7 +700,7 @@ class MirrorSourceSyncer {
                                 MirrorPartition key = new MirrorPartition(mirrorName, topicImage.id(), partitionId);
                                 MirrorPartitionMetadata mpm = MirrorPartitionMetadata.orEmpty(mirrorCache.getPartitionMetadata(key, false));
                                 if (mpm.state() == MirrorPartitionState.FAILED && mpm.retryAttempt() == MirrorPartitionMetadata.NON_RETRYABLE_ERROR) {
-                                    log.debug("Skipping transition to FAILED state for partition {}. Already in this state due to: {}", name, partition, mpm.errorMessage());
+                                    log.info("Skipping transition to FAILED state for partition {}. Already in this state due to: {}", name, partition, mpm.errorMessage());
                                 } else {
                                     log.info("Detected topic {} deleted in source cluster {}, marking partitions as failed (non retryable).", name, mirrorName);
                                     transitionHandler.transitionTo(mirrorName, Set.of(new TopicPartition(name, partitionId)),
@@ -710,7 +710,7 @@ class MirrorSourceSyncer {
                         });
                     }
                 } else {
-                    log.debug("Topic {} not found in source cluster {}, pending deletion confirmation on next sync", name, mirrorName);
+                    log.info("Topic {} not found in source cluster {}, pending deletion confirmation on next sync", name, mirrorName);
                     sourceDeletions.computeIfAbsent(mirrorName, k -> ConcurrentHashMap.newKeySet()).add(name);
                 }
             } else {
@@ -726,7 +726,7 @@ class MirrorSourceSyncer {
         Admin srcAdmin = getOrCreateSourceAdmin(mirrorName);
 
         Set<String> topics = mirrorCache.getMirrorTopics(mirrorName, EnumSet.of(MirrorPartitionState.MIRRORING));
-        log.debug("Describing topic configs for topics {}", topics);
+        log.info("Describing topic configs for topics {}", topics);
 
         Collection<ConfigResource> resources = topics.stream()
                 .map(topic -> new ConfigResource(ConfigResource.Type.TOPIC, topic))
@@ -780,7 +780,7 @@ class MirrorSourceSyncer {
             return;
         }
 
-        log.debug("Applying configuration changes {}", configsToChange);
+        log.info("Applying configuration changes {}", configsToChange);
 
         var resources = configsToChange.entrySet().stream()
                 .map(topicEntry -> {
@@ -856,7 +856,7 @@ class MirrorSourceSyncer {
                             TopicPartition topicPartition = ent.getKey();
                             PartitionLogInfo plog = logInfoMap.get(topicPartition);
                             if (plog == null) {
-                                log.debug("Cannot resolve log offsets for partition {}, skip consumer group sync for it", topicPartition);
+                                log.info("Cannot resolve log offsets for partition {}, skip consumer group sync for it", topicPartition);
                                 return;
                             }
                             OffsetAndMetadata sourceGroupOffsetAndMetadata = ent.getValue();
@@ -868,13 +868,13 @@ class MirrorSourceSyncer {
                                 filtered.put(topicPartition, sourceGroupOffsetAndMetadata);
                             } else if (finalOffset == plog.logEndOffset()) {
                                 if (plog.logEndEpoch() < 0) {
-                                    log.debug("Cannot get the log end epoch for partition {}, skip consumer group sync for it", topicPartition);
+                                    log.info("Cannot get the log end epoch for partition {}, skip consumer group sync for it", topicPartition);
                                 } else {
                                     filtered.put(topicPartition, new OffsetAndMetadata(plog.logEndOffset(), Optional.of(plog.logEndEpoch()), ""));
                                 }
                             } else {
                                 if (plog.logStartEpoch() < 0) {
-                                    log.debug("Cannot get the log start epoch for partition {}, skip consumer group sync for it", topicPartition);
+                                    log.info("Cannot get the log start epoch for partition {}, skip consumer group sync for it", topicPartition);
                                 } else {
                                     filtered.put(topicPartition, new OffsetAndMetadata(plog.logStartOffset(), Optional.of(plog.logStartEpoch()), ""));
                                 }
@@ -889,12 +889,12 @@ class MirrorSourceSyncer {
                 // rejects commits for groups with active members, so per-group error
                 // handling is sufficient and avoids a racy ListGroups RPC every cycle.
                 try {
-                    log.debug("Committing consumer group offsets for group {} on destination, partitions={}", groupId, filtered.keySet());
+                    log.info("Committing consumer group offsets for group {} on destination, partitions={}", groupId, filtered.keySet());
                     getOrCreateDestAdmin().alterConsumerGroupOffsets(groupId, filtered)
                         .all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
                 } catch (Exception ex) {
                     if (ex instanceof ExecutionException && ex.getCause() instanceof UnknownMemberIdException) {
-                        log.debug("Skipped consumer group offset sync for active group {}", groupId);
+                        log.info("Skipped consumer group offset sync for active group {}", groupId);
                     } else {
                         log.warn("Failed to commit consumer group offsets for group {}", groupId, ex);
                         consumerGroupOffsetSyncError.mark();
@@ -916,7 +916,7 @@ class MirrorSourceSyncer {
                         groupsIncludePattern, groupsExcludePattern);
             } catch (ExecutionException e) {
                 if (e.getCause() instanceof UnsupportedVersionException) {
-                    log.debug("The source cluster doesn't support share group, skipping share group offset sync");
+                    log.info("The source cluster doesn't support share group, skipping share group offset sync");
                     return;
                 } else {
                     throw e;
@@ -949,7 +949,7 @@ class MirrorSourceSyncer {
                             TopicPartition topicPartition = ent.getKey();
                             PartitionLogInfo plog = logInfoMap.get(topicPartition);
                             if (plog == null) {
-                                log.debug("Cannot resolve log offsets for partition {}, skip share group sync for it", topicPartition);
+                                log.info("Cannot resolve log offsets for partition {}, skip share group sync for it", topicPartition);
                                 return;
                             }
                             OffsetAndMetadata sourceGroupOffsetAndMetadata = ent.getValue();
@@ -965,7 +965,7 @@ class MirrorSourceSyncer {
                 // rejects commits for groups with active members, so per-group error
                 // handling is sufficient and avoids a racy ListGroups RPC every cycle.
                 try {
-                    log.debug("Committing share group offsets for group {} on destination, partitions={}", groupId, filtered.keySet());
+                    log.info("Committing share group offsets for group {} on destination, partitions={}", groupId, filtered.keySet());
                     getOrCreateDestAdmin().alterShareGroupOffsets(groupId, filtered).all().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
                 } catch (Exception ex) {
                     if (ex instanceof ExecutionException && ex.getCause() instanceof GroupNotEmptyException) {
@@ -1023,7 +1023,7 @@ class MirrorSourceSyncer {
                         earliest.offset(), earliest.leaderEpoch().orElse(-1),
                         latest.offset(), latest.leaderEpoch().orElse(-1)));
                 } catch (ExecutionException e) {
-                    log.debug("Failed to fetch offsets for partition {} via Admin: {}", tp, e.getMessage());
+                    log.info("Failed to fetch offsets for partition {} via Admin: {}", tp, e.getMessage());
                 }
             }
         }
@@ -1038,7 +1038,7 @@ class MirrorSourceSyncer {
             Collection<AclBinding> sourceAcls = srcAdmin.describeAcls(AclBindingFilter.ANY)
                     .values().get(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
 
-            log.debug("Describe ACLs response from remote cluster {}: {}", mirrorName, sourceAcls);
+            log.info("Describe ACLs response from remote cluster {}: {}", mirrorName, sourceAcls);
 
             List<MirrorAclRule> aclIncludeRules = mirrorConfig.aclIncludeRules();
             List<MirrorAclRule> aclExcludeRules = mirrorConfig.aclExcludeRules();
@@ -1050,7 +1050,7 @@ class MirrorSourceSyncer {
             applyAclChanges(mirrorName, aclChanges);
         } catch (ExecutionException e) {
             if (e.getCause() instanceof SecurityDisabledException) {
-                log.debug("ACL sync skipped for mirror {} because security is disabled", mirrorName);
+                log.info("ACL sync skipped for mirror {} because security is disabled", mirrorName);
             } else {
                 log.warn("Failed to describe ACLs for mirror {}", mirrorName, e);
                 aclSyncError.mark();
@@ -1083,7 +1083,7 @@ class MirrorSourceSyncer {
 
     private void applyAclChanges(String mirrorName, SourceAclChanges aclChanges) {
         if (!aclChanges.aclsToAdd().isEmpty()) {
-            log.debug("Adding {} ACLs from remote cluster {}", aclChanges.aclsToAdd().size(), mirrorName);
+            log.info("Adding {} ACLs from remote cluster {}", aclChanges.aclsToAdd().size(), mirrorName);
             var requestData = aclChanges.aclsToAdd().stream().map(
                             aclBinding -> new CreateAclsRequestData.AclCreation()
                                     .setResourceType(aclBinding.pattern().resourceType().code())
@@ -1101,7 +1101,7 @@ class MirrorSourceSyncer {
         }
 
         if (!aclChanges.aclsToDelete().isEmpty()) {
-            log.debug("Removing {} ACLs from remote cluster {}", aclChanges.aclsToDelete().size(), mirrorName);
+            log.info("Removing {} ACLs from remote cluster {}", aclChanges.aclsToDelete().size(), mirrorName);
             var requestData = aclChanges.aclsToDelete().stream().map(
                             aclBinding -> new org.apache.kafka.common.message.DeleteAclsRequestData.DeleteAclsFilter()
                                     .setResourceTypeFilter(aclBinding.pattern().resourceType().code())
@@ -1246,7 +1246,7 @@ class MirrorSourceSyncer {
             if (numErrors > 0) {
                 maybeMarkError();
             }
-            log.debug("Controller request completed: {}", response);
+            log.info("Controller request completed: {}", response);
         }
 
         private void maybeMarkError() {

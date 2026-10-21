@@ -186,12 +186,14 @@ class MirrorCoordinatorSender {
      */
     CompletableFuture<ReadMirrorStatesResponse> readStateFromLocalCoordinator(
             String mirrorName, Map<String, Set<Integer>> partitions) {
+        log.info("readStateFromLocalCoordinator:" + partitions);
         return coordinatorReader.map(reader -> reader.readPartitionStates(mirrorName, partitions)
                 .handle((res, ex) -> {
+                    log.info("readStateFromLocalCoordinator response:" + res);
                     if (ex != null) {
                         Throwable cause = (ex instanceof CompletionException && ex.getCause() != null) ? ex.getCause() : ex;
                         if (cause instanceof CoordinatorLoadInProgressException) {
-                            log.debug("Failed to read local state for partitions {} (shard loading).", partitions);
+                            log.info("Failed to read local state for partitions {} (shard loading).", partitions);
                         } else {
                             log.warn("Failed to read local state for partitions {}. {}", partitions, cause.getMessage());
                         }
@@ -226,7 +228,7 @@ class MirrorCoordinatorSender {
      */
     CompletableFuture<ReadMirrorStatesResponse> readStateFromRemoteCoordinator(
             String mirrorName, Map<String, Set<Integer>> partitions) {
-        log.debug("Reading states from remote coordinator: {} {}", mirrorName, partitions);
+        log.info("Reading states from remote coordinator: {} {}", mirrorName, partitions);
 
         Map<Node, Map<String, List<ReadMirrorStatesRequestData.PartitionData>>> nodeToTopicPartitions = new HashMap<>();
 
@@ -274,7 +276,7 @@ class MirrorCoordinatorSender {
                     new ReadMirrorStatesRequest.Builder(data),
                     response -> {
                         if (response.responseBody() instanceof ReadMirrorStatesResponse readMirrorStatesResponse) {
-                            log.debug("Read states from remote coordinator completed: {}", response.responseBody());
+                            log.info("Read states from remote coordinator completed: {}", response.responseBody());
 
                             readMirrorStatesResponse.data().topics().forEach(topic ->
                                 topic.partitions().forEach(partition -> {
@@ -326,7 +328,7 @@ class MirrorCoordinatorSender {
     /** Reads mirror offsets from remote leaders, batching requests per leader node. */
     CompletableFuture<ReadMirrorOffsetsResponse> readOffsetsFromRemoteLeaders(
             String mirrorName, Map<String, Set<Integer>> partitions) {
-        log.debug("Reading offsets from remote leaders: {} {}", mirrorName, partitions);
+        log.info("Reading offsets from remote leaders: {} {}", mirrorName, partitions);
 
         ListenerName listenerName = brokerConfig.interBrokerListenerName();
         Map<Node, Map<String, List<Integer>>> nodeToTopicPartitions = new HashMap<>();
@@ -371,7 +373,7 @@ class MirrorCoordinatorSender {
                     new ReadMirrorOffsetsRequest.Builder(data),
                     response -> {
                         if (response.responseBody() instanceof ReadMirrorOffsetsResponse readOffsetsResponse) {
-                            log.debug("Read offsets from remote leader node {} completed. {}", node, response.responseBody());
+                            log.info("Read offsets from remote leader node {} completed. {}", node, response.responseBody());
 
                             synchronized (merged) {
                                 merged.topics().addAll(readOffsetsResponse.data().topics());
@@ -408,7 +410,7 @@ class MirrorCoordinatorSender {
     /** Writes mirror partition states to local coordinator, batching all writes. */
     CompletableFuture<WriteMirrorStatesResponseData> writeStateToLocalCoordinator(
             String mirrorName, Map<String, Set<MirrorStateWrite>> stateWrites) {
-        log.debug("Writing states to local coordinator for mirror {}", mirrorName);
+        log.info("Writing states to local coordinator for mirror {}", mirrorName);
 
         if (coordinatorWriter.isEmpty()) {
             return CompletableFuture.completedFuture(new WriteMirrorStatesResponseData());
@@ -420,7 +422,7 @@ class MirrorCoordinatorSender {
     /** Writes mirror partition states to remote coordinators, batching requests per coordinator node. */
     CompletableFuture<WriteMirrorStatesResponse> writeStateToRemoteCoordinator(
             String mirrorName, Map<String, Set<MirrorStateWrite>> topicMetadata, Set<String> stoppedTopics) {
-        log.debug("Writing states to remote coordinators for mirror {}. Topic metadata: {}, Stopped topics: {}.",
+        log.info("Writing states to remote coordinators for mirror {}. Topic metadata: {}, Stopped topics: {}.",
                 mirrorName, topicMetadata, stoppedTopics);
 
         CompletableFuture<WriteMirrorStatesResponse> resultFuture = new CompletableFuture<>();
@@ -478,7 +480,7 @@ class MirrorCoordinatorSender {
                 node,
                 new WriteMirrorStatesRequest.Builder(data),
                 response -> {
-                    log.debug("Write states to remote coordinator completed: {}", response.responseBody());
+                    log.info("Write states to remote coordinator completed: {}", response.responseBody());
                     if (response.responseBody() instanceof WriteMirrorStatesResponse writeMirrorStatesResponse) {
                         synchronized (merged) {
                             merged.topics().addAll(writeMirrorStatesResponse.data().topics());
