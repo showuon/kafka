@@ -218,7 +218,7 @@ class MirrorUtils:
         wait_until(check, timeout_sec=timeout_sec, backoff_sec=2, err_msg=err_msg)
 
     def wait_mirror_lag_zero(self, kafka, client_node, mirror_name,
-                             topics, timeout_sec=120,
+                             topics, timeout_sec=30,
                              err_msg="Mirror did not catch up"):
         """Wait until all mirror partitions reach MIRRORING state with zero lag."""
         def check():
@@ -240,7 +240,7 @@ class MirrorUtils:
         time.sleep(sleep_s)
 
     def wait_for_log_convergence(self, source_kafka, dest_kafka, topics,
-                                 timeout_sec=120):
+                                 timeout_sec=30):
         """Poll until source leader and all dest replica log segment hashes match."""
         def log_segment_hashes(node, topic, partition):
             cmd = "md5sum %s*/%s-%d/*.log 2>/dev/null" % (
