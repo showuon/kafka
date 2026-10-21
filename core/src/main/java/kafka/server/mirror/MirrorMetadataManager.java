@@ -1760,7 +1760,11 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED, MirrorPartitionState.STOPPED));
         return validateMirrorStates(data.mirrorName(), topics,
                 Set.of(MirrorPartitionState.STOPPED), false)
-            .thenApply(result -> {
+            .handle((result, ex) -> {
+                if (ex != null) {
+                    log.error("failed to validate delete mirror states", ex);
+                    return Optional.of(Errors.forException(ex));
+                }
                 data.setStateOffset(result.stateOffset());
                 return result.error();
             });
@@ -1771,7 +1775,11 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 .map(StartMirrorTopicsRequestData.TopicMetadata::topicName).collect(Collectors.toSet());
         return validateMirrorStates(data.mirrorName(), topics,
                 Set.of(MirrorPartitionState.STOPPED, MirrorPartitionState.UNKNOWN), true)
-            .thenApply(result -> {
+            .handle((result, ex) -> {
+                if (ex != null) {
+                    log.error("failed to validate start mirror states", ex);
+                    return Optional.of(Errors.forException(ex));
+                }
                 data.setStateOffset(result.stateOffset());
                 return result.error();
             });
@@ -1782,10 +1790,15 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 .map(StopMirrorTopicsRequestData.TopicMetadata::topicName).collect(Collectors.toSet());
         return validateMirrorStates(data.mirrorName(), topics,
                 Set.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED), false)
-            .thenApply(result -> {
+            .handle((result, ex) -> {
+                if (ex != null) {
+                    log.error("failed to validate stop mirror states", ex);
+                    return Optional.of(Errors.forException(ex));
+                }
                 data.setStateOffset(result.stateOffset());
                 return result.error();
             });
+
     }
 
     public CompletableFuture<Optional<Errors>> validatePauseMirrorStates(PauseMirrorTopicsRequestData data) {
@@ -1793,7 +1806,11 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 .map(PauseMirrorTopicsRequestData.TopicMetadata::topicName).collect(Collectors.toSet());
         return validateMirrorStates(data.mirrorName(), topics,
                 Set.of(MirrorPartitionState.MIRRORING), false)
-            .thenApply(result -> {
+            .handle((result, ex) -> {
+                if (ex != null) {
+                    log.error("failed to validate pause mirror states", ex);
+                    return Optional.of(Errors.forException(ex));
+                }
                 data.setStateOffset(result.stateOffset());
                 return result.error();
             });
@@ -1804,7 +1821,11 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 .map(ResumeMirrorTopicsRequestData.TopicMetadata::topicName).collect(Collectors.toSet());
         return validateMirrorStates(data.mirrorName(), topics,
                 Set.of(MirrorPartitionState.PAUSED), false)
-            .thenApply(result -> {
+            .handle((result, ex) -> {
+                if (ex != null) {
+                    log.error("failed to validate resume mirror states", ex);
+                    return Optional.of(Errors.forException(ex));
+                }
                 data.setStateOffset(result.stateOffset());
                 return result.error();
             });
@@ -1834,8 +1855,14 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             return CompletableFuture.completedFuture(new ValidationResult(validationOffset, Optional.empty()));
         }
 
-        return coordSender.readStateFromRemoteCoordinator(mirrorName, remotePartitions).thenApply(response ->
-            new ValidationResult(validationOffset, validateRemotePartitions(response, validStates))
+        return coordSender.readStateFromRemoteCoordinator(mirrorName, remotePartitions)
+                .handle((response, ex) -> {
+                    if (ex != null) {
+                        log.error("failed to read state from remote coordinator", ex);
+                        return new ValidationResult(validationOffset, Optional.of(Errors.forException(ex)));
+                    }
+                    return new ValidationResult(validationOffset, validateRemotePartitions(response, validStates));
+                }
         );
     }
 
