@@ -727,7 +727,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
         // Phase 3: Write to remote coordinator and handle completion
         if (!remoteWrites.isEmpty()) {
-            coordSender.writeStateToRemoteCoordinator(mirrorName, remoteWrites, Set.of())
+            coordSender.writeStateToRemoteCoordinator(mirrorName, remoteWrites)
                 .whenComplete((res, ex) -> {
                     if (ex != null) {
                         remoteWrites.forEach((topic, writes) -> writes.forEach(write ->
@@ -984,8 +984,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             writePositionFuture = coordSender.writeLastMirrorPositions(mirrorName, Map.of(tp, lastMirrorPosition));
         } else {
             coordSender.writeStateToRemoteCoordinator(mirrorName,
-                Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), null, -1, -1, lastMirrorPosition, null, -1, false))),
-                Set.of());
+                Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), null, -1, -1, lastMirrorPosition, null, -1, false))));
             writePositionFuture = CompletableFuture.completedFuture(null);
         }
 
@@ -1644,7 +1643,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                         }));
                     });
         } else {
-            coordSender.writeStateToRemoteCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)), Set.of())
+            coordSender.writeStateToRemoteCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)))
                     .whenComplete((res, ex) -> {
                         if (ex != null) {
                             refreshAndPersistState(mirrorName, tp, state, errorMessage, nonRetryable, ex.getMessage());
@@ -1761,7 +1760,11 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 EnumSet.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED, MirrorPartitionState.STOPPED));
         return validateMirrorStates(data.mirrorName(), topics,
                 Set.of(MirrorPartitionState.STOPPED), false)
-            .thenApply(result -> {
+            .handle((result, ex) -> {
+                if (ex != null) {
+                    log.error("Failed to validate delete mirror states", ex);
+                    return Optional.of(Errors.forException(ex));
+                }
                 data.setStateOffset(result.stateOffset());
                 return result.error();
             });
@@ -1772,7 +1775,11 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 .map(StartMirrorTopicsRequestData.TopicMetadata::topicName).collect(Collectors.toSet());
         return validateMirrorStates(data.mirrorName(), topics,
                 Set.of(MirrorPartitionState.STOPPED, MirrorPartitionState.UNKNOWN), true)
-            .thenApply(result -> {
+            .handle((result, ex) -> {
+                if (ex != null) {
+                    log.error("Failed to validate start mirror states", ex);
+                    return Optional.of(Errors.forException(ex));
+                }
                 data.setStateOffset(result.stateOffset());
                 return result.error();
             });
@@ -1783,10 +1790,15 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 .map(StopMirrorTopicsRequestData.TopicMetadata::topicName).collect(Collectors.toSet());
         return validateMirrorStates(data.mirrorName(), topics,
                 Set.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED), false)
-            .thenApply(result -> {
+            .handle((result, ex) -> {
+                if (ex != null) {
+                    log.error("Failed to validate stop mirror states", ex);
+                    return Optional.of(Errors.forException(ex));
+                }
                 data.setStateOffset(result.stateOffset());
                 return result.error();
             });
+
     }
 
     public CompletableFuture<Optional<Errors>> validatePauseMirrorStates(PauseMirrorTopicsRequestData data) {
@@ -1794,7 +1806,11 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 .map(PauseMirrorTopicsRequestData.TopicMetadata::topicName).collect(Collectors.toSet());
         return validateMirrorStates(data.mirrorName(), topics,
                 Set.of(MirrorPartitionState.MIRRORING), false)
-            .thenApply(result -> {
+            .handle((result, ex) -> {
+                if (ex != null) {
+                    log.error("Failed to validate pause mirror states", ex);
+                    return Optional.of(Errors.forException(ex));
+                }
                 data.setStateOffset(result.stateOffset());
                 return result.error();
             });
@@ -1805,7 +1821,11 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 .map(ResumeMirrorTopicsRequestData.TopicMetadata::topicName).collect(Collectors.toSet());
         return validateMirrorStates(data.mirrorName(), topics,
                 Set.of(MirrorPartitionState.PAUSED), false)
-            .thenApply(result -> {
+            .handle((result, ex) -> {
+                if (ex != null) {
+                    log.error("Failed to validate resume mirror states", ex);
+                    return Optional.of(Errors.forException(ex));
+                }
                 data.setStateOffset(result.stateOffset());
                 return result.error();
             });
@@ -1835,8 +1855,14 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             return CompletableFuture.completedFuture(new ValidationResult(validationOffset, Optional.empty()));
         }
 
-        return coordSender.readStateFromRemoteCoordinator(mirrorName, remotePartitions).thenApply(response ->
-            new ValidationResult(validationOffset, validateRemotePartitions(response, validStates))
+        return coordSender.readStateFromRemoteCoordinator(mirrorName, remotePartitions)
+                .handle((response, ex) -> {
+                    if (ex != null) {
+                        log.error("Failed to read state from remote coordinator", ex);
+                        return new ValidationResult(validationOffset, Optional.of(Errors.forException(ex)));
+                    }
+                    return new ValidationResult(validationOffset, validateRemotePartitions(response, validStates));
+                }
         );
     }
 
@@ -1990,7 +2016,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                         }));
                     });
         } else {
-            coordSender.writeStateToRemoteCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)), Set.of())
+            coordSender.writeStateToRemoteCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)))
                     .whenComplete((res, ex) -> {
                         if (ex != null) {
                             scheduleRetry(tp.toString(),
@@ -2108,7 +2134,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             return localWriteFuture;
         }
 
-        return localWriteFuture.thenCompose(res -> coordSender.writeStateToRemoteCoordinator(mirrorName, remoteWrites, Set.of())
+        return localWriteFuture.thenCompose(res -> coordSender.writeStateToRemoteCoordinator(mirrorName, remoteWrites)
                 .thenApply(response -> {
                     response.data().topics().forEach(t -> t.partitions().forEach(p -> {
                         if (p.errorCode() != Errors.NONE.code()) {

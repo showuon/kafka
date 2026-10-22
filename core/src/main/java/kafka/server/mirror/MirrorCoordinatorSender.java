@@ -398,9 +398,9 @@ class MirrorCoordinatorSender {
 
     /** Writes mirror partition states to remote coordinators, batching requests per coordinator node. */
     CompletableFuture<WriteMirrorStatesResponse> writeStateToRemoteCoordinator(
-            String mirrorName, Map<String, Set<MirrorStateWrite>> topicMetadata, Set<String> stoppedTopics) {
-        log.debug("Writing states to remote coordinators for mirror {}. Topic metadata: {}, Stopped topics: {}.",
-                mirrorName, topicMetadata, stoppedTopics);
+            String mirrorName, Map<String, Set<MirrorStateWrite>> topicMetadata) {
+        log.debug("Writing states to remote coordinators for mirror {}. Topic metadata: {}.",
+                mirrorName, topicMetadata);
 
         CompletableFuture<WriteMirrorStatesResponse> resultFuture = new CompletableFuture<>();
 
