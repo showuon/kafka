@@ -1762,7 +1762,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 Set.of(MirrorPartitionState.STOPPED), false)
             .handle((result, ex) -> {
                 if (ex != null) {
-                    log.error("failed to validate delete mirror states", ex);
+                    log.error("Failed to validate delete mirror states", ex);
                     return Optional.of(Errors.forException(ex));
                 }
                 data.setStateOffset(result.stateOffset());
@@ -1777,7 +1777,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 Set.of(MirrorPartitionState.STOPPED, MirrorPartitionState.UNKNOWN), true)
             .handle((result, ex) -> {
                 if (ex != null) {
-                    log.error("failed to validate start mirror states", ex);
+                    log.error("Failed to validate start mirror states", ex);
                     return Optional.of(Errors.forException(ex));
                 }
                 data.setStateOffset(result.stateOffset());
@@ -1792,7 +1792,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 Set.of(MirrorPartitionState.MIRRORING, MirrorPartitionState.PAUSED), false)
             .handle((result, ex) -> {
                 if (ex != null) {
-                    log.error("failed to validate stop mirror states", ex);
+                    log.error("Failed to validate stop mirror states", ex);
                     return Optional.of(Errors.forException(ex));
                 }
                 data.setStateOffset(result.stateOffset());
@@ -1808,7 +1808,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 Set.of(MirrorPartitionState.MIRRORING), false)
             .handle((result, ex) -> {
                 if (ex != null) {
-                    log.error("failed to validate pause mirror states", ex);
+                    log.error("Failed to validate pause mirror states", ex);
                     return Optional.of(Errors.forException(ex));
                 }
                 data.setStateOffset(result.stateOffset());
@@ -1823,7 +1823,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 Set.of(MirrorPartitionState.PAUSED), false)
             .handle((result, ex) -> {
                 if (ex != null) {
-                    log.error("failed to validate resume mirror states", ex);
+                    log.error("Failed to validate resume mirror states", ex);
                     return Optional.of(Errors.forException(ex));
                 }
                 data.setStateOffset(result.stateOffset());
@@ -1858,7 +1858,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         return coordSender.readStateFromRemoteCoordinator(mirrorName, remotePartitions)
                 .handle((response, ex) -> {
                     if (ex != null) {
-                        log.error("failed to read state from remote coordinator", ex);
+                        log.error("Failed to read state from remote coordinator", ex);
                         return new ValidationResult(validationOffset, Optional.of(Errors.forException(ex)));
                     }
                     return new ValidationResult(validationOffset, validateRemotePartitions(response, validStates));
