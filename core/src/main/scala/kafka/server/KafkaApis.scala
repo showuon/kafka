@@ -255,8 +255,8 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.STREAMS_GROUP_DESCRIBE => handleStreamsGroupDescribe(request).exceptionally(handleError)
         case ApiKeys.STREAMS_GROUP_HEARTBEAT => handleStreamsGroupHeartbeat(request).exceptionally(handleError)
         case ApiKeys.GET_REPLICA_LOG_INFO => handleGetReplicaLogInfo(request)
-        case ApiKeys.CREATE_CLUSTER_MIRROR => handleCreateClusterMirror(request)//.exceptionally(handleError)
-        case ApiKeys.START_MIRROR_TOPICS => handleStartMirrorTopics(request).exceptionally(handleError)
+        case ApiKeys.CREATE_CLUSTER_MIRROR => handleCreateClusterMirror(request)
+        case ApiKeys.START_MIRROR_TOPICS => handleStartMirrorTopics(request)
         case ApiKeys.STOP_MIRROR_TOPICS => handleStopMirrorTopics(request)
         case ApiKeys.PAUSE_MIRROR_TOPICS => handlePauseMirrorTopics(request)
         case ApiKeys.RESUME_MIRROR_TOPICS => handleResumeMirrorTopics(request)
@@ -4265,17 +4265,23 @@ class KafkaApis(val requestChannel: RequestChannel,
   }
 
   def handleCreateClusterMirror(request: RequestChannel.Request): CompletableFuture[Unit] = {
-    forwardingManager.forwardRequest(request, { responseOpt =>
-      responseOpt match {
-        case Some(response) =>
-          ensureMirrorStateTopicExists(request)
-          requestHelper.sendForwardedResponse(request, response)
-        case None =>
-          handleInvalidVersionsDuringForwarding(request)
-          CompletableFuture.completedFuture[Unit](())
-      }
+    ensureMirrorStateTopicExists(request).thenCompose(_ => {
+      val future = new CompletableFuture[Unit]()
+      forwardingManager.forwardRequest(request, { responseOpt =>
+        responseOpt match {
+          case Some(response) =>
+            requestHelper.sendForwardedResponse(request, response)
+            future.complete(())
+          case None =>
+            handleInvalidVersionsDuringForwarding(request)
+            future.complete(())
+        }
+      })
+      future
+    }).exceptionally(ex => {
+      requestHelper.handleError(request, ex)
+      ()
     })
-    CompletableFuture.completedFuture[Unit](())
   }
 
   private def ensureMirrorStateTopicExists(request: RequestChannel.Request): CompletableFuture[Unit] = {
@@ -4291,6 +4297,9 @@ class KafkaApis(val requestChannel: RequestChannel,
       )
       metadataResponseTopics.find(_.name == Topic.MIRROR_STATE_TOPIC_NAME) match {
         case Some(topic) if topic.errorCode == 0 || Errors.forCode(topic.errorCode) == Errors.TOPIC_ALREADY_EXISTS =>
+          CompletableFuture.completedFuture[Unit](())
+        case Some(topic) if Errors.forCode(topic.errorCode) == Errors.UNKNOWN_TOPIC_OR_PARTITION =>
+          // Transient state: the topic exists in the controller but hasn't fully propagated to the broker's metadata yet
           CompletableFuture.completedFuture[Unit](())
         case Some(topic) =>
           CompletableFuture.failedFuture(Errors.forCode(topic.errorCode).exception())
@@ -4361,7 +4370,10 @@ class KafkaApis(val requestChannel: RequestChannel,
           }
         })
       }
-    }
+    }.exceptionally(ex => {
+      requestHelper.handleError(request, ex)
+      ()
+    })
   }
 
   def handleStopMirrorTopics(request: RequestChannel.Request): Unit = {
