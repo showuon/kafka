@@ -4290,22 +4290,12 @@ class KafkaApis(val requestChannel: RequestChannel,
         request.session,
         request.header.clientId
       )
-      val metadataResponseTopics = autoTopicCreationManager.createTopics(
+      autoTopicCreationManager.createTopics(
         Set(Topic.MIRROR_STATE_TOPIC_NAME),
         controllerMutationQuota,
         Some(request.context)
       )
-      metadataResponseTopics.find(_.name == Topic.MIRROR_STATE_TOPIC_NAME) match {
-        case Some(topic) if topic.errorCode == 0 || Errors.forCode(topic.errorCode) == Errors.TOPIC_ALREADY_EXISTS =>
-          CompletableFuture.completedFuture[Unit](())
-        case Some(topic) if Errors.forCode(topic.errorCode) == Errors.UNKNOWN_TOPIC_OR_PARTITION =>
-          // A successful reply always returns this error, so we ignore here
-          CompletableFuture.completedFuture[Unit](())
-        case Some(topic) =>
-          CompletableFuture.failedFuture(Errors.forCode(topic.errorCode).exception())
-        case None =>
-          CompletableFuture.failedFuture(Errors.UNKNOWN_SERVER_ERROR.exception())
-      }
+      CompletableFuture.completedFuture[Unit](())
     } catch {
       case e: Exception =>
         CompletableFuture.failedFuture(e)
