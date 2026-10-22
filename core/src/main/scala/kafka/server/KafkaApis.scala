@@ -22,9 +22,8 @@ import kafka.network.RequestChannel
 import kafka.server.QuotaFactory.{QuotaManagers, UNBOUNDED_QUOTA}
 import kafka.server.handlers.DescribeTopicPartitionsRequestHandler
 import kafka.server.mirror.MirrorMetadataManager
-import org.apache.kafka.coordinator.mirror.MirrorMetadataCache
-import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService
-import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService.MirrorStateWrite
+import org.apache.kafka.coordinator.mirror.{ClusterMirrorCoordinator, MirrorMetadataCache}
+import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinator.MirrorStateWrite
 import org.apache.kafka.server.mirror.MirrorPartitionState
 import org.apache.kafka.server.common.MirrorVersion
 import kafka.server.share.{ShareFetchUtils, SharePartitionManager}
@@ -100,7 +99,7 @@ class KafkaApis(val requestChannel: RequestChannel,
                 val groupCoordinator: GroupCoordinator,
                 val txnCoordinator: TransactionCoordinator,
                 val shareCoordinator: ShareCoordinator,
-                val clusterMirrorCoordinator: ClusterMirrorCoordinatorService,
+                val mirrorCoordinator: ClusterMirrorCoordinator,
                 val mirrorMetadataManager: MirrorMetadataManager,
                 val mirrorMetadataCache: MirrorMetadataCache,
                 val autoTopicCreationManager: AutoTopicCreationManager,
@@ -256,8 +255,8 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.STREAMS_GROUP_DESCRIBE => handleStreamsGroupDescribe(request).exceptionally(handleError)
         case ApiKeys.STREAMS_GROUP_HEARTBEAT => handleStreamsGroupHeartbeat(request).exceptionally(handleError)
         case ApiKeys.GET_REPLICA_LOG_INFO => handleGetReplicaLogInfo(request)
-        case ApiKeys.CREATE_CLUSTER_MIRROR => forwardToController(request)
-        case ApiKeys.START_MIRROR_TOPICS => handleStartMirrorTopics(request).exceptionally(handleError)
+        case ApiKeys.CREATE_CLUSTER_MIRROR => handleCreateClusterMirror(request)
+        case ApiKeys.START_MIRROR_TOPICS => handleStartMirrorTopics(request)
         case ApiKeys.STOP_MIRROR_TOPICS => handleStopMirrorTopics(request)
         case ApiKeys.PAUSE_MIRROR_TOPICS => handlePauseMirrorTopics(request)
         case ApiKeys.RESUME_MIRROR_TOPICS => handleResumeMirrorTopics(request)
@@ -4265,6 +4264,44 @@ class KafkaApis(val requestChannel: RequestChannel,
     authHelper.authorize(request.context, operation, CLUSTER, CLUSTER_NAME)
   }
 
+  def handleCreateClusterMirror(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    ensureMirrorStateTopicExists(request).thenCompose(_ => {
+      val future = new CompletableFuture[Unit]()
+      forwardingManager.forwardRequest(request, { responseOpt =>
+        responseOpt match {
+          case Some(response) =>
+            requestHelper.sendForwardedResponse(request, response)
+            future.complete(())
+          case None =>
+            handleInvalidVersionsDuringForwarding(request)
+            future.complete(())
+        }
+      })
+      future
+    }).exceptionally(ex => {
+      requestHelper.handleError(request, ex)
+      ()
+    })
+  }
+
+  private def ensureMirrorStateTopicExists(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    try {
+      val controllerMutationQuota = quotas.controllerMutation.newPermissiveQuotaFor(
+        request.session,
+        request.header.clientId
+      )
+      autoTopicCreationManager.createTopics(
+        Set(Topic.MIRROR_STATE_TOPIC_NAME),
+        controllerMutationQuota,
+        Some(request.context)
+      )
+      CompletableFuture.completedFuture[Unit](())
+    } catch {
+      case e: Exception =>
+        CompletableFuture.failedFuture(e)
+    }
+  }
+
   def handleStartMirrorTopics(request: RequestChannel.Request): CompletableFuture[Unit] = {
     if (!MirrorVersion.isEnabled(apiVersionManager.features.finalizedFeatures)) {
       logger.warn("Cluster Mirroring is disabled (mirror.version=0), ignoring start mirror topics request")
@@ -4323,7 +4360,10 @@ class KafkaApis(val requestChannel: RequestChannel,
           }
         })
       }
-    }
+    }.exceptionally(ex => {
+      requestHelper.handleError(request, ex)
+      ()
+    })
   }
 
   def handleStopMirrorTopics(request: RequestChannel.Request): Unit = {
@@ -4864,7 +4904,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       })
       mirrorPartitions.put(topic.topicName(), parts)
     })
-    clusterMirrorCoordinator.readPartitionStates(mirrorName, mirrorPartitions)
+    mirrorCoordinator.readPartitionStates(mirrorName, mirrorPartitions)
       .whenComplete((res, ex) => {
         if (ex != null) {
           val errResponse = new ReadMirrorStatesResponse(new ReadMirrorStatesResponseData()
@@ -4952,15 +4992,15 @@ class KafkaApis(val requestChannel: RequestChannel,
     writeMirrorStatesRequest.data().topics().forEach(topic => {
       val topicState = new util.HashSet[MirrorStateWrite]()
       topic.partitions().forEach(part => {
-        val lm = if (part.lastMirrorEpoch() != -1 || part.lastMirrorOffset() != -1L)
+        val lastMirrorPosition = if (part.lastMirrorEpoch() != -1 || part.lastMirrorOffset() != -1L)
           new EpochOffset(part.lastMirrorEpoch(), part.lastMirrorOffset()) else null
         topicState.add(new MirrorStateWrite(part.partitionIndex(),
           MirrorPartitionState.fromValue(part.state()), part.leaderEpoch(), part.stateEpoch(),
-            lm, part.errorMessage(), part.retryAttempt(), part.nonRetryable()))
+            lastMirrorPosition, part.errorMessage(), part.retryAttempt(), part.nonRetryable()))
       })
       mirrorState.put(topic.topicName(), topicState)
     })
-    clusterMirrorCoordinator.writePartitionStates(mirrorName, mirrorState)
+    mirrorCoordinator.writePartitionStates(mirrorName, mirrorState)
       .whenComplete((res, ex) => {
         if (ex != null) {
           val errResponse = new WriteMirrorStatesResponse(new WriteMirrorStatesResponseData()

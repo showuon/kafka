@@ -17,19 +17,18 @@
 
 package kafka.server.metadata
 
-import java.util.OptionalInt
 import kafka.coordinator.transaction.TransactionCoordinator
 import kafka.log.LogManager
+import kafka.server.mirror.MirrorMetadataManager
 import kafka.server.share.SharePartitionManager
 import kafka.server.{KafkaConfig, ReplicaManager}
-import kafka.server.mirror.MirrorMetadataManager
-import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService
 import kafka.utils.Logging
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.errors.TimeoutException
 import org.apache.kafka.common.internals.Topic
 import org.apache.kafka.coordinator.common.runtime.{KRaftCoordinatorMetadataDelta, KRaftCoordinatorMetadataImage}
 import org.apache.kafka.coordinator.group.GroupCoordinator
+import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinator
 import org.apache.kafka.coordinator.share.ShareCoordinator
 import org.apache.kafka.coordinator.transaction.TransactionLogConfig
 import org.apache.kafka.image.loader.LoaderManifest
@@ -41,6 +40,7 @@ import org.apache.kafka.server.common.{FinalizedFeatures, MirrorVersion, Request
 import org.apache.kafka.server.fault.FaultHandler
 import org.apache.kafka.storage.internals.log.{LogManager => JLogManager}
 
+import java.util.OptionalInt
 import java.util.concurrent.CompletableFuture
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
@@ -86,7 +86,7 @@ class BrokerMetadataPublisher(
   aclPublisher: AclPublisher,
   fatalFaultHandler: FaultHandler,
   metadataPublishingFaultHandler: FaultHandler,
-  mirrorCoordinator: ClusterMirrorCoordinatorService,
+  mirrorCoordinator: ClusterMirrorCoordinator,
   mirrorMetadataManager: MirrorMetadataManager
 ) extends MetadataPublisher with Logging {
   logIdent = s"[BrokerMetadataPublisher id=${config.nodeId}] "

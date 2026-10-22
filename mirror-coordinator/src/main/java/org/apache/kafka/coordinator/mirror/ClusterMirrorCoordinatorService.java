@@ -18,6 +18,7 @@ package org.apache.kafka.coordinator.mirror;
 
 import org.apache.kafka.common.EpochOffset;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.message.ReadMirrorStatesResponseData;
 import org.apache.kafka.common.message.WriteMirrorStatesResponseData;
 import org.apache.kafka.common.metrics.Metrics;
@@ -35,7 +36,7 @@ import org.apache.kafka.coordinator.common.runtime.MultiThreadedEventProcessor;
 import org.apache.kafka.coordinator.common.runtime.PartitionWriter;
 import org.apache.kafka.coordinator.mirror.metrics.ClusterMirrorCoordinatorMetrics;
 import org.apache.kafka.server.mirror.MirrorPartition;
-import org.apache.kafka.server.mirror.MirrorPartitionState;
+import org.apache.kafka.server.record.BrokerCompressionType;
 import org.apache.kafka.server.util.KafkaScheduler;
 import org.apache.kafka.server.util.timer.Timer;
 
@@ -48,6 +49,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -278,28 +280,24 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         }
     }
 
-    /**
-     * Determines the coordinator partition index for a given mirror partition key.
-     * Uses composite hashing on (mirror name, topic id, partition) to distribute
-     * partition-level coordination across brokers, ensuring load balance across
-     * multiple mirrors with many partitions.
-     *
-     * @param key the mirror partition key (mirror name, topic id, partition)
-     * @return the coordinator partition index in the __mirror_state topic
-     * @throws IllegalStateException if the coordinator service is not active
-     */
+    @Override
     public int partitionFor(MirrorPartition key) {
         throwIfNotActive();
         return key.coordinatorPartition(mirrorConfig.stateTopicNumPartitions());
     }
 
-    /**
-     * Reads mirror partition states across coordinator shards for the given mirror and topic partitions.
-     *
-     * @param mirrorName the name of the cluster mirror
-     * @param partitions map of topic name to set of partition indices to read
-     * @return future completed with the response data containing partition states
-     */
+    @Override
+    public Properties mirrorStateTopicConfigs() {
+        Properties properties = new Properties();
+        properties.put(TopicConfig.CLEANUP_POLICY_CONFIG, TopicConfig.CLEANUP_POLICY_COMPACT);
+        properties.put(TopicConfig.COMPRESSION_TYPE_CONFIG, BrokerCompressionType.PRODUCER.name);
+        properties.put(TopicConfig.SEGMENT_BYTES_CONFIG, mirrorConfig.stateTopicSegmentBytes());
+        properties.put(TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG, mirrorConfig.stateTopicMinISR());
+        properties.put(TopicConfig.RETENTION_MS_CONFIG, -1);
+        return properties;
+    }
+
+    @Override
     public CompletableFuture<ReadMirrorStatesResponseData> readPartitionStates(
             String mirrorName,
             Map<String, Set<Integer>> partitions
@@ -351,13 +349,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         return resultFuture;
     }
 
-    /**
-     * Writes partition states and optional last mirror positions across coordinator shards.
-     *
-     * @param mirrorName   the name of the cluster mirror
-     * @param stateWrites map of topic name to set of state write descriptors
-     * @return future completed with the response data containing per-partition write results and state epochs
-     */
+    @Override
     public CompletableFuture<WriteMirrorStatesResponseData> writePartitionStates(
             String mirrorName,
             Map<String, Set<MirrorStateWrite>> stateWrites
@@ -491,7 +483,4 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         });
         return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
     }
-
-    public record MirrorStateWrite(int partition, MirrorPartitionState state, int leaderEpoch, int stateEpoch,
-                                   EpochOffset lastMirrorPosition, String errorMessage, int retryAttempt, boolean nonRetryable) { }
 }

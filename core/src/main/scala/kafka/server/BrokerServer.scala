@@ -23,8 +23,7 @@ import kafka.log.LogManager
 import kafka.network.SocketServer
 import kafka.raft.KafkaRaftManager
 import kafka.server.mirror.MirrorMetadataManager
-import org.apache.kafka.coordinator.mirror.MirrorMetadataCache
-import org.apache.kafka.coordinator.mirror.{ClusterMirrorCoordinatorService, MirrorRecordSerde}
+import org.apache.kafka.coordinator.mirror.{ClusterMirrorCoordinator, ClusterMirrorCoordinatorService, MirrorMetadataCache, MirrorRecordSerde}
 import kafka.server.metadata._
 import kafka.server.share.{ShareCoordinatorMetadataCacheHelperImpl, SharePartitionManager}
 import kafka.utils.CoreUtils
@@ -128,7 +127,7 @@ class BrokerServer(
 
   var transactionCoordinator: TransactionCoordinator = _
 
-  var mirrorCoordinator: ClusterMirrorCoordinatorService = _
+  var mirrorCoordinator: ClusterMirrorCoordinator = _
   var mirrorMetadataCache: MirrorMetadataCache = _
   var mirrorMetadataManager: MirrorMetadataManager = _
 
@@ -411,7 +410,7 @@ class BrokerServer(
 
       autoTopicCreationManager = new DefaultAutoTopicCreationManager(
         config, clientToControllerChannelManager, groupCoordinator,
-        transactionCoordinator, shareCoordinator)
+        transactionCoordinator, shareCoordinator, mirrorCoordinator)
 
       dynamicConfigHandlers = Map[ConfigType, ConfigHandler](
         ConfigType.TOPIC -> new TopicConfigHandler(replicaManager, config, quotaManagers),
@@ -471,7 +470,7 @@ class BrokerServer(
         groupCoordinator = groupCoordinator,
         txnCoordinator = transactionCoordinator,
         shareCoordinator = shareCoordinator,
-        clusterMirrorCoordinator = mirrorCoordinator,
+        mirrorCoordinator = mirrorCoordinator,
         mirrorMetadataManager = mirrorMetadataManager,
         mirrorMetadataCache = mirrorMetadataCache,
         autoTopicCreationManager = autoTopicCreationManager,
@@ -721,7 +720,7 @@ class BrokerServer(
     }
   }
 
-  private def createClusterMirrorCoordinator(): ClusterMirrorCoordinatorService = {
+  private def createClusterMirrorCoordinator(): ClusterMirrorCoordinator = {
     val time = Time.SYSTEM
     val timer = new SystemTimerReaper(
       "cluster-mirror-coordinator-reaper",

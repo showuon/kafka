@@ -200,7 +200,7 @@ class KafkaApisTest extends Logging {
       groupCoordinator = groupCoordinator,
       txnCoordinator = txnCoordinator,
       shareCoordinator = shareCoordinator,
-      clusterMirrorCoordinator = mirrorCoordinator,
+      mirrorCoordinator = mirrorCoordinator,
       mirrorMetadataManager = mirrorMetadataManager,
       mirrorMetadataCache = MirrorMetadataCache.empty(metadataCache),
       autoTopicCreationManager = autoTopicCreationManager,

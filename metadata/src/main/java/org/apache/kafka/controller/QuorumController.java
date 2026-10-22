@@ -1784,7 +1784,7 @@ public final class QuorumController implements Controller {
     ) {
         return appendWriteEvent("createClusterMirror", context.deadlineNs(), () -> {
             ControllerResult<CreateClusterMirrorResponseData> result =
-                    configurationControl.addMirrorConfig(mirrorName, configChanges);
+                    configurationControl.createClusterMirror(mirrorName, configChanges);
             return result;
         });
     }

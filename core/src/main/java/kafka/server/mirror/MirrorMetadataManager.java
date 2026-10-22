@@ -63,7 +63,7 @@ import org.apache.kafka.common.utils.ExponentialBackoff;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig;
-import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinatorService.MirrorStateWrite;
+import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinator.MirrorStateWrite;
 import org.apache.kafka.coordinator.mirror.MetadataManagerBridge;
 import org.apache.kafka.coordinator.mirror.MirrorMetadataCache;
 import org.apache.kafka.image.ConfigurationDelta;

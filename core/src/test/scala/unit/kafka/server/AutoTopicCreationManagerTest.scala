@@ -36,6 +36,7 @@ import org.apache.kafka.common.requests._
 import org.apache.kafka.common.security.auth.{KafkaPrincipal, KafkaPrincipalSerde, SecurityProtocol}
 import org.apache.kafka.common.utils.{SecurityUtils, Utils}
 import org.apache.kafka.coordinator.group.{GroupCoordinator, GroupCoordinatorConfig}
+import org.apache.kafka.coordinator.mirror.ClusterMirrorCoordinator
 import org.apache.kafka.coordinator.share.{ShareCoordinator, ShareCoordinatorConfig}
 import org.apache.kafka.metadata.MetadataCache
 import org.apache.kafka.server.config.ServerConfigs
@@ -59,6 +60,7 @@ class AutoTopicCreationManagerTest {
   private val groupCoordinator = Mockito.mock(classOf[GroupCoordinator])
   private val transactionCoordinator = Mockito.mock(classOf[TransactionCoordinator])
   private val shareCoordinator = Mockito.mock(classOf[ShareCoordinator])
+  private val mirrorCoordinator = Mockito.mock(classOf[ClusterMirrorCoordinator])
   private var autoTopicCreationManager: AutoTopicCreationManager = _
 
   private val internalTopicPartitions = 2
@@ -115,7 +117,8 @@ class AutoTopicCreationManagerTest {
       brokerToController,
       groupCoordinator,
       transactionCoordinator,
-      shareCoordinator)
+      shareCoordinator,
+      mirrorCoordinator)
 
     val topicsCollection = new CreateTopicsRequestData.CreatableTopicCollection
     topicsCollection.add(getNewTopic(topicName, numPartitions, replicationFactor))
@@ -231,7 +234,8 @@ class AutoTopicCreationManagerTest {
       brokerToController,
       groupCoordinator,
       transactionCoordinator,
-      shareCoordinator)
+      shareCoordinator,
+      mirrorCoordinator)
 
     autoTopicCreationManager.createStreamsInternalTopics(topics, requestContext)
 
@@ -267,7 +271,8 @@ class AutoTopicCreationManagerTest {
       brokerToController,
       groupCoordinator,
       transactionCoordinator,
-      shareCoordinator)
+      shareCoordinator,
+      mirrorCoordinator)
 
     autoTopicCreationManager.createStreamsInternalTopics(topics, requestContext)
 
@@ -288,7 +293,8 @@ class AutoTopicCreationManagerTest {
       brokerToController,
       groupCoordinator,
       transactionCoordinator,
-      shareCoordinator)
+      shareCoordinator,
+      mirrorCoordinator)
 
     autoTopicCreationManager.createStreamsInternalTopics(topics, requestContext)
 
@@ -325,7 +331,8 @@ class AutoTopicCreationManagerTest {
       brokerToController,
       groupCoordinator,
       transactionCoordinator,
-      shareCoordinator)
+      shareCoordinator,
+      mirrorCoordinator)
 
     autoTopicCreationManager.createStreamsInternalTopics(topics, requestContext)
 
@@ -356,7 +363,8 @@ class AutoTopicCreationManagerTest {
       brokerToController,
       groupCoordinator,
       transactionCoordinator,
-      shareCoordinator)
+      shareCoordinator,
+      mirrorCoordinator)
 
     val createTopicApiVersion = new ApiVersionsResponseData.ApiVersion()
       .setApiKey(ApiKeys.CREATE_TOPICS.id)
