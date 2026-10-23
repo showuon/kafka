@@ -110,27 +110,36 @@ class MirrorFetcherThread(name: String,
     logAppendInfo
   }
 
-  // Validates batch epoch against local epoch (destination) and partition epoch (source metadata)
+  // Validates source leader epoch against destination leader epoch
   private def validateLeaderEpoch(topicPartition: TopicPartition,
-                                  partition: Partition,
-                                  records: Records,
-                                  partitionLeaderEpoch: Int): Unit = {
-    val localLeaderEpoch = partition.getLeaderEpoch
-    val highestBatchLeaderEpoch = if (records.lastBatch().isPresent)
-      records.lastBatch().get().partitionLeaderEpoch() else -1
-    log.trace(s"Validating leader epoch for partition $topicPartition: batch epoch=$highestBatchLeaderEpoch, " +
-      s"local epoch=$localLeaderEpoch, partition leader epoch=$partitionLeaderEpoch")
-    if (highestBatchLeaderEpoch > localLeaderEpoch) {
-      // React by fencing this partition when source records are already ahead of the local leader epoch.
-      // The exception will mark this partition as failed and transition mirror state to EPOCH_FENCING.
-      throw new MirrorLeaderEpochExceededException(s"Batch epoch $highestBatchLeaderEpoch " +
-        s"exceeds local epoch $localLeaderEpoch for partition $topicPartition")
+                                  partitionState: Partition,
+                                  sourceRecords: Records,
+                                  fetchLeaderEpoch: Int): Unit = {
+    // Three leader epoch values to validate:
+    // - fetchLeaderEpoch: epoch from fetch state (source epoch known to destination)
+    // - destinationLeaderEpoch: current destination epoch (our replica)
+    // - sourceLeaderEpoch: epoch of the most recent batch in fetched records (true source epoch)
+    val destinationLeaderEpoch = partitionState.getLeaderEpoch
+    val sourceLeaderEpoch = if (sourceRecords.lastBatch().isPresent)
+      sourceRecords.lastBatch().get().partitionLeaderEpoch() else -1
+    log.trace(s"Validating leader epoch for partition $topicPartition. " +
+      s"Source leader epoch=$sourceLeaderEpoch, " +
+      s"destination leader epoch=$destinationLeaderEpoch, " +
+      s"fetch leader epoch=$fetchLeaderEpoch")
+
+    // Check 1: If records are from a future epoch relative to destination, fence the partition.
+    // This prevents the destination from accepting records that would violate leader epoch invariant (DLE >= SLE).
+    if (sourceLeaderEpoch > destinationLeaderEpoch) {
+      throw new MirrorLeaderEpochExceededException(s"Source leader epoch $sourceLeaderEpoch " +
+        s"exceeds destination leader epoch $destinationLeaderEpoch for partition $topicPartition")
     } else {
       replicaMgr.mirrorManager.foreach { mmm =>
         mmm.maybeClearFailedStateAndPersist(mirrorName, topicPartition)
 
-        if (highestBatchLeaderEpoch > localLeaderEpoch - LEADER_EPOCH_BUMP_THRESHOLD) {
-          mmm.scheduleBumpLeaderEpoch(partition.getMirrorName().get(), topicPartition)
+        // Proactively bump destination's epoch if batches are approaching the current epoch.
+        // This avoids fencing events from natural leadership changes on source.
+        if (sourceLeaderEpoch > destinationLeaderEpoch - LEADER_EPOCH_BUMP_THRESHOLD) {
+          mmm.scheduleBumpLeaderEpoch(partitionState.getMirrorName().get(), topicPartition)
             .whenComplete { (_, ex) =>
               if (ex != null) log.warn(s"Failed to bump leader epoch for partition $topicPartition", ex)
             }
@@ -138,13 +147,13 @@ class MirrorFetcherThread(name: String,
       }
     }
 
-    if (highestBatchLeaderEpoch > partitionLeaderEpoch) {
-      // In old version, the leader epoch will be incremented "when follower is down". When this happens, the leader
-      // will still serve the fetch request with "currentLeaderEpoch=X", even though the leader's leader epoch is "X+1".
-      // With the fix of KAFKA-18723, the follower node will reject the batches and endlessly re-fetch.
-      // Fix it by throwing exception and handle it by refresh the source cluster metadata.
-      throw new MirrorPartitionStaleMetadataException(s"Batch epoch $highestBatchLeaderEpoch exceeds partition " +
-        s"leader epoch $partitionLeaderEpoch for partition $topicPartition; refreshing source metadata")
+    // Check 2: If records contain a higher epoch than source's fetch response claims,
+    // source's metadata is stale (leadership changed but response metadata wasn't updated).
+    // Refresh source cluster metadata to pick up the leadership change.
+    // See KAFKA-18723: source can serve records with newer epoch than its claimed epoch.
+    if (sourceLeaderEpoch > fetchLeaderEpoch) {
+      throw new MirrorPartitionStaleMetadataException(s"Batch epoch $sourceLeaderEpoch exceeds partition " +
+        s"leader epoch $fetchLeaderEpoch for partition $topicPartition; refreshing source metadata")
     }
   }
 
