@@ -202,10 +202,6 @@ public class MirrorMetadataCache {
         mirrorPartitions.keySet().removeIf(key -> key.mirrorName().equals(mirrorName));
     }
 
-    public Map<TopicPartition, SourceClusterLeader> getSourceClusterLeaders(String mirrorName) {
-        return sourceLeaders.get(mirrorName);
-    }
-
     public Optional<SourceClusterLeader> getSourceClusterLeader(String mirrorName, TopicPartition tp) {
         var partitionLeaders = sourceLeaders.get(mirrorName);
         if (partitionLeaders != null) {
