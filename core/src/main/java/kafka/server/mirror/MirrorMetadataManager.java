@@ -2080,6 +2080,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
      * correct state on the next metadata update without exhausted retry attempts.
      */
     public CompletableFuture<Void> writeRecoveryRecords(String mirrorName, Set<String> topics) {
+        log.info("!!! writeRecoveryRecords:" + topics);
         if (!coordSender.isInitialized()) {
             return CompletableFuture.completedFuture(null);
         }
@@ -2097,6 +2098,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     }
 
     private CompletableFuture<Void> executeRecoveryWrites(String mirrorName, Set<String> topics, MetadataImage image) {
+        log.info("!!! executeRecoveryWrites:" + topics);
         Map<String, Set<MirrorStateWrite>> localWrites = new HashMap<>();
         Map<String, Set<MirrorStateWrite>> remoteWrites = new HashMap<>();
 
@@ -2120,6 +2122,8 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 }
             }
         }
+
+        log.info("!!! localWrites:" + localWrites + ";; remoteWrites:" + remoteWrites);
 
         CompletableFuture<Void> localWriteFuture = localWrites.isEmpty() ?
                 CompletableFuture.completedFuture(null) :
