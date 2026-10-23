@@ -727,7 +727,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
         // Phase 3: Write to remote coordinator and handle completion
         if (!remoteWrites.isEmpty()) {
-            coordSender.writeStateToRemoteCoordinator(mirrorName, remoteWrites, Set.of())
+            coordSender.writeStateToRemoteCoordinator(mirrorName, remoteWrites)
                 .whenComplete((res, ex) -> {
                     if (ex != null) {
                         remoteWrites.forEach((topic, writes) -> writes.forEach(write ->
@@ -992,8 +992,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             writePositionFuture = coordSender.writeLastMirrorPositions(mirrorName, Map.of(tp, lastMirrorPosition));
         } else {
             coordSender.writeStateToRemoteCoordinator(mirrorName,
-                Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), null, -1, -1, lastMirrorPosition, null, -1, false))),
-                Set.of());
+                Map.of(tp.topic(), Set.of(new MirrorStateWrite(tp.partition(), null, -1, -1, lastMirrorPosition, null, -1, false))));
             writePositionFuture = CompletableFuture.completedFuture(null);
         }
 
@@ -1652,7 +1651,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                         }));
                     });
         } else {
-            coordSender.writeStateToRemoteCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)), Set.of())
+            coordSender.writeStateToRemoteCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)))
                     .whenComplete((res, ex) -> {
                         if (ex != null) {
                             refreshAndPersistState(mirrorName, tp, state, errorMessage, nonRetryable, ex.getMessage());
@@ -1998,7 +1997,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                         }));
                     });
         } else {
-            coordSender.writeStateToRemoteCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)), Set.of())
+            coordSender.writeStateToRemoteCoordinator(mirrorName, Map.of(tp.topic(), Set.of(write)))
                     .whenComplete((res, ex) -> {
                         if (ex != null) {
                             scheduleRetry(tp.toString(),
@@ -2062,6 +2061,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
      * correct state on the next metadata update without exhausted retry attempts.
      */
     public CompletableFuture<Void> writeRecoveryRecords(String mirrorName, Set<String> topics) {
+        log.info("!!! writeRecoveryRecords:" + topics);
         if (!coordSender.isInitialized()) {
             return CompletableFuture.completedFuture(null);
         }
@@ -2079,6 +2079,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     }
 
     private CompletableFuture<Void> executeRecoveryWrites(String mirrorName, Set<String> topics, MetadataImage image) {
+        log.info("!!! executeRecoveryWrites:" + topics);
         Map<String, Set<MirrorStateWrite>> localWrites = new HashMap<>();
         Map<String, Set<MirrorStateWrite>> remoteWrites = new HashMap<>();
 
@@ -2103,6 +2104,8 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             }
         }
 
+        log.info("!!! localWrites:" + localWrites + ";; remoteWrites:" + remoteWrites);
+
         CompletableFuture<Void> localWriteFuture = localWrites.isEmpty() ?
                 CompletableFuture.completedFuture(null) :
                 coordSender.writeStateToLocalCoordinator(mirrorName, localWrites)
@@ -2116,7 +2119,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             return localWriteFuture;
         }
 
-        return localWriteFuture.thenCompose(res -> coordSender.writeStateToRemoteCoordinator(mirrorName, remoteWrites, Set.of())
+        return localWriteFuture.thenCompose(res -> coordSender.writeStateToRemoteCoordinator(mirrorName, remoteWrites)
                 .thenApply(response -> {
                     response.data().topics().forEach(t -> t.partitions().forEach(p -> {
                         if (p.errorCode() != Errors.NONE.code()) {
