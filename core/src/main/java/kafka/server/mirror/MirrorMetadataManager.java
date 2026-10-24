@@ -2093,6 +2093,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 MirrorPartition mp = MirrorPartition.of(mirrorName, topicImage.id(), i);
                 // We're going to write recovery records to local/remote coordinator, so we have to get cache from coordinator
                 MirrorPartitionMetadata mpm = mirrorCache.getPartitionMetadata(mp, true);
+                log.info("mpm:" + mp + ";;" + mpm);
                 if (mpm.state() == MirrorPartitionState.FAILED && mpm.prevState() != null) {
                     MirrorPartitionState targetState = mpm.prevState();
                     MirrorStateWrite write = new MirrorStateWrite(i, targetState,
