@@ -271,6 +271,8 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             return;
         }
 
+        maybeCompletePendingEpochBumps();
+
         Set<TopicPartition> partitionsToTransition = collectPartitionsToTransition(delta, newImage);
 
         if (partitionsToTransition.isEmpty()) {
@@ -280,7 +282,6 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         log.info("Cluster metadata updated for partitions {}", partitionsToTransition);
 
         processStateTransitions(partitionsToTransition, newImage);
-        maybeCompletePendingEpochBumps();
     }
 
     /**
@@ -1150,7 +1151,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     public CompletionStage<Map<TopicPartition, EpochOffset>> sendLastMirrorEpochLookup(
             String mirrorName, TopicPartition tp, Collection<ClusterMirrorListing> sourceMirrors) {
         Admin admin = sourceSyncer.getOrCreateSourceAdmin(mirrorName);
-        log.info("Sending LME lookup request for partition {} in mirror {}", tp, mirrorName);
+        log.info("Sending Last Mirror Epoch lookup request for partition {} in mirror {}", tp, mirrorName);
 
         Map<String, List<Integer>> topicPartitions = Map.of(tp.topic(), List.of(tp.partition()));
         DescribeClusterMirrorsOptions options = new DescribeClusterMirrorsOptions()
@@ -1168,7 +1169,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         .thenApply(lastMirrorPositions -> {
             // This log format is used in cluster_mirroring_test.test_failove_failback,
             // so the system test needs to be updated in case of changes
-            log.info("Received LME lookup response for partition {} in mirror {}: {}",
+            log.info("Received Last Mirror Epoch lookup response for partition {} in mirror {}: {}",
                     tp, mirrorName, lastMirrorPositions);
             return lastMirrorPositions;
         })
