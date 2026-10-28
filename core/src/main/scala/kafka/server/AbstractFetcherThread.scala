@@ -507,6 +507,12 @@ abstract class AbstractFetcherThread(name: String,
 
     val startNs = time.nanoseconds()
     try {
+      if (!mirrorName.isEmpty && fetchRequest.fetchData().containsKey(new TopicPartition("quickstart-events", 0))) {
+        fetchRequest.fetchData().forEach((tp, data) => {
+          println(s"### sending fetch request with partition: $tp, fetch offset: ${data.fetchOffset}")
+        })
+
+      }
       responseData = leader.fetch(fetchRequest).asScala
     } catch {
       case t: Throwable =>
