@@ -177,7 +177,7 @@ public abstract class ClusterMirrorCommand {
 
             listing.sort(Comparator.comparing(ClusterMirrorListing::mirrorName));
 
-            System.out.printf("%-30s %-10s %-26s %-50s%n", "MIRROR", "TOPICS", "SOURCE-CLUSTER-ID", "SOURCE-BOOTSTRAP-SERVER");
+            System.out.printf("%-20s %-5s %-16s %-30s%n", "MIRROR", "TOPICS", "SOURCE-CLUSTER-ID", "SOURCE-BOOTSTRAP-SERVER");
             for (ClusterMirrorListing mirror : listing) {
                 String sourceBootstrap = mirror.sourceBootstrap() != null && !mirror.sourceBootstrap().isEmpty()
                     ? mirror.sourceBootstrap()
@@ -185,7 +185,7 @@ public abstract class ClusterMirrorCommand {
                 String sourceClusterId = mirror.sourceClusterId() != null && !mirror.sourceClusterId().isEmpty()
                     ? mirror.sourceClusterId()
                     : "-";
-                System.out.printf("%-30s %-10d %-26s %-50s%n",
+                System.out.printf("%-20s %-5d %-16s %-30s%n",
                     truncateLeft(mirror.mirrorName(), 30),
                     mirror.topicNames().size(),
                     sourceClusterId,
@@ -290,7 +290,7 @@ public abstract class ClusterMirrorCommand {
         private void printFailedPartitions(List<PartitionInfo> partitionInfos) {
             int maxRetryAttempts = getMaxRetryAttempts();
             int maxError = 80;
-            System.out.printf("%-30s %-40s %-10s %-7s %s%n",
+            System.out.printf("%-20s %-30s %-10s %-7s %s%n",
                 "MIRROR", "TOPIC", "PARTITION", "RETRY", "ERROR");
             for (PartitionInfo info : partitionInfos) {
                 String error = info.errorMessage() != null ? info.errorMessage() : "";
@@ -299,9 +299,9 @@ public abstract class ClusterMirrorCommand {
                 }
                 String retry = info.retryAttempt() == -1
                     ? "NonRetryable" : info.retryAttempt() + "/" + maxRetryAttempts;
-                System.out.printf("%-30s %-40s %-10d %-7s %s%n",
-                    truncateLeft(info.mirror(), 30),
-                    truncateLeft(info.topic(), 40),
+                System.out.printf("%-20s %-30s %-10d %-7s %s%n",
+                    truncateLeft(info.mirror(), 20),
+                    truncateLeft(info.topic(), 30),
                     info.partition(),
                     retry,
                     error);
@@ -309,12 +309,12 @@ public abstract class ClusterMirrorCommand {
         }
 
         private void printPartitions(List<PartitionInfo> partitionInfos) {
-            System.out.printf("%-30s %-40s %-10s %-15s %-18s %-10s %-12s%n",
+            System.out.printf("%-20s %-30s %-10s %-15s %-18s %-10s %-12s%n",
                 "MIRROR", "TOPIC", "PARTITION", "SOURCE-OFFSET", "DESTINATION-OFFSET", "LAG", "STATE");
             for (PartitionInfo info : partitionInfos) {
-                System.out.printf("%-30s %-40s %-10d %-15s %-18s %-10s %-12s%n",
-                    truncateLeft(info.mirror(), 30),
-                    truncateLeft(info.topic(), 40),
+                System.out.printf("%-20s %-30s %-10d %-15s %-18s %-10s %-12s%n",
+                    truncateLeft(info.mirror(), 20),
+                    truncateLeft(info.topic(), 30),
                     info.partition(),
                     formatOffset(info.sourceOffset()),
                     formatOffset(info.destinationOffset()),
