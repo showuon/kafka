@@ -990,7 +990,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
         var latestLocalEpoch = replicaManagerSupplier.get().logManager().getLog(tp, false).get().latestEpoch().orElse(-1);
         writePositionFuture
-            .thenCompose(v -> sendBumpLeaderEpochs(Map.of(tp, latestLocalEpoch)))
+            .thenCompose(v -> sendBumpLeaderEpochs(Map.of(tp, Math.addExact(latestLocalEpoch, 1))))
             .thenCompose(v -> abortOngoingTransactions(tp))
             .thenCompose(v -> writePidResetRecord(mirrorName, tp))
             .thenAccept(v -> transitionTo(mirrorName, Set.of(tp), MirrorPartitionState.STOPPED, null, false))
@@ -1277,7 +1277,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 });
     }
 
-    private CompletableFuture<Void> sendBumpLeaderEpochs(Map<TopicPartition, Integer> partitionMinEpochs) {
+    private CompletableFuture<Void>     sendBumpLeaderEpochs(Map<TopicPartition, Integer> partitionMinEpochs) {
         if (partitionMinEpochs.isEmpty()) {
             return CompletableFuture.completedFuture(null);
         }
@@ -1433,6 +1433,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         }
     }
 
+    @SuppressWarnings("NPathComplexity")
     private Map<TopicPartition, Integer> buildSourceEpochBumpTargets(String mirrorName,
                                                                      List<SourceTopicMetadata> sourceTopicMetadata,
                                                                      Set<TopicPartition> topicPartitions) {
@@ -1447,36 +1448,30 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             if (!mirrorTopics.isEmpty() && !mirrorTopics.contains(ts.topic())) {
                 continue;
             }
-            collectEpochBumpTargets(ts, topicPartitions, leaderEpochFromMetadata);
+            for (SourcePartitionState ps : ts.partitions()) {
+                TopicPartition tp = ps.topicPartition();
+                if (!topicPartitions.isEmpty() && !topicPartitions.contains(tp)) {
+                    continue;
+                }
+                if (ps.leaderEpoch().isEmpty()) {
+                    continue;
+                }
+                TopicImage topicImage = metadataImage.topics().getTopic(tp.topic());
+                if (topicImage == null || topicImage.partitions().get(tp.partition()) == null) {
+                    continue;
+                }
+                int sle = ps.leaderEpoch().get();
+                int dle = topicImage.partitions().get(tp.partition()).leaderEpoch;
+                if (sle > dle - LEADER_EPOCH_BUMP_THRESHOLD) {
+                    int targetEpoch = Math.addExact(sle, LEADER_EPOCH_BUMP_INCREMENT);
+                    leaderEpochFromMetadata.put(tp, targetEpoch);
+                }
+            }
         }
         if (!leaderEpochFromMetadata.isEmpty()) {
             log.info("Bumping leader epoch for partitions {}", leaderEpochFromMetadata);
         }
         return leaderEpochFromMetadata;
-    }
-
-    private void collectEpochBumpTargets(SourceTopicMetadata topicInfo,
-                                         Set<TopicPartition> topicPartitions,
-                                         Map<TopicPartition, Integer> leaderEpochFromMetadata) {
-        for (SourcePartitionState ps : topicInfo.partitions()) {
-            TopicPartition tp = ps.topicPartition();
-            if (!topicPartitions.isEmpty() && !topicPartitions.contains(tp)) {
-                continue;
-            }
-            if (ps.leaderEpoch().isEmpty()) {
-                continue;
-            }
-            TopicImage topicImage = metadataImage.topics().getTopic(tp.topic());
-            if (topicImage == null || topicImage.partitions().get(tp.partition()) == null) {
-                continue;
-            }
-            int epoch = ps.leaderEpoch().get();
-            int localEpoch = topicImage.partitions().get(tp.partition()).leaderEpoch;
-            if (epoch > localEpoch - LEADER_EPOCH_BUMP_THRESHOLD) {
-                int newEpoch = Math.addExact(epoch, LEADER_EPOCH_BUMP_INCREMENT);
-                leaderEpochFromMetadata.put(tp, newEpoch);
-            }
-        }
     }
 
     private void addPendingEpochBump(CompletableFuture<Void> future, Map<TopicPartition, Integer> partitionMinEpochs) {
@@ -1492,7 +1487,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 if (topicImage == null) return false;
                 var partitionReg = topicImage.partitions().get(tp.partition());
                 if (partitionReg == null) return false;
-                return partitionReg.leaderEpoch <= epoch;
+                return partitionReg.leaderEpoch < epoch;
             }).map(Map.Entry::getKey).collect(Collectors.toSet());
             if (pendingPartitions.isEmpty()) {
                 bump.future().complete(null);

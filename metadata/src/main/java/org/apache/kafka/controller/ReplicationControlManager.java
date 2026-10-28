@@ -141,7 +141,6 @@ import static org.apache.kafka.common.protocol.Errors.NO_REASSIGNMENT_IN_PROGRES
 import static org.apache.kafka.common.protocol.Errors.TOPIC_AUTHORIZATION_FAILED;
 import static org.apache.kafka.common.protocol.Errors.UNKNOWN_TOPIC_ID;
 import static org.apache.kafka.common.protocol.Errors.UNKNOWN_TOPIC_OR_PARTITION;
-import static org.apache.kafka.common.record.RecordBatch.NO_PARTITION_LEADER_EPOCH;
 import static org.apache.kafka.controller.PartitionReassignmentReplicas.isReassignmentInProgress;
 import static org.apache.kafka.controller.QuorumController.MAX_RECORDS_PER_USER_OP;
 import static org.apache.kafka.metadata.LeaderConstants.NO_LEADER;
@@ -1023,10 +1022,10 @@ public class ReplicationControlManager {
             Map<Integer, Integer> epochs = partitionLeaderEpoch.getValue();
             Uuid topicId = topicsByName.get(topicName);
             TopicControlInfo info = topics.get(topicId);
-            epochs.forEach((partitionId, epoch) -> {
+            epochs.forEach((partitionId, minLeaderEpoch) -> {
                 PartitionRegistration partition = info.parts.get(partitionId);
-                // Skip if the current epoch already exceeds the requested value
-                if (partition.leaderEpoch <= epoch) {
+                // Process a requested target only when partition.leaderEpoch < minLeaderEpoch
+                if (partition.leaderEpoch < minLeaderEpoch) {
                     PartitionChangeBuilder builder = new PartitionChangeBuilder(
                             partition,
                             info.topicId(),
@@ -1035,12 +1034,12 @@ public class ReplicationControlManager {
                             featureControl.metadataVersionOrThrow(),
                             getTopicEffectiveMinIsr(topicName)
                     )
-                            .setTargetLeaderEpoch(epochs.getOrDefault(partitionId, NO_PARTITION_LEADER_EPOCH))
+                            .setTargetLeaderEpoch(minLeaderEpoch)
                             .setDefaultDirProvider(clusterDescriber);
                     builder.build().ifPresent(records::add);
-                    log.debug("Updating partition {} leader epoch for topic {} from {} to {}: {}", partitionId, topicName, partition.leaderEpoch, epoch, records);
+                    log.debug("Updating {}-{} leader epoch from {} to {}: {}", topicName, partitionId, partition.leaderEpoch, minLeaderEpoch, records);
                 } else {
-                    log.debug("Skipping partition {} leader epoch update for topic {} from {} to {}", partitionId, topicName, partition.leaderEpoch, epoch);
+                    log.debug("Skipping {}-{} leader epoch update from {} to {}", topicName, partitionId, partition.leaderEpoch, minLeaderEpoch);
                 }
             });
         }
