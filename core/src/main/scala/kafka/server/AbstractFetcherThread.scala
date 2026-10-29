@@ -509,6 +509,7 @@ abstract class AbstractFetcherThread(name: String,
     try {
       if (!mirrorName.isEmpty && fetchRequest.fetchData().containsKey(new TopicPartition("quickstart-events", 0))) {
         fetchRequest.fetchData().forEach((tp, data) => {
+          println("###");
           println(s"### sending fetch request with partition: $tp, fetch offset: ${data.fetchOffset}")
         })
 

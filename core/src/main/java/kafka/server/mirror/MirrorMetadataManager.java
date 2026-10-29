@@ -784,9 +784,11 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 log.info("Transitioning partition {} from {} to {} due to {}{}",
                         tp, currentState, targetState, errorMessage,
                         nonRetryable ? " (non-retryable error)" : " (retryable error)");
+                System.out.println("###");
                 System.out.println("### Transitioning partition " +  tp + " from " + currentState + " to " + targetState + " due to " + errorMessage);
             } else {
                 log.info("Transitioning partition {} from {} to {}", tp, currentState, targetState);
+                System.out.println("###");
                 System.out.println("### Transitioning partition " + tp + " from " + currentState + " to " + targetState);
             }
 
@@ -1154,7 +1156,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             String mirrorName, TopicPartition tp, Collection<ClusterMirrorListing> sourceMirrors) {
         Admin admin = sourceSyncer.getOrCreateSourceAdmin(mirrorName);
         log.info("Sending Last Mirror Epoch lookup request for partition {} in mirror {}", tp, mirrorName);
-        System.out.println("### Sending Last Mirror Epoch lookup request for partition " + tp +  " in mirror " + mirrorName);
+//        System.out.println("### Sending 'Last Mirror Epoch' lookup request for partition " + tp +  " in mirror " + mirrorName);
 
         Map<String, List<Integer>> topicPartitions = Map.of(tp.topic(), List.of(tp.partition()));
         DescribeClusterMirrorsOptions options = new DescribeClusterMirrorsOptions()
@@ -1174,7 +1176,8 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             // so the system test needs to be updated in case of changes
             log.info("Received Last Mirror Epoch lookup response for partition {} in mirror {}: {}",
                     tp, mirrorName, lastMirrorPositions);
-            System.out.println("### Received Last Mirror Epoch lookup response for partition " +  tp +  " in mirror " + mirrorName + ":\n### " + lastMirrorPositions);
+            System.out.println("###");
+            System.out.println("### Received 'Last Mirror Epoch' lookup response for partition " +  tp +  " in mirror " + mirrorName + ":\n### " + lastMirrorPositions);
             return lastMirrorPositions;
         })
         .orTimeout(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);

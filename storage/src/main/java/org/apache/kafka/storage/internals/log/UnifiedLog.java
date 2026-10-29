@@ -2297,6 +2297,7 @@ public class UnifiedLog implements AutoCloseable {
                         return false;
                     } else {
                         logger.info("Truncating to offset {}", targetOffset);
+                        System.out.println("###");
                         System.out.println("### Truncating to offset " +  targetOffset);
                         synchronized (lock) {
                             localLog.checkIfMemoryMappedBufferClosed();
