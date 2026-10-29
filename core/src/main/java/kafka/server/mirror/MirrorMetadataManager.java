@@ -1277,7 +1277,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 });
     }
 
-    private CompletableFuture<Void>     sendBumpLeaderEpochs(Map<TopicPartition, Integer> partitionMinEpochs) {
+    private CompletableFuture<Void> sendBumpLeaderEpochs(Map<TopicPartition, Integer> partitionMinEpochs) {
         if (partitionMinEpochs.isEmpty()) {
             return CompletableFuture.completedFuture(null);
         }
@@ -1482,12 +1482,12 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         pendingLeaderEpochBumps.removeIf(bump -> {
             Set<TopicPartition> pendingPartitions = bump.partitionToEpoch().entrySet().stream().filter(entry -> {
                 TopicPartition tp = entry.getKey();
-                int epoch = entry.getValue();
+                int expectedEpoch = entry.getValue();
                 var topicImage = metadataImage.topics().getTopic(tp.topic());
                 if (topicImage == null) return false;
                 var partitionReg = topicImage.partitions().get(tp.partition());
                 if (partitionReg == null) return false;
-                return partitionReg.leaderEpoch < epoch;
+                return partitionReg.leaderEpoch < expectedEpoch;
             }).map(Map.Entry::getKey).collect(Collectors.toSet());
             if (pendingPartitions.isEmpty()) {
                 bump.future().complete(null);
