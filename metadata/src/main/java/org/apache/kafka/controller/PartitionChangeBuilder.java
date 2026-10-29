@@ -486,9 +486,8 @@ public class PartitionChangeBuilder {
      * Only sets the explicit LeaderEpoch field on v3+ records. Older metadata versions
      * rely on implicit derivation in PartitionRegistration.merge() (leader change = +1).
      *
-     * If targetLeaderEpoch is set (bump leader epoch request), the caller already
-     * verified that currentLeaderEpoch <= targetLeaderEpoch, so the new epoch is
-     * targetLeaderEpoch + 1. If a leader change was triggered by election, reassignment,
+     * If an explicit target is set (BumpLeaderEpoch request), assign the final leader epoch
+     * to at least that target. If a leader change was triggered by election, reassignment,
      * or ISR shrink, the epoch increments by 1. Otherwise, the epoch is left unchanged
      * (default -1).
      */
@@ -497,7 +496,7 @@ public class PartitionChangeBuilder {
             return;
         }
         if (targetLeaderEpoch >= 0) {
-            record.setLeaderEpoch(Math.max(targetLeaderEpoch + 1, partition.leaderEpoch));
+            record.setLeaderEpoch(Math.max(targetLeaderEpoch, partition.leaderEpoch));
         } else if (record.leader() != NO_LEADER_CHANGE) {
             record.setLeaderEpoch(partition.leaderEpoch + 1);
         }
