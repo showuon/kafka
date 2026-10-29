@@ -1174,7 +1174,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             // so the system test needs to be updated in case of changes
             log.info("Received Last Mirror Epoch lookup response for partition {} in mirror {}: {}",
                     tp, mirrorName, lastMirrorPositions);
-            System.out.println("### Received Last Mirror Epoch lookup response for partition " +  tp +  " in mirror " + mirrorName + ":\n " + lastMirrorPositions);
+            System.out.println("### Received Last Mirror Epoch lookup response for partition " +  tp +  " in mirror " + mirrorName + ":\n### " + lastMirrorPositions);
             return lastMirrorPositions;
         })
         .orTimeout(brokerConfig.requestTimeoutMs(), TimeUnit.MILLISECONDS);
