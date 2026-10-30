@@ -14,32 +14,29 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kafka.tools.consumer;
+package org.apache.kafka.coordinator.mirror;
 
+import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.protocol.ApiMessage;
-import org.apache.kafka.coordinator.mirror.MirrorRecordSerde;
-import org.apache.kafka.coordinator.mirror.generated.CoordinatorRecordJsonConverters;
+import org.apache.kafka.coordinator.common.runtime.CoordinatorRecordSerde;
+import org.apache.kafka.coordinator.mirror.generated.CoordinatorRecordType;
 
-import com.fasterxml.jackson.databind.JsonNode;
-
-public class ClusterMirrorStateMessageFormatter extends CoordinatorRecordMessageFormatter {
-
-    public ClusterMirrorStateMessageFormatter() {
-        super(new MirrorRecordSerde());
+public class MirrorCoordinatorRecordSerde extends CoordinatorRecordSerde {
+    @Override
+    protected ApiMessage apiMessageKeyFor(short recordType) {
+        try {
+            return CoordinatorRecordType.fromId(recordType).newRecordKey();
+        } catch (UnsupportedVersionException ex) {
+            throw new UnknownRecordTypeException(recordType);
+        }
     }
 
     @Override
-    protected boolean isRecordTypeAllowed(short recordType) {
-        return true;
-    }
-
-    @Override
-    protected JsonNode keyAsJson(ApiMessage message) {
-        return CoordinatorRecordJsonConverters.writeRecordKeyAsJson(message);
-    }
-
-    @Override
-    protected JsonNode valueAsJson(ApiMessage message, short version) {
-        return CoordinatorRecordJsonConverters.writeRecordValueAsJson(message, version);
+    protected ApiMessage apiMessageValueFor(short recordType) {
+        try {
+            return CoordinatorRecordType.fromId(recordType).newRecordValue();
+        } catch (UnsupportedVersionException ex) {
+            throw new UnknownRecordTypeException(recordType);
+        }
     }
 }
