@@ -62,7 +62,7 @@ import org.apache.kafka.common.test.TestKitNodes;
 import org.apache.kafka.coordinator.common.runtime.CoordinatorRecord;
 import org.apache.kafka.coordinator.group.GroupCoordinatorConfig;
 import org.apache.kafka.coordinator.mirror.ClusterMirrorConfig;
-import org.apache.kafka.coordinator.mirror.MirrorRecordSerde;
+import org.apache.kafka.coordinator.mirror.MirrorCoordinatorRecordSerde;
 import org.apache.kafka.coordinator.mirror.generated.LastMirrorEpochsKey;
 import org.apache.kafka.coordinator.mirror.generated.MirrorPartitionStateKey;
 import org.apache.kafka.server.config.ReplicationConfigs;
@@ -624,7 +624,7 @@ public class ClusterMirroringIntegrationTest {
         // 3. Poll until the last batch contains the expected tombstone records.
         //    Tombstones are written asynchronously by the coordinator runtime.
         TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME, partId);
-        MirrorRecordSerde serde = new MirrorRecordSerde();
+        MirrorCoordinatorRecordSerde serde = new MirrorCoordinatorRecordSerde();
         waitForCondition(() -> {
             var batch = dstCluster.brokers().get(leaderMirrorStatePartition).replicaManager()
                     .getLog(mirrorStateTp).get().activeSegment().log().lastBatch().get();

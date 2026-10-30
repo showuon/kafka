@@ -156,7 +156,7 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                     .withDefaultWriteTimeOut(Duration.ofMillis(config.coordinatorWriteTimeoutMs()))
                     .withCoordinatorRuntimeMetrics(runtimeMetrics)
                     .withCoordinatorMetrics(new ClusterMirrorCoordinatorMetrics())
-                    .withSerializer(new MirrorRecordSerde())
+                    .withSerializer(new MirrorCoordinatorRecordSerde())
                     .withAppendLingerMs(config.coordinatorAppendLingerMs())
                     .withExecutorService(Executors.newSingleThreadExecutor())
                     .build();

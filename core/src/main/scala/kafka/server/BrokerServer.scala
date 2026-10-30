@@ -23,7 +23,7 @@ import kafka.log.LogManager
 import kafka.network.SocketServer
 import kafka.raft.KafkaRaftManager
 import kafka.server.mirror.MirrorMetadataManager
-import org.apache.kafka.coordinator.mirror.{ClusterMirrorCoordinator, ClusterMirrorCoordinatorService, MirrorMetadataCache, MirrorRecordSerde}
+import org.apache.kafka.coordinator.mirror.{ClusterMirrorCoordinator, ClusterMirrorCoordinatorService, MirrorMetadataCache, MirrorCoordinatorRecordSerde}
 import kafka.server.metadata._
 import kafka.server.share.{ShareCoordinatorMetadataCacheHelperImpl, SharePartitionManager}
 import kafka.utils.CoreUtils
@@ -726,7 +726,7 @@ class BrokerServer(
       "cluster-mirror-coordinator-reaper",
       new SystemTimer("cluster-mirror-coordinator")
     )
-    val serde = new MirrorRecordSerde
+    val serde = new MirrorCoordinatorRecordSerde
     val loader = new CoordinatorLoaderImpl[CoordinatorRecord](
       time,
       tp => replicaManager.getLog(tp).toJava,
