@@ -16,7 +16,6 @@
  */
 package org.apache.kafka.coordinator.mirror;
 
-import org.apache.kafka.common.EpochOffset;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.errors.CoordinatorLoadInProgressException;
@@ -215,8 +214,8 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                     }
 
                     @Override
-                    public CompletableFuture<Set<String>> listLocalMirrorNames() {
-                        return ClusterMirrorCoordinatorService.this.listLocalMirrorNames();
+                    public CompletableFuture<Set<String>> readMirrorNames() {
+                        return ClusterMirrorCoordinatorService.this.readMirrorNames();
                     }
                 },
                 new MetadataManagerBridge.CoordinatorWriter() {
@@ -225,13 +224,6 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                             String mirrorName,
                             Map<String, Set<MirrorStateWrite>> states) {
                         return ClusterMirrorCoordinatorService.this.writePartitionStates(mirrorName, states);
-                    }
-
-                    @Override
-                    public CompletableFuture<Void> writeLastMirrorPositions(
-                            String mirrorName,
-                            Map<TopicPartition, EpochOffset> positions) {
-                        return ClusterMirrorCoordinatorService.this.writeLastMirrorPositions(mirrorName, positions);
                     }
 
                     @Override
@@ -317,34 +309,6 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
         return properties;
     }
 
-    /**
-     * Lists distinct mirror names present in committed state across all locally hosted
-     * {@code __mirror_state} shards.
-     */
-    public CompletableFuture<Set<String>> listLocalMirrorNames() {
-        throwIfNotActive();
-
-        List<CompletableFuture<Set<String>>> futures = runtime.scheduleReadAllOperation(
-                "list-local-mirror-names",
-                (shard, offset) -> shard.listMirrorNames(offset)
-            ).stream()
-            .map(future -> future.exceptionally(ex -> {
-                Throwable cause = (ex instanceof CompletionException && ex.getCause() != null) ? ex.getCause() : ex;
-                if (cause instanceof NotCoordinatorException || cause instanceof CoordinatorLoadInProgressException) {
-                    return Set.of();
-                }
-                throw new CompletionException(cause);
-            }))
-            .toList();
-
-        return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
-            .thenApply(v -> {
-                Set<String> mirrorNames = new HashSet<>();
-                futures.forEach(f -> mirrorNames.addAll(f.join()));
-                return mirrorNames;
-            });
-    }
-
     @Override
     public CompletableFuture<ReadMirrorStatesResponseData> readPartitionStates(
             String mirrorName,
@@ -395,6 +359,30 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                 resultFuture.complete(data);
             });
         return resultFuture;
+    }
+
+    public CompletableFuture<Set<String>> readMirrorNames() {
+        throwIfNotActive();
+
+        List<CompletableFuture<Set<String>>> futures = runtime.scheduleReadAllOperation(
+                        "read-mirror-names",
+                        (shard, offset) -> shard.readMirrorNames(offset)
+                ).stream()
+                .map(future -> future.exceptionally(ex -> {
+                    Throwable cause = (ex instanceof CompletionException && ex.getCause() != null) ? ex.getCause() : ex;
+                    if (cause instanceof NotCoordinatorException || cause instanceof CoordinatorLoadInProgressException) {
+                        return Set.of();
+                    }
+                    throw new CompletionException(cause);
+                }))
+                .toList();
+
+        return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
+                .thenApply(v -> {
+                    Set<String> mirrorNames = new HashSet<>();
+                    futures.forEach(f -> mirrorNames.addAll(f.join()));
+                    return mirrorNames;
+                });
     }
 
     @Override
@@ -470,36 +458,6 @@ public class ClusterMirrorCoordinatorService implements ClusterMirrorCoordinator
                 resultFuture.complete(data);
             });
         return resultFuture;
-    }
-
-    /**
-     * Persists the last mirror positions (epoch and offset) across coordinator shards.
-     *
-     * @param mirrorName          the name of the cluster mirror
-     * @param lastMirrorPositions map of topic partition to its last mirrored position
-     * @return future completed when all records are persisted
-     */
-    public CompletableFuture<Void> writeLastMirrorPositions(
-            String mirrorName, Map<TopicPartition, EpochOffset> lastMirrorPositions
-    ) {
-        throwIfNotActive();
-
-        // Phase 1: Group positions by coordinator shard.
-        Map<Integer, Map<TopicPartition, EpochOffset>> byCoordPartition = new HashMap<>();
-        lastMirrorPositions.forEach((tp, position) -> {
-            int cp = partitionFor(MirrorPartition.of(mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition()));
-            byCoordPartition.computeIfAbsent(cp, k -> new HashMap<>()).put(tp, position);
-        });
-
-        // Phase 2: Issue batched write operations to each coordinator shard and wait for completion.
-        List<CompletableFuture<Void>> futures = new ArrayList<>();
-        byCoordPartition.forEach((cp, positions) -> {
-            TopicPartition mirrorStateTp = new TopicPartition(MIRROR_STATE_TOPIC_NAME, cp);
-            futures.add(runtime.scheduleWriteOperation("write-mirror-positions", mirrorStateTp,
-                Duration.ofMillis(mirrorConfig.coordinatorWriteTimeoutMs()),
-                shard -> shard.writeLastMirrorPositions(mirrorName, positions)));
-        });
-        return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
     }
 
     /**

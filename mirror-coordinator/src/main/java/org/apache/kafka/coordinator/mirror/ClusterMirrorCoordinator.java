@@ -146,7 +146,7 @@ public interface ClusterMirrorCoordinator {
      * @param state the mirror partition state being written
      * @param leaderEpoch the broker leader epoch when the state was determined
      * @param stateEpoch the epoch counter for the state value
-     * @param lastMirrorPosition the last fetched offset position from the source topic
+     * @param lastMirrorEpoch the last mirrored epoch and offset from the source topic
      * @param errorMessage error message if the state is in error, null otherwise
      * @param retryAttempt the current retry attempt number for failed mirrors
      * @param nonRetryable true if the error is non-retriable and requires manual intervention
@@ -156,7 +156,7 @@ public interface ClusterMirrorCoordinator {
             MirrorPartitionState state,
             int leaderEpoch,
             int stateEpoch,
-            EpochOffset lastMirrorPosition,
+            EpochOffset lastMirrorEpoch,
             String errorMessage,
             int retryAttempt,
             boolean nonRetryable

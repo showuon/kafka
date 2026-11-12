@@ -16,6 +16,7 @@
  */
 package kafka.server.mirror;
 
+import org.apache.kafka.common.EpochOffset;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
@@ -45,12 +46,14 @@ import java.util.stream.Collectors;
 /**
  * Thread-safe cache for the data leader's working state of mirror partitions.
  *
- * This cache holds partition metadata populated from coordinator read/write completions.
- * Coordinator-side state is owned by the coordinator shard via timeline-backed
- * data structures, ensuring read-committed semantics and automatic rollback on write failures.
+ * This cache sits on the data leader and holds partition metadata populated from coordinator
+ * read/write completions. The authoritative state lives in the coordinator shard's timeline-backed
+ * data structures, which provide read-committed semantics and automatic rollback on write failures.
+ * This cache is a best-effort local projection of that state, optimised for fast reads on the
+ * data-path without round-tripping to the coordinator.
  *
- * Updates use stateEpoch-based optimistic locking: a stale update (lower stateEpoch) is
- * silently rejected to prevent async callback races from overwriting fresher state.
+ * All updates use stateEpoch-based optimistic locking: a stale update (lower stateEpoch) is
+ * silently rejected so that async callback races never overwrite fresher state.
  */
 public class MirrorLeaderCache {
     private static final Logger LOG = LoggerFactory.getLogger(MirrorLeaderCache.class);
@@ -80,6 +83,149 @@ public class MirrorLeaderCache {
         mirrorPartitions.clear();
         sourceLeaders.clear();
     }
+
+    // ======== MIRROR PARTITIONS ======================================================================================
+
+    /**
+     * Replays a full metadata snapshot from the coordinator log (shard load or read response).
+     * Rejects snapshots with a stale stateEpoch; when the epoch matches, only advances the
+     * last mirror epoch forward, never regressing it.
+     */
+    public void updatePartitionMetadata(MirrorPartition mp, MirrorPartitionMetadata metadata) {
+        mirrorPartitions.compute(mp, (key, existing) -> {
+            if (existing != null && existing.stateEpoch() > metadata.stateEpoch()) {
+                LOG.debug("Skipping stale metadata update for {}: existing stateEpoch {} > incoming {}",
+                        mp, existing.stateEpoch(), metadata.stateEpoch());
+                return existing;
+            }
+            if (existing != null && existing.stateEpoch() == metadata.stateEpoch()) {
+                // State fields have the same revision; only the position can differ
+                return new MirrorPartitionMetadata.Builder(existing)
+                        .withLastMirrorEpoch(laterPosition(existing.lastMirrorEpoch(), metadata.lastMirrorEpoch()))
+                        .build();
+            }
+            return metadata;
+        });
+    }
+
+    /**
+     * Updates lifecycle state during a local transition (e.g. MIRRORING to STOPPING).
+     * Leaves the last mirror epoch untouched; position updates travel through the coordinator.
+     * Returns true if the transition was applied, false if a newer stateEpoch already superseded it.
+     */
+    public boolean updatePartitionState(
+            MirrorPartition mp, MirrorPartitionState state, int stateEpoch,
+            String errorMessage, int retryAttempt, boolean nonRetryable, int maxRetryAttempts
+    ) {
+        MirrorPartitionMetadata updated = mirrorPartitions.compute(mp, (key, current) -> {
+            MirrorPartitionMetadata existing = MirrorPartitionMetadata.orEmpty(current);
+            if (existing.stateEpoch() > stateEpoch) {
+                return current;
+            }
+            // A read may already have installed this transition; do not increment retries twice
+            if (existing.stateEpoch() == stateEpoch && current != null) {
+                return current;
+            }
+            return new MirrorPartitionMetadata.Builder(existing)
+                    .withResolvedErrorInfo(state, errorMessage, retryAttempt, nonRetryable, maxRetryAttempts)
+                    .withState(state)
+                    .withStateEpoch(stateEpoch)
+                    .build();
+        });
+        return updated != null && updated.stateEpoch() == stateEpoch && updated.state() == state;
+    }
+
+    /**
+     * Advances the cached last mirror epoch after the coordinator confirms persistence.
+     * Scoped to a specific stateEpoch so a delayed completion cannot clobber a newer lifecycle state.
+     */
+    public void updateLastMirrorEpoch(MirrorPartition mp, int stateEpoch, EpochOffset position) {
+        mirrorPartitions.computeIfPresent(mp, (key, existing) -> {
+            if (existing.stateEpoch() != stateEpoch) {
+                return existing;
+            }
+            return new MirrorPartitionMetadata.Builder(existing)
+                    .withLastMirrorEpoch(laterPosition(existing.lastMirrorEpoch(), position))
+                    .build();
+        });
+    }
+
+    private static EpochOffset laterPosition(EpochOffset existing, EpochOffset incoming) {
+        // Positions are monotonic within a state epoch, ordered by leader epoch and then offset
+        if (existing.epoch() > incoming.epoch()
+                || (existing.epoch() == incoming.epoch() && existing.offset() >= incoming.offset())) {
+            return existing;
+        }
+        return incoming;
+    }
+
+    public Set<MirrorPartition> getMirrorPartitions() {
+        return mirrorPartitions.keySet();
+    }
+
+    public void clearFailedState(MirrorPartition mp, int stateEpoch) {
+        mirrorPartitions.computeIfPresent(mp, (key, existing) -> {
+            if (existing.stateEpoch() != stateEpoch || existing.state() != MirrorPartitionState.MIRRORING) {
+                return existing;
+            }
+            return new MirrorPartitionMetadata.Builder(existing)
+                    .withErrorMessage(null)
+                    .withRetryAttempt(0)
+                    .withPrevState(null)
+                    .build();
+        });
+    }
+
+    public MirrorPartitionMetadata getPartitionMetadata(MirrorPartition mp) {
+        return MirrorPartitionMetadata.orEmpty(mirrorPartitions.get(mp));
+    }
+
+    public void removePartitionMetadata(MirrorPartition mp) {
+        mirrorPartitions.remove(mp);
+    }
+
+    public void removePartitionMeatadata(String mirrorName) {
+        mirrorPartitions.keySet().removeIf(key -> key.mirrorName().equals(mirrorName));
+    }
+
+    public Map<TopicPartition, MirrorPartitionState> getPartitionStates(String mirrorName) {
+        Map<TopicPartition, MirrorPartitionState> result = new HashMap<>();
+        mirrorPartitions.keySet().forEach(key -> {
+            if (key.mirrorName().equals(mirrorName)) {
+                MirrorPartitionMetadata entry = getPartitionMetadata(key);
+                if (entry != null && entry.state() != null) {
+                    metadataCache.getTopicName(key.topicId()).ifPresent(topicName ->
+                            result.put(new TopicPartition(topicName, key.partition()), entry.state()));
+                }
+            }
+        });
+        return result;
+    }
+
+    // ======== SOURCE LEADERS =========================================================================================
+
+    public Optional<SourceClusterLeader> getSourceClusterLeader(String mirrorName, TopicPartition tp) {
+        var partitionLeaders = sourceLeaders.get(mirrorName);
+        if (partitionLeaders != null) {
+            SourceClusterLeader leader = partitionLeaders.get(tp);
+            if (leader != null) {
+                return Optional.of(leader);
+            }
+        }
+        return Optional.empty();
+    }
+
+    public void updateSourceClusterLeader(String mirrorName, TopicPartition tp, SourceClusterLeader leader) {
+        sourceLeaders.computeIfAbsent(mirrorName, k -> new ConcurrentHashMap<>()).put(tp, leader);
+    }
+
+    public void removeSourceClusterLeaders(String mirrorName) {
+        sourceLeaders.remove(mirrorName);
+    }
+
+    public record SourceClusterLeader(Optional<Node> node, int leaderEpoch) { }
+
+    // ======== CLUSTER METADATA =======================================================================================
 
     public String getSourceClusterId(String mirrorName) {
         Properties props = metadataCache.config(new ConfigResource(ConfigResource.Type.CLUSTER_MIRROR, mirrorName));
@@ -122,6 +268,36 @@ public class MirrorLeaderCache {
         return metadataCache.getTopicMetadata(topics, listenerName, allowAutoTopicCreation, supportsAutoTopicCreation);
     }
 
+    public Optional<Node> getLeaderEndpoint(String topic, int partition, ListenerName listenerName) {
+        return metadataCache.getPartitionLeaderEndpoint(topic, partition, listenerName);
+    }
+
+    public int getLeaderEpoch(TopicPartition tp) {
+        TopicImage topicImage = metadataImage.topics().getTopic(tp.topic());
+        if (topicImage == null) {
+            return -1;
+        }
+        var partitionReg = topicImage.partitions().get(tp.partition());
+        if (partitionReg == null) {
+            return -1;
+        }
+        return partitionReg.leaderEpoch;
+    }
+
+    public Map<String, Set<Integer>> getTopicPartitionsMapping(String mirrorName) {
+        Map<String, Set<Integer>> result = new HashMap<>();
+        metadataImage.topics().topicsById().values().forEach(topicInfo -> {
+            if (mirrorName.equals(topicInfo.mirrorName())) {
+                Set<Integer> parts = new HashSet<>();
+                for (int i = 0; i < topicInfo.partitions().size(); i++) {
+                    parts.add(i);
+                }
+                result.put(topicInfo.name(), parts);
+            }
+        });
+        return result;
+    }
+
     public Set<String> getConfiguredMirrorNames() {
         return metadataImage.configs().resourceData().keySet().stream()
                 .filter(resource -> resource.type() == ConfigResource.Type.CLUSTER_MIRROR)
@@ -140,101 +316,4 @@ public class MirrorLeaderCache {
                 .map(TopicImage::name)
                 .collect(Collectors.toSet());
     }
-
-    public Optional<Node> getLeaderEndpoint(String topic, int partition, ListenerName listenerName) {
-        return metadataCache.getPartitionLeaderEndpoint(topic, partition, listenerName);
-    }
-
-    public int getLeaderEpoch(TopicPartition tp) {
-        TopicImage topicImage = metadataImage.topics().getTopic(tp.topic());
-        if (topicImage == null) {
-            return -1;
-        }
-        var partitionReg = topicImage.partitions().get(tp.partition());
-        if (partitionReg == null) {
-            return -1;
-        }
-        return partitionReg.leaderEpoch;
-    }
-
-    public Map<TopicPartition, MirrorPartitionState> getPartitionStates(String mirrorName) {
-        Map<TopicPartition, MirrorPartitionState> result = new HashMap<>();
-        mirrorPartitions.keySet().forEach(key -> {
-            if (key.mirrorName().equals(mirrorName)) {
-                MirrorPartitionMetadata entry = getPartitionMetadata(key);
-                if (entry != null && entry.state() != null) {
-                    metadataCache.getTopicName(key.topicId()).ifPresent(topicName ->
-                            result.put(new TopicPartition(topicName, key.partition()), entry.state()));
-                }
-            }
-        });
-        return result;
-    }
-
-    public Map<String, Set<Integer>> getTopicPartitionsMapping(String mirrorName) {
-        Map<String, Set<Integer>> result = new HashMap<>();
-        metadataImage.topics().topicsById().values().forEach(topicInfo -> {
-            if (mirrorName.equals(topicInfo.mirrorName())) {
-                Set<Integer> parts = new HashSet<>();
-                for (int i = 0; i < topicInfo.partitions().size(); i++) {
-                    parts.add(i);
-                }
-                result.put(topicInfo.name(), parts);
-            }
-        });
-        return result;
-    }
-
-    public MirrorPartitionMetadata getPartitionMetadata(MirrorPartition mp) {
-        return MirrorPartitionMetadata.orEmpty(mirrorPartitions.get(mp));
-    }
-
-    /**
-     * Updates the data leader's partition metadata using stateEpoch-based optimistic locking.
-     * A stale update (incoming stateEpoch lower than existing) is rejected to prevent async
-     * callback races from overwriting fresher state.
-     */
-    public void updatePartitionMetadata(MirrorPartition mp, MirrorPartitionMetadata metadata) {
-        mirrorPartitions.compute(mp, (key, existing) -> {
-            if (existing != null && existing.stateEpoch() > metadata.stateEpoch()) {
-                LOG.debug("Skipping stale metadata update for {}: existing stateEpoch {} > incoming {}",
-                        mp, existing.stateEpoch(), metadata.stateEpoch());
-                return existing;
-            }
-            return metadata;
-        });
-    }
-
-    public void removePartitionMetadata(MirrorPartition mp) {
-        mirrorPartitions.remove(mp);
-    }
-
-    public Set<MirrorPartition> getMirrorPartitions() {
-        return mirrorPartitions.keySet();
-    }
-
-    public void removeMirrorPartitions(String mirrorName) {
-        mirrorPartitions.keySet().removeIf(key -> key.mirrorName().equals(mirrorName));
-    }
-
-    public Optional<SourceClusterLeader> getSourceClusterLeader(String mirrorName, TopicPartition tp) {
-        var partitionLeaders = sourceLeaders.get(mirrorName);
-        if (partitionLeaders != null) {
-            SourceClusterLeader leader = partitionLeaders.get(tp);
-            if (leader != null) {
-                return Optional.of(leader);
-            }
-        }
-        return Optional.empty();
-    }
-
-    public void updateSourceClusterLeader(String mirrorName, TopicPartition tp, SourceClusterLeader leader) {
-        sourceLeaders.computeIfAbsent(mirrorName, k -> new ConcurrentHashMap<>()).put(tp, leader);
-    }
-
-    public void removeSourceClusterLeaders(String mirrorName) {
-        sourceLeaders.remove(mirrorName);
-    }
-
-    public record SourceClusterLeader(Optional<Node> node, int leaderEpoch) { }
 }

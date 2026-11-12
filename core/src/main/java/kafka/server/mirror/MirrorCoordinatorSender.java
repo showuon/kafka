@@ -22,7 +22,6 @@ import kafka.server.NetworkUtils;
 import org.apache.kafka.clients.KafkaClient;
 import org.apache.kafka.common.EpochOffset;
 import org.apache.kafka.common.Node;
-import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.errors.CoordinatorLoadInProgressException;
 import org.apache.kafka.common.message.MetadataResponseData;
@@ -182,9 +181,9 @@ class MirrorCoordinatorSender {
      * Lists mirror names present in committed state on locally hosted coordinator shards.
      * Returns an empty set when no local coordinator reader is available.
      */
-    CompletableFuture<Set<String>> listLocalMirrorNames() {
+    CompletableFuture<Set<String>> readLocalMirrorNames() {
         return coordinatorReader
-                .map(CoordinatorReader::listLocalMirrorNames)
+                .map(CoordinatorReader::readMirrorNames)
                 .orElseGet(() -> CompletableFuture.completedFuture(Set.of()));
     }
 
@@ -217,7 +216,7 @@ class MirrorCoordinatorSender {
                                         new MirrorPartitionMetadata.Builder()
                                                 .withState(MirrorPartitionState.fromValue(partition.state()))
                                                 .withStateEpoch(partition.stateEpoch())
-                                                .withLastPosition(new EpochOffset(partition.lastMirrorEpoch(),
+                                                .withLastMirrorEpoch(new EpochOffset(partition.lastMirrorEpoch(),
                                                         partition.lastMirrorOffset()))
                                                 .withErrorMessage(partition.errorMessage())
                                                 .withRetryAttempt(partition.retryAttempt())
@@ -294,7 +293,7 @@ class MirrorCoordinatorSender {
                                             new MirrorPartitionMetadata.Builder()
                                                     .withState(MirrorPartitionState.fromValue(partition.state()))
                                                     .withStateEpoch(partition.stateEpoch())
-                                                    .withLastPosition(new EpochOffset(partition.lastMirrorEpoch(),
+                                                    .withLastMirrorEpoch(new EpochOffset(partition.lastMirrorEpoch(),
                                                             partition.lastMirrorOffset()))
                                                     .withErrorMessage(partition.errorMessage())
                                                     .withRetryAttempt(partition.retryAttempt())
@@ -449,7 +448,7 @@ class MirrorCoordinatorSender {
                 partitionData.setState(m.state() == null ? MirrorPartitionState.UNKNOWN.value() : m.state().value());
                 partitionData.setLeaderEpoch(m.leaderEpoch());
                 partitionData.setStateEpoch(m.stateEpoch());
-                EpochOffset lm = m.lastMirrorPosition();
+                EpochOffset lm = m.lastMirrorEpoch();
                 partitionData.setLastMirrorEpoch(lm != null ? lm.epoch() : -1);
                 partitionData.setLastMirrorOffset(lm != null ? lm.offset() : -1L);
                 partitionData.setPartitionIndex(m.partition());
@@ -517,13 +516,6 @@ class MirrorCoordinatorSender {
         });
 
         return resultFuture;
-    }
-
-    CompletableFuture<Void> writeLastMirrorPositions(String mirrorName, Map<TopicPartition, EpochOffset> positions) {
-        if (coordinatorWriter.isEmpty()) {
-            return CompletableFuture.completedFuture(null);
-        }
-        return coordinatorWriter.get().writeLastMirrorPositions(mirrorName, positions);
     }
 
     CompletableFuture<Void> writeMirrorTombstones(String mirrorName) {
