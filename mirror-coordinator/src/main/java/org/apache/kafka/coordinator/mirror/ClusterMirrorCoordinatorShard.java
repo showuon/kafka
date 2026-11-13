@@ -449,18 +449,19 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
     ) {
         MirrorPartition mp = MirrorPartition.of(
                 mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
+        boolean alreadyValidated = pendingStates.containsKey(mp);
         PendingPartitionState current = pendingStates.get(mp);
         if (current == null) {
             current = new PendingPartitionState(
                     MirrorPartitionMetadata.orEmpty(partitionMetadata.get(mp)),
                     leaderEpochMap.getOrDefault(mp, -1), stateEpochMap.getOrDefault(mp, 0));
         }
-        if (leaderEpoch != -1 && current.leaderEpoch() > leaderEpoch) {
+        if (!alreadyValidated && leaderEpoch != -1 && current.leaderEpoch() > leaderEpoch) {
             log.info("LastMirrorEpoch write fenced for partition {} because leader epoch {} < current {}",
                     tp, leaderEpoch, current.leaderEpoch());
             throw Errors.FENCED_LEADER_EPOCH.exception();
         }
-        if (stateEpoch != -1 && current.stateEpoch() > stateEpoch) {
+        if (!alreadyValidated && stateEpoch != -1 && current.stateEpoch() > stateEpoch) {
             log.info("LastMirrorEpoch write fenced for {} because current epoch {} > expected {}",
                     tp, current.stateEpoch(), stateEpoch);
             throw Errors.FENCED_STATE_EPOCH.exception();
