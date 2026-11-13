@@ -93,19 +93,12 @@ public class MirrorLeaderCache {
      */
     public void updatePartitionMetadata(MirrorPartition mp, MirrorPartitionMetadata metadata) {
         mirrorPartitions.compute(mp, (key, existing) -> {
-            if (existing != null && existing.stateEpoch() > metadata.stateEpoch()) {
-                LOG.debug("Skipping stale metadata update for {}: existing stateEpoch {} > incoming {}",
-                        mp, existing.stateEpoch(), metadata.stateEpoch());
+            if (existing != null && existing.stateEpoch() >= metadata.stateEpoch()) {
+                if (existing.stateEpoch() > metadata.stateEpoch()) {
+                    LOG.debug("Skipping stale metadata update for {}: existing stateEpoch {} > incoming {}",
+                            mp, existing.stateEpoch(), metadata.stateEpoch());
+                }
                 return existing;
-            }
-            if (existing != null && existing.stateEpoch() == metadata.stateEpoch()) {
-                EpochOffset ep = existing.lastMirrorEpoch();
-                EpochOffset ip = metadata.lastMirrorEpoch();
-                EpochOffset later = (ep.epoch() > ip.epoch()
-                        || (ep.epoch() == ip.epoch() && ep.offset() >= ip.offset())) ? ep : ip;
-                return new MirrorPartitionMetadata.Builder(existing)
-                        .withLastMirrorEpoch(later)
-                        .build();
             }
             return metadata;
         });
@@ -148,6 +141,8 @@ public class MirrorLeaderCache {
     public void updateLastMirrorEpoch(MirrorPartition mp, int stateEpoch, EpochOffset position) {
         mirrorPartitions.computeIfPresent(mp, (key, existing) -> {
             if (existing.stateEpoch() > stateEpoch) {
+                LOG.debug("Skipping stale LastMirrorEpoch update for {}: existing stateEpoch {} > incoming {}",
+                        mp, existing.stateEpoch(), stateEpoch);
                 return existing;
             }
             return new MirrorPartitionMetadata.Builder(existing)

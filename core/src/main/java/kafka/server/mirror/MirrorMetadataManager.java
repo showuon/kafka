@@ -955,12 +955,12 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                     if (data.errorCode() != Errors.NONE.code()) {
                         throw Errors.forCode(data.errorCode()).exception();
                     }
-                    return data.topics().stream()
+                    var result = data.topics().stream()
                             .filter(topic -> topic.topicName().equals(tp.topic()))
                             .flatMap(topic -> topic.partitions().stream())
                             .filter(partition -> partition.partitionIndex() == tp.partition())
-                            .findFirst().map(WriteMirrorStatesResponseData.PartitionResult::stateEpoch)
-                            .orElse(existing.stateEpoch());
+                            .findFirst().orElseThrow(() -> Errors.COORDINATOR_NOT_AVAILABLE.exception());
+                    return result.stateEpoch();
                 });
         } else {
             writeLmeFuture = coordSender.writeStateToRemoteCoordinator(mirrorName,
@@ -969,7 +969,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                     if (response.data().errorCode() != Errors.NONE.code()) {
                         throw Errors.forCode(response.data().errorCode()).exception();
                     }
-                    WriteMirrorStatesResponseData.PartitionResult result = response.data().topics().stream()
+                    var result = response.data().topics().stream()
                             .filter(topic -> topic.topicName().equals(tp.topic()))
                             .flatMap(topic -> topic.partitions().stream())
                             .filter(partition -> partition.partitionIndex() == tp.partition())
