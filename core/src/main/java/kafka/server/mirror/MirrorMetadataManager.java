@@ -975,7 +975,6 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
         var latestLocalEpoch = replicaManagerSupplier.get().logManager().getLog(tp, false).get().latestEpoch().orElse(-1);
         writePositionFuture
-            // Publish only persisted positions, preserving any newer cached state or position
             .thenRun(() -> mirrorCache.updateLastMirrorEpoch(mp, existing.stateEpoch(), lastMirrorEpoch))
             .thenCompose(v -> sendBumpLeaderEpochs(Map.of(tp, Math.addExact(latestLocalEpoch, 1))))
             .thenCompose(v -> abortOngoingTransactions(tp))

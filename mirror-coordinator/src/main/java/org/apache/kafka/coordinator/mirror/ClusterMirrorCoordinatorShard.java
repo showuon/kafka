@@ -335,7 +335,8 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
     ) {
         List<CoordinatorRecord> records = new ArrayList<>();
         Map<TopicPartition, PartitionWriteResult> results = new HashMap<>();
-        // Repeated writes in one request share tentative state, never the shard's timeline maps
+        // Tracks in-flight state across partitions within this request so that a second write
+        // to the same partition sees the result of the first, without mutating the timeline maps
         Map<MirrorPartition, PendingPartitionState> pendingStates = new HashMap<>();
         stateWrites.forEach((topic, partitions) -> partitions.forEach(partition -> {
             TopicPartition tp = new TopicPartition(topic, partition.partition());
@@ -397,10 +398,11 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
         MirrorPartitionMetadata updated = new MirrorPartitionMetadata.Builder(existing)
                 .withResolvedErrorInfo(state, errorMessage, retryAttempt,
                         nonRetryable, mirrorConfig.failedRetryMaxAttempts())
+                .withState(state)
                 .build();
+        int newLeaderEpoch = leaderEpoch != -1 ? leaderEpoch : current.leaderEpoch();
         int newStateEpoch = current.stateEpoch() + 1;
-        pendingStates.put(mp, new PendingPartitionState(
-                updated, Math.max(current.leaderEpoch(), leaderEpoch), newStateEpoch));
+        pendingStates.put(mp, new PendingPartitionState(updated, newLeaderEpoch, newStateEpoch));
 
         var key = new MirrorPartitionStateKey()
                 .setMirrorName(mirrorName)

@@ -120,6 +120,8 @@ public class MirrorLeaderCache {
         MirrorPartitionMetadata updated = mirrorPartitions.compute(mp, (key, current) -> {
             MirrorPartitionMetadata existing = MirrorPartitionMetadata.orEmpty(current);
             if (existing.stateEpoch() > stateEpoch) {
+                LOG.debug("Skipping stale state update for {}: existing stateEpoch {} > incoming {}",
+                        mp, existing.stateEpoch(), stateEpoch);
                 return current;
             }
             // A read may already have installed this transition; do not increment retries twice
