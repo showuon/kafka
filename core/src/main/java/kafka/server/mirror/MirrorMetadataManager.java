@@ -944,21 +944,28 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
         MirrorPartition mp = MirrorPartition.of(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
         MirrorPartitionMetadata existing = mirrorCache.getPartitionMetadata(mp);
-        MirrorStateWrite write = new MirrorStateWrite(tp.partition(), null, -1, -1, lastMirrorEpoch, null, -1, false);
+        MirrorStateWrite write = new MirrorStateWrite(tp.partition(), null,
+                mirrorCache.getLeaderEpoch(tp), existing.stateEpoch(), lastMirrorEpoch, null, -1, false);
 
-        CompletableFuture<Void> writePositionFuture;
+        CompletableFuture<Integer> writeLmeFuture;
         if (coordSender.isLocalCoordinatorFor(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition())) {
-            writePositionFuture = coordSender.writeStateToLocalCoordinator(mirrorName,
+            writeLmeFuture = coordSender.writeStateToLocalCoordinator(mirrorName,
                 Map.of(tp.topic(), Set.of(write)))
-                .thenAccept(data -> {
+                .thenApply(data -> {
                     if (data.errorCode() != Errors.NONE.code()) {
                         throw Errors.forCode(data.errorCode()).exception();
                     }
+                    return data.topics().stream()
+                            .filter(topic -> topic.topicName().equals(tp.topic()))
+                            .flatMap(topic -> topic.partitions().stream())
+                            .filter(partition -> partition.partitionIndex() == tp.partition())
+                            .findFirst().map(WriteMirrorStatesResponseData.PartitionResult::stateEpoch)
+                            .orElse(existing.stateEpoch());
                 });
         } else {
-            writePositionFuture = coordSender.writeStateToRemoteCoordinator(mirrorName,
+            writeLmeFuture = coordSender.writeStateToRemoteCoordinator(mirrorName,
                 Map.of(tp.topic(), Set.of(write)))
-                .thenAccept(response -> {
+                .thenApply(response -> {
                     if (response.data().errorCode() != Errors.NONE.code()) {
                         throw Errors.forCode(response.data().errorCode()).exception();
                     }
@@ -970,12 +977,13 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                     if (result.errorCode() != Errors.NONE.code()) {
                         throw Errors.forCode(result.errorCode()).exception();
                     }
+                    return result.stateEpoch();
                 });
         }
 
         var latestLocalEpoch = replicaManagerSupplier.get().logManager().getLog(tp, false).get().latestEpoch().orElse(-1);
-        writePositionFuture
-            .thenRun(() -> mirrorCache.updateLastMirrorEpoch(mp, existing.stateEpoch(), lastMirrorEpoch))
+        writeLmeFuture
+            .thenAccept(stateEpoch -> mirrorCache.updateLastMirrorEpoch(mp, stateEpoch, lastMirrorEpoch))
             .thenCompose(v -> sendBumpLeaderEpochs(Map.of(tp, Math.addExact(latestLocalEpoch, 1))))
             .thenCompose(v -> abortOngoingTransactions(tp))
             .thenCompose(v -> writePidResetRecord(mirrorName, tp))

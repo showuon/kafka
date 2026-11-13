@@ -99,9 +99,12 @@ public class MirrorLeaderCache {
                 return existing;
             }
             if (existing != null && existing.stateEpoch() == metadata.stateEpoch()) {
-                // State fields have the same revision; only the position can differ
+                EpochOffset ep = existing.lastMirrorEpoch();
+                EpochOffset ip = metadata.lastMirrorEpoch();
+                EpochOffset later = (ep.epoch() > ip.epoch()
+                        || (ep.epoch() == ip.epoch() && ep.offset() >= ip.offset())) ? ep : ip;
                 return new MirrorPartitionMetadata.Builder(existing)
-                        .withLastMirrorEpoch(laterPosition(existing.lastMirrorEpoch(), metadata.lastMirrorEpoch()))
+                        .withLastMirrorEpoch(later)
                         .build();
             }
             return metadata;
@@ -139,26 +142,19 @@ public class MirrorLeaderCache {
 
     /**
      * Advances the cached last mirror epoch after the coordinator confirms persistence.
-     * Scoped to a specific stateEpoch so a delayed completion cannot clobber a newer lifecycle state.
+     * Each LME write bumps the coordinator stateEpoch, so a higher stateEpoch always
+     * carries a newer position and stale completions are rejected.
      */
     public void updateLastMirrorEpoch(MirrorPartition mp, int stateEpoch, EpochOffset position) {
         mirrorPartitions.computeIfPresent(mp, (key, existing) -> {
-            if (existing.stateEpoch() != stateEpoch) {
+            if (existing.stateEpoch() > stateEpoch) {
                 return existing;
             }
             return new MirrorPartitionMetadata.Builder(existing)
-                    .withLastMirrorEpoch(laterPosition(existing.lastMirrorEpoch(), position))
+                    .withLastMirrorEpoch(position)
+                    .withStateEpoch(stateEpoch)
                     .build();
         });
-    }
-
-    private static EpochOffset laterPosition(EpochOffset existing, EpochOffset incoming) {
-        // Positions are monotonic within a state epoch, ordered by leader epoch and then offset
-        if (existing.epoch() > incoming.epoch()
-                || (existing.epoch() == incoming.epoch() && existing.offset() >= incoming.offset())) {
-            return existing;
-        }
-        return incoming;
     }
 
     public Set<MirrorPartition> getMirrorPartitions() {

@@ -249,10 +249,14 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
         MirrorPartition mp = MirrorPartition.of(key.mirrorName(), key.topicId(), key.partition());
         if (value != null) {
             LastMirrorEpochsValue lme = (LastMirrorEpochsValue) value.message();
+            maybeUpdateLeaderEpochMap(mp, lme.leaderEpoch());
+            maybeUpdateStateEpochMap(mp, lme.stateEpoch());
             MirrorPartitionMetadata existing = MirrorPartitionMetadata.orEmpty(partitionMetadata.get(mp));
+
             partitionMetadata.put(mp,
                     new MirrorPartitionMetadata.Builder(existing)
                         .withLastMirrorEpoch(new EpochOffset(lme.lastMirrorEpoch(), lme.lastMirrorOffset()))
+                        .withStateEpoch(lme.stateEpoch())
                         .build());
         } else {
             partitionMetadata.remove(mp);
@@ -359,7 +363,17 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
             }
             EpochOffset lm = partition.lastMirrorEpoch();
             if (lm != null && (lm.epoch() != -1 || lm.offset() != -1)) {
-                records.addAll(writeLastMirrorEpochs(mirrorName, Map.of(tp, lm)).records());
+                try {
+                    CoordinatorResult<Integer, CoordinatorRecord> lmeResult =
+                            writeLastMirrorEpoch(mirrorName, tp, lm,
+                                    partition.leaderEpoch(), partition.stateEpoch(), pendingStates);
+                    records.addAll(lmeResult.records());
+                    results.put(tp, new PartitionWriteResult(Errors.NONE, lmeResult.response()));
+                } catch (FencedLeaderEpochException e) {
+                    results.put(tp, new PartitionWriteResult(Errors.FENCED_LEADER_EPOCH, -1));
+                } catch (FencedStateEpochException e) {
+                    results.put(tp, new PartitionWriteResult(Errors.FENCED_STATE_EPOCH, -1));
+                }
             }
         }));
         return new CoordinatorResult<>(records, results);
@@ -382,11 +396,13 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
                     leaderEpochMap.getOrDefault(mp, -1), stateEpochMap.getOrDefault(mp, 0));
         }
         if (leaderEpoch != -1 && current.leaderEpoch() > leaderEpoch) {
-            log.info("Write fenced for partition {} because leader epoch {} < current {}", tp, leaderEpoch, current.leaderEpoch());
+            log.info("MirrorPartitionState write fenced for partition {} because leader epoch {} < current {}",
+                    tp, leaderEpoch, current.leaderEpoch());
             throw Errors.FENCED_LEADER_EPOCH.exception();
         }
         if (stateEpoch != -1 && current.stateEpoch() > stateEpoch) {
-            log.info("Write fenced for {} because current epoch {} > expected {}", tp, current.stateEpoch(), stateEpoch);
+            log.info("MirrorPartitionState write fenced for {} because current epoch {} > expected {}",
+                    tp, current.stateEpoch(), stateEpoch);
             throw Errors.FENCED_STATE_EPOCH.exception();
         }
         MirrorPartitionMetadata existing = current.metadata();
@@ -423,32 +439,54 @@ public class ClusterMirrorCoordinatorShard implements CoordinatorShard<Coordinat
     }
 
     /**
-     * Writes last mirror epochs for multiple partitions in a batch.
-     * Timeline mutations belong in replay.
+     * Validates leader epoch, bumps state epoch, and writes a last mirror epoch record.
+     * Mirrors the fencing logic in {@link #writePartitionState}.
      */
-    public CoordinatorResult<Void, CoordinatorRecord> writeLastMirrorEpochs(
-            String mirrorName, Map<TopicPartition, EpochOffset> positions
+    private CoordinatorResult<Integer, CoordinatorRecord> writeLastMirrorEpoch(
+            String mirrorName, TopicPartition tp, EpochOffset lastMirror,
+            int leaderEpoch, int stateEpoch, Map<MirrorPartition,
+            PendingPartitionState> pendingStates
     ) {
-        List<CoordinatorRecord> records = new ArrayList<>();
-        positions.forEach((tp, lastMirror) -> {
-            MirrorPartition mp = MirrorPartition.of(
-                    mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
-            var key = new LastMirrorEpochsKey()
-                    .setMirrorName(mp.mirrorName())
-                    .setTopicId(mp.topicId())
-                    .setPartition(mp.partition());
-            var val = new LastMirrorEpochsValue()
-                    .setLastMirrorEpoch(lastMirror.epoch())
-                    .setLastMirrorOffset(lastMirror.offset());
-            records.add(CoordinatorRecord.record(key,
-                    new ApiMessageAndVersion(val, LastMirrorEpochsValue.HIGHEST_SUPPORTED_VERSION)));
-        });
-        return new CoordinatorResult<>(records, null);
+        MirrorPartition mp = MirrorPartition.of(
+                mirrorName, metadataCache.getTopicId(tp.topic()), tp.partition());
+        PendingPartitionState current = pendingStates.get(mp);
+        if (current == null) {
+            current = new PendingPartitionState(
+                    MirrorPartitionMetadata.orEmpty(partitionMetadata.get(mp)),
+                    leaderEpochMap.getOrDefault(mp, -1), stateEpochMap.getOrDefault(mp, 0));
+        }
+        if (leaderEpoch != -1 && current.leaderEpoch() > leaderEpoch) {
+            log.info("LastMirrorEpoch write fenced for partition {} because leader epoch {} < current {}",
+                    tp, leaderEpoch, current.leaderEpoch());
+            throw Errors.FENCED_LEADER_EPOCH.exception();
+        }
+        if (stateEpoch != -1 && current.stateEpoch() > stateEpoch) {
+            log.info("LastMirrorEpoch write fenced for {} because current epoch {} > expected {}",
+                    tp, current.stateEpoch(), stateEpoch);
+            throw Errors.FENCED_STATE_EPOCH.exception();
+        }
+        int newLeaderEpoch = leaderEpoch != -1 ? leaderEpoch : current.leaderEpoch();
+        int newStateEpoch = current.stateEpoch() + 1;
+        pendingStates.put(mp, new PendingPartitionState(current.metadata(), newLeaderEpoch, newStateEpoch));
+
+        var key = new LastMirrorEpochsKey()
+                .setMirrorName(mp.mirrorName())
+                .setTopicId(mp.topicId())
+                .setPartition(mp.partition());
+        var val = new LastMirrorEpochsValue()
+                .setLastMirrorEpoch(lastMirror.epoch())
+                .setLastMirrorOffset(lastMirror.offset())
+                .setLeaderEpoch(newLeaderEpoch)
+                .setStateEpoch(newStateEpoch);
+        CoordinatorRecord record = CoordinatorRecord.record(key,
+                new ApiMessageAndVersion(val, LastMirrorEpochsValue.HIGHEST_SUPPORTED_VERSION));
+        return new CoordinatorResult<>(List.of(record), newStateEpoch);
     }
 
     /**
      * Writes tombstone records for all partitions of a mirror that this shard owns.
      * Iterates the shard's own partition metadata to find entries.
+     * No epoch bump: tombstones delete the partition entirely, so there is no surviving state to version.
      */
     public CoordinatorResult<Void, CoordinatorRecord> writeMirrorTombstones(String mirrorName) {
         List<CoordinatorRecord> records = new ArrayList<>();
