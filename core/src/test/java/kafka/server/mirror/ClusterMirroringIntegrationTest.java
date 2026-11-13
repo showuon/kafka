@@ -169,12 +169,12 @@ public class ClusterMirroringIntegrationTest {
         DescribeClusterMirrorsResult describeClusterMirrors = dstAdmin.describeClusterMirrors(
                 null, topicPartitions,
                 new DescribeClusterMirrorsOptions().clusterId(srcClusterId).includeMirrorState(true));
-        Map<TopicPartition, EpochOffset> lastMirrorPositions =
-                describeClusterMirrors.lastMirrorPositions().get(10, TimeUnit.SECONDS);
+        Map<TopicPartition, EpochOffset> lastMirrorEpochs =
+                describeClusterMirrors.lastMirrorEpochs().get(10, TimeUnit.SECONDS);
         TopicPartition tp0 = new TopicPartition(topic, 0);
-        assertEquals(1, lastMirrorPositions.size(), "Should have one lookup result");
-        assertTrue(lastMirrorPositions.containsKey(tp0), "Should have partition 0");
-        assertTrue(lastMirrorPositions.get(tp0).epoch() >= 0, "Should have LME >= 0");
+        assertEquals(1, lastMirrorEpochs.size(), "Should have one lookup result");
+        assertTrue(lastMirrorEpochs.containsKey(tp0), "Should have partition 0");
+        assertTrue(lastMirrorEpochs.get(tp0).epoch() >= 0, "Should have LME >= 0");
 
         // Reverse mirror: B -> A (failback)
         srcAdmin.createClusterMirror(reverseMirror, Map.of(

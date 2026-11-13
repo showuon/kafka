@@ -4993,11 +4993,11 @@ class KafkaApis(val requestChannel: RequestChannel,
     writeMirrorStatesRequest.data().topics().forEach(topic => {
       val topicState = new util.HashSet[MirrorStateWrite]()
       topic.partitions().forEach(part => {
-        val lastMirrorPosition = if (part.lastMirrorEpoch() != -1 || part.lastMirrorOffset() != -1L)
+        val lastMirrorEpoch = if (part.lastMirrorEpoch() != -1 || part.lastMirrorOffset() != -1L)
           new EpochOffset(part.lastMirrorEpoch(), part.lastMirrorOffset()) else null
         topicState.add(new MirrorStateWrite(part.partitionIndex(),
           MirrorPartitionState.fromValue(part.state()), part.leaderEpoch(), part.stateEpoch(),
-            lastMirrorPosition, part.errorMessage(), part.retryAttempt(), part.nonRetryable()))
+            lastMirrorEpoch, part.errorMessage(), part.retryAttempt(), part.nonRetryable()))
       })
       mirrorState.put(topic.topicName(), topicState)
     })

@@ -16,8 +16,6 @@
  */
 package org.apache.kafka.coordinator.mirror;
 
-import org.apache.kafka.common.EpochOffset;
-import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.ReadMirrorStatesResponseData;
 import org.apache.kafka.common.message.WriteMirrorStatesResponseData;
 import org.apache.kafka.server.mirror.MirrorPartition;
@@ -59,18 +57,13 @@ public interface MetadataManagerBridge {
                 Map<String, Set<Integer>> partitions
         );
 
-        CompletableFuture<Set<String>> listLocalMirrorNames();
+        CompletableFuture<Set<String>> readMirrorNames();
     }
 
     interface CoordinatorWriter {
         CompletableFuture<WriteMirrorStatesResponseData> writePartitionStates(
             String mirrorName,
             Map<String, Set<ClusterMirrorCoordinatorService.MirrorStateWrite>> states
-        );
-
-        CompletableFuture<Void> writeLastMirrorPositions(
-            String mirrorName,
-            Map<TopicPartition, EpochOffset> positions
         );
 
         CompletableFuture<Void> writeMirrorTombstones(String mirrorName);

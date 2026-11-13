@@ -21,15 +21,14 @@ import org.apache.kafka.common.EpochOffset;
 /**
  * Immutable snapshot of mirror partition metadata.
  *
- * @param state          the current lifecycle state, or null if unknown
- * @param stateEpoch     monotonically increasing epoch incremented on every state transition
- * @param lastPosition   the last mirrored epoch and offset, or {@link EpochOffset#EMPTY} if not yet recorded
- * @param errorMessage   the failure reason when in FAILED state, or null otherwise
- * @param retryAttempt   the retry count in FAILED state, 0 if not failed,
- *                       or {@link #NON_RETRYABLE_ERROR} if non-retryable
- * @param prevState      the state before entering FAILED, or null if not applicable
+ * @param state           the current lifecycle state, or null if unknown
+ * @param stateEpoch      monotonically increasing epoch incremented on every state transition
+ * @param lastMirrorEpoch the last mirrored epoch and offset, or empty if not yet recorded
+ * @param errorMessage    the failure reason when in FAILED state, or null otherwise
+ * @param retryAttempt    the retry count in FAILED state, 0 if not failed, -1 if non-retryable error
+ * @param prevState       the state before entering FAILED, or null if not applicable
  */
-public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch, EpochOffset lastPosition,
+public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch, EpochOffset lastMirrorEpoch,
                                       String errorMessage, int retryAttempt, MirrorPartitionState prevState) {
     public static final MirrorPartitionMetadata EMPTY = new MirrorPartitionMetadata(MirrorPartitionState.UNKNOWN, 0, EpochOffset.EMPTY, null, 0, null);
     public static final int NON_RETRYABLE_ERROR = -1;
@@ -41,7 +40,7 @@ public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch
     public static class Builder {
         private MirrorPartitionState state;
         private int stateEpoch;
-        private EpochOffset lastPosition;
+        private EpochOffset lastMirrorEpoch;
         private String errorMessage;
         private int retryAttempt;
         private MirrorPartitionState prevState;
@@ -49,7 +48,7 @@ public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch
         public Builder() {
             this.state = EMPTY.state();
             this.stateEpoch = EMPTY.stateEpoch();
-            this.lastPosition = EMPTY.lastPosition();
+            this.lastMirrorEpoch = EMPTY.lastMirrorEpoch();
             this.errorMessage = EMPTY.errorMessage();
             this.retryAttempt = EMPTY.retryAttempt();
             this.prevState = EMPTY.prevState();
@@ -59,7 +58,7 @@ public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch
             existing = orEmpty(existing);
             this.state = existing.state();
             this.stateEpoch = existing.stateEpoch();
-            this.lastPosition = existing.lastPosition();
+            this.lastMirrorEpoch = existing.lastMirrorEpoch();
             this.errorMessage = existing.errorMessage();
             this.retryAttempt = existing.retryAttempt();
             this.prevState = existing.prevState();
@@ -75,8 +74,8 @@ public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch
             return this;
         }
 
-        public Builder withLastPosition(EpochOffset lastPosition) {
-            this.lastPosition = lastPosition;
+        public Builder withLastMirrorEpoch(EpochOffset lastMirrorEpoch) {
+            this.lastMirrorEpoch = lastMirrorEpoch;
             return this;
         }
 
@@ -97,7 +96,7 @@ public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch
 
         /**
          * Resolves error-related fields based on the transition to {@code newState}.
-         * <p>
+         *
          * When entering FAILED, computes the retry attempt count and records the previous state.
          * When leaving FAILED (or entering STOPPED/PAUSED), clears all error fields.
          * Otherwise, updates only the error message.
@@ -125,7 +124,7 @@ public record MirrorPartitionMetadata(MirrorPartitionState state, int stateEpoch
         }
 
         public MirrorPartitionMetadata build() {
-            return new MirrorPartitionMetadata(state, stateEpoch, lastPosition,
+            return new MirrorPartitionMetadata(state, stateEpoch, lastMirrorEpoch,
                     errorMessage, retryAttempt, prevState);
         }
     }

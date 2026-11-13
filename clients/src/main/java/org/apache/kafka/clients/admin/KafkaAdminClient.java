@@ -5243,7 +5243,7 @@ public class KafkaAdminClient extends AdminClient {
                                                                Map<String, List<Integer>> topicPartitions,
                                                                DescribeClusterMirrorsOptions options) {
         final KafkaFutureImpl<Map<String, ClusterMirrorDescription>> all = new KafkaFutureImpl<>();
-        final KafkaFutureImpl<Map<TopicPartition, EpochOffset>> lastMirrorPositionFutures = new KafkaFutureImpl<>();
+        final KafkaFutureImpl<Map<TopicPartition, EpochOffset>> lastMirrorEpochFutures = new KafkaFutureImpl<>();
         final long now = time.milliseconds();
         final long deadline = calcDeadlineMs(now, options.timeoutMs());
 
@@ -5280,13 +5280,13 @@ public class KafkaAdminClient extends AdminClient {
             void handleResponse(AbstractResponse abstractResponse) {
                 DescribeClusterMirrorsResponse response = (DescribeClusterMirrorsResponse) abstractResponse;
                 Map<String, ClusterMirrorDescription> descriptions = new HashMap<>();
-                Map<TopicPartition, EpochOffset> lastMirrorPositions = new HashMap<>();
+                Map<TopicPartition, EpochOffset> lastMirrorEpochs = new HashMap<>();
 
                 for (DescribeClusterMirrorsResponseData.DescribedMirror mirror : response.data().mirrors()) {
                     Errors errorCode = Errors.forCode(mirror.errorCode());
                     if (errorCode != Errors.NONE) {
                         all.completeExceptionally(errorCode.exception());
-                        lastMirrorPositionFutures.completeExceptionally(errorCode.exception());
+                        lastMirrorEpochFutures.completeExceptionally(errorCode.exception());
                         return;
                     }
 
@@ -5307,7 +5307,7 @@ public class KafkaAdminClient extends AdminClient {
                                     partition.errorMessage()));
 
                             if (partition.lastMirrorEpoch() >= 0 || partition.lastMirrorOffset() >= 0) {
-                                lastMirrorPositions
+                                lastMirrorEpochs
                                     .merge(new TopicPartition(topic.topicName(), partition.partitionIndex()),
                                         new EpochOffset(partition.lastMirrorEpoch(), partition.lastMirrorOffset()),
                                         (a, b) -> new EpochOffset(
@@ -5326,18 +5326,18 @@ public class KafkaAdminClient extends AdminClient {
                 }
 
                 all.complete(descriptions);
-                lastMirrorPositionFutures.complete(lastMirrorPositions);
+                lastMirrorEpochFutures.complete(lastMirrorEpochs);
             }
 
             @Override
             void handleFailure(Throwable throwable) {
                 KafkaException exception = new KafkaException("Failed to describe cluster mirrors", throwable);
                 all.completeExceptionally(exception);
-                lastMirrorPositionFutures.completeExceptionally(exception);
+                lastMirrorEpochFutures.completeExceptionally(exception);
             }
         }, now);
 
-        return new DescribeClusterMirrorsResult(all, lastMirrorPositionFutures);
+        return new DescribeClusterMirrorsResult(all, lastMirrorEpochFutures);
     }
 
     @Override

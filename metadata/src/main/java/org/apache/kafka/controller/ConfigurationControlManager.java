@@ -77,6 +77,7 @@ import static org.apache.kafka.common.protocol.Errors.CLUSTER_MIRROR_ALREADY_EXI
 import static org.apache.kafka.common.protocol.Errors.INVALID_CONFIG;
 import static org.apache.kafka.controller.QuorumController.MAX_RECORDS_PER_USER_OP;
 
+
 public class ConfigurationControlManager {
     public static final ConfigResource DEFAULT_NODE = new ConfigResource(Type.BROKER, "");
 
