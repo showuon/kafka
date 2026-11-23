@@ -273,8 +273,12 @@ public final class TopicsDelta {
             topicIds.putAll(changes.topicIds());
             directoryIds.putAll(changes.directoryIds());
 
-            // Compare against this delta's image rather than the topic delta's image. When a snapshot is loaded, the
-            // topic delta starts from an empty topic, so it can't detect a mirror association that was removed.
+
+            // Compare against the existing topics image rather than the topic delta's image. When a broker loads a snapshot
+            // after being offline, its local metadata log may contain a stale mirror association that was removed while it
+            // was offline. Comparing against the existing image ensures that this removal is detected.
+            // Incremental update example: local log (mirror-A, MIRRORING) --> fetched snapshot (null, UNKNOWN).
+            // Snapshot update example: local log (mirror-A, MIRRORING) --> fetched snapshot (null, UNKNOWN).
             LocalReplicaChanges.MirrorTopicState mirrorTopicState = delta.mirrorTopicStateChange(image.getTopic(delta.id()));
             if (mirrorTopicState != null) {
                 mirrorTopicChanges.put(delta.id(), mirrorTopicState);
