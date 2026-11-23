@@ -872,7 +872,7 @@ public class TopicsImageTest {
         assertNull(finalImage.getTopic(topicId).mirrorName());
         assertEquals(MirrorPartitionState.UNKNOWN.value(), finalImage.getTopic(topicId).desiredMirrorState());
 
-        List<ApiMessageAndVersion> imageRecords = getImageRecords(image);
+        List<ApiMessageAndVersion> imageRecords = getImageRecords(image, MetadataVersion.latestTesting());
         imageRecords.addAll(topicRecords);
         testToImage(finalImage, Optional.of(imageRecords));
     }
@@ -915,7 +915,7 @@ public class TopicsImageTest {
         );
         snapshotTopics.add(topics.get(1));
         TopicsImage snapshotImage = new TopicsImage(newTopicsByIdMap(snapshotTopics), newTopicsByNameMap(snapshotTopics));
-        List<ApiMessageAndVersion> snapshotRecords = getImageRecords(snapshotImage);
+        List<ApiMessageAndVersion> snapshotRecords = getImageRecords(snapshotImage, MetadataVersion.latestTesting());
 
         TopicsDelta delta = new TopicsDelta(image);
         RecordTestUtils.replayAll(delta, snapshotRecords);
@@ -1024,10 +1024,14 @@ public class TopicsImageTest {
         ).test(image, fromRecords);
     }
 
-    private static List<ApiMessageAndVersion> getImageRecords(TopicsImage image) {
+    private static List<ApiMessageAndVersion> getImageRecords(TopicsImage image, MetadataVersion metadataVersion) {
         RecordListWriter writer = new RecordListWriter();
-        image.write(writer, new ImageWriterOptions.Builder(MetadataVersion.latestProduction()).build());
+        image.write(writer, new ImageWriterOptions.Builder(metadataVersion).build());
         return writer.records();
+    }
+
+    private static List<ApiMessageAndVersion> getImageRecords(TopicsImage image) {
+        return getImageRecords(image, MetadataVersion.latestProduction());
     }
 
     @Test
