@@ -21,7 +21,6 @@ import org.apache.kafka.common.DirectoryId;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.metadata.ClearElrRecord;
-import org.apache.kafka.common.metadata.MirrorTopicStateChangeRecord;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
@@ -34,7 +33,6 @@ import org.apache.kafka.metadata.RecordTestUtils;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.MetadataVersion;
 import org.apache.kafka.server.immutable.ImmutableMap;
-import org.apache.kafka.server.mirror.MirrorPartitionState;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -49,7 +47,6 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.apache.kafka.common.metadata.MetadataRecordType.CLEAR_ELR_RECORD;
-import static org.apache.kafka.common.metadata.MetadataRecordType.MIRROR_TOPIC_STATE_CHANGE_RECORD;
 import static org.apache.kafka.common.metadata.MetadataRecordType.PARTITION_CHANGE_RECORD;
 import static org.apache.kafka.common.metadata.MetadataRecordType.PARTITION_RECORD;
 import static org.apache.kafka.common.metadata.MetadataRecordType.REMOVE_TOPIC_RECORD;
@@ -74,16 +71,12 @@ public class TopicsImageTest {
     static final List<TopicImage> TOPIC_IMAGES1;
 
     private static TopicImage newTopicImage(String name, Uuid id, PartitionRegistration... partitions) {
-        return newTopicImage(name, id, null, MirrorPartitionState.UNKNOWN.value(), partitions);
-    }
-
-    private static TopicImage newTopicImage(String name, Uuid id, String mirrorName, byte desiredMirrorState, PartitionRegistration... partitions) {
         Map<Integer, PartitionRegistration> partitionMap = new HashMap<>();
         int i = 0;
         for (PartitionRegistration partition : partitions) {
             partitionMap.put(i++, partition);
         }
-        return new TopicImage(name, id, mirrorName, desiredMirrorState, partitionMap);
+        return new TopicImage(name, id, partitionMap);
     }
 
     private static ImmutableMap<Uuid, TopicImage> newTopicsByIdMap(Collection<TopicImage> topics) {
@@ -317,7 +310,6 @@ public class TopicsImageTest {
         assertEquals(Map.of(), changes.electedLeaders());
         assertEquals(Map.of(), changes.leaders());
         assertEquals(Map.of(), changes.followers());
-        assertEquals(Map.of(), changes.mirrorTopicStates());
 
         TopicsImage finalImage = delta.apply();
         List<ApiMessageAndVersion> imageRecords = getImageRecords(image);
@@ -823,167 +815,6 @@ public class TopicsImageTest {
         testToImage(finalImage, Optional.of(imageRecords));
     }
 
-    private static ApiMessageAndVersion newMirrorTopicStateChangeRecord(String topicName, String mirrorName, MirrorPartitionState state) {
-        return new ApiMessageAndVersion(
-            new MirrorTopicStateChangeRecord()
-                .setTopicName(topicName)
-                .setMirrorName(mirrorName)
-                .setDesiredState(state.value()),
-            MIRROR_TOPIC_STATE_CHANGE_RECORD.highestSupportedVersion()
-        );
-    }
-
-    @Test
-    public void testMirrorTopicDisassociation() {
-        int localId = 3;
-        Uuid topicId = Uuid.fromString("0hHJ3X5ZQ-CFfQ5xgpj90w");
-
-        List<TopicImage> topics = new ArrayList<>();
-        topics.add(
-            newTopicImage(
-                "topic",
-                topicId,
-                "test-mirror",
-                MirrorPartitionState.STOPPED.value(),
-                newPartition(new int[] {localId, 1, 2})
-            )
-        );
-        TopicsImage image = new TopicsImage(newTopicsByIdMap(topics), newTopicsByNameMap(topics));
-
-        {
-            List<ApiMessageAndVersion> topicRecords = new ArrayList<>();
-            topicRecords.add(newMirrorTopicStateChangeRecord("topic", null, MirrorPartitionState.LOG_ALIGNMENT));
-            TopicsDelta delta = new TopicsDelta(image);
-            RuntimeException ex = assertThrows(RuntimeException.class, () -> RecordTestUtils.replayAll(delta, topicRecords));
-            assertEquals(IllegalArgumentException.class, ex.getCause().getClass());
-            assertEquals("desiredState must be UNKNOWN when mirrorName is null, got LOG_ALIGNMENT", ex.getCause().getMessage());
-        }
-
-        List<ApiMessageAndVersion> topicRecords = new ArrayList<>();
-        topicRecords.add(newMirrorTopicStateChangeRecord("topic", null, MirrorPartitionState.UNKNOWN));
-        TopicsDelta delta = new TopicsDelta(image);
-        RecordTestUtils.replayAll(delta, topicRecords);
-        assertEquals(
-            Map.of(topicId, new LocalReplicaChanges.MirrorTopicState(null, MirrorPartitionState.UNKNOWN.value())),
-            delta.localChanges(localId).mirrorTopicStates()
-        );
-
-        TopicsImage finalImage = delta.apply();
-        assertNull(finalImage.getTopic(topicId).mirrorName());
-        assertEquals(MirrorPartitionState.UNKNOWN.value(), finalImage.getTopic(topicId).desiredMirrorState());
-
-        List<ApiMessageAndVersion> imageRecords = getImageRecords(image, MetadataVersion.latestTesting());
-        imageRecords.addAll(topicRecords);
-        testToImage(finalImage, Optional.of(imageRecords));
-    }
-
-    @Test
-    public void testSnapshotClearsMirrorTopicAssociation() {
-        int localId = 3;
-        Uuid topicId = Uuid.fromString("0hHJ3X5ZQ-CFfQ5xgpj90w");
-        Uuid otherTopicId = Uuid.fromString("f62ptyETTjet8SL5ZeREiw");
-
-        List<TopicImage> topics = new ArrayList<>();
-        topics.add(
-            newTopicImage(
-                "topic",
-                topicId,
-                "test-mirror",
-                MirrorPartitionState.MIRRORING.value(),
-                newPartition(new int[] {localId, 1, 2})
-            )
-        );
-        topics.add(
-            newTopicImage(
-                "other-topic",
-                otherTopicId,
-                "test-mirror",
-                MirrorPartitionState.PAUSED.value(),
-                newPartition(new int[] {localId, 1, 2})
-            )
-        );
-        TopicsImage image = new TopicsImage(newTopicsByIdMap(topics), newTopicsByNameMap(topics));
-
-        // The snapshot contains both topics, but "topic" is no longer associated with the mirror.
-        List<TopicImage> snapshotTopics = new ArrayList<>();
-        snapshotTopics.add(
-            newTopicImage(
-                "topic",
-                topicId,
-                newPartition(new int[] {localId, 1, 2})
-            )
-        );
-        snapshotTopics.add(topics.get(1));
-        TopicsImage snapshotImage = new TopicsImage(newTopicsByIdMap(snapshotTopics), newTopicsByNameMap(snapshotTopics));
-        List<ApiMessageAndVersion> snapshotRecords = getImageRecords(snapshotImage, MetadataVersion.latestTesting());
-
-        TopicsDelta delta = new TopicsDelta(image);
-        RecordTestUtils.replayAll(delta, snapshotRecords);
-        delta.finishSnapshot();
-
-        // The topic whose mirror association was removed is reported even though the snapshot has no
-        // MirrorTopicStateChangeRecord for it. The other topic is reported because its record is replayed.
-        assertEquals(
-            Map.of(
-                topicId, new LocalReplicaChanges.MirrorTopicState(null, MirrorPartitionState.UNKNOWN.value()),
-                otherTopicId, new LocalReplicaChanges.MirrorTopicState("test-mirror", MirrorPartitionState.PAUSED.value())
-            ),
-            delta.localChanges(localId).mirrorTopicStates()
-        );
-
-        TopicsImage finalImage = delta.apply();
-        assertEquals(snapshotImage, finalImage);
-        TopicImage topic = finalImage.getTopic(topicId);
-        assertNull(topic.mirrorName());
-        assertEquals(MirrorPartitionState.UNKNOWN.value(), topic.desiredMirrorState());
-        TopicImage otherTopic = finalImage.getTopic(otherTopicId);
-        assertEquals("test-mirror", otherTopic.mirrorName());
-        assertEquals(MirrorPartitionState.PAUSED.value(), otherTopic.desiredMirrorState());
-
-        testToImage(finalImage, Optional.of(snapshotRecords));
-    }
-
-    @Test
-    public void testMirrorTopicStateChangeOnDeletedTopic() {
-        int localId = 3;
-        Uuid topicId = Uuid.fromString("0hHJ3X5ZQ-CFfQ5xgpj90w");
-
-        List<TopicImage> topics = new ArrayList<>();
-        topics.add(
-            newTopicImage(
-                "test-topic",
-                topicId,
-                newPartition(new int[] {localId, 1, 2})
-            )
-        );
-        TopicsImage image = new TopicsImage(newTopicsByIdMap(topics), newTopicsByNameMap(topics));
-
-        TopicsDelta delta = new TopicsDelta(image);
-        RecordTestUtils.replayAll(delta, List.of(
-            new ApiMessageAndVersion(
-                new RemoveTopicRecord().setTopicId(topicId),
-                REMOVE_TOPIC_RECORD.highestSupportedVersion()
-            )
-        ));
-
-        List<ApiMessageAndVersion> mirrorRecords = List.of(
-            newMirrorTopicStateChangeRecord("test-topic", "test-mirror", MirrorPartitionState.MIRRORING));
-        RuntimeException e = assertThrows(RuntimeException.class, () -> RecordTestUtils.replayAll(delta, mirrorRecords));
-        assertTrue(e.getMessage().contains("no such topic found"), e.getMessage());
-
-        assertNull(delta.changedTopic(topicId));
-        assertNull(delta.apply().getTopic("test-topic"));
-    }
-
-    @Test
-    public void testMirrorTopicStateChangeOnNonExistingTopic() {
-        TopicsDelta delta = new TopicsDelta(TopicsImage.EMPTY);
-        List<ApiMessageAndVersion> topicRecords = List.of(
-            newMirrorTopicStateChangeRecord("non-exist", "test-mirror", MirrorPartitionState.MIRRORING));
-        RuntimeException e = assertThrows(RuntimeException.class, () -> RecordTestUtils.replayAll(delta, topicRecords));
-        assertTrue(e.getMessage().contains("no such topic found"), e.getMessage());
-    }
-
     @Test
     public void testEmptyImageRoundTrip() {
         testToImage(TopicsImage.EMPTY);
@@ -1024,14 +855,10 @@ public class TopicsImageTest {
         ).test(image, fromRecords);
     }
 
-    private static List<ApiMessageAndVersion> getImageRecords(TopicsImage image, MetadataVersion metadataVersion) {
-        RecordListWriter writer = new RecordListWriter();
-        image.write(writer, new ImageWriterOptions.Builder(metadataVersion).build());
-        return writer.records();
-    }
-
     private static List<ApiMessageAndVersion> getImageRecords(TopicsImage image) {
-        return getImageRecords(image, MetadataVersion.latestProduction());
+        RecordListWriter writer = new RecordListWriter();
+        image.write(writer, new ImageWriterOptions.Builder(MetadataVersion.latestProduction()).build());
+        return writer.records();
     }
 
     @Test
