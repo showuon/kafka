@@ -17,15 +17,22 @@
 
 package org.apache.kafka.image;
 
+import org.apache.kafka.common.DirectoryId;
+import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.metadata.MirrorTopicStateChangeRecord;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.image.writer.RecordListWriter;
+import org.apache.kafka.metadata.LeaderRecoveryState;
+import org.apache.kafka.metadata.PartitionRegistration;
 import org.apache.kafka.metadata.RecordTestUtils;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.MetadataVersion;
+import org.apache.kafka.server.mirror.MirrorPartitionState;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -103,6 +110,49 @@ public class MetadataImageTest {
     @Test
     public void testImage1RoundTrip() {
         testToImage(IMAGE1);
+    }
+
+    /**
+     * This can be dropped when Cluster Mirror's MV is stable for changes to
+     * be added to {@link TopicsImageTest#IMAGE1}.
+     */
+    @Test
+    public void testMirrorTopicRoundTrip() {
+        MetadataVersion metadataVersion = MetadataVersion.IBP_4_2_IV2;
+        TopicImage mirrorTopic = TopicsImageTest.newTopicImage(
+            "mirror-topic",
+            Uuid.fromString("Kz4eV9sJTi6oEcxW1bnK3A"),
+            new TopicImage.ActiveMirror("test-mirror", MirrorPartitionState.MIRRORING.value()),
+            new PartitionRegistration.Builder().setReplicas(new int[] {1, 2, 3}).
+                setDirectories(DirectoryId.migratingArray(3)).
+                setIsr(new int[] {1, 2, 3}).setLeader(1).setLeaderRecoveryState(LeaderRecoveryState.RECOVERED).
+                setLeaderEpoch(1).setPartitionEpoch(1).build());
+        List<TopicImage> topics = new ArrayList<>(IMAGE1.topics().topicsById().values());
+        topics.add(mirrorTopic);
+        MetadataImage image = new MetadataImage(
+            IMAGE1.provenance(),
+            new FeaturesImage(IMAGE1.features().finalizedVersions(), metadataVersion),
+            IMAGE1.cluster(),
+            new TopicsImage(TopicsImageTest.newTopicsByIdMap(topics), TopicsImageTest.newTopicsByNameMap(topics)),
+            IMAGE1.configs(),
+            IMAGE1.clientQuotas(),
+            IMAGE1.producerIds(),
+            IMAGE1.acls(),
+            IMAGE1.scram(),
+            IMAGE1.delegationTokens());
+
+        List<ApiMessageAndVersion> records = getImageRecords(image, new ImageWriterOptions.Builder(metadataVersion).build());
+        assertEquals(
+            List.of(new MirrorTopicStateChangeRecord().
+                setTopicName("mirror-topic").
+                setMirrorName("test-mirror").
+                setDesiredState(MirrorPartitionState.MIRRORING.value())),
+            records.stream().
+                map(ApiMessageAndVersion::message).
+                filter(message -> message instanceof MirrorTopicStateChangeRecord).
+                toList());
+
+        testToImage(image, records);
     }
 
     @Test

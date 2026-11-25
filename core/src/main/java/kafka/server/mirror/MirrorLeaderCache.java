@@ -280,7 +280,7 @@ public class MirrorLeaderCache {
     public Map<String, Set<Integer>> getTopicPartitionsMapping(String mirrorName) {
         Map<String, Set<Integer>> result = new HashMap<>();
         metadataImage.topics().topicsById().values().forEach(topicInfo -> {
-            if (mirrorName.equals(topicInfo.mirrorName())) {
+            if (topicInfo.mirror() instanceof TopicImage.ActiveMirror activeMirror && mirrorName.equals(activeMirror.name())) {
                 Set<Integer> parts = new HashSet<>();
                 for (int i = 0; i < topicInfo.partitions().size(); i++) {
                     parts.add(i);
@@ -300,11 +300,11 @@ public class MirrorLeaderCache {
 
     public Set<String> getMirrorTopics(String mirrorName, Set<MirrorPartitionState> includeStates) {
         return metadataImage.topics().topicsById().values().stream()
+                .filter(topicInfo -> topicInfo.mirror() instanceof TopicImage.ActiveMirror)
                 .filter(topicInfo -> {
-                    String topicMirrorName = topicInfo.mirrorName();
-                    if (topicMirrorName == null || topicMirrorName.isBlank()) return false;
-                    if (!mirrorName.equals(topicMirrorName)) return false;
-                    return includeStates.contains(MirrorPartitionState.fromValue(topicInfo.desiredMirrorState()));
+                    TopicImage.ActiveMirror activeMirror = (TopicImage.ActiveMirror) topicInfo.mirror();
+                    if (!mirrorName.equals(activeMirror.name())) return false;
+                    return includeStates.contains(MirrorPartitionState.fromValue(activeMirror.desiredState()));
                 })
                 .map(TopicImage::name)
                 .collect(Collectors.toSet());

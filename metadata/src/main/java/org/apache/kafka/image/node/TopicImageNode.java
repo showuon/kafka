@@ -23,7 +23,6 @@ import org.apache.kafka.server.mirror.MirrorPartitionState;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Optional;
 
 
 public final class TopicImageNode implements MetadataNode {
@@ -44,9 +43,9 @@ public final class TopicImageNode implements MetadataNode {
         for (Integer partitionId : image.partitions().keySet()) {
             childNames.add(partitionId.toString());
         }
-        if (image.mirrorName() != null) {
+        if (image.mirror() instanceof TopicImage.ActiveMirror) {
             childNames.add("mirrorName");
-            childNames.add("mirrorDesiredState");
+            childNames.add("desiredMirrorState");
         }
         return childNames;
     }
@@ -58,11 +57,15 @@ public final class TopicImageNode implements MetadataNode {
         } else if (name.equals("id")) {
             return new MetadataLeafNode(image.id().toString());
         } else if (name.equals("mirrorName")) {
-            return Optional.ofNullable(image.mirrorName()).map(MetadataLeafNode::new).orElse(null);
-        } else if (name.equals("mirrorDesiredState")) {
-            return Optional.ofNullable(image.mirrorName())
-                    .map(_unused -> new MetadataLeafNode(MirrorPartitionState.nameOf(image.desiredMirrorState())))
-                    .orElse(null);
+            if (image.mirror() instanceof TopicImage.ActiveMirror activeMirror) {
+                return new MetadataLeafNode(activeMirror.name());
+            }
+            return null;
+        } else if (name.equals("desiredMirrorState")) {
+            if (image.mirror() instanceof TopicImage.ActiveMirror activeMirror) {
+                return new MetadataLeafNode(MirrorPartitionState.nameOf(activeMirror.desiredState()));
+            }
+            return null;
         } else {
             int partitionId;
             try {

@@ -34,6 +34,7 @@ import org.apache.kafka.common.requests.OffsetsForLeaderEpochResponse.{UNDEFINED
 import org.apache.kafka.common.requests._
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.common.{DirectoryId, IsolationLevel, TopicIdPartition, TopicPartition, Uuid, PartitionState => JPartitionState}
+import org.apache.kafka.image.TopicImage
 import org.apache.kafka.metadata.{LeaderAndIsr, LeaderRecoveryState, MetadataCache}
 import org.apache.kafka.server.mirror.MirrorPartitionState
 import org.apache.kafka.server.common.RequestLocal
@@ -1436,8 +1437,11 @@ class Partition(val topicPartition: TopicPartition,
     metadataCache match {
       case kraftMetadataCache: KRaftMetadataCache if (kraftMetadataCache.currentImage() != null && kraftMetadataCache.currentImage().topics() != null) =>
         val topicImage = kraftMetadataCache.currentImage().topics().getTopic(topic)
-        if (topicImage != null && topicImage.mirrorName() != null) {
-          Optional.of(topicImage.mirrorName())
+        if (topicImage != null) {
+          topicImage.mirror() match {
+            case activeMirror: TopicImage.ActiveMirror => Optional.of(activeMirror.name())
+            case _ => Optional.empty()
+          }
         } else {
           Optional.empty()
         }
@@ -1449,7 +1453,14 @@ class Partition(val topicPartition: TopicPartition,
     metadataCache match {
       case kraftMetadataCache: KRaftMetadataCache if (kraftMetadataCache.currentImage() != null && kraftMetadataCache.currentImage().topics() != null) =>
         val topicImage = kraftMetadataCache.currentImage().topics().getTopic(topic)
-        if (topicImage != null) topicImage.desiredMirrorState() else MirrorPartitionState.UNKNOWN.value()
+        if (topicImage != null) {
+          topicImage.mirror() match {
+            case activeMirror: TopicImage.ActiveMirror => activeMirror.desiredState()
+            case _ => MirrorPartitionState.UNKNOWN.value()
+          }
+        } else {
+          MirrorPartitionState.UNKNOWN.value()
+        }
       case _ => MirrorPartitionState.UNKNOWN.value()
     }
   }
