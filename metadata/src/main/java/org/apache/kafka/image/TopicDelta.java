@@ -32,7 +32,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -46,11 +46,25 @@ public final class TopicDelta {
     private final Map<Integer, Integer> partitionToElrElectionCount = new HashMap<>();
 
     private boolean mirrorRecordReplayed;
-    private String mirrorName;
-    private byte desiredMirrorState;
+    private TopicImage.Mirror mirror;
+
+    /**
+     * The topic image in the parent {@code TopicsImage} before this delta is applied. Used to detect mirror
+     * association changes; see {@link #localChanges(int)}.
+     *
+     * <p>This is usually the same as {@code image}. It differs when a TopicRecord is replayed into a
+     * {@code TopicsDelta}, for example when replaying a snapshot: the delta is created around a fresh, unmirrored
+     * image, while the topic may have been associated with a mirror in the parent image.</p>
+     */
+    private final TopicImage prevImage;
 
     public TopicDelta(TopicImage image) {
+        this(image, image);
+    }
+
+    public TopicDelta(TopicImage image, TopicImage prevImage) {
         this.image = image;
+        this.prevImage = prevImage;
     }
 
     public TopicImage image() {
@@ -115,39 +129,35 @@ public final class TopicDelta {
             throw new IllegalArgumentException("desiredState must be UNKNOWN when mirrorName is null, got " + MirrorPartitionState.nameOf(record.desiredState()));
         }
         mirrorRecordReplayed = true;
-        mirrorName = record.mirrorName();
-        desiredMirrorState = record.desiredState();
+        mirror = record.mirrorName() == null ?
+            new TopicImage.NoMirror() :
+            new TopicImage.ActiveMirror(record.mirrorName(), record.desiredState());
     }
 
     /**
-     * Returns the mirror name after this delta is applied.
+     * Returns the mirror state after this delta is applied, or {@link TopicImage.NoMirror} if the topic is not mirrored.
      */
-    public String mirrorName() {
-        return mirrorRecordReplayed ? mirrorName : image.mirrorName();
-    }
-
-    /**
-     * Returns the desired mirror state after this delta is applied.
-     */
-    public byte desiredMirrorState() {
-        return mirrorRecordReplayed ? desiredMirrorState : image.desiredMirrorState();
+    public TopicImage.Mirror mirror() {
+        return mirrorRecordReplayed ? mirror : image.mirror();
     }
 
     /**
      * Returns the mirror topic state after this delta is applied if a mirror topic state change record was replayed,
-     * or if the state differs from the state in the given image. Returns null otherwise. A null image is treated as a
+     * or if the state differs from the state in the given image. Returns empty otherwise. A null image is treated as a
      * topic that is not associated with a mirror.
+     *
      * <p>
      * A replayed record is reported even if it doesn't change the state, because the controller re-writes the current
      * state to make brokers re-process the mirror partitions (e.g. when recovering failed partitions).
+     * </p>
      */
-    LocalReplicaChanges.MirrorTopicState mirrorTopicStateChange(TopicImage prevImage) {
-        String prevMirrorName = prevImage == null ? null : prevImage.mirrorName();
-        byte prevDesiredMirrorState = prevImage == null ? MirrorPartitionState.UNKNOWN.value() : prevImage.desiredMirrorState();
-        if (!mirrorRecordReplayed && Objects.equals(prevMirrorName, mirrorName()) && prevDesiredMirrorState == desiredMirrorState()) {
-            return null;
+    public Optional<TopicImage.Mirror> mirrorTopicStateChange(TopicImage prevImage) {
+        TopicImage.Mirror prevMirror = prevImage == null ? new TopicImage.NoMirror() : prevImage.mirror();
+        TopicImage.Mirror newMirror = mirror();
+        if (!mirrorRecordReplayed && prevMirror.equals(newMirror)) {
+            return Optional.empty();
         }
-        return new LocalReplicaChanges.MirrorTopicState(mirrorName(), desiredMirrorState());
+        return Optional.of(newMirror);
     }
 
     private void updateElectionStats(int partitionId, PartitionRegistration prevPartition, int newLeader, byte newLeaderRecoveryState) {
@@ -199,7 +209,7 @@ public final class TopicDelta {
             }
         }
 
-        return new TopicImage(image.name(), image.id(), mirrorName(), desiredMirrorState(), newPartitions);
+        return new TopicImage(image.name(), image.id(), mirror(), newPartitions);
     }
 
     /**
@@ -229,12 +239,14 @@ public final class TopicDelta {
         Map<TopicPartition, LocalReplicaChanges.PartitionInfo> followers = new HashMap<>();
         Map<String, Uuid> topicIds = new HashMap<>();
         Map<TopicIdPartition, Uuid> directoryIds = new HashMap<>();
-        Map<Uuid, LocalReplicaChanges.MirrorTopicState> mirrorTopicChanges = new HashMap<>();
+        Map<Uuid, TopicImage.Mirror> mirrorTopicChanges = new HashMap<>();
 
-        LocalReplicaChanges.MirrorTopicState mirrorTopicState = mirrorTopicStateChange(image);
-        if (mirrorTopicState != null) {
-            mirrorTopicChanges.put(id(), mirrorTopicState);
-        }
+        // Compare against the topic image in the parent TopicsImage rather than this delta's own image.
+        // When a broker loads a snapshot after being offline, its local metadata log may contain a stale
+        // mirror association that was removed while it was offline. Comparing against the parent image
+        // ensures that this removal is detected.
+        // Example: local log (mirror-A, MIRRORING) --> fetched snapshot or incremental update (null, UNKNOWN).
+        mirrorTopicStateChange(prevImage).ifPresent(mirror -> mirrorTopicChanges.put(id(), mirror));
 
         for (Entry<Integer, PartitionRegistration> entry : partitionChanges.entrySet()) {
             if (!Replicas.contains(entry.getValue().replicas, brokerId)) {
@@ -289,7 +301,7 @@ public final class TopicDelta {
     public String toString() {
         return "TopicDelta(" +
                 "partitionChanges=" + partitionChanges +
-                (mirrorRecordReplayed ? ", mirrorName=" + mirrorName + ", desiredMirrorState=" + desiredMirrorState : "") +
+                (mirrorRecordReplayed ? ", mirror=" + mirror : "") +
                 ')';
     }
 }

@@ -223,12 +223,12 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         }
         Set<TopicPartition> mirrorLeaders = new HashSet<>();
         metadataImage.topics().topicsByName().forEach((topicName, topicImage) -> {
-            if (topicImage.mirrorName() != null) {
+            if (topicImage.mirror() instanceof TopicImage.ActiveMirror activeMirror) {
                 topicImage.partitions().forEach((partitionId, partition) -> {
                     if (partition.leader == nodeId) {
                         TopicPartition tp = new TopicPartition(topicName, partitionId);
                         MirrorPartition mp = new MirrorPartition(
-                                topicImage.mirrorName(), mirrorCache.getTopicId(topicName), partitionId);
+                                activeMirror.name(), mirrorCache.getTopicId(topicName), partitionId);
                         if (coordSender.coordPartFinder().get().apply(mp) == coordPartition) {
                             mirrorLeaders.add(tp);
                         }
@@ -319,7 +319,7 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         Set<String> configuredMirrors = mirrorCache.getConfiguredMirrorNames();
         Set<TopicPartition> mirrorLeaders = new HashSet<>();
         metadataImage.topics().topicsByName().forEach((topicName, topicImage) -> {
-            if (topicImage.mirrorName() != null && configuredMirrors.contains(topicImage.mirrorName())) {
+            if (topicImage.mirror() instanceof TopicImage.ActiveMirror activeMirror && configuredMirrors.contains(activeMirror.name())) {
                 topicImage.partitions().forEach((partitionId, partition) -> {
                     if (partition.leader == nodeId) {
                         mirrorLeaders.add(new TopicPartition(topicName, partitionId));
@@ -367,9 +367,10 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
         // [1] This broker became leader for a mirror partition
         localReplicaChanges.leaders().keySet().forEach(tp -> {
-            String mirrorName = image.topics().getTopic(tp.topic()).mirrorName();
-            if (mirrorName != null && configuredMirrors.contains(mirrorName)) {
-                result.add(tp);
+            if (image.topics().getTopic(tp.topic()).mirror() instanceof TopicImage.ActiveMirror activeMirror) {
+                if (configuredMirrors.contains(activeMirror.name())) {
+                    result.add(tp);
+                }
             }
         });
 
@@ -385,8 +386,14 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     private void addMirrorLeaderPartitions(TopicImage topicImage,
                                            Set<String> configuredMirrors,
                                            Set<TopicPartition> result) {
-        if (topicImage == null || topicImage.mirrorName() == null
-                || !configuredMirrors.contains(topicImage.mirrorName())) {
+        if (topicImage == null) {
+            return;
+        }
+        if (topicImage.mirror() instanceof TopicImage.ActiveMirror activeMirror) {
+            if (!configuredMirrors.contains(activeMirror.name())) {
+                return;
+            }
+        } else {
             return;
         }
         topicImage.partitions().forEach((partitionId, partition) -> {
@@ -398,15 +405,13 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
 
     private void clearLostLeadershipCache(LocalReplicaChanges changes, MetadataImage image) {
         changes.followers().keySet().forEach(tp -> {
-            String mirrorName = image.topics().getTopic(tp.topic()).mirrorName();
-            if (mirrorName == null) {
-                return;
-            }
-            pendingStateTransitions.remove(tp);
-            removePendingEpochBumpPartitions(Set.of(tp));
-            if (!coordSender.isLocalCoordinatorFor(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition())) {
-                MirrorPartition mp = new MirrorPartition(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition());
-                mirrorCache.removePartitionMetadata(mp);
+            if (image.topics().getTopic(tp.topic()).mirror() instanceof TopicImage.ActiveMirror activeMirror) {
+                pendingStateTransitions.remove(tp);
+                removePendingEpochBumpPartitions(Set.of(tp));
+                if (!coordSender.isLocalCoordinatorFor(activeMirror.name(), mirrorCache.getTopicId(tp.topic()), tp.partition())) {
+                    MirrorPartition mp = new MirrorPartition(activeMirror.name(), mirrorCache.getTopicId(tp.topic()), tp.partition());
+                    mirrorCache.removePartitionMetadata(mp);
+                }
             }
         });
     }
@@ -504,18 +509,18 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
         // Phase 1: Group partitions by coordinator location (local vs remote)
         topicPartitions.forEach(tp -> {
             TopicImage topicImage = metadataImage.topics().getTopic(tp.topic());
-            String mirrorName = topicImage.mirrorName();
-
-            if (coordSender.isLocalCoordinatorFor(mirrorName, mirrorCache.getTopicId(tp.topic()), tp.partition())) {
-                localPartitions
-                        .computeIfAbsent(mirrorName, k -> new HashMap<>())
-                        .computeIfAbsent(tp.topic(), k -> new HashSet<>())
-                        .add(tp.partition());
-            } else {
-                remotePartitions
-                        .computeIfAbsent(mirrorName, k -> new HashMap<>())
-                        .computeIfAbsent(tp.topic(), k -> new HashSet<>())
-                        .add(tp.partition());
+            if (topicImage.mirror() instanceof TopicImage.ActiveMirror activeMirror) {
+                if (coordSender.isLocalCoordinatorFor(activeMirror.name(), mirrorCache.getTopicId(tp.topic()), tp.partition())) {
+                    localPartitions
+                            .computeIfAbsent(activeMirror.name(), k -> new HashMap<>())
+                            .computeIfAbsent(tp.topic(), k -> new HashSet<>())
+                            .add(tp.partition());
+                } else {
+                    remotePartitions
+                            .computeIfAbsent(activeMirror.name(), k -> new HashMap<>())
+                            .computeIfAbsent(tp.topic(), k -> new HashSet<>())
+                            .add(tp.partition());
+                }
             }
         });
 
@@ -598,8 +603,12 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
     private void handleReadStateResponse(String mirrorName, String topicName, int partitionInd, MirrorPartitionState currentState) {
         TopicPartition tp = new TopicPartition(topicName, partitionInd);
         TopicImage topicImage = metadataImage.topics().getTopic(tp.topic());
-        MirrorPartitionState desiredState = topicImage != null ?
-                MirrorPartitionState.fromValue(topicImage.desiredMirrorState()) : MirrorPartitionState.UNKNOWN;
+        MirrorPartitionState desiredState;
+        if (topicImage != null && topicImage.mirror() instanceof TopicImage.ActiveMirror activeMirror) {
+            desiredState = MirrorPartitionState.fromValue(activeMirror.desiredState());
+        } else {
+            desiredState = MirrorPartitionState.UNKNOWN;
+        }
         applyStateTransition(mirrorName, tp, currentState, desiredState);
     }
 
@@ -1880,9 +1889,11 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
                 }
                 continue;
             }
-            if (!validDesiredStateValues.contains(topicImage.desiredMirrorState())) {
+            byte mirrorPartitionState = topicImage.mirror() instanceof TopicImage.ActiveMirror activeMirror ?
+                    activeMirror.desiredState() : MirrorPartitionState.UNKNOWN.value();
+            if (!validDesiredStateValues.contains(mirrorPartitionState)) {
                 log.error("Topic {} desired state is {}, expected one of {}",
-                        topic, MirrorPartitionState.fromValue(topicImage.desiredMirrorState()), validStates);
+                        topic, MirrorPartitionState.fromValue(mirrorPartitionState), validStates);
                 return Optional.of(Errors.INVALID_CLUSTER_MIRROR_STATE);
             }
             for (int i = 0; i < topicImage.partitions().size(); i++) {
@@ -1938,16 +1949,18 @@ public class MirrorMetadataManager implements MetadataManagerBridge, MetadataPub
             return false;
         }
 
-        if (topicImage.mirrorName() == null || topicImage.mirrorName().isBlank()) {
-            return true;
-        }
+        TopicImage.Mirror mirror = topicImage.mirror();
+        if (mirror instanceof TopicImage.ActiveMirror activeMirror) {
+            String mirrorName = activeMirror.name();
 
-        if (topicImage.desiredMirrorState() != MirrorPartitionState.STOPPED.value()) {
-            return false;
-        }
+            if (activeMirror.desiredState() != MirrorPartitionState.STOPPED.value()) {
+                return false;
+            }
 
-        Map<TopicPartition, MirrorPartitionState> currentState = mirrorCache.getPartitionStates(topicImage.mirrorName());
-        return currentState.getOrDefault(tp, MirrorPartitionState.UNKNOWN) == MirrorPartitionState.STOPPED;
+            Map<TopicPartition, MirrorPartitionState> currentState = mirrorCache.getPartitionStates(mirrorName);
+            return currentState.getOrDefault(tp, MirrorPartitionState.UNKNOWN) == MirrorPartitionState.STOPPED;
+        }
+        return true;
     }
 
     /**

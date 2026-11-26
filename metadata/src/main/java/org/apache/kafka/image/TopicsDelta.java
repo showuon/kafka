@@ -72,7 +72,8 @@ public final class TopicsDelta {
 
     public void replay(TopicRecord record) {
         TopicDelta delta = new TopicDelta(
-            new TopicImage(record.name(), record.topicId(), Map.of()));
+            new TopicImage(record.name(), record.topicId(), Map.of()),
+            image.getTopic(record.topicId()));
         changedTopics.put(record.topicId(), delta);
         createdTopics.put(record.name(), record.topicId());
     }
@@ -261,7 +262,7 @@ public final class TopicsDelta {
         Map<TopicPartition, LocalReplicaChanges.PartitionInfo> followers = new HashMap<>();
         Map<String, Uuid> topicIds = new HashMap<>();
         Map<TopicIdPartition, Uuid> directoryIds = new HashMap<>();
-        Map<Uuid, LocalReplicaChanges.MirrorTopicState> mirrorTopicChanges = new HashMap<>();
+        Map<Uuid, TopicImage.Mirror> mirrorTopicChanges = new HashMap<>();
 
         for (TopicDelta delta : changedTopics.values()) {
             LocalReplicaChanges changes = delta.localChanges(brokerId);
@@ -272,17 +273,7 @@ public final class TopicsDelta {
             followers.putAll(changes.followers());
             topicIds.putAll(changes.topicIds());
             directoryIds.putAll(changes.directoryIds());
-
-
-            // Compare against the existing topics image rather than the topic delta's image. When a broker loads a snapshot
-            // after being offline, its local metadata log may contain a stale mirror association that was removed while it
-            // was offline. Comparing against the existing image ensures that this removal is detected.
-            // Incremental update example: local log (mirror-A, MIRRORING) --> fetched snapshot (null, UNKNOWN).
-            // Snapshot update example: local log (mirror-A, MIRRORING) --> fetched snapshot (null, UNKNOWN).
-            LocalReplicaChanges.MirrorTopicState mirrorTopicState = delta.mirrorTopicStateChange(image.getTopic(delta.id()));
-            if (mirrorTopicState != null) {
-                mirrorTopicChanges.put(delta.id(), mirrorTopicState);
-            }
+            mirrorTopicChanges.putAll(changes.mirrorTopicStates());
         }
 
         // Add all of the removed topic partitions to the set of locally removed partitions
